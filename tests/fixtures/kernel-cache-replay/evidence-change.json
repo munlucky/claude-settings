@@ -1,0 +1,256 @@
+{
+  "name": "evidence-change",
+  "note": "New evidence moves only the tail.",
+  "expectedChangedSegments": [
+    "volatile"
+  ],
+  "expectedPrefixStable": true,
+  "before": {
+    "role": "implementer",
+    "action": "implement",
+    "riskTier": "T1",
+    "tools": [
+      {
+        "name": "read_file",
+        "description": "Read a file from the workspace",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      {
+        "name": "edit_file",
+        "description": "Apply an edit to a file",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "patch": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      {
+        "name": "search",
+        "description": "Search workspace contents",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "pattern": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    ],
+    "hostStable": {
+      "principles": [
+        {
+          "id": "kernel-minimal-correct-change",
+          "guidance": "Keep the change minimal and contract-shaped."
+        }
+      ]
+    },
+    "projectStable": {
+      "policyAnchors": [
+        {
+          "id": "pa-1",
+          "type": "policy_anchor",
+          "revision": "r1",
+          "statement": "Kernel core stays provider-neutral."
+        }
+      ],
+      "architectureRecords": [
+        {
+          "id": "ad-1",
+          "type": "architecture_decision",
+          "revision": "r1",
+          "statement": "Host owns provider model identity."
+        }
+      ]
+    },
+    "runStable": {
+      "objective": "Stabilize the cacheable prompt prefix.",
+      "acceptance": [
+        "Segments are byte-identical for identical state.",
+        "Evidence changes touch only the volatile tail."
+      ],
+      "constraints": [
+        "Kernel authority is unchanged."
+      ],
+      "nonGoals": [
+        "Semantic response cache."
+      ],
+      "obligations": [
+        {
+          "obligationId": "default",
+          "evidenceClass": "hard"
+        }
+      ]
+    },
+    "volatile": {
+      "step": {
+        "stepId": "step-1-1",
+        "objective": "Add deterministic segments."
+      },
+      "allowedPaths": [
+        "scripts/kernel/"
+      ],
+      "evidence": [
+        {
+          "obligationId": "default",
+          "status": "pending",
+          "evidenceDigest": "sha256:aaa"
+        }
+      ]
+    },
+    "modelPolicy": {
+      "modelClass": "value_coding",
+      "resolvedModel": "model-a",
+      "resolvedEffort": "high"
+    },
+    "capabilities": {
+      "supportsPromptCache": true,
+      "supportsExplicitCacheBreakpoints": true,
+      "supportsCacheReadTokens": true,
+      "supportsCacheWriteTokens": true,
+      "supportsSessionContinuation": true
+    },
+    "control": {
+      "runId": "run-alpha",
+      "stepId": "step-1-1",
+      "capsuleId": "capsule-alpha"
+    }
+  },
+  "after": {
+    "role": "implementer",
+    "action": "implement",
+    "riskTier": "T1",
+    "tools": [
+      {
+        "name": "read_file",
+        "description": "Read a file from the workspace",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      {
+        "name": "edit_file",
+        "description": "Apply an edit to a file",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "patch": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      {
+        "name": "search",
+        "description": "Search workspace contents",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "pattern": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    ],
+    "hostStable": {
+      "principles": [
+        {
+          "id": "kernel-minimal-correct-change",
+          "guidance": "Keep the change minimal and contract-shaped."
+        }
+      ]
+    },
+    "projectStable": {
+      "policyAnchors": [
+        {
+          "id": "pa-1",
+          "type": "policy_anchor",
+          "revision": "r1",
+          "statement": "Kernel core stays provider-neutral."
+        }
+      ],
+      "architectureRecords": [
+        {
+          "id": "ad-1",
+          "type": "architecture_decision",
+          "revision": "r1",
+          "statement": "Host owns provider model identity."
+        }
+      ]
+    },
+    "runStable": {
+      "objective": "Stabilize the cacheable prompt prefix.",
+      "acceptance": [
+        "Segments are byte-identical for identical state.",
+        "Evidence changes touch only the volatile tail."
+      ],
+      "constraints": [
+        "Kernel authority is unchanged."
+      ],
+      "nonGoals": [
+        "Semantic response cache."
+      ],
+      "obligations": [
+        {
+          "obligationId": "default",
+          "evidenceClass": "hard"
+        }
+      ]
+    },
+    "volatile": {
+      "step": {
+        "stepId": "step-1-1",
+        "objective": "Add deterministic segments."
+      },
+      "allowedPaths": [
+        "scripts/kernel/"
+      ],
+      "evidence": [
+        {
+          "obligationId": "default",
+          "status": "passed",
+          "evidenceDigest": "sha256:bbb"
+        }
+      ]
+    },
+    "modelPolicy": {
+      "modelClass": "value_coding",
+      "resolvedModel": "model-a",
+      "resolvedEffort": "high"
+    },
+    "capabilities": {
+      "supportsPromptCache": true,
+      "supportsExplicitCacheBreakpoints": true,
+      "supportsCacheReadTokens": true,
+      "supportsCacheWriteTokens": true,
+      "supportsSessionContinuation": true
+    },
+    "control": {
+      "runId": "run-alpha",
+      "stepId": "step-1-1",
+      "capsuleId": "capsule-alpha"
+    }
+  }
+}

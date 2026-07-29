@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "note": "Common rules defined once and shared; provider prompts carry only provider-specific policy. Byte-stable across provider, model, effort, run, step, project, and time.",
+  "surfaces": {
+    "skills/moon-relay-kernel/SKILL.md": 1932,
+    "kernel-planner.md": 1270,
+    "kernel-implementer.md": 1618,
+    "kernel-reviewer.md": 1548
+  },
+  "commonExecutionPromptBytes": 714,
+  "claudeProviderPromptBytes": 352,
+  "codexProviderPromptBytes": 455,
+  "duplicatedCommonRulesInProviderPrompts": 0
+}

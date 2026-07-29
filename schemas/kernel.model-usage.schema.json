@@ -19,6 +19,11 @@
     "parentSessionId": { "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }] },
     "resolvedModel": { "type": ["string", "null"] },
     "resolvedEffort": { "type": ["string", "null"] },
+    "capsuleId": { "type": ["string", "null"] },
+    "capsuleDigest": { "type": ["string", "null"] },
+    "admissionId": { "type": ["string", "null"] },
+    "admissionDigest": { "type": ["string", "null"] },
+    "stepId": { "type": ["string", "null"] },
     "enforcementStatus": { "enum": ["enforced", "fallback", "advisory", "unsupported", "failed"] },
     "resultStatus": { "enum": ["completed", "failed", "interrupted", "abandoned"] },
     "startedAt": { "type": ["string", "null"] },
@@ -28,6 +33,35 @@
     "cachedInputTokens": { "oneOf": [{ "type": "null" }, { "type": "integer", "minimum": 0 }] },
     "outputTokens": { "oneOf": [{ "type": "null" }, { "type": "integer", "minimum": 0 }] },
     "costMicros": { "oneOf": [{ "type": "null" }, { "type": "integer", "minimum": 0 }] },
+    "provider": { "type": ["string", "null"] },
+    "surface": { "type": ["string", "null"] },
+    "speedMode": { "type": ["string", "null"] },
+    "reasoningContext": { "type": ["string", "null"] },
+    "reasoningMode": { "type": ["string", "null"] },
+    "delegationMode": { "type": ["string", "null"] },
+    "sessionLineageId": { "type": ["string", "null"] },
+    "previousResponseIdDigest": { "type": ["string", "null"] },
+    "promptPrefixDigest": { "type": ["string", "null"] },
+    "promptCacheKeyDigest": { "type": ["string", "null"] },
+    "cacheMode": { "oneOf": [{ "type": "null" }, { "enum": ["off", "shadow", "on"] }] },
+    "cacheTtl": { "type": ["string", "null"] },
+    "cacheMissReason": {
+      "oneOf": [
+        { "type": "null" },
+        { "enum": ["cold-prefix", "tool-schema-changed", "common-prefix-changed", "provider-prefix-changed", "project-prefix-changed", "run-prefix-changed", "model-changed", "effort-changed", "speed-mode-changed", "session-reset", "provider-unsupported", "usage-unreported", "unknown"] }
+      ]
+    },
+    "modelEscalationReason": {
+      "oneOf": [
+        { "type": "null" },
+        { "enum": ["risk-tier", "complexity", "repeated-failure", "review-policy", "user-request", "quality-regression", "provider-fallback", "unknown"] }
+      ]
+    },
+    "eligiblePrefixTokens": { "oneOf": [{ "type": "null" }, { "type": "integer", "minimum": 0 }] },
+    "uncachedInputTokens": { "oneOf": [{ "type": "null" }, { "type": "integer", "minimum": 0 }] },
+    "cacheReadInputTokens": { "oneOf": [{ "type": "null" }, { "type": "integer", "minimum": 0 }] },
+    "cacheWriteInputTokens": { "oneOf": [{ "type": "null" }, { "type": "integer", "minimum": 0 }] },
+    "reasoningTokens": { "oneOf": [{ "type": "null" }, { "type": "integer", "minimum": 0 }] },
     "createdAt": { "type": "string", "minLength": 1 }
   }
 }

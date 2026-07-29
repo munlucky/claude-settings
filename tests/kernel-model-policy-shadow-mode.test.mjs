@@ -1,0 +1,41 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { resolveOptimizationModes } from '../scripts/host/kernel/provider-prompt-policy.mjs';
+import { resolveCodexModelPolicy } from '../scripts/host/kernel/codex-model-policy.mjs';
+import { resolveClaudeEffort } from '../scripts/host/kernel/claude-effort-policy.mjs';
+
+// In shadow the Host still resolves a recommended model and effort so the
+// replay corpus can compare them against what actually ran; it just does not
+// apply them. The recommendation must therefore be computable without any
+// mode-dependent branching.
+
+test('the model policy mode is its own switch', () => {
+  const modes = resolveOptimizationModes({ MOON_RELAY_KERNEL_MODEL_POLICY_MODE: 'on', MOON_RELAY_KERNEL_CACHE_MODE: 'off' });
+  assert.equal(modes.modelPolicyMode, 'on');
+  assert.equal(modes.cacheMode, 'off');
+});
+
+test('a recommendation is produced regardless of the active mode', () => {
+  for (const mode of ['off', 'shadow', 'on']) {
+    resolveOptimizationModes({ MOON_RELAY_KERNEL_MODEL_POLICY_MODE: mode });
+    const codex = resolveCodexModelPolicy({ actionKind: 'implement' });
+    const claude = resolveClaudeEffort({ actionKind: 'implement' });
+    assert.equal(codex.model, 'gpt-5.6-terra');
+    assert.equal(codex.reasoning, 'medium');
+    assert.equal(claude.effort, 'high');
+  }
+});
+
+test('the recommendation is deterministic for identical input', () => {
+  const input = { actionKind: 'review_engineering', riskTier: 'T3', shapes: ['security'] };
+  assert.deepEqual(resolveCodexModelPolicy(input), resolveCodexModelPolicy(input));
+  assert.deepEqual(resolveClaudeEffort(input), resolveClaudeEffort(input));
+});
+
+test('every routing decision carries the reasons that produced it', () => {
+  const escalated = resolveCodexModelPolicy({ actionKind: 'implement', repeatedFailure: true });
+  assert.ok(escalated.reasons.includes('repeated-failure-escalation'));
+  assert.equal(escalated.policyRevision, 'kernel-codex-model.v1');
+  const claude = resolveClaudeEffort({ actionKind: 'implement', triggers: ['broad-refactor'] });
+  assert.ok(claude.reasons.includes('broad-refactor'));
+});

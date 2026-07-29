@@ -6,7 +6,10 @@ import path from 'node:path';
 import { readFileSync } from 'node:fs';
 
 export const CLASS_ENV_TOKEN = Object.freeze({ frontier_reasoning: 'FRONTIER', value_coding: 'VALUE' });
-export const RESOLUTION_SOURCES = Object.freeze(['invocation-override', 'environment', 'profile-config', 'host-default']);
+// 'model-policy' is applied by the turn dispatcher (Wave 5/6), not this
+// registry, when MOON_RELAY_KERNEL_MODEL_POLICY_MODE=on overrides the class
+// mapping below with the provider's own Sol/Terra/Luna or effort policy.
+export const RESOLUTION_SOURCES = Object.freeze(['invocation-override', 'environment', 'profile-config', 'host-default', 'model-policy']);
 
 const interpolate = (value, env) => String(value ?? '').replace(/\$\{([A-Z0-9_]+)\}/g, (_, name) => env[name] || '');
 

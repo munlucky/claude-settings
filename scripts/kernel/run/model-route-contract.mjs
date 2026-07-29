@@ -199,6 +199,29 @@ const optionalCount = (value, field) => {
 export const buildReceiptId = ({ decisionId, actorSessionId, startedAt = '' } = {}) =>
   `usage-${createHash('sha256').update(`${decisionId}|${actorSessionId}|${startedAt}`).digest('hex').slice(0, 24)}`;
 
+// Cache and routing economics (Wave 8). Cache *reads* save money and cache
+// *writes* cost it, so a receipt that reports only "cached tokens" cannot tell a
+// profitable prefix from a losing one. They are recorded separately, and a value
+// the Host did not measure stays null.
+export const CACHE_MODES = Object.freeze(['off', 'shadow', 'on']);
+export const CACHE_MISS_REASONS = Object.freeze([
+  'cold-prefix', 'tool-schema-changed', 'common-prefix-changed', 'provider-prefix-changed',
+  'project-prefix-changed', 'run-prefix-changed', 'model-changed', 'effort-changed',
+  'speed-mode-changed', 'session-reset', 'provider-unsupported', 'usage-unreported', 'unknown',
+]);
+export const MODEL_ESCALATION_REASONS = Object.freeze([
+  'risk-tier', 'complexity', 'repeated-failure', 'review-policy', 'user-request',
+  'quality-regression', 'provider-fallback', 'unknown',
+]);
+
+const optionalEnum = (value, allowed, field) => {
+  if (value === null || value === undefined || value === '') return null;
+  if (!allowed.includes(String(value))) fail('kernel_model_usage_invalid', `${field} must be one of: ${allowed.join(', ')}`);
+  return String(value);
+};
+
+const optionalText = (value) => (value === null || value === undefined || value === '' ? null : String(value));
+
 // What the Host actually did with a decision (§6.3). A Host that could not
 // enforce the requested class must say so; it may not claim `enforced`.
 export const normalizeModelUsageReceipt = (receipt = {}) => {
@@ -215,6 +238,17 @@ export const normalizeModelUsageReceipt = (receipt = {}) => {
     fail('kernel_model_usage_enforcement_unproven', 'enforcementStatus "enforced" requires the resolved provider model the Host actually used');
   }
   const startedAt = receipt.startedAt ? String(receipt.startedAt) : null;
+  // Backward compatibility runs both ways: a Host that reports only the legacy
+  // `cachedInputTokens` is read as a cache read, and a Host that reports the new
+  // field keeps the legacy one populated so existing readers do not go blind.
+  const cacheReadInputTokens = optionalCount(
+    receipt.cacheReadInputTokens ?? receipt.cachedInputTokens ?? null,
+    'cacheReadInputTokens',
+  );
+  const cachedInputTokens = optionalCount(
+    receipt.cachedInputTokens ?? receipt.cacheReadInputTokens ?? null,
+    'cachedInputTokens',
+  );
   return Object.freeze({
     schemaVersion: 1,
     receiptId: String(receipt.receiptId || buildReceiptId({ decisionId: receipt.decisionId, actorSessionId: receipt.actorSessionId, startedAt })),
@@ -239,10 +273,84 @@ export const normalizeModelUsageReceipt = (receipt = {}) => {
     finishedAt: receipt.finishedAt ? String(receipt.finishedAt) : null,
     wallClockMs: optionalCount(receipt.wallClockMs, 'wallClockMs'),
     inputTokens: optionalCount(receipt.inputTokens, 'inputTokens'),
-    cachedInputTokens: optionalCount(receipt.cachedInputTokens, 'cachedInputTokens'),
+    cachedInputTokens,
     outputTokens: optionalCount(receipt.outputTokens, 'outputTokens'),
     costMicros: optionalCount(receipt.costMicros, 'costMicros'),
+    // Wave 8 economics. Provider/surface are recorded here because the same
+    // model class can run on more than one surface in a single project.
+    provider: optionalText(receipt.provider),
+    surface: optionalText(receipt.surface),
+    speedMode: optionalText(receipt.speedMode),
+    reasoningContext: optionalText(receipt.reasoningContext),
+    reasoningMode: optionalText(receipt.reasoningMode),
+    delegationMode: optionalText(receipt.delegationMode),
+    sessionLineageId: optionalText(receipt.sessionLineageId),
+    previousResponseIdDigest: optionalText(receipt.previousResponseIdDigest),
+    promptPrefixDigest: optionalText(receipt.promptPrefixDigest),
+    promptCacheKeyDigest: optionalText(receipt.promptCacheKeyDigest),
+    cacheMode: optionalEnum(receipt.cacheMode, CACHE_MODES, 'cacheMode'),
+    cacheTtl: optionalText(receipt.cacheTtl),
+    cacheMissReason: optionalEnum(receipt.cacheMissReason, CACHE_MISS_REASONS, 'cacheMissReason'),
+    modelEscalationReason: optionalEnum(receipt.modelEscalationReason, MODEL_ESCALATION_REASONS, 'modelEscalationReason'),
+    eligiblePrefixTokens: optionalCount(receipt.eligiblePrefixTokens ?? null, 'eligiblePrefixTokens'),
+    uncachedInputTokens: optionalCount(receipt.uncachedInputTokens ?? null, 'uncachedInputTokens'),
+    cacheReadInputTokens,
+    cacheWriteInputTokens: optionalCount(receipt.cacheWriteInputTokens ?? null, 'cacheWriteInputTokens'),
+    reasoningTokens: optionalCount(receipt.reasoningTokens ?? null, 'reasoningTokens'),
     createdAt: receipt.createdAt ? String(receipt.createdAt) : new Date().toISOString(),
+  });
+};
+
+// Derived cache and routing metrics (Wave 8). Every ratio is null when its
+// denominator is zero or unmeasured — a 0% hit rate and "nobody reported"
+// are different facts, and only one of them is a problem to fix.
+const ratio = (numerator, denominator) =>
+  (numerator === null || denominator === null || !denominator ? null : numerator / denominator);
+
+const sum = (receipts, field) => receipts.reduce((total, receipt) => (receipt[field] === null || receipt[field] === undefined ? total : (total ?? 0) + receipt[field]), null);
+
+// A ratio summed independently per field mixes populations: a receipt that
+// reports the denominator but not the numerator (or the reverse) still
+// contributes to one side, silently pulling the published rate toward
+// whichever side happened to be reported. Only a receipt that reports BOTH
+// fields may contribute to either side of the ratio.
+const pairedRatio = (receipts, numeratorField, denominatorField) => {
+  let numerator = null;
+  let denominator = null;
+  for (const receipt of receipts) {
+    const numValue = receipt[numeratorField];
+    const denValue = receipt[denominatorField];
+    if (numValue === null || numValue === undefined || denValue === null || denValue === undefined) continue;
+    numerator = (numerator ?? 0) + numValue;
+    denominator = (denominator ?? 0) + denValue;
+  }
+  return ratio(numerator, denominator);
+};
+
+export const summarizeCacheEconomics = (receipts = []) => {
+  const eligiblePrefixTokens = sum(receipts, 'eligiblePrefixTokens');
+  const cacheReadInputTokens = sum(receipts, 'cacheReadInputTokens');
+  const cacheWriteInputTokens = sum(receipts, 'cacheWriteInputTokens');
+  const inputTokens = sum(receipts, 'inputTokens');
+  const outputTokens = sum(receipts, 'outputTokens');
+  const reasoningTokens = sum(receipts, 'reasoningTokens');
+  const continuationEligible = receipts.filter((receipt) => receipt.sessionLineageId !== null);
+  const continued = continuationEligible.filter((receipt, index, all) =>
+    all.findIndex((other) => other.sessionLineageId === receipt.sessionLineageId) !== index);
+  return Object.freeze({
+    schemaVersion: 1,
+    receipts: receipts.length,
+    totals: Object.freeze({ eligiblePrefixTokens, cacheReadInputTokens, cacheWriteInputTokens, inputTokens, outputTokens, reasoningTokens }),
+    eligibleHitRatio: pairedRatio(receipts, 'cacheReadInputTokens', 'eligiblePrefixTokens'),
+    totalInputCacheRatio: pairedRatio(receipts, 'cacheReadInputTokens', 'inputTokens'),
+    writeReadRatio: pairedRatio(receipts, 'cacheWriteInputTokens', 'cacheReadInputTokens'),
+    reasoningRatio: pairedRatio(receipts, 'reasoningTokens', 'outputTokens'),
+    sessionContinuationRate: continuationEligible.length ? continued.length / continuationEligible.length : null,
+    missReasons: Object.freeze(Object.fromEntries(
+      [...new Set(receipts.map((receipt) => receipt.cacheMissReason).filter(Boolean))]
+        .sort()
+        .map((reason) => [reason, receipts.filter((receipt) => receipt.cacheMissReason === reason).length]),
+    )),
   });
 };
 
