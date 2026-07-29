@@ -15,6 +15,20 @@ export const CLAUDE_CAPABILITIES = Object.freeze({
   supportsIndependentContext: true,
   supportsUsageTokens: true,
   supportsResolvedModelIdentity: true,
+  // Wave 7. Claude marks cacheable prefixes explicitly and reports read and
+  // write token counts separately, so both are observable rather than inferred.
+  supportsPromptCache: true,
+  supportsExplicitCacheBreakpoints: true,
+  supportsCacheReadTokens: true,
+  supportsCacheWriteTokens: true,
+  supportsSessionContinuation: true,
+  // Responses-API-only features. Claude has no equivalent surface here, and
+  // claiming one would produce requests that fail at dispatch.
+  supportsPersistedReasoning: false,
+  supportsProgrammaticToolCalling: false,
+  supportsProMode: false,
+  supportsFastMode: false,
+  supportsUltra: false,
 });
 
 export const buildClaudeInvocation = ({ decision, resolution }) => {
@@ -47,8 +61,12 @@ export const createClaudeAdapter = ({ launch = null, capabilities = {} } = {}) =
       resolvedEffort: result.resolvedEffort ?? invocation.effort ?? null,
       actorSessionId: result.sessionId || null,
       inputTokens: result.inputTokens ?? null,
-      cachedInputTokens: result.cachedInputTokens ?? null,
+      cachedInputTokens: result.cachedInputTokens ?? result.cacheReadInputTokens ?? null,
+      cacheReadInputTokens: result.cacheReadInputTokens ?? result.cachedInputTokens ?? null,
+      cacheWriteInputTokens: result.cacheWriteInputTokens ?? null,
+      uncachedInputTokens: result.uncachedInputTokens ?? null,
       outputTokens: result.outputTokens ?? null,
+      reasoningTokens: result.reasoningTokens ?? null,
       wallClockMs: result.wallClockMs ?? null,
       invocation,
     };
