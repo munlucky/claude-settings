@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "note": "Baseline at 016afe1d. No consolidated common or provider execution prompt existed; the per-surface files below were the only stable prompt bytes.",
+  "surfaces": {
+    "skills/moon-relay-kernel/SKILL.md": 1932,
+    "kernel-planner.md": 1270,
+    "kernel-implementer.md": 1618,
+    "kernel-reviewer.md": 1548
+  },
+  "commonExecutionPromptBytes": 0,
+  "claudeProviderPromptBytes": 0,
+  "codexProviderPromptBytes": 0
+}
