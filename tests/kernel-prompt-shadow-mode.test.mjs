@@ -1,0 +1,46 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { resolveOptimizationModes, resolveProviderOptimizationMode, CACHE_MODES } from '../scripts/host/kernel/provider-prompt-policy.mjs';
+import { buildPromptEnvelope } from '../scripts/host/kernel/prompt-envelope.mjs';
+import { buildToolManifest } from '../scripts/host/kernel/tool-manifest.mjs';
+
+const envelopeFor = (env) => buildPromptEnvelope({
+  provider: 'claude',
+  toolManifest: buildToolManifest([{ name: 'read_file', description: 'Read a file' }]),
+  contextSegments: {},
+  capabilities: { supportsPromptCache: true, supportsExplicitCacheBreakpoints: true },
+  env,
+});
+
+test('every mode defaults to shadow when nothing is configured', () => {
+  const modes = resolveOptimizationModes({});
+  assert.deepEqual(modes, { cacheMode: 'shadow', modelPolicyMode: 'shadow', claude: 'shadow', codex: 'shadow' });
+});
+
+test('an unrecognized mode value falls back to shadow rather than turning on', () => {
+  assert.equal(resolveOptimizationModes({ MOON_RELAY_KERNEL_CACHE_MODE: 'enabled' }).cacheMode, 'shadow');
+  assert.deepEqual([...CACHE_MODES], ['off', 'shadow', 'on']);
+});
+
+test('providers are switched independently', () => {
+  const env = { MOON_RELAY_KERNEL_CLAUDE_OPTIMIZATION: 'on', MOON_RELAY_KERNEL_CODEX_OPTIMIZATION: 'off' };
+  assert.equal(resolveProviderOptimizationMode('claude', env), 'on');
+  assert.equal(resolveProviderOptimizationMode('codex', env), 'off');
+});
+
+test('shadow mode still computes the envelope so it can be measured', () => {
+  const shadow = envelopeFor({ MOON_RELAY_KERNEL_CLAUDE_OPTIMIZATION: 'shadow' });
+  assert.equal(shadow.cachePolicy.requestedMode, 'shadow');
+  assert.match(shadow.cacheIdentity.prefixDigest, /^sha256:/);
+});
+
+test('the requested mode does not change the compiled prompt bytes', () => {
+  // Shadow must be observationally identical to off for the model; only the
+  // recorded policy differs.
+  const off = envelopeFor({ MOON_RELAY_KERNEL_CLAUDE_OPTIMIZATION: 'off' });
+  const on = envelopeFor({ MOON_RELAY_KERNEL_CLAUDE_OPTIMIZATION: 'on' });
+  assert.deepEqual(off.segments.map((s) => s.digest), on.segments.map((s) => s.digest));
+  assert.equal(off.cacheIdentity.prefixDigest, on.cacheIdentity.prefixDigest);
+  assert.equal(off.cachePolicy.requestedMode, 'off');
+  assert.equal(on.cachePolicy.requestedMode, 'on');
+});
