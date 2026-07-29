@@ -463,6 +463,28 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
   addCol('model_usage_receipts', 'admission_id', 'TEXT');
   addCol('model_usage_receipts', 'admission_digest', 'TEXT');
   addCol('model_usage_receipts', 'step_id', 'TEXT');
+  // Wave 8 cache/model economics. Additive only: existing rows keep NULL, which
+  // reads as "not measured" rather than "measured as zero". There is no
+  // destructive rollback for these columns by design.
+  addCol('model_usage_receipts', 'provider', 'TEXT');
+  addCol('model_usage_receipts', 'surface', 'TEXT');
+  addCol('model_usage_receipts', 'speed_mode', 'TEXT');
+  addCol('model_usage_receipts', 'reasoning_context', 'TEXT');
+  addCol('model_usage_receipts', 'reasoning_mode', 'TEXT');
+  addCol('model_usage_receipts', 'delegation_mode', 'TEXT');
+  addCol('model_usage_receipts', 'session_lineage_id', 'TEXT');
+  addCol('model_usage_receipts', 'previous_response_id_digest', 'TEXT');
+  addCol('model_usage_receipts', 'prompt_prefix_digest', 'TEXT');
+  addCol('model_usage_receipts', 'prompt_cache_key_digest', 'TEXT');
+  addCol('model_usage_receipts', 'cache_mode', 'TEXT');
+  addCol('model_usage_receipts', 'cache_ttl', 'TEXT');
+  addCol('model_usage_receipts', 'cache_miss_reason', 'TEXT');
+  addCol('model_usage_receipts', 'model_escalation_reason', 'TEXT');
+  addCol('model_usage_receipts', 'eligible_prefix_tokens', 'INTEGER');
+  addCol('model_usage_receipts', 'uncached_input_tokens', 'INTEGER');
+  addCol('model_usage_receipts', 'cache_read_input_tokens', 'INTEGER');
+  addCol('model_usage_receipts', 'cache_write_input_tokens', 'INTEGER');
+  addCol('model_usage_receipts', 'reasoning_tokens', 'INTEGER');
   addCol('verifications', 'evidence_class', "TEXT DEFAULT 'attested'");
   addCol('verifications', 'contract_revision', 'INTEGER DEFAULT 1');
   addCol('leases', 'fencing_token', 'INTEGER DEFAULT 0');
@@ -1048,15 +1070,21 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       const decision = this.getModelRouteDecision(normalized.decisionId, { runId });
       if (!decision) throw new Error(`model usage receipt references decision ${normalized.decisionId}, which does not belong to run ${runId}`);
       db.prepare(`
-        INSERT INTO model_usage_receipts(receipt_id, decision_id, run_id, host_surface, actor_session_id, parent_session_id, resolved_model, resolved_effort, enforcement_status, input_tokens, cached_input_tokens, output_tokens, cost_micros, wall_clock_ms, result_status, capsule_id, capsule_digest, admission_id, admission_digest, step_id, receipt_json, created_at)
-        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(receipt_id) DO UPDATE SET enforcement_status=excluded.enforcement_status, resolved_model=excluded.resolved_model, resolved_effort=excluded.resolved_effort, input_tokens=excluded.input_tokens, cached_input_tokens=excluded.cached_input_tokens, output_tokens=excluded.output_tokens, cost_micros=excluded.cost_micros, wall_clock_ms=excluded.wall_clock_ms, result_status=excluded.result_status, capsule_id=excluded.capsule_id, capsule_digest=excluded.capsule_digest, admission_id=excluded.admission_id, admission_digest=excluded.admission_digest, step_id=excluded.step_id, receipt_json=excluded.receipt_json
+        INSERT INTO model_usage_receipts(receipt_id, decision_id, run_id, host_surface, actor_session_id, parent_session_id, resolved_model, resolved_effort, enforcement_status, input_tokens, cached_input_tokens, output_tokens, cost_micros, wall_clock_ms, result_status, capsule_id, capsule_digest, admission_id, admission_digest, step_id, provider, surface, speed_mode, reasoning_context, reasoning_mode, delegation_mode, session_lineage_id, previous_response_id_digest, prompt_prefix_digest, prompt_cache_key_digest, cache_mode, cache_ttl, cache_miss_reason, model_escalation_reason, eligible_prefix_tokens, uncached_input_tokens, cache_read_input_tokens, cache_write_input_tokens, reasoning_tokens, receipt_json, created_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(receipt_id) DO UPDATE SET enforcement_status=excluded.enforcement_status, resolved_model=excluded.resolved_model, resolved_effort=excluded.resolved_effort, input_tokens=excluded.input_tokens, cached_input_tokens=excluded.cached_input_tokens, output_tokens=excluded.output_tokens, cost_micros=excluded.cost_micros, wall_clock_ms=excluded.wall_clock_ms, result_status=excluded.result_status, capsule_id=excluded.capsule_id, capsule_digest=excluded.capsule_digest, admission_id=excluded.admission_id, admission_digest=excluded.admission_digest, step_id=excluded.step_id, provider=excluded.provider, surface=excluded.surface, speed_mode=excluded.speed_mode, reasoning_context=excluded.reasoning_context, reasoning_mode=excluded.reasoning_mode, delegation_mode=excluded.delegation_mode, session_lineage_id=excluded.session_lineage_id, previous_response_id_digest=excluded.previous_response_id_digest, prompt_prefix_digest=excluded.prompt_prefix_digest, prompt_cache_key_digest=excluded.prompt_cache_key_digest, cache_mode=excluded.cache_mode, cache_ttl=excluded.cache_ttl, cache_miss_reason=excluded.cache_miss_reason, model_escalation_reason=excluded.model_escalation_reason, eligible_prefix_tokens=excluded.eligible_prefix_tokens, uncached_input_tokens=excluded.uncached_input_tokens, cache_read_input_tokens=excluded.cache_read_input_tokens, cache_write_input_tokens=excluded.cache_write_input_tokens, reasoning_tokens=excluded.reasoning_tokens, receipt_json=excluded.receipt_json
       `).run(
         normalized.receiptId, normalized.decisionId, runId, normalized.hostSurface, normalized.actorSessionId,
         normalized.parentSessionId, normalized.resolvedModel, normalized.resolvedEffort, normalized.enforcementStatus,
         normalized.inputTokens, normalized.cachedInputTokens, normalized.outputTokens, normalized.costMicros,
         normalized.wallClockMs, normalized.resultStatus,
         normalized.capsuleId, normalized.capsuleDigest, normalized.admissionId, normalized.admissionDigest, normalized.stepId,
+        normalized.provider, normalized.surface, normalized.speedMode, normalized.reasoningContext, normalized.reasoningMode,
+        normalized.delegationMode, normalized.sessionLineageId, normalized.previousResponseIdDigest,
+        normalized.promptPrefixDigest, normalized.promptCacheKeyDigest, normalized.cacheMode, normalized.cacheTtl,
+        normalized.cacheMissReason, normalized.modelEscalationReason,
+        normalized.eligiblePrefixTokens, normalized.uncachedInputTokens, normalized.cacheReadInputTokens,
+        normalized.cacheWriteInputTokens, normalized.reasoningTokens,
         persistentJson(normalized), normalized.createdAt,
       );
       return normalized;
