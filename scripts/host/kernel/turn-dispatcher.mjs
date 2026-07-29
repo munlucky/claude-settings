@@ -12,6 +12,7 @@ import { buildKernelContextSegments } from '../../kernel/context-segments.mjs';
 import { resolveOptimizationModes } from './provider-prompt-policy.mjs';
 import { resolveCodexModelPolicy } from './codex-model-policy.mjs';
 import { resolveClaudeEffort } from './claude-effort-policy.mjs';
+import { buildModelCapsuleView } from './model-capsule-view.mjs';
 
 // A decision carries no risk-shape data (security/migration/...) to the Host
 // today, only actionKind/riskTier/reasonCodes, so the recommendation below is
@@ -107,14 +108,17 @@ export const buildExecutionContract = (modelInput = {}, decision = {}) => {
 // manifest is empty rather than guessed.
 export const buildTurnPromptEnvelope = ({ modelInput = {}, decision, resolution, hostCapabilities, env = process.env } = {}) => {
   const action = modelInput.action || {};
-  const step = modelInput.step || {};
+  // The current work unit lives at action.step (run-loop.mjs's buildNextPayload
+  // only sets it there for implement/fix actions), not at a top-level `step` —
+  // reading the wrong path silently produced an empty step, no allowed/
+  // forbidden paths, and a null control stepId on every real turn.
+  const step = action.step || {};
   const contextSegments = buildKernelContextSegments({
     runStable: {
       objective: modelInput.objective,
       acceptance: modelInput.acceptance || [],
       constraints: modelInput.constraints || [],
       nonGoals: modelInput.nonGoals || [],
-      obligations: action.obligations || [],
     },
     volatile: {
       action: { type: action.type, guidance: action.guidance },
@@ -122,6 +126,15 @@ export const buildTurnPromptEnvelope = ({ modelInput = {}, decision, resolution,
       allowedPaths: step.allowedPaths || [],
       forbiddenPaths: step.forbiddenPaths || [],
       evidence: modelInput.evidence || [],
+      // action.obligations is the *outstanding* subset recomputed every turn
+      // (run-loop.mjs's buildNextPayload derives it from what has not yet
+      // passed) — it shrinks as obligations pass and is absent entirely on a
+      // fix action. Classifying it as run-stable would move runStableDigest,
+      // and reset cache/session affinity, on every obligation that clears
+      // even though the task contract itself never changed. No stable,
+      // contract-level obligation set reaches the Host at this layer today
+      // (a known gap, not silently worked around), so this stays volatile.
+      outstandingObligations: action.obligations || [],
     },
   }).segments;
   return buildPromptEnvelope({
@@ -244,6 +257,13 @@ export const dispatchKernelTurn = async ({
   // continued session.
   const sessionLineage = resolveSessionLineage({ previous: null, current: envelope.cacheIdentity, role: decision.role, instanceSeed: decision.decisionId });
 
+  // Wave 3: the launcher gets the allowlisted model-visible projection, never
+  // the persisted capsule — the persisted one carries control/provenance
+  // fields (capsuleId, mutationRevision, workspaceIdentity, ...) that must
+  // not enter a cacheable prompt. `executionCapsule` below (unprojected)
+  // still flows to admission and the receipt, where that lineage is required.
+  const modelVisibleCapsule = executionCapsule ? buildModelCapsuleView(executionCapsule, { role: decision.role }) : null;
+
   const startedAt = now();
   let dispatch;
   try {
@@ -251,7 +271,7 @@ export const dispatchKernelTurn = async ({
       decision,
       resolution,
       strategy: hostDirective.enforcementStrategy,
-      executionCapsule,
+      executionCapsule: modelVisibleCapsule,
       executionContract: buildExecutionContract(modelInput, decision),
       envelope,
     }) || {};
@@ -275,6 +295,11 @@ export const dispatchKernelTurn = async ({
     sessionLineage,
     cacheContext: {
       modelEscalationReason: modelPolicyMode === 'on' ? firstMappedEscalationReason(modelPolicyRecommendation?.reasons) : null,
+      // The denominator eligibleHitRatio needs: the token estimate of every
+      // segment this turn declared cacheable. Without it every live receipt
+      // reports a null eligiblePrefixTokens, so summarizeCacheEconomics() can
+      // never publish a real hit ratio outside the replay corpus.
+      eligiblePrefixTokens: envelope.segments.filter((segment) => segment.cacheable).reduce((total, segment) => total + segment.tokenEstimate, 0),
     },
   });
   await controlPlane.recordModelUsage(runId, receipt);

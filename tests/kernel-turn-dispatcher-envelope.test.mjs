@@ -41,8 +41,10 @@ test('buildTurnPromptEnvelope compiles a real cache identity from a next() paylo
       constraints: [],
       nonGoals: [],
       evidence: [{ obligationId: 'default', status: 'pending', evidenceDigest: 'sha256:aaa' }],
-      action: { type: 'implement', guidance: 'go', obligations: [{ obligationId: 'default' }] },
-      step: { stepId: 'step-1', objective: 'go', allowedPaths: ['src/'], forbiddenPaths: [] },
+      // The real next() payload nests the current work unit under
+      // action.step (run-loop.mjs's buildNextPayload), not at a top-level
+      // `step` — this fixture matches that shape deliberately.
+      action: { type: 'implement', guidance: 'go', obligations: [{ obligationId: 'default' }], step: { stepId: 'step-1', objective: 'go', allowedPaths: ['src/'], forbiddenPaths: [] } },
     },
     decision: { runId: 'r-1', role: 'implementer', actionKind: 'implement', riskTier: 'T1', modelClass: 'value_coding' },
     resolution: { model: 'model-a', effort: 'high' },
@@ -72,6 +74,11 @@ test('a real dispatch records a non-null prefix digest and cache mode on the rec
     assert.equal(result.receipt.promptPrefixDigest, result.envelope.cacheIdentity.prefixDigest);
     assert.equal(result.receipt.cacheMode, 'shadow');
     assert.ok(result.receipt.sessionLineageId);
+    // Regression: without reading the current step from action.step, and
+    // without forwarding the envelope's cacheable segment tokens, these two
+    // fields stayed null/undefined on every real dispatch.
+    assert.ok(result.envelope.control.stepId, 'the live envelope must carry a real stepId, not the undefined a wrong modelInput.step read would produce');
+    assert.ok(result.receipt.eligiblePrefixTokens > 0);
   });
 });
 
@@ -107,5 +114,26 @@ test('two independent turns with the same identity fingerprint do not share a se
     const second = await dispatchKernelTurn({ controlPlane: cp, runId, adapter, registry });
     assert.equal(first.envelope.cacheIdentity.prefixDigest, second.envelope.cacheIdentity.prefixDigest, 'the two turns must share the same identity fingerprint for this regression to be meaningful');
     assert.notEqual(first.receipt.sessionLineageId, second.receipt.sessionLineageId);
+  });
+});
+
+test('the launcher receives the model-visible capsule projection, never the persisted one', async () => {
+  // Regression: buildModelCapsuleView() had no production caller — the raw
+  // persisted executionCapsule (capsuleId, mutationRevision, provenance,
+  // workspaceIdentity, ...) went straight to the launcher.
+  await withRun(async (cp, runId) => {
+    let seenCapsule = null;
+    const adapter = createClaudeAdapter({
+      launch: async ({ executionCapsule }) => { seenCapsule = executionCapsule; return { resolvedModel: 'model-a', sessionId: 'claude-session-1' }; },
+    });
+    const result = await dispatchKernelTurn({ controlPlane: cp, runId, adapter, registry: createModelRegistry({ surface: 'claude', env: FRONTIER_ENV }) });
+    assert.ok(seenCapsule, 'the fake launcher must have received a capsule to make this regression meaningful');
+    assert.ok(!Object.hasOwn(seenCapsule, 'capsuleId'));
+    assert.ok(!Object.hasOwn(seenCapsule, 'mutationRevision'));
+    assert.ok(!Object.hasOwn(seenCapsule, 'provenance'));
+    assert.ok(!Object.hasOwn(seenCapsule, 'workspaceIdentity'));
+    assert.equal(typeof seenCapsule.objective, 'string');
+    // The full, unprojected capsule is still what the receipt's lineage uses.
+    assert.ok(result.executionCapsule.capsuleId);
   });
 });

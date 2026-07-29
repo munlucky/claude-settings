@@ -20,24 +20,34 @@ export const CONTROL_ONLY_CAPSULE_FIELDS = Object.freeze([
   'workspaceIdentity', 'provenance', 'capsuleDigest', 'createdAt', 'observedAt', 'leaseId',
 ]);
 
+// A reviewer capsule (buildReviewCapsule) never has workUnit/repositoryContext/
+// verification at all — "no implementer reasoning, no project knowledge, no
+// write permission" is enforced by the persisted shape itself. Fabricating an
+// empty workUnit/repositoryContext/verification for it here would hand a
+// reviewer session an implementer-shaped object it was never meant to see, so
+// each of these three is included only when the source capsule actually has it.
 export const buildModelCapsuleView = (capsule = {}, { role = null } = {}) => {
-  const workUnit = capsule.workUnit || {};
-  const repositoryContext = capsule.repositoryContext || {};
-  const verification = capsule.verification || {};
-  return Object.freeze({
+  const view = {
     role: role || capsule.role || null,
     objective: capsule.objective || '',
     acceptance: list(capsule.acceptance),
     constraints: list(capsule.constraints),
     nonGoals: list(capsule.nonGoals),
-    workUnit: Object.freeze({
+    permissions: capsule.permissions ?? null,
+  };
+  if (capsule.workUnit) {
+    const workUnit = capsule.workUnit;
+    view.workUnit = Object.freeze({
       objective: workUnit.objective || capsule.objective || '',
       dependencies: list(workUnit.dependencies),
       allowedPaths: list(workUnit.allowedPaths),
       forbiddenPaths: list(workUnit.forbiddenPaths),
       expectedOutputs: list(workUnit.expectedOutputs),
-    }),
-    repositoryContext: Object.freeze({
+    });
+  }
+  if (capsule.repositoryContext) {
+    const repositoryContext = capsule.repositoryContext;
+    view.repositoryContext = Object.freeze({
       projectMode: repositoryContext.projectMode || null,
       entrypoints: list(repositoryContext.entrypoints),
       relevantFiles: list(repositoryContext.relevantFiles),
@@ -48,10 +58,12 @@ export const buildModelCapsuleView = (capsule = {}, { role = null } = {}) => {
       knowledgeRecords: list(repositoryContext.knowledgeRecords),
       knownFailurePatterns: list(repositoryContext.knownFailurePatterns),
       baseline: repositoryContext.baseline || null,
-    }),
-    verification: Object.freeze({ obligations: list(verification.obligations) }),
-    permissions: capsule.permissions || null,
-  });
+    });
+  }
+  if (capsule.verification) {
+    view.verification = Object.freeze({ obligations: list(capsule.verification.obligations) });
+  }
+  return Object.freeze(view);
 };
 
 // Used by the envelope tests: proves the projection dropped everything the

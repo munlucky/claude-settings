@@ -78,3 +78,21 @@ test('global knowledge moves project-stable; task-local knowledge does not', () 
   assert.equal(baseline.segments.projectStable.digest, taskResult.segments.projectStable.digest);
   assert.notEqual(baseline.segments.volatile.digest, taskResult.segments.volatile.digest);
 });
+
+test('an obligation clearing (the outstanding subset shrinking) moves only the volatile tail', () => {
+  // Regression: dispatchKernelTurn used to classify the *outstanding*
+  // obligation subset as run-stable content. That subset is recomputed every
+  // turn from what has not yet passed, so run-stable would have moved (and
+  // reset cache/session affinity) on every obligation that cleared even
+  // though the task contract itself never changed.
+  const before = buildKernelContextSegments({
+    runStable: { objective: 'Ship the feature.' },
+    volatile: { outstandingObligations: [{ obligationId: 'default', evidenceClass: 'hard' }, { obligationId: 'routing', evidenceClass: 'hard' }] },
+  });
+  const afterOneCleared = buildKernelContextSegments({
+    runStable: { objective: 'Ship the feature.' },
+    volatile: { outstandingObligations: [{ obligationId: 'routing', evidenceClass: 'hard' }] },
+  });
+  assert.equal(before.segments.runStable.digest, afterOneCleared.segments.runStable.digest);
+  assert.notEqual(before.segments.volatile.digest, afterOneCleared.segments.volatile.digest);
+});

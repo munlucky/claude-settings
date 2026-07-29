@@ -148,8 +148,11 @@ test('K1: the capsule reaches the worker launcher, not just the dispatcher', asy
     });
     // The launcher is the thing that actually starts a worker session; a capsule
     // that stops at the dispatcher would leave the worker with the old flat
-    // contract and no work unit at all.
-    assert.equal(seen[0].capsuleId, implementTurn.executionCapsule.capsuleId);
+    // contract and no work unit at all. It receives the model-visible
+    // projection, though — capsuleId and other control fields stay on the
+    // full capsule dispatchKernelTurn returns, never on what the launcher saw.
+    assert.ok(implementTurn.executionCapsule.capsuleId);
+    assert.ok(!Object.hasOwn(seen[0], 'capsuleId'), 'the launcher must not see the persisted capsuleId');
     assert.equal(seen[0].role, 'implementer');
     assert.deepEqual(seen[0].workUnit.allowedPaths, ['src/auth/**']);
 
@@ -160,7 +163,8 @@ test('K1: the capsule reaches the worker launcher, not just the dispatcher', asy
       registry: createModelRegistry({ surface: 'claude', env: { MOON_RELAY_KERNEL_MODEL_FRONTIER: 'configured-frontier', MOON_RELAY_KERNEL_MODEL_VALUE: 'configured-value' } }),
       actionContext: { actionKind: 'review_engineering', obligationId: 'security-review' },
     });
-    assert.equal(seen[1].capsuleId, reviewTurn.executionCapsule.capsuleId);
+    assert.ok(reviewTurn.executionCapsule.capsuleId);
+    assert.ok(!Object.hasOwn(seen[1], 'capsuleId'), 'the launcher must not see the persisted capsuleId');
     assert.equal(seen[1].role, 'reviewer');
     assert.equal(seen[1].permissions.filesystem, 'read_only');
     assert.equal(seen[1].workUnit, undefined, 'a reviewer never receives the implementer work unit');

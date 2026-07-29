@@ -158,6 +158,11 @@ const renderVolatile = (payload = {}) => {
   lines.push(...renderList('Task Knowledge', taskKnowledge.map((r) => bullet(statementOf(r)))));
   const evidence = sortContextRecords(payload.evidence || [], 'evidence');
   lines.push(...renderList('Evidence', evidence.map((e) => bullet(`${e.obligationId}: ${e.status} (${e.evidenceDigest || 'no-digest'})`))));
+  // The outstanding subset shrinks as obligations pass and disappears on a
+  // fix action, so it belongs here rather than in Run Stable's declared
+  // obligation set.
+  const outstandingObligations = sortContextRecords(payload.outstandingObligations || [], 'obligations');
+  lines.push(...renderList('Outstanding Obligations', outstandingObligations.map((o) => bullet(`${o.obligationId} (${o.evidenceClass || 'hard'})`))));
   const toolResults = sortContextRecords(payload.toolResults || []);
   // Full tool output belongs in the evidence store; the model gets the summary
   // and the digest that points back at it.
