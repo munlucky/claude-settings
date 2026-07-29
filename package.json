@@ -18,7 +18,7 @@
     "test:routing": "node --test tests/kernel-codex-model-adapter.test.mjs tests/kernel-model-routing-eval.test.mjs tests/codex-gpt-5-6-adapter-contract.test.mjs tests/codex-profile-config-contract.test.mjs tests/model-routing-evidence-contract.test.mjs tests/provider-model-routing-contract.test.mjs tests/provider-model-routing-eval-contract.test.mjs tests/provider-profile-adoption-verifier-contract.test.mjs tests/provider-profile-isolation-contract.test.mjs",
     "test:eval": "node tools/evals/harness-control-plane.mjs run --json --include-research",
     "test:lab": "node tools/harness-lab/harness-lab.mjs run --candidate-root . --json",
-    "test:switcher": "node --test --test-concurrency=1 tests/harness-switcher-phase01.test.mjs tests/harness-switcher-transaction.test.mjs tests/harness-switcher-fault-matrix.test.mjs tests/harness-switcher-shortcut.test.mjs tests/harness-switcher-adoption.test.mjs tests/kernel-profile-switcher-lifecycle.test.mjs tests/kernel-app-switching-parity.test.mjs tests/kernel-codex-project-hydration.test.mjs",
+    "test:switcher": "node --test --test-concurrency=1 tests/harness-switcher-phase01.test.mjs tests/harness-switcher-transaction.test.mjs tests/harness-switcher-fault-matrix.test.mjs tests/harness-switcher-shortcut.test.mjs tests/harness-switcher-adoption.test.mjs tests/kernel-profile-switcher-lifecycle.test.mjs tests/kernel-app-switching-parity.test.mjs tests/kernel-codex-project-hydration.test.mjs tests/kernel-global-skills-isolation.test.mjs",
     "setup": "node bin/moonshot-relay.mjs install",
     "doctor": "node bin/moon-harness-switcher.mjs doctor",
     "k": "node bin/moon-harness-switcher.mjs launch --surface all --track kernel --execute",
