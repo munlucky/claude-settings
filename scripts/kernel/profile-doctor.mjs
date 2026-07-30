@@ -13,7 +13,7 @@ export async function doctorKernelProfile({ targetRoot, runtime = null, runtimeH
   const commandChecks = [];
   const requiredProfileFiles = {
     codex: ['AGENTS.override.md', '.codex/config.toml', '.codex/hooks.json', 'skills/moon-relay-kernel/SKILL.md'],
-    claude: ['CLAUDE.md', 'skills/moon-relay-kernel/SKILL.md'],
+    claude: ['CLAUDE.md', 'settings.json', 'skills/moon-relay-kernel/SKILL.md'],
   };
   for (const relativePath of requiredProfileFiles[result.manifest.runtime] || ['skills/moon-relay-kernel/SKILL.md']) {
     let present = true;

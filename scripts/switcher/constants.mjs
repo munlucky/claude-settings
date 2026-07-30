@@ -2,7 +2,7 @@ export const SWITCHER_PRODUCT_ID = 'moon-harness-switcher';
 export const SWITCHER_SCHEMA_VERSION = 1;
 export const TRACKS = ['relay', 'kernel'];
 export const SURFACES = ['claude_cli', 'codex_cli', 'codex_desktop', 'qwen_cli', 'antigravity_desktop'];
-export const GUI_SURFACES = new Set(['codex_desktop', 'antigravity_desktop']);
+export const GUI_SURFACES = new Set(['claude_cli', 'codex_desktop', 'antigravity_desktop']);
 export const ERROR_CODES = Object.freeze([
   'process_active', 'wrong_harness', 'application_not_resolved', 'login_required',
   'journal_recovery_required', 'unsafe_target', 'target_collision', 'shared_mutable_surface',

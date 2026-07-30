@@ -92,6 +92,17 @@ if (!existsSync(selectedInstaller)) {
   process.exit(1);
 }
 
+if (command === 'install' && !args.includes('--dry-run')) {
+  const { inspectAccountSkillsOverlay } = await import('../scripts/switcher/account-skills-overlay.mjs');
+  for (const surface of ['codex_desktop', 'claude_cli']) {
+    const overlay = await inspectAccountSkillsOverlay({ surface });
+    if (!['inactive', 'not_required'].includes(overlay.status)) {
+      console.error(`Setup refused: ${surface} has a ${overlay.status} Kernel skills overlay. Close the app and run the matching r:codex or r:claude command before setup.`);
+      process.exit(1);
+    }
+  }
+}
+
 const installerArgs = command === 'bridge'
   ? [selectedInstaller, ...args]
   : [

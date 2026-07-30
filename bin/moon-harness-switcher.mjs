@@ -60,7 +60,10 @@ try {
   else if (command === 'uninstall') result = await uninstallSwitcher({ home: get('--home') });
   else throw new Error(`unknown command: ${command}`);
   output(result);
-  if (result?.status === 'error' || result?.errorCode === 'wrong_harness') process.exitCode = 1;
+  if (command === 'launch') {
+    const launches = result?.results || [result];
+    if (launches.some((item) => !['committed', 'already_effective'].includes(item?.status))) process.exitCode = 1;
+  } else if (result?.status === 'error' || result?.errorCode === 'wrong_harness') process.exitCode = 1;
 } catch (error) {
   output({ schemaVersion: 1, status: 'error', errorCode: error.code || 'unknown_error', message: error.message, sensitiveContentRead: false });
   process.exitCode = 1;

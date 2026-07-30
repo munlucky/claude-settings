@@ -1,9 +1,9 @@
-import { readFile, stat, mkdir, rename, rm, readdir, cp } from 'node:fs/promises';
+import { stat, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { GUI_SURFACES, SURFACES, TRACKS } from './constants.mjs';
 import { resolveApplication } from './app-resolver/index.mjs';
 import { buildLaunchSpec, spawnTrack } from './launch-adapter.mjs';
-import { listProviderProcesses, processGuardError, waitForQuiescence } from './process-guard.mjs';
+import { listProviderProcesses, processGuardError, waitForProcessPresence, waitForQuiescence } from './process-guard.mjs';
 import { assertSafeTarget, resolveTrackRoots } from './paths.mjs';
 import { createReceipt } from './receipt.mjs';
 import { clearJournal, readJournal, readState, updateState } from './state-store.mjs';
@@ -11,6 +11,7 @@ import { uninstallSwitcherPackage } from './installer.mjs';
 import { advanceTransaction, commitTransaction, prepareTransaction, recoverTransaction } from './transaction.mjs';
 import { inspectProfile } from '../kernel/profile-install.mjs';
 import { cleanupLegacyKernelHydration } from '../kernel/legacy-hydration-cleanup.mjs';
+import { applyAccountSkillsOverlay, inspectAccountSkillsOverlay, restoreAccountSkillsOverlay, requiresAccountSkillsOverlay } from './account-skills-overlay.mjs';
 
 const validate = (surface, track) => {
   if (!SURFACES.includes(surface)) throw new Error(`wrong_harness: unsupported surface ${surface}`);
@@ -29,167 +30,15 @@ const protectedRoots = ({ kernelRuntimeHome = null } = {}) => {
   if (process.env.MOON_RELAY_TRACK !== 'kernel' || !kernelRuntimeHome) return roots;
 
   const kernelRoot = path.resolve(kernelRuntimeHome);
-  // A Kernel-launched surface legitimately inherits its process-scoped
-  // provider home beneath the Kernel runtime. Those paths are not Relay roots
-  // and must not make a subsequent Kernel surface collide with itself.
   return roots.filter((root) => {
     const candidate = path.resolve(root);
     return candidate !== kernelRoot && !candidate.startsWith(`${kernelRoot}${path.sep}`);
   });
 };
 
-const exists = async (file) => {
-  try {
-    await stat(file);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-const SURFACE_SKILLS_DIR = {
-  codex_desktop: '.codex',
-  codex_cli: '.codex',
-  claude_cli: '.claude',
-  qwen_cli: '.qwen',
-  antigravity_desktop: path.join('.gemini', 'antigravity'),
-};
+const exists = async (file) => { try { await stat(file); return true; } catch { return false; } };
 
 export const KERNEL_ENTRYPOINT_SKILL = 'moon-relay-kernel';
-
-// Exact stub that pre-K-1 switcher builds wrote into the account-root skills
-// directory. Matched byte-for-byte so the repair below can only remove our own
-// damage, never a skill the operator authored.
-const LEGACY_ACCOUNT_ROOT_STUB = '---\nname: moon-relay-kernel\ndescription: Single public entrypoint for Moon Relay Kernel task routing.\n---\n\n# Moon Relay Kernel\n';
-
-const globalSkillsPaths = (surface) => {
-  const dirName = SURFACE_SKILLS_DIR[surface];
-  if (!dirName) return null;
-  const baseDir = path.join(process.env.USERPROFILE || process.env.HOME || '', dirName);
-  return { userSkills: path.join(baseDir, 'skills'), backupSkills: path.join(baseDir, '.skills-relay-backup') };
-};
-
-const isLegacyAccountRootStub = async (skillDir) => {
-  let entries;
-  try {
-    entries = await readdir(skillDir);
-  } catch {
-    return false;
-  }
-  if (entries.length !== 1 || entries[0] !== 'SKILL.md') return false;
-  try {
-    return (await readFile(path.join(skillDir, 'SKILL.md'), 'utf8')) === LEGACY_ACCOUNT_ROOT_STUB;
-  } catch {
-    return false;
-  }
-};
-
-/**
- * Repairs an account-root skills directory that an earlier switcher build
- * replaced with a Kernel stub. Kernel isolation is process-scoped through the
- * provider home, so the account root owns the operator's Relay skills in both
- * tracks. Nothing is blind-deleted: only the exact legacy stub is removed, and
- * an entry that already exists under the account root always wins over its
- * backup copy. Failures are reported, never swallowed.
- */
-export async function restoreGlobalSkillsBackup({ surface } = {}) {
-  const paths = globalSkillsPaths(surface);
-  if (!paths) return { status: 'not_applicable', restored: [], conflicts: [], errors: [] };
-  const { userSkills, backupSkills } = paths;
-  if (!(await exists(backupSkills))) return { status: 'noop', restored: [], conflicts: [], errors: [] };
-
-  const restored = [];
-  const conflicts = [];
-  const errors = [];
-  const record = (target, error) => errors.push({ path: target, code: error.code || 'unknown' });
-
-  const stubDir = path.join(userSkills, KERNEL_ENTRYPOINT_SKILL);
-  if (await isLegacyAccountRootStub(stubDir)) {
-    try {
-      await rm(stubDir, { force: true, recursive: true });
-    } catch (error) {
-      record(stubDir, error);
-    }
-  }
-
-  await mkdir(userSkills, { recursive: true });
-  for (const entry of await readdir(backupSkills)) {
-    const target = path.join(userSkills, entry);
-    if (await exists(target)) {
-      conflicts.push(entry);
-      continue;
-    }
-    try {
-      await rename(path.join(backupSkills, entry), target);
-      restored.push(entry);
-    } catch (error) {
-      record(target, error);
-    }
-  }
-
-  if (!conflicts.length && !errors.length) {
-    try {
-      await rm(backupSkills, { force: true, recursive: true });
-    } catch (error) {
-      record(backupSkills, error);
-    }
-  }
-
-  const status = errors.length ? 'restore_incomplete' : conflicts.length ? 'partial' : 'restored';
-  return { status, restored, conflicts, errors, userSkills, backupSkills };
-}
-
-export async function isolateGlobalSkillsForKernel({ surface, sourceRoot = process.cwd(), dryRun = false } = {}) {
-  const restoreResult = await restoreGlobalSkillsBackup({ surface });
-  if (dryRun) return restoreResult.status === 'restored' ? restoreResult : { status: 'noop', backedUp: [], errors: [] };
-  const paths = globalSkillsPaths(surface);
-  if (!paths) return { status: 'not_applicable', backedUp: [], errors: [] };
-  const { userSkills, backupSkills } = paths;
-
-  await mkdir(userSkills, { recursive: true });
-  await mkdir(backupSkills, { recursive: true });
-
-  const backedUp = [];
-  const errors = [];
-
-  try {
-    const entries = await readdir(userSkills, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.name === KERNEL_ENTRYPOINT_SKILL || entry.name.startsWith('.')) continue;
-      const src = path.join(userSkills, entry.name);
-      const dest = path.join(backupSkills, entry.name);
-      try {
-        if (!(await exists(dest))) {
-          await rename(src, dest);
-          backedUp.push(entry.name);
-        } else {
-          await rm(src, { force: true, recursive: true });
-          backedUp.push(entry.name);
-        }
-      } catch (err) {
-        errors.push({ path: src, code: err.code || 'unknown' });
-      }
-    }
-  } catch (err) {
-    errors.push({ path: userSkills, code: err.code || 'unknown' });
-  }
-
-  const kernelSkillSrc = path.join(sourceRoot, 'skills', KERNEL_ENTRYPOINT_SKILL);
-  const kernelSkillDest = path.join(userSkills, KERNEL_ENTRYPOINT_SKILL);
-  if (await exists(kernelSkillSrc)) {
-    try {
-      await mkdir(kernelSkillDest, { recursive: true });
-      const skillFiles = await readdir(kernelSkillSrc);
-      for (const f of skillFiles) {
-        await cp(path.join(kernelSkillSrc, f), path.join(kernelSkillDest, f), { recursive: true, force: true });
-      }
-    } catch (err) {
-      errors.push({ path: kernelSkillDest, code: err.code || 'unknown' });
-    }
-  }
-
-  return { status: errors.length ? 'isolation_incomplete' : 'isolated', backedUp, errors, userSkills, backupSkills };
-}
 
 export async function discoverProviderSkills(providerHome) {
   if (!providerHome) return [];
@@ -230,8 +79,6 @@ export async function inspectKernelLaunchReadiness({ runtimeHome, providerHome, 
     return { status: 'unsafe_target', reason: 'app_data_root_missing' };
   }
 
-  // The public Kernel surface is exactly one entrypoint skill. Read what the
-  // provider home actually serves instead of asserting the expected answer.
   const discoveredSkills = await discoverProviderSkills(providerHome);
   if (!discoveredSkills.includes(KERNEL_ENTRYPOINT_SKILL)) {
     return { status: 'kernel_profile_not_ready', reason: 'skill_discovery_missing', discoveredSkills };
@@ -267,7 +114,7 @@ export async function cleanupLegacyProject({ projectRoot, providerHome } = {}) {
   return cleanupLegacyKernelHydration({ projectRoot, profileReady: profile.status === 'ready' });
 }
 
-export async function launchSwitch({ surface, track, sourceRoot = process.cwd(), projectRoot = null, workspaceRoot = null, taskBinding = null, processProvider, closeApproval = false, closeHandler = null, launchSpec = null, spawnImpl = null, dryRun = true } = {}) {
+export async function launchSwitch({ surface, track, sourceRoot = process.cwd(), projectRoot = null, workspaceRoot = null, taskBinding = null, processProvider, closeApproval = false, closeHandler = null, launchSpec = null, spawnImpl = null, dryRun = true, platform = process.platform, accountHome = null, applicationResolver = resolveApplication } = {}) {
   validate(surface, track);
   const targetProjectRoot = projectRoot || workspaceRoot || (track === 'kernel' ? sourceRoot : null);
   const defaultRoots = resolveTrackRoots({ track, surface, sourceRoot });
@@ -278,7 +125,12 @@ export async function launchSwitch({ surface, track, sourceRoot = process.cwd(),
   const active = await listProviderProcesses({ surface, processProvider });
 
   if (active.length && GUI_SURFACES.has(surface)) {
-    if (previous?.effectiveTrack === track) return createReceipt({ operation: 'launch', status: 'already_effective', surface, track, effective: { activated: true, processSet: active } });
+    let previousIsEffective = previous?.effectiveTrack === track;
+    if (previousIsEffective && requiresAccountSkillsOverlay(surface, platform)) {
+      const overlay = await inspectAccountSkillsOverlay({ surface, platform, accountHome });
+      previousIsEffective = track === 'kernel' ? overlay.status === 'active' : overlay.status === 'inactive';
+    }
+    if (previousIsEffective) return createReceipt({ operation: 'launch', status: 'already_effective', surface, track, effective: { activated: true, processSet: active } });
     if (!closeApproval || !closeHandler) return createReceipt({ operation: 'launch', status: 'close_incomplete', surface, track: previous?.effectiveTrack || 'unknown', errorCode: 'operator_approval_missing', effective: { processSet: active } });
     const closed = await closeHandler({ surface, processSet: active });
     if (!closed) return createReceipt({ operation: 'launch', status: 'close_incomplete', surface, track: previous?.effectiveTrack || 'unknown', errorCode: 'close_incomplete', effective: { processSet: active } });
@@ -299,32 +151,57 @@ export async function launchSwitch({ surface, track, sourceRoot = process.cwd(),
       sourceRoot,
     });
     if (readiness.status !== 'launch_candidate') {
-      // Refused before the journal exists and before anything is spawned, so a
-      // rejected launch leaves no partial transaction behind.
       return createReceipt({ operation: 'launch', status: readiness.status, surface, track, errorCode: readiness.reason || readiness.status, effective: { discoveredSkills: readiness.discoveredSkills || [] } });
     }
   }
 
-  const journal = await prepareTransaction({ surface, requestedTrack: track, roots, previousSelection: previous, processSet: active });
-  // Provider homes are already isolated per track. Normal launch must never
-  // move, overwrite, restore, or delete account-root skills; legacy recovery
-  // remains an explicit operator action.
-  const globalSkillsRestore = { status: 'not_required', reason: 'provider_home_isolated' };
-  await advanceTransaction(journal, 'old_app_stopped', { globalSkillsRestore });
-
   let spec = launchSpec;
-  if (!spec && GUI_SURFACES.has(surface)) {
-    const application = await resolveApplication(surface);
+  if (!spec && GUI_SURFACES.has(surface) && surface !== 'claude_cli') {
+    const application = await applicationResolver(surface);
     if (!application.executable) return createReceipt({ operation: 'launch', status: 'error', surface, track, errorCode: 'application_not_resolved', effective: { warnings: application.warnings || [] } });
     const args = roots.appDataRoot ? [`--user-data-dir=${roots.appDataRoot}`] : [];
     spec = { ...buildLaunchSpec({ surface, track, sourceRoot, workspaceRoot: targetProjectRoot, roots, command: application.executable, args, ...taskBinding }), aumid: application.aumid || null };
   }
   spec ||= buildLaunchSpec({ surface, track, sourceRoot, workspaceRoot: targetProjectRoot, roots, ...taskBinding });
 
-  await advanceTransaction(journal, 'launch_requested', { launch: { commandName: spec.command, argCount: spec.args.length } });
-  const started = dryRun ? { status: 'launch_requested', pid: null } : spawnTrack(spec, { spawnImpl: spawnImpl || undefined });
+  const journal = await prepareTransaction({ surface, requestedTrack: track, roots, previousSelection: previous, processSet: active });
+  let accountSkillsOverlay = { status: 'not_required', reason: 'process_scoped_provider_home' };
+  if (!dryRun && requiresAccountSkillsOverlay(surface, platform)) {
+    try {
+      accountSkillsOverlay = track === 'kernel'
+        ? await applyAccountSkillsOverlay({ surface, providerHome: roots.providerHome, platform, accountHome })
+        : await restoreAccountSkillsOverlay({ surface, platform, accountHome });
+    } catch (error) {
+      await clearJournal();
+      return createReceipt({ operation: 'launch', status: 'error', surface, track, errorCode: error.code || 'account_skills_overlay_failed', effective: { accountSkillsOverlay: { status: 'refused', reason: error.message } } });
+    }
+  }
+  await advanceTransaction(journal, 'old_app_stopped', { accountSkillsOverlay });
 
-  await advanceTransaction(journal, 'process_observed', { pid: started.pid || null });
+  await advanceTransaction(journal, 'launch_requested', { launch: { commandName: spec.command, argCount: spec.args.length } });
+  let started;
+  try {
+    started = dryRun ? { status: 'launch_requested', pid: null } : spawnTrack(spec, { spawnImpl: spawnImpl || undefined });
+  } catch (error) {
+    if (track === 'kernel' && accountSkillsOverlay.status === 'applied') {
+      await restoreAccountSkillsOverlay({ surface, platform, accountHome }).catch(() => {});
+    }
+    await clearJournal();
+    return createReceipt({ operation: 'launch', status: 'error', surface, track, errorCode: error.code || 'launch_failed' });
+  }
+
+  let observed = { status: 'not_required', processSet: [] };
+  if (!dryRun && GUI_SURFACES.has(surface) && !spawnImpl) {
+    observed = await waitForProcessPresence({ surface, processProvider });
+    if (observed.status !== 'process_observed') {
+      if (track === 'kernel' && accountSkillsOverlay.status === 'applied') {
+        await restoreAccountSkillsOverlay({ surface, platform, accountHome }).catch(() => {});
+      }
+      await clearJournal();
+      return createReceipt({ operation: 'launch', status: 'error', surface, track, errorCode: 'launch_unverified' });
+    }
+  }
+  await advanceTransaction(journal, 'process_observed', { pid: started.pid || null, processSet: observed.processSet });
   await advanceTransaction(journal, 'provider_home_verified', { providerHome: roots.providerHome });
   await advanceTransaction(journal, 'workspace_verified', { workspaceRoot: spec.workspaceRoot });
 
@@ -338,9 +215,9 @@ export async function launchSwitch({ surface, track, sourceRoot = process.cwd(),
     appDataRoot: roots.appDataRoot || null,
     workspaceRoot: spec.workspaceRoot || null,
     discoveredSkills,
-    globalSkillsRestore,
+    accountSkillsOverlay,
     pid: started.pid || null,
-    processScoped: true,
+    processScoped: !requiresAccountSkillsOverlay(surface, platform),
   };
 
   await advanceTransaction(journal, 'effective_verified', { effective });
@@ -355,13 +232,21 @@ export async function launchSwitch({ surface, track, sourceRoot = process.cwd(),
   return createReceipt({ operation: 'launch', status: 'committed', surface, track, effective });
 }
 
-export async function recoverSwitch({ surface, processProvider, closeApproval = false, closeHandler = null } = {}) {
+export async function recoverSwitch({ surface, processProvider, closeApproval = false, closeHandler = null, platform = process.platform, accountHome = null } = {}) {
   const journal = await readJournal();
   if (!journal || (surface && journal.surface !== surface)) return createReceipt({ operation: 'recover', status: 'idle', surface: surface || 'unknown', track: 'unknown' });
   const active = await listProviderProcesses({ surface: journal.surface, processProvider });
   if (active.length) {
     if (!closeApproval || !closeHandler) return createReceipt({ operation: 'recover', status: 'recovery_required', surface: journal.surface, track: journal.requestedTrack, errorCode: 'operator_approval_missing' });
     if (!(await closeHandler({ surface: journal.surface, processSet: active }))) return createReceipt({ operation: 'recover', status: 'close_incomplete', surface: journal.surface, track: journal.requestedTrack, errorCode: 'close_incomplete' });
+  }
+  if (requiresAccountSkillsOverlay(journal.surface, platform)) {
+    try {
+      const overlay = await inspectAccountSkillsOverlay({ surface: journal.surface, platform, accountHome });
+      if (overlay.status !== 'inactive') await restoreAccountSkillsOverlay({ surface: journal.surface, platform, accountHome });
+    } catch (error) {
+      return createReceipt({ operation: 'recover', status: 'recovery_required', surface: journal.surface, track: journal.requestedTrack, errorCode: error.code || 'account_skills_overlay_failed' });
+    }
   }
   await recoverTransaction();
   await clearJournal();

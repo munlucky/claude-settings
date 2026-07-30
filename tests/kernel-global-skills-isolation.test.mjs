@@ -3,11 +3,10 @@ import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
-import { launchSwitch, restoreGlobalSkillsBackup } from '../scripts/switcher/operations.mjs';
+import { launchSwitch } from '../scripts/switcher/operations.mjs';
 import { readJournal } from '../scripts/switcher/state-store.mjs';
 import { installKernelProfile, canonicalKernelSkillDir, KERNEL_SKILL_INSTALL_REL } from '../scripts/kernel/profile-install.mjs';
 
-const LEGACY_STUB = '---\nname: moon-relay-kernel\ndescription: Single public entrypoint for Moon Relay Kernel task routing.\n---\n\n# Moon Relay Kernel\n';
 const PROFILES_ROOT = path.join('package', 'kernel', 'profiles');
 
 const withAccountHome = async (label, body) => {
@@ -87,53 +86,6 @@ test('a Kernel launch leaves the account-root skills directory untouched', async
     assert.equal(await readFile(path.join(accountSkills, 'operator-skill', 'SKILL.md'), 'utf8'), '# operator owned\n');
     await assert.rejects(() => readdir(path.join(home, '.claude', '.skills-relay-backup')), /ENOENT/);
     assert.deepEqual(receipt.effective.discoveredSkills, ['moon-relay-kernel']);
-  });
-});
-
-test('a Kernel launch leaves a legacy account-root skills backup untouched', async () => {
-  await withAccountHome('kernel-restore', async (home) => {
-    const base = path.join(home, '.claude');
-    await mkdir(path.join(base, 'skills', 'moon-relay-kernel'), { recursive: true });
-    await writeFile(path.join(base, 'skills', 'moon-relay-kernel', 'SKILL.md'), LEGACY_STUB, 'utf8');
-    for (const name of ['commit-moonshot', 'session-logger']) {
-      await mkdir(path.join(base, '.skills-relay-backup', name), { recursive: true });
-      await writeFile(path.join(base, '.skills-relay-backup', name, 'SKILL.md'), `# ${name}\n`, 'utf8');
-    }
-    const { runtimeHome, providerHome } = await readyKernelRoots(home);
-
-    const receipt = await launchSwitch({
-      surface: 'claude_cli',
-      track: 'kernel',
-      sourceRoot: process.cwd(),
-      dryRun: true,
-      launchSpec: { command: 'claude', args: [], roots: { runtimeHome, providerHome }, env: {} },
-    });
-
-    assert.equal(receipt.status, 'committed');
-    assert.equal(receipt.effective.globalSkillsRestore.status, 'not_required');
-    assert.deepEqual(await readdir(path.join(base, 'skills')), ['moon-relay-kernel']);
-    assert.deepEqual((await readdir(path.join(base, '.skills-relay-backup'))).sort(), ['commit-moonshot', 'session-logger']);
-  });
-});
-
-test('backup restore never overwrites an entry the operator recreated by hand', async () => {
-  await withAccountHome('kernel-restore-conflict', async (home) => {
-    const base = path.join(home, '.claude');
-    await mkdir(path.join(base, 'skills', 'commit-moonshot'), { recursive: true });
-    await writeFile(path.join(base, 'skills', 'commit-moonshot', 'SKILL.md'), '# current\n', 'utf8');
-    for (const name of ['commit-moonshot', 'session-logger']) {
-      await mkdir(path.join(base, '.skills-relay-backup', name), { recursive: true });
-      await writeFile(path.join(base, '.skills-relay-backup', name, 'SKILL.md'), '# backup\n', 'utf8');
-    }
-
-    const result = await restoreGlobalSkillsBackup({ surface: 'claude_cli' });
-
-    assert.equal(result.status, 'partial');
-    assert.deepEqual(result.conflicts, ['commit-moonshot']);
-    assert.deepEqual(result.restored, ['session-logger']);
-    assert.equal(await readFile(path.join(base, 'skills', 'commit-moonshot', 'SKILL.md'), 'utf8'), '# current\n');
-    // The unresolved backup entry is kept so the operator can reconcile it.
-    assert.deepEqual(await readdir(path.join(base, '.skills-relay-backup')), ['commit-moonshot']);
   });
 });
 

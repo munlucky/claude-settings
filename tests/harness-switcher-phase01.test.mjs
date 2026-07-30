@@ -27,6 +27,17 @@ test('phase 01 process characterization is metadata-only and injectable', async 
   assert.equal(quiet.status, 'quiescent');
 });
 
+test('macOS process guard detects Codex and Claude app binaries', async () => {
+  const execProvider = async () => ({ stdout: [
+    ' 101 /Applications/Codex.app/Contents/MacOS/Codex /Applications/Codex.app/Contents/MacOS/Codex',
+    ' 202 /Applications/Claude.app/Contents/MacOS/Claude /Applications/Claude.app/Contents/MacOS/Claude',
+    ' 303 /usr/local/bin/codex /usr/local/bin/codex --version',
+  ].join('\n') });
+  assert.deepEqual((await listProviderProcesses({ surface: 'codex_desktop', platform: 'darwin', execProvider })).map((row) => row.pid), [101]);
+  assert.deepEqual((await listProviderProcesses({ surface: 'claude_cli', platform: 'darwin', execProvider })).map((row) => row.pid), [202]);
+  await assert.rejects(() => listProviderProcesses({ surface: 'codex_desktop', platform: 'darwin', execProvider: async () => { throw new Error('ps failed'); } }), (error) => error.code === 'process_probe_failed');
+});
+
 test('phase 01 app discovery is unpinned and records typed probe gaps', async () => {
   const missingCodex = await resolveCodexDesktop({ candidates: [path.join(os.tmpdir(), 'missing-codex.exe')], commandResolver: async () => null });
   const missingAntigravity = await resolveAntigravity({ candidates: [path.join(os.tmpdir(), 'missing-antigravity.exe')], commandResolver: async () => null });
