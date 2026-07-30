@@ -90,6 +90,44 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       acquired_at TEXT NOT NULL,
       expires_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS session_bindings (
+      binding_id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      surface TEXT,
+      run_id TEXT NOT NULL,
+      project_id TEXT NOT NULL,
+      workspace_id TEXT,
+      workspace_root TEXT,
+      access_mode TEXT NOT NULL,
+      status TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      expires_at TEXT,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY(run_id) REFERENCES runs(run_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_session_bindings_lookup ON session_bindings(session_id, run_id, status);
+    CREATE INDEX IF NOT EXISTS idx_session_bindings_project ON session_bindings(project_id, workspace_id, status);
+    CREATE TABLE IF NOT EXISTS project_workspaces (
+      workspace_id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      canonical_root TEXT NOT NULL,
+      git_common_dir TEXT,
+      git_worktree_dir TEXT,
+      identity_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL,
+      UNIQUE(project_id, canonical_root)
+    );
+    CREATE TABLE IF NOT EXISTS workspace_mutation_locks_v2 (
+      workspace_id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      holder_run_id TEXT NOT NULL,
+      session_token TEXT NOT NULL,
+      fencing_token INTEGER NOT NULL,
+      acquired_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS attempts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       run_id TEXT NOT NULL,
@@ -447,6 +485,8 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
   // live steps and writes the replacement plan at the next revision, without
   // touching the task contract's revision.
   addCol('runs', 'plan_revision', 'INTEGER DEFAULT 1');
+  addCol('runs', 'workspace_id', 'TEXT');
+  addCol('runs', 'owner_binding_id', 'TEXT');
   // Obligation binding authority (P0-2/P0-3).
   addCol('run_obligations', 'evidence_class', "TEXT DEFAULT 'hard'");
   addCol('run_obligations', 'verification_method', 'TEXT');
@@ -551,6 +591,8 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       contractRevision = 1,
       route = null,
       implementationContext = null,
+      workspaceId = null,
+      ownerBindingId = null,
     }) {
       if (!sourceIdentity || typeof sourceIdentity !== 'string' || !sourceIdentityRegex.test(sourceIdentity)) {
         throw new Error('sourceIdentity is required and must be a valid candidate identity string for Kernel run');
@@ -559,8 +601,8 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         throw new Error('workspaceIdentity must be a sha256:<hex> digest when provided');
       }
       db.prepare(`
-        INSERT INTO runs(run_id, objective, state, status, revision, mutation_revision, source_identity, run_start_workspace_identity, current_workspace_identity, project_mode, proof_tier, evidence_tier, required_obligations, acceptance_criteria, release_evidence_required, project_id, knowledge_revision_start, knowledge_status, task_contract_json, contract_revision, finalization_status, route_json, implementation_context_json, updated_at)
-        VALUES(?, ?, 'FRAME', 'active', 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, 'pending', ?, ?, ?)
+        INSERT INTO runs(run_id, objective, state, status, revision, mutation_revision, source_identity, run_start_workspace_identity, current_workspace_identity, project_mode, proof_tier, evidence_tier, required_obligations, acceptance_criteria, release_evidence_required, project_id, knowledge_revision_start, knowledge_status, task_contract_json, contract_revision, finalization_status, route_json, implementation_context_json, workspace_id, owner_binding_id, updated_at)
+        VALUES(?, ?, 'FRAME', 'active', 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, 'pending', ?, ?, ?, ?, ?)
       `).run(
         runId,
         objective,
@@ -579,6 +621,8 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         Number(contractRevision) || 1,
         route ? JSON.stringify(route) : null,
         implementationContext ? persistentJson(implementationContext) : null,
+        workspaceId,
+        ownerBindingId,
         now()
       );
       return this.getRun(runId);
@@ -766,6 +810,8 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
                route_json as routeJson,
                implementation_context_json as implementationContextJson,
                plan_revision as planRevision,
+               workspace_id as workspaceId,
+               owner_binding_id as ownerBindingId,
                updated_at as updatedAt
         FROM runs WHERE run_id=?
       `).get(runId);
@@ -806,8 +852,92 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         route: row.routeJson ? safeJsonParse(row.routeJson, null) : null,
         implementationContext: row.implementationContextJson ? safeJsonParse(row.implementationContextJson, null) : null,
         planRevision: Number(row.planRevision || 1),
+        workspaceId: row.workspaceId || null,
+        ownerBindingId: row.ownerBindingId || null,
         updatedAt: row.updatedAt,
       };
+    },
+
+    getRunMetadata(runId) {
+      const row = db.prepare(`SELECT run_id as runId, project_id as projectId, workspace_id as workspaceId, owner_binding_id as ownerBindingId, status FROM runs WHERE run_id=?`).get(runId);
+      return row || null;
+    },
+
+    createSessionBinding(binding) {
+      db.prepare(`INSERT INTO session_bindings(binding_id, session_id, provider, surface, run_id, project_id, workspace_id, workspace_root, access_mode, status, created_at, expires_at, updated_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        binding.bindingId, binding.sessionId, binding.provider, binding.surface, binding.runId,
+        binding.projectId, binding.workspaceId, binding.workspaceRoot, binding.accessMode,
+        binding.status, now(), binding.expiresAt, now(),
+      );
+      if (binding.accessMode === 'owner') {
+        db.prepare(`UPDATE runs SET owner_binding_id=?, workspace_id=COALESCE(workspace_id, ?), updated_at=? WHERE run_id=?`)
+          .run(binding.bindingId, binding.workspaceId, now(), binding.runId);
+      }
+      return this.getActiveSessionBinding({ sessionId: binding.sessionId, runId: binding.runId });
+    },
+
+    adoptUnownedRunBinding(binding) {
+      const adopt = db.transaction(() => {
+        const claimed = db.prepare(`
+          UPDATE runs
+          SET owner_binding_id=?, workspace_id=COALESCE(workspace_id, ?), updated_at=?
+          WHERE run_id=? AND project_id=? AND owner_binding_id IS NULL
+            AND (workspace_id IS NULL OR workspace_id=?)
+        `).run(
+          binding.bindingId,
+          binding.workspaceId,
+          now(),
+          binding.runId,
+          binding.projectId,
+          binding.workspaceId,
+        );
+        if (claimed.changes !== 1) return false;
+        db.prepare(`
+          INSERT INTO session_bindings(
+            binding_id, session_id, provider, surface, run_id, project_id,
+            workspace_id, workspace_root, access_mode, status, created_at,
+            expires_at, updated_at
+          ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          binding.bindingId, binding.sessionId, binding.provider, binding.surface, binding.runId,
+          binding.projectId, binding.workspaceId, binding.workspaceRoot, binding.accessMode,
+          binding.status, now(), binding.expiresAt, now(),
+        );
+        return true;
+      });
+      const adopted = adopt();
+      return {
+        adopted,
+        binding: adopted ? this.getActiveSessionBinding({ sessionId: binding.sessionId, runId: binding.runId }) : null,
+      };
+    },
+
+    getActiveSessionBinding({ sessionId, runId = null } = {}) {
+      if (!sessionId) return null;
+      const row = runId
+        ? db.prepare(`SELECT * FROM session_bindings WHERE session_id=? AND run_id=? AND status='active' ORDER BY updated_at DESC LIMIT 1`).get(sessionId, runId)
+        : db.prepare(`SELECT * FROM session_bindings WHERE session_id=? AND status='active' ORDER BY updated_at DESC LIMIT 1`).get(sessionId);
+      if (!row) return null;
+      return {
+        bindingId: row.binding_id, sessionId: row.session_id, provider: row.provider, surface: row.surface,
+        runId: row.run_id, projectId: row.project_id, workspaceId: row.workspace_id,
+        workspaceRoot: row.workspace_root, accessMode: row.access_mode, status: row.status,
+        createdAt: row.created_at, expiresAt: row.expires_at, updatedAt: row.updated_at,
+      };
+    },
+
+    registerProjectWorkspace(workspace) {
+      db.prepare(`INSERT INTO project_workspaces(workspace_id, project_id, canonical_root, git_common_dir, git_worktree_dir, identity_json, created_at, last_seen_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(workspace_id) DO UPDATE SET last_seen_at=excluded.last_seen_at, identity_json=excluded.identity_json`)
+        .run(workspace.workspaceId, workspace.identity.projectId, workspace.canonicalRoot, workspace.gitCommonDir, workspace.gitWorktreeDir, persistentJson(workspace.identity), now(), now());
+      return this.getProjectWorkspace(workspace.workspaceId);
+    },
+
+    getProjectWorkspace(workspaceId) {
+      const row = db.prepare(`SELECT workspace_id as workspaceId, project_id as projectId, canonical_root as canonicalRoot, git_common_dir as gitCommonDir, git_worktree_dir as gitWorktreeDir, identity_json as identityJson, created_at as createdAt, last_seen_at as lastSeenAt FROM project_workspaces WHERE workspace_id=?`).get(workspaceId);
+      return row ? { ...row, identity: safeJsonParse(row.identityJson, null) } : null;
     },
 
     listActiveRuns({ projectId = null } = {}) {
@@ -840,6 +970,35 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         try { db.exec('ROLLBACK'); } catch {}
         throw error;
       }
+    },
+
+    acquireWorkspaceMutationLockV2({ workspaceId, projectId, runId, sessionToken, ttlMs = 60000 } = {}) {
+      if (!workspaceId || !projectId || !runId || !sessionToken) throw new Error('workspace mutation lock requires workspaceId, projectId, runId, and sessionToken');
+      const acquiredAt = now();
+      const expiresAt = new Date(Date.now() + ttlMs).toISOString();
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        const current = db.prepare(`SELECT workspace_id as workspaceId, project_id as projectId, holder_run_id as holderRunId, session_token as sessionToken, fencing_token as fencingToken, acquired_at as acquiredAt, expires_at as expiresAt FROM workspace_mutation_locks_v2 WHERE workspace_id=?`).get(workspaceId);
+        if (current && Date.parse(current.expiresAt) > Date.now() && (current.holderRunId !== runId || current.sessionToken !== sessionToken)) {
+          db.exec('ROLLBACK');
+          return { acquired: false, lock: current };
+        }
+        const fencingToken = Number(current?.fencingToken || 0) + 1;
+        db.prepare(`INSERT INTO workspace_mutation_locks_v2(workspace_id, project_id, holder_run_id, session_token, fencing_token, acquired_at, expires_at)
+          VALUES(?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(workspace_id) DO UPDATE SET holder_run_id=excluded.holder_run_id, session_token=excluded.session_token, fencing_token=excluded.fencing_token, acquired_at=excluded.acquired_at, expires_at=excluded.expires_at`)
+          .run(workspaceId, projectId, runId, sessionToken, fencingToken, acquiredAt, expiresAt);
+        db.exec('COMMIT');
+        return { acquired: true, lock: { workspaceId, projectId, holderRunId: runId, sessionToken, fencingToken, acquiredAt, expiresAt } };
+      } catch (error) {
+        try { db.exec('ROLLBACK'); } catch {}
+        throw error;
+      }
+    },
+
+    getWorkspaceMutationLockV2(workspaceId) {
+      const row = db.prepare(`SELECT workspace_id as workspaceId, project_id as projectId, holder_run_id as holderRunId, session_token as sessionToken, fencing_token as fencingToken, acquired_at as acquiredAt, expires_at as expiresAt FROM workspace_mutation_locks_v2 WHERE workspace_id=?`).get(workspaceId);
+      return !row || Date.parse(row.expiresAt) <= Date.now() ? null : row;
     },
 
     getWorkspaceMutationLock(projectId) {
@@ -1242,6 +1401,76 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       return this.getRun(runId);
     },
 
+    replaceRunPlanAtomic(runId, {
+      currentPlanRevision,
+      nextPlanRevision,
+      steps = [],
+      resumeBlockedReason = null,
+    } = {}) {
+      const replace = db.transaction(() => {
+        const run = db.prepare(`
+          SELECT plan_revision as planRevision, status, blocked_reason as blockedReason
+          FROM runs WHERE run_id=?
+        `).get(runId);
+        if (!run) throw new Error(`Run ${runId} not found`);
+        if (Number(run.planRevision) !== Number(currentPlanRevision)) {
+          throw new Error(`PLAN_REVISION_CONFLICT: expected ${currentPlanRevision}, found ${run.planRevision}`);
+        }
+        const existingIds = new Set(db.prepare(`SELECT step_id as stepId FROM run_steps WHERE run_id=?`).all(runId).map((row) => row.stepId));
+        for (const step of steps) {
+          if (existingIds.has(step.stepId)) throw new Error(`STEP_ID_COLLISION: step "${step.stepId}" already exists`);
+        }
+        db.prepare(`
+          UPDATE run_steps SET state='superseded', updated_at=?
+          WHERE run_id=? AND plan_revision=? AND state NOT IN ('passed','superseded','cancelled')
+        `).run(now(), runId, currentPlanRevision);
+        const insert = db.prepare(`
+          INSERT INTO run_steps(
+            step_id, run_id, sequence, objective, state, plan_revision,
+            dependency_ids_json, allowed_paths_json, forbidden_paths_json,
+            acceptance_ids_json, obligation_ids_json, expected_outputs_json,
+            assigned_role, synthetic, migration_origin, created_at, updated_at
+          ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        for (const step of steps) {
+          insert.run(
+            step.stepId, runId, Number(step.sequence) || 1, String(step.objective || ''),
+            String(step.state || 'planned'), Number(step.planRevision) || nextPlanRevision,
+            JSON.stringify(step.dependencyIds || []), JSON.stringify(step.allowedPaths || []),
+            JSON.stringify(step.forbiddenPaths || []), JSON.stringify(step.acceptanceIds || []),
+            JSON.stringify(step.obligationIds || []), JSON.stringify(step.expectedOutputs || []),
+            String(step.assignedRole || 'implementer'), step.synthetic ? 1 : 0,
+            step.migrationOrigin || null, now(), now(),
+          );
+        }
+        db.prepare(`
+          UPDATE runs
+          SET plan_revision=?,
+              replan_count=replan_count+1,
+              intervention_count=intervention_count + CASE
+                WHEN ? IS NOT NULL AND status='blocked' AND blocked_reason=? THEN 1 ELSE 0 END,
+              status=CASE
+                WHEN ? IS NOT NULL AND status='blocked' AND blocked_reason=? THEN 'active' ELSE status END,
+              blocked_reason=CASE
+                WHEN ? IS NOT NULL AND status='blocked' AND blocked_reason=? THEN NULL ELSE blocked_reason END,
+              revision=revision+1,
+              updated_at=?
+          WHERE run_id=?
+        `).run(
+          nextPlanRevision,
+          resumeBlockedReason, resumeBlockedReason,
+          resumeBlockedReason, resumeBlockedReason,
+          resumeBlockedReason, resumeBlockedReason,
+          now(), runId,
+        );
+      });
+      replace();
+      return {
+        run: this.getRun(runId),
+        steps: this.getRunSteps(runId, { planRevision: nextPlanRevision }),
+      };
+    },
+
     recordStepAttempt(runId, { stepId, actorSessionId = null, capsuleDigest = null, routeDecisionId = null, usageReceiptId = null, workspaceIdentityStart = null, summary = null, changedPaths = [] }) {
       const attemptNumber = this.nextStepAttemptNumber(runId, stepId);
       const result = db.prepare(`
@@ -1391,6 +1620,36 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         WHERE u.run_id=? AND d.role='implementer' ORDER BY u.rowid DESC LIMIT 1
       `).get(runId);
       return row || null;
+    },
+
+    // The two-command CLI path has no provider usage receipt for the model
+    // that owns and reports the mutation. Its Host-created owner binding is
+    // nevertheless durable implementation provenance: every mutating report
+    // is preflighted against this exact binding. Use it only as a fallback;
+    // a routed implementation receipt remains the stronger authority.
+    getImplementationPrincipal(runId) {
+      const routed = this.getLatestImplementationSession(runId);
+      if (routed) return routed;
+      const owner = db.prepare(`
+        SELECT b.binding_id as bindingId, b.session_id as sessionId
+        FROM runs r
+        JOIN session_bindings b ON b.binding_id=r.owner_binding_id
+        WHERE r.run_id=? AND b.run_id=r.run_id
+          AND b.access_mode='owner' AND b.status='active'
+        LIMIT 1
+      `).get(runId);
+      if (!owner?.sessionId) return null;
+      return {
+        receiptId: null,
+        actorSessionId: `sha256:${createHash('sha256').update(String(owner.sessionId)).digest('hex')}`,
+        decisionId: null,
+        capsuleId: null,
+        capsuleDigest: null,
+        resolvedModel: null,
+        modelClass: 'owner-session',
+        actionKind: 'manual-implementation',
+        bindingId: owner.bindingId,
+      };
     },
 
     listKnowledgeRecords({ projectId, statuses = ['verified', 'committed'] } = {}) {

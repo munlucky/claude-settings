@@ -14,6 +14,9 @@ import { executeKernelGitCloseout } from '../git/closeout.mjs';
 import { normalizeChangedContract } from '../change-contract.mjs';
 import { resolveRecordType } from '../knowledge/records.mjs';
 import { projectRunState } from '../state-projector.mjs';
+import { resolveRunArtifactPaths } from '../artifact-paths.mjs';
+import { mkdir, writeFile, rename } from 'node:fs/promises';
+import path from 'node:path';
 
 const ALLOWED_CANDIDATE_TYPES = new Set([
   'semantic_fact',
@@ -327,6 +330,14 @@ export const finalizeRun = async ({
 
   store.recordFinalizationReceipt(runId, finalizationReceipt);
   store.setFinalizationStatus(runId, finalizationStatus);
+  if (run.projectId) {
+    const dir = resolveRunArtifactPaths({ runtimeHome, projectId: run.projectId, runId }).finalization;
+    await mkdir(dir, { recursive: true });
+    const target = path.join(dir, 'receipt.json');
+    const temporary = `${target}.${process.pid}.tmp`;
+    await writeFile(temporary, JSON.stringify(finalizationReceipt, null, 2));
+    await rename(temporary, target);
+  }
   await projectRunState(store.getRun(runId), { runtimeHome });
 
   return finalizationReceipt;

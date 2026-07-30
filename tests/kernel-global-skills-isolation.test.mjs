@@ -90,7 +90,7 @@ test('a Kernel launch leaves the account-root skills directory untouched', async
   });
 });
 
-test('a Kernel launch restores an account-root skills backup left by an earlier build', async () => {
+test('a Kernel launch leaves a legacy account-root skills backup untouched', async () => {
   await withAccountHome('kernel-restore', async (home) => {
     const base = path.join(home, '.claude');
     await mkdir(path.join(base, 'skills', 'moon-relay-kernel'), { recursive: true });
@@ -110,9 +110,9 @@ test('a Kernel launch restores an account-root skills backup left by an earlier 
     });
 
     assert.equal(receipt.status, 'committed');
-    assert.equal(receipt.effective.globalSkillsRestore.status, 'restored');
-    assert.deepEqual((await readdir(path.join(base, 'skills'))).sort(), ['commit-moonshot', 'session-logger']);
-    await assert.rejects(() => readdir(path.join(base, '.skills-relay-backup')), /ENOENT/);
+    assert.equal(receipt.effective.globalSkillsRestore.status, 'not_required');
+    assert.deepEqual(await readdir(path.join(base, 'skills')), ['moon-relay-kernel']);
+    assert.deepEqual((await readdir(path.join(base, '.skills-relay-backup'))).sort(), ['commit-moonshot', 'session-logger']);
   });
 });
 

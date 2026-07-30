@@ -40,6 +40,7 @@ const commonSpec = {
     'bin',
     'catalog',
     'docs',
+    'kernel',
     'rules',
     'schemas',
     'scripts',

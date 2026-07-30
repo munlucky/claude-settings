@@ -66,7 +66,9 @@ export const assertMutationAllowed = ({
   if (['git_reset', 'destructive_command'].includes(operation)) fail('mutation_operation_forbidden', operation);
   if (operation === 'git_commit' && capsule.permissions?.canCommit !== true) fail('mutation_operation_forbidden', operation);
 
-  const lock = stateStore.getWorkspaceMutationLock(run.projectId);
+  const lock = run.workspaceId
+    ? stateStore.getWorkspaceMutationLockV2(run.workspaceId)
+    : stateStore.getWorkspaceMutationLock(run.projectId);
   if (!lock) {
     fail('workspace_mutation_lock_missing', run.projectId);
   }

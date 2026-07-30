@@ -2,12 +2,30 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import { prepareTransaction, advanceTransaction, recoverTransaction } from '../scripts/switcher/transaction.mjs';
 import { readJournal } from '../scripts/switcher/state-store.mjs';
 import { switchDoctor, launchSwitch, recoverSwitch } from '../scripts/switcher/operations.mjs';
 import { installKernelProfile } from '../scripts/kernel/profile-install.mjs';
-import { hydrateKernelProject } from '../scripts/kernel/project-hydrate.mjs';
+import { buildLaunchSpec } from '../scripts/switcher/launch-adapter.mjs';
+
+test('Kernel task binding is process-scoped in provider launch specs', () => {
+  const spec = buildLaunchSpec({
+    surface: 'codex_cli',
+    track: 'kernel',
+    sourceRoot: process.cwd(),
+    workspaceRoot: process.cwd(),
+    workspaceId: 'workspace-1',
+    runId: 'run-1',
+    projectId: 'project-1',
+    sessionId: 'session-1',
+    roots: { runtimeHome: 'C:\\kernel', providerHome: 'C:\\kernel\\providers\\codex' },
+  });
+  assert.equal(spec.env.MOON_RELAY_KERNEL_RUN_ID, 'run-1');
+  assert.equal(spec.env.MOON_RELAY_KERNEL_PROJECT_ID, 'project-1');
+  assert.equal(spec.env.MOON_RELAY_KERNEL_SESSION_ID, 'session-1');
+  assert.equal(spec.env.MOON_RELAY_KERNEL_WORKSPACE_ID, 'workspace-1');
+});
 
 test('phase 03 transaction journal follows prepare, stop, launch, and recovery states', async () => {
   const home = path.join(os.tmpdir(), `switcher-state-${Date.now()}`); process.env.MOON_HARNESS_SWITCHER_HOME = home;
@@ -41,7 +59,8 @@ test('phase 03 CLI tracks use process-scoped roots and can coexist', async () =>
   await mkdir(runtimeHome, { recursive: true });
   await writeFile(path.join(runtimeHome, 'install-manifest.json'), JSON.stringify({ productId: 'moon-relay-kernel' }), 'utf8');
   await installKernelProfile({ sourceRoot: process.cwd(), runtime: 'codex', targetRoot: providerHome });
-  await hydrateKernelProject({ projectRoot, sourceRoot: process.cwd() });
+  await mkdir(projectRoot, { recursive: true });
+  const treeBefore = await readdir(projectRoot);
 
   const relay = await launchSwitch({ surface: 'codex_cli', track: 'relay', sourceRoot: process.cwd(), dryRun: true });
   const kernel = await launchSwitch({
@@ -55,6 +74,7 @@ test('phase 03 CLI tracks use process-scoped roots and can coexist', async () =>
   assert.equal(relay.status, 'committed');
   assert.equal(kernel.status, 'committed');
   assert.notEqual(relay.effective.providerHome, kernel.effective.providerHome);
+  assert.deepEqual(await readdir(projectRoot), treeBefore);
   await rm(home, { recursive: true, force: true });
 });
 

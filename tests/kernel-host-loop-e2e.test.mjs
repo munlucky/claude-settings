@@ -80,6 +80,22 @@ test('run loop plans state paths without exposing states to the model', () => {
   assert.ok(!JSON.stringify(payload).includes('FRAME'));
 });
 
+test('run loop routes judgment-only obligations to independent review', () => {
+  const payload = buildNextPayload({
+    run: { runId: 'r-review', objective: 'secure change', acceptanceCriteria: [], status: 'active' },
+    verifications: [{ obligationId: 'unit-test', status: 'passed' }],
+    requiredObligations: ['unit-test', 'security-review'],
+    obligations: [
+      { obligationId: 'unit-test', evidenceClass: 'hard', allowedCommandRefs: ['test'] },
+      { obligationId: 'security-review', evidenceClass: 'judgment', verificationMethod: 'structured-judgment' },
+    ],
+  });
+
+  assert.equal(payload.action.type, 'review');
+  assert.equal(payload.action.independentReviewRequired, true);
+  assert.deepEqual(payload.action.outstandingObligations, ['security-review']);
+});
+
 test('host loop E2E: fail -> fix -> hard evidence -> accepted completion', async () => {
   const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'krn-host-loop-home-'));
   const projectRoot = await setupProject();

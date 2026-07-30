@@ -17,8 +17,9 @@ import { scanRepositoryEvidence } from '../task/evidence-scan.mjs';
 import { canonicalDigest } from '../canonical-digest.mjs';
 import { gitLsFiles } from '../../lib/git-safe.mjs';
 import { observeWorkspaceIdentity } from './workspace-identity.mjs';
+import { projectRunState } from '../state-projector.mjs';
 
-export const createWorkCursorApi = ({ store, projectRoot }) => ({
+export const createWorkCursorApi = ({ store, projectRoot, runtimeHome }) => ({
   // --- Run Step Ledger (K2) -------------------------------------------
   // No model-visible command is added: `next` returns the current step inside
   // the action it already returned, and `report` answers it.
@@ -99,11 +100,10 @@ export const createWorkCursorApi = ({ store, projectRoot }) => ({
   // Replan (§7.5): the live steps of the current revision are superseded and a
   // replacement plan is written at the next revision. Nothing that was already
   // attempted is edited.
-  async replanSteps(runId, { steps = [] } = {}) {
+  async replanSteps(runId, { steps = [], resumeBlockedReason = null } = {}) {
     const run = store.getRun(runId);
     if (!run) throw new Error(`Run ${runId} not found`);
     const nextRevision = Number(run.planRevision || 1) + 1;
-    store.supersedeRunSteps(runId, { planRevision: run.planRevision });
     const replacement = planReplacementSteps({
       run,
       contract: run.taskContract || {},
@@ -114,10 +114,14 @@ export const createWorkCursorApi = ({ store, projectRoot }) => ({
       // is qualified rather than silently colliding with the step it replaces.
       reservedStepIds: store.getRunSteps(runId).map((step) => step.stepId),
     });
-    store.createRunSteps(runId, replacement);
-    store.setPlanRevision(runId, nextRevision);
-    await this.signalReplan(runId);
-    return { planRevision: nextRevision, steps: store.getRunSteps(runId, { planRevision: nextRevision }) };
+    const replaced = store.replaceRunPlanAtomic(runId, {
+      currentPlanRevision: run.planRevision,
+      nextPlanRevision: nextRevision,
+      steps: replacement,
+      resumeBlockedReason,
+    });
+    await projectRunState(replaced.run, { runtimeHome });
+    return { planRevision: nextRevision, steps: replaced.steps };
   },
 
   // The wave the Host may dispatch right now (§7.6). Sequential is the answer
@@ -305,7 +309,7 @@ export const createWorkCursorApi = ({ store, projectRoot }) => ({
       // carrying the diff itself into the capsule.
       diffDigest: digestOfChangedFiles({ projectRoot, changedPaths }),
       verifications: store.getVerifications(runId),
-      implementationSession: store.getLatestImplementationSession(runId),
+      implementationSession: store.getImplementationPrincipal(runId),
     });
     return store.recordExecutionCapsule(runId, capsule);
   },

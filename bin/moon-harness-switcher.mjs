@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import process from 'node:process';
-import { switchStatus, switchDoctor, launchSwitch, recoverSwitch, rollbackSwitch, uninstallSwitcher } from '../scripts/switcher/operations.mjs';
+import { switchStatus, switchDoctor, launchSwitch, recoverSwitch, rollbackSwitch, uninstallSwitcher, cleanupLegacyProject } from '../scripts/switcher/operations.mjs';
 import { buildLivePreflight, adoptLive } from '../scripts/switcher/adoption.mjs';
 
 const args = process.argv.slice(2);
@@ -27,11 +27,30 @@ try {
   else if (command === 'doctor') result = await switchDoctor({ surface: surface === 'all' ? null : surface });
   else if (command === 'preflight') result = await buildLivePreflight({ sourceRoot: get('--source-root') || process.cwd() });
   else if (command === 'adopt') result = await adoptLive({ sourceRoot: get('--source-root') || process.cwd(), approved: args.includes('--approved'), approvalToken: get('--approval-token') || '' });
+  else if (command === 'cleanup-project') {
+    result = await cleanupLegacyProject({
+      projectRoot: get('--project-root') || process.cwd(),
+      providerHome: get('--provider-home'),
+    });
+  }
   else if (command === 'launch') {
     const targets = surface === 'all' ? ['codex_desktop', 'claude_cli', 'qwen_cli', 'antigravity_desktop'] : [surface];
     const results = [];
+    const taskBinding = {
+      runId: get('--run-id'),
+      projectId: get('--project-id'),
+      sessionId: get('--session-id'),
+      workspaceId: get('--workspace-id'),
+    };
     for (const item of targets) {
-      const res = await launchSwitch({ surface: item, track, sourceRoot: get('--source-root') || process.cwd(), dryRun: !args.includes('--execute') });
+      const res = await launchSwitch({
+        surface: item,
+        track,
+        sourceRoot: get('--source-root') || process.cwd(),
+        projectRoot: get('--project-root') || process.cwd(),
+        taskBinding,
+        dryRun: !args.includes('--execute'),
+      });
       results.push(res);
     }
     result = targets.length === 1 ? results[0] : { schemaVersion: 1, status: 'completed', operation: 'launch', track, results };

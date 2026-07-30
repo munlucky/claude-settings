@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { mkdtemp } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -7,6 +7,7 @@ import { test } from 'node:test';
 import { spawnSync } from 'node:child_process';
 import { installKernel, uninstallKernel } from '../scripts/kernel/installer.mjs';
 import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
+import { resolveKernelProjectIdentity } from '../scripts/kernel/project-identity.mjs';
 
 const unavailableFields = ['providerModelIdentity', 'actualInputTokens', 'actualOutputTokens', 'falseCompletionDecision', 'wallClockMs', 'modelRouting'];
 const observedFields = ['retryCount', 'replanCount', 'userInterventionCount', 'hardEvidenceCoverage', 'promptTokenBudget'];
@@ -42,8 +43,17 @@ test('disposable installed CLI exposes schema-shaped context receipt and measure
   const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'krn-measurement-installed-home-'));
   await installKernel({ targetRoot, sourceRoot: process.cwd() });
   const cli = path.join(targetRoot, '.moon-relay', 'kernel-payload', 'bin', 'moon-relay-kernel.mjs');
-  const env = { ...process.env, MOON_RELAY_KERNEL_HOME: runtimeHome };
-  const run = spawnSync(process.execPath, [cli, 'start-run', '--project-root', targetRoot, '--run-id', 'installed-measurement', '--objective', 'installed measurement'], { env, encoding: 'utf8' });
+  const projectId = resolveKernelProjectIdentity({ cwd: targetRoot }).projectId;
+  const contractPath = path.join(targetRoot, 'measurement-contract.json');
+  await writeFile(contractPath, JSON.stringify({ objective: 'installed measurement', acceptance: ['measurement is exposed'] }));
+  const env = {
+    ...process.env,
+    MOON_RELAY_KERNEL_HOME: runtimeHome,
+    MOON_RELAY_KERNEL_RUN_ID: 'installed-measurement',
+    MOON_RELAY_KERNEL_PROJECT_ID: projectId,
+    MOON_RELAY_KERNEL_SESSION_ID: 'installed-measurement-session',
+  };
+  const run = spawnSync(process.execPath, [cli, 'next', '--project-root', targetRoot, '--contract-json', contractPath, '--json'], { env, encoding: 'utf8' });
   assert.equal(run.status, 0, run.stderr);
   const context = spawnSync(process.execPath, [cli, 'context', '--project-root', targetRoot, '--run-id', 'installed-measurement', '--json'], { env, encoding: 'utf8' });
   assert.equal(context.status, 0, context.stderr);

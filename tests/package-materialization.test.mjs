@@ -108,6 +108,7 @@ const requiredCommonPayloadFiles = [
   'skills/moonshot-plan-writer/SKILL.md',
   'skills/verification-contract-gate/SKILL.md',
   'bin/browserctl',
+  'kernel/proof-policy.yaml',
   'tools/agent-api/registry.yaml',
   'tools/agent-api/dispatch.mjs',
   'tools/evals/harness-control-plane.mjs',
@@ -145,6 +146,8 @@ const requiredCommonPayloadFiles = [
   'scripts/spec-test-obligations.mjs',
   'scripts/memory-claim-validate.mjs',
   'scripts/doctor.mjs',
+  'scripts/kernel/runtime-home.mjs',
+  'scripts/kernel/control-plane.mjs',
   'scripts/lib/skills-lock.mjs',
   'scripts/plan-graph-validate.mjs',
   'scripts/review-bundle-build.mjs',
@@ -430,6 +433,24 @@ test('Moonshot Relay common package payload includes shared harness entries', as
   for (const entry of requiredCommonPayloadFiles) {
     await assertEntryExists(profileRoot, entry);
   }
+});
+
+test('materialized Moon Relay Kernel CLI has a closed import graph', async () => {
+  const profileRoot = await commonProfile();
+  const result = spawnSync(process.execPath, [
+    path.join(profileRoot, 'bin', 'moon-relay-kernel.mjs'),
+    '--version',
+  ], {
+    cwd: profileRoot,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      MOON_RELAY_KERNEL_REEXEC: '1',
+    },
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /moon-relay-kernel/);
 });
 
 test('Claude package payload includes only service profile entries', async () => {
@@ -927,6 +948,8 @@ test('account-root installer merges shared directories without deleting unrelate
     assert.equal(existsSync(path.join(moonshotHome, 'skills', 'completion-verifier', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(moonshotHome, 'skills.lock.json')), true);
     assert.equal(existsSync(path.join(moonshotHome, 'catalog', 'moonshot-catalog.json')), true);
+    assert.equal(existsSync(path.join(moonshotHome, 'kernel', 'proof-policy.yaml')), true);
+    assert.equal(existsSync(path.join(moonshotHome, 'scripts', 'kernel', 'runtime-home.mjs')), true);
     assert.equal(existsSync(path.join(moonshotHome, 'scripts', 'install-account-root-harness.mjs')), true);
     assert.equal(existsSync(path.join(moonshotHome, 'templates', 'GOAL_CONTRACT.template.yaml')), true);
     assert.equal(existsSync(path.join(moonshotHome, 'node_modules', 'better-sqlite3', 'package.json')), false);
@@ -951,6 +974,20 @@ test('account-root installer merges shared directories without deleting unrelate
     assert.equal(existsSync(path.join(antigravityHome, 'scripts')), false);
     assert.equal(existsSync(path.join(antigravityHome, 'schemas')), false);
     assert.equal(existsSync(path.join(antigravityHome, 'docs', 'public')), false);
+
+    const kernelCliSmoke = spawnSync(process.execPath, [
+      path.join(moonshotHome, 'bin', 'moon-relay-kernel.mjs'),
+      '--version',
+    ], {
+      cwd: moonshotHome,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        MOON_RELAY_KERNEL_REEXEC: '1',
+      },
+    });
+    assert.equal(kernelCliSmoke.status, 0, kernelCliSmoke.stderr || kernelCliSmoke.stdout);
+    assert.match(kernelCliSmoke.stdout, /moon-relay-kernel/);
 
     const runtimeSmoke = spawnSync(process.execPath, [
       path.join(moonshotHome, 'scripts', 'runtime-state.mjs'),

@@ -11,6 +11,15 @@ export async function doctorKernelProfile({ targetRoot, runtime = null, runtimeH
   if (runtime && result.manifest.runtime !== runtime) return { status: 'wrong_harness', effective: 'unknown', targetRoot: result.targetRoot, expectedRuntime: runtime, actualRuntime: result.manifest.runtime };
   if (result.status !== 'ready') return { status: 'drift', effective: 'unknown', targetRoot: result.targetRoot, recovery: 'rollback or reinstall manifest-owned static files', checks: result.checks };
   const commandChecks = [];
+  const requiredProfileFiles = {
+    codex: ['AGENTS.override.md', '.codex/config.toml', '.codex/hooks.json', 'skills/moon-relay-kernel/SKILL.md'],
+    claude: ['CLAUDE.md', 'skills/moon-relay-kernel/SKILL.md'],
+  };
+  for (const relativePath of requiredProfileFiles[result.manifest.runtime] || ['skills/moon-relay-kernel/SKILL.md']) {
+    let present = true;
+    try { await access(path.join(path.resolve(targetRoot), relativePath)); } catch { present = false; }
+    commandChecks.push({ check: `profile-surface:${relativePath.replaceAll('\\', '/')}`, passed: present });
+  }
   if (runtimeHome) {
     const binDir = path.join(path.resolve(runtimeHome), 'bin');
     const shim = path.join(binDir, process.platform === 'win32' ? 'kernel.cmd' : 'kernel');

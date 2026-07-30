@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
+import { resolveRunArtifactPaths } from './artifact-paths.mjs';
 
 const digest = (v) => createHash('sha256').update(JSON.stringify(v)).digest('hex');
 
@@ -63,6 +64,8 @@ export const verifyProjection = async ({ run, file }) => {
 
 export const projectRunState = async (run, { runtimeHome } = {}) => {
   if (!run || !runtimeHome) return null;
-  const outputDir = path.join(runtimeHome, 'projections', run.runId);
+  const outputDir = run.projectId
+    ? resolveRunArtifactPaths({ runtimeHome, projectId: run.projectId, runId: run.runId }).projections
+    : path.join(runtimeHome, 'projections', run.runId);
   return writeProjection({ run, outputDir });
 };

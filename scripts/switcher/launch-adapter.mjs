@@ -25,7 +25,7 @@ function resolveCommandPath(command) {
   return command;
 }
 
-export function buildProcessEnvironment({ surface, track, roots, workspaceRoot = null, runId = null, projectId = null, sessionId = null, baseEnv = process.env } = {}) {
+export function buildProcessEnvironment({ surface, track, roots, workspaceRoot = null, workspaceId = null, runId = null, projectId = null, sessionId = null, baseEnv = process.env } = {}) {
   const env = { ...baseEnv };
   if (SURFACE_ENV[surface]) env[SURFACE_ENV[surface]] = roots.providerHome;
   if (track === 'kernel') {
@@ -34,6 +34,7 @@ export function buildProcessEnvironment({ surface, track, roots, workspaceRoot =
     if (runId) env.MOON_RELAY_KERNEL_RUN_ID = String(runId);
     if (projectId) env.MOON_RELAY_KERNEL_PROJECT_ID = String(projectId);
     if (sessionId) env.MOON_RELAY_KERNEL_SESSION_ID = String(sessionId);
+    if (workspaceId) env.MOON_RELAY_KERNEL_WORKSPACE_ID = String(workspaceId);
     // Older switcher builds incorrectly exported the Kernel runtime through
     // MOONSHOT_RELAY_HOME. Do not propagate that poisoned alias into another
     // Kernel surface, while preserving a genuinely distinct custom Relay home.
@@ -56,7 +57,7 @@ const defaultCommand = (surface) => {
   return surface;
 };
 
-export function buildLaunchSpec({ surface, track, sourceRoot = process.cwd(), workspaceRoot = null, runId = null, projectId = null, sessionId = null, command, args = [], roots = resolveTrackRoots({ track, surface, sourceRoot }) } = {}) {
+export function buildLaunchSpec({ surface, track, sourceRoot = process.cwd(), workspaceRoot = null, workspaceId = null, runId = null, projectId = null, sessionId = null, command, args = [], roots = resolveTrackRoots({ track, surface, sourceRoot }) } = {}) {
   const resolvedWorkspace = workspaceRoot ? path.resolve(workspaceRoot) : (track === 'kernel' ? path.resolve(sourceRoot) : null);
   const expectedPublicSkills = track === 'kernel' ? ['moon-relay-kernel'] : null;
   return {
@@ -70,7 +71,7 @@ export function buildLaunchSpec({ surface, track, sourceRoot = process.cwd(), wo
     workspaceRoot: resolvedWorkspace,
     cwd: resolvedWorkspace || process.cwd(),
     expectedPublicSkills,
-    env: buildProcessEnvironment({ surface, track, roots, workspaceRoot: resolvedWorkspace, runId, projectId, sessionId }),
+    env: buildProcessEnvironment({ surface, track, roots, workspaceRoot: resolvedWorkspace, workspaceId, runId, projectId, sessionId }),
   };
 }
 

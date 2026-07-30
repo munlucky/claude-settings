@@ -62,7 +62,20 @@ const assertKernelTrack = async (root = projectRoot) => {
 
 // The lease holder must be stable across the separate processes of one model
 // session; `--session-id` lets a host pin it explicitly (P0-6).
-const sessionId = getArgValue('--session-id') || process.env.MOON_RELAY_KERNEL_SESSION_ID || null;
+// Codex Desktop already exports a stable UUID for the current task. Treat it
+// as a host-provided binding only when the explicit Kernel variables are
+// absent, so direct skill invocations can bootstrap without weakening the
+// cross-session/project preflight.
+const codexThreadId = process.env.CODEX_THREAD_ID || null;
+const sessionId = getArgValue('--session-id') || process.env.MOON_RELAY_KERNEL_SESSION_ID || codexThreadId || null;
+const inferredRunId = process.env.MOON_RELAY_KERNEL_RUN_ID || (codexThreadId ? `codex-${codexThreadId}` : null);
+const kernelEnv = sessionId || inferredRunId
+  ? {
+      ...process.env,
+      ...(sessionId ? { MOON_RELAY_KERNEL_SESSION_ID: sessionId } : {}),
+      ...(inferredRunId ? { MOON_RELAY_KERNEL_RUN_ID: inferredRunId } : {}),
+    }
+  : process.env;
 
 const openControlPlane = async () => {
   await assertKernelTrack();
@@ -70,7 +83,8 @@ const openControlPlane = async () => {
   return createKernelControlPlane({
     runtimeHome: runtimeHomeArg || undefined,
     projectRoot,
-    env: sessionId ? { ...process.env, MOON_RELAY_KERNEL_SESSION_ID: sessionId } : process.env,
+    env: kernelEnv,
+    requireHostBinding: true,
   });
 };
 
@@ -146,7 +160,7 @@ try {
     const positionalRunId = args[1] && !args[1].startsWith('--') ? args[1] : null;
     const runId = await cp.resolveRunId({
       explicitRunId: getArgValue('--run-id') || positionalRunId,
-      envRunId: process.env.MOON_RELAY_KERNEL_RUN_ID || null,
+      envRunId: kernelEnv.MOON_RELAY_KERNEL_RUN_ID || null,
     });
     const contractFile = getArgValue('--contract-json') || getArgValue('--objective-json');
     let res;
@@ -165,7 +179,7 @@ try {
     const positionalRunId = args[1] && !args[1].startsWith('--') ? args[1] : null;
     const runId = await cp.resolveRunId({
       explicitRunId: getArgValue('--run-id') || positionalRunId,
-      envRunId: process.env.MOON_RELAY_KERNEL_RUN_ID || null,
+      envRunId: kernelEnv.MOON_RELAY_KERNEL_RUN_ID || null,
     });
     const reportFile = getArgValue('--report-json') || getArgValue('--context-json');
     let payload = {};
@@ -264,6 +278,6 @@ try {
     throw new Error(`Unknown command: ${command}`);
   }
 } catch (error) {
-  console.error(json ? JSON.stringify({ status: 'error', message: error.message }) : error.message);
+  console.error(json ? JSON.stringify({ schemaVersion: 1, status: 'error', errorCode: error.code || error.message, message: error.message }) : error.message);
   process.exitCode = 1;
 }

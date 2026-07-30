@@ -313,3 +313,25 @@ test('K2: a store-level id collision fails loudly instead of dropping the row', 
     await cleanup(fixture);
   }
 });
+
+test('K2: an atomic replacement rolls back supersession and revision on collision', async () => {
+  const fixture = await setup();
+  const cp = await createKernelControlPlane(fixture);
+  const store = await openKernelStateStore({ runtimeHome: fixture.runtimeHome });
+  try {
+    await cp.startRun({ runId: 'r-atomic-collide', objective: 'x', taskContract: CONTRACT });
+    const before = store.getRun('r-atomic-collide');
+    const original = store.getRunSteps('r-atomic-collide');
+    assert.throws(() => store.replaceRunPlanAtomic('r-atomic-collide', {
+      currentPlanRevision: before.planRevision,
+      nextPlanRevision: before.planRevision + 1,
+      steps: [{ ...original[0], planRevision: before.planRevision + 1 }],
+    }), /STEP_ID_COLLISION/);
+    assert.equal(store.getRun('r-atomic-collide').planRevision, before.planRevision);
+    assert.deepEqual(store.getRunSteps('r-atomic-collide').map((step) => step.state), original.map((step) => step.state));
+  } finally {
+    store.close();
+    await cp.close();
+    await cleanup(fixture);
+  }
+});

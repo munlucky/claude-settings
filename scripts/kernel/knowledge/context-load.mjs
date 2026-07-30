@@ -1,4 +1,6 @@
 import path from 'node:path';
+import { resolveRunArtifactPaths } from '../artifact-paths.mjs';
+import { resolveKernelRuntimeHome } from '../runtime-home.mjs';
 import { loadAllProjectRecords, readProjectRevision, projectKnowledgeDirectory, writeAtomicJson } from './store.mjs';
 import { renderPromptBlock, computeContextDigest, deepRedact } from './context-render.mjs';
 import { matchPathScope, scoreRelevance } from './path-scope.mjs';
@@ -177,7 +179,8 @@ export async function buildProjectKnowledgeContext({
     ontologyConstraints: selectedConstraints,
   });
 
-  const contextPackRef = path.join('context-packs', runId, `${stage}.json`);
+  const artifactPaths = resolveRunArtifactPaths({ runtimeHome: resolveKernelRuntimeHome({ env }), projectId, runId });
+  const contextPackRef = path.join('runs', runId, 'projections', 'context', `${stage}.json`);
   const status = 'ready';
 
   const rawPayload = {
@@ -202,8 +205,7 @@ export async function buildProjectKnowledgeContext({
   contextPayload.digest = digest;
 
   // Persist context pack
-  const root = projectKnowledgeDirectory(projectId, { env });
-  const packPath = path.join(root, 'context-packs', runId, `${stage}.json`);
+  const packPath = path.join(artifactPaths.projections, 'context', `${stage}.json`);
   await writeAtomicJson(packPath, contextPayload);
 
   return contextPayload;

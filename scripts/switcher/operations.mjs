@@ -10,7 +10,7 @@ import { clearJournal, readJournal, readState, updateState } from './state-store
 import { uninstallSwitcherPackage } from './installer.mjs';
 import { advanceTransaction, commitTransaction, prepareTransaction, recoverTransaction } from './transaction.mjs';
 import { inspectProfile } from '../kernel/profile-install.mjs';
-import { hydrateKernelProject, unhydrateKernelProject } from '../kernel/project-hydrate.mjs';
+import { cleanupLegacyKernelHydration } from '../kernel/legacy-hydration-cleanup.mjs';
 
 const validate = (surface, track) => {
   if (!SURFACES.includes(surface)) throw new Error(`wrong_harness: unsupported surface ${surface}`);
@@ -262,7 +262,12 @@ export async function switchDoctor({ surface = null, processProvider } = {}) {
   return { schemaVersion: 1, status: Object.values(reports).some((r) => r.status === 'recovery_required') ? 'recovery_required' : 'ready', reports, sensitiveContentRead: false };
 }
 
-export async function launchSwitch({ surface, track, sourceRoot = process.cwd(), projectRoot = null, workspaceRoot = null, processProvider, closeApproval = false, closeHandler = null, launchSpec = null, spawnImpl = null, dryRun = true } = {}) {
+export async function cleanupLegacyProject({ projectRoot, providerHome } = {}) {
+  const profile = await inspectProfile(providerHome);
+  return cleanupLegacyKernelHydration({ projectRoot, profileReady: profile.status === 'ready' });
+}
+
+export async function launchSwitch({ surface, track, sourceRoot = process.cwd(), projectRoot = null, workspaceRoot = null, taskBinding = null, processProvider, closeApproval = false, closeHandler = null, launchSpec = null, spawnImpl = null, dryRun = true } = {}) {
   validate(surface, track);
   const targetProjectRoot = projectRoot || workspaceRoot || (track === 'kernel' ? sourceRoot : null);
   const defaultRoots = resolveTrackRoots({ track, surface, sourceRoot });
@@ -301,36 +306,20 @@ export async function launchSwitch({ surface, track, sourceRoot = process.cwd(),
   }
 
   const journal = await prepareTransaction({ surface, requestedTrack: track, roots, previousSelection: previous, processSet: active });
-  let globalSkillsRestore = null;
-  if (track === 'kernel') {
-    globalSkillsRestore = await isolateGlobalSkillsForKernel({ surface, sourceRoot, dryRun });
-  } else {
-    globalSkillsRestore = await restoreGlobalSkillsBackup({ surface });
-  }
+  // Provider homes are already isolated per track. Normal launch must never
+  // move, overwrite, restore, or delete account-root skills; legacy recovery
+  // remains an explicit operator action.
+  const globalSkillsRestore = { status: 'not_required', reason: 'provider_home_isolated' };
   await advanceTransaction(journal, 'old_app_stopped', { globalSkillsRestore });
-
-  if (targetProjectRoot) {
-    if (track === 'kernel') {
-      try {
-        await hydrateKernelProject({ projectRoot: targetProjectRoot, sourceRoot, dryRun });
-      } catch (error) {
-        if (!error.message?.includes('target_collision') && !error.message?.includes('catalog_missing')) throw error;
-      }
-    } else if (track === 'relay') {
-      try {
-        await unhydrateKernelProject({ projectRoot: targetProjectRoot });
-      } catch {}
-    }
-  }
 
   let spec = launchSpec;
   if (!spec && GUI_SURFACES.has(surface)) {
     const application = await resolveApplication(surface);
     if (!application.executable) return createReceipt({ operation: 'launch', status: 'error', surface, track, errorCode: 'application_not_resolved', effective: { warnings: application.warnings || [] } });
     const args = roots.appDataRoot ? [`--user-data-dir=${roots.appDataRoot}`] : [];
-    spec = { ...buildLaunchSpec({ surface, track, sourceRoot, workspaceRoot: targetProjectRoot, roots, command: application.executable, args }), aumid: application.aumid || null };
+    spec = { ...buildLaunchSpec({ surface, track, sourceRoot, workspaceRoot: targetProjectRoot, roots, command: application.executable, args, ...taskBinding }), aumid: application.aumid || null };
   }
-  spec ||= buildLaunchSpec({ surface, track, sourceRoot, workspaceRoot: targetProjectRoot, roots });
+  spec ||= buildLaunchSpec({ surface, track, sourceRoot, workspaceRoot: targetProjectRoot, roots, ...taskBinding });
 
   await advanceTransaction(journal, 'launch_requested', { launch: { commandName: spec.command, argCount: spec.args.length } });
   const started = dryRun ? { status: 'launch_requested', pid: null } : spawnTrack(spec, { spawnImpl: spawnImpl || undefined });

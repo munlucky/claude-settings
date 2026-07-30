@@ -31,6 +31,8 @@ const runtimeSpecs = {
     sharedDirs: [
       'catalog',
       'bin',
+      'kernel',
+      'scripts/kernel',
       'tools',
       'schemas',
       'templates',
@@ -478,8 +480,8 @@ const materializeRuntime = async (runtime, options) => {
   for (const sharedDir of spec.sharedDirs) {
     const source = path.join(repoRoot, sharedDir);
     const targetName = path.basename(sharedDir);
-    const destination = sharedDir === path.join('docs', 'public')
-      ? path.join(outputRoot, 'docs', 'public')
+    const destination = /[\\/]/.test(sharedDir)
+      ? path.join(outputRoot, sharedDir)
       : path.join(outputRoot, targetName);
     if (sharedDir === 'skills' && spec.skillExposure === 'publicRuntimeSkills') {
       await copyPublicRuntimeSkills(source, destination, plannedCopies, options);

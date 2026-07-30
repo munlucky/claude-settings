@@ -13,7 +13,7 @@ test('mutation paths reject traversal and symlink escapes', async () => {
   await writeFile(path.join(root, 'src', 'app.mjs'), 'x');
   assert.equal(canonicalMutationPath({ workspaceRoot: root, targetPath: 'src/../src/app.mjs' }), 'src/app.mjs');
   assert.throws(() => canonicalMutationPath({ workspaceRoot: root, targetPath: '../escape' }), /mutation_outside_workspace/);
-  await symlink(outside, path.join(root, 'link'));
+  await symlink(outside, path.join(root, 'link'), process.platform === 'win32' ? 'junction' : undefined);
   assert.throws(() => canonicalMutationPath({ workspaceRoot: root, targetPath: 'link/file' }), /mutation_outside_workspace/);
 });
 

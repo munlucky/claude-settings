@@ -138,7 +138,20 @@ export const buildNextPayload = ({
   const passed = new Set(verifications.filter((verification) => verification.status === 'passed').map((verification) => verification.obligationId));
   const outstanding = requiredObligations.filter((obligation) => !passed.has(obligation));
   if (verifications.length === 0 || outstanding.length > 0) {
-    const unsatisfiable = describeObligations(obligations, outstanding)
+    const described = describeObligations(obligations, outstanding);
+    if (outstanding.length > 0 && described.every((entry) => entry.evidenceClass === 'judgment')) {
+      return {
+        ...base,
+        action: {
+          type: 'review',
+          guidance: 'Route the outstanding judgment obligations to an independent reviewer session and submit the Kernel-recorded review receipt in kernel report.',
+          outstandingObligations: outstanding,
+          obligations: described,
+          independentReviewRequired: true,
+        },
+      };
+    }
+    const unsatisfiable = described
       .filter((entry) => entry.evidenceClass === 'hard' && entry.allowedCommandRefs.length === 0);
     return {
       ...base,
@@ -148,7 +161,7 @@ export const buildNextPayload = ({
           ? 'Implement the objective. Some required evidence has no runnable project command yet — add one to the project manifest, or report an unsupported-verification blocker.'
           : 'Implement the objective, then submit kernel report with a summary, changed paths, and the verifications to run.',
         outstandingObligations: outstanding,
-        obligations: describeObligations(obligations, outstanding),
+        obligations: described,
         shapeRequired: Boolean(run.route?.shapeRequired),
       },
     };
