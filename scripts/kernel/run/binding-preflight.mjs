@@ -34,14 +34,26 @@ export const assertBoundRunAccess = ({
   command,
 } = {}) => {
   if (!sessionId || !requestedRunId) fail('host_binding_missing');
-  const binding = stateStore.getActiveSessionBinding({ sessionId, runId: requestedRunId });
-  if (!binding) fail('host_binding_missing');
+  const projectId = currentProject?.projectId || currentProject;
+  if (!projectId) fail('run_project_mismatch');
+  const binding = stateStore.getActiveRunBinding({
+    projectId,
+    sessionId,
+    runId: requestedRunId,
+  });
+  if (!binding) {
+    const observedScope = stateStore.getActiveRunBindingScope({
+      sessionId,
+      runId: requestedRunId,
+    });
+    if (observedScope && observedScope.projectId !== projectId) fail('run_project_mismatch');
+    fail('host_binding_missing');
+  }
   if (binding.expiresAt && Date.parse(binding.expiresAt) <= Date.now()) fail('binding_expired');
   if (binding.status !== 'active') fail('binding_expired');
   if (binding.runId !== String(requestedRunId)) fail('run_session_mismatch');
   const run = stateStore.getRunMetadata(requestedRunId);
   if (!run) fail('active_run_not_found');
-  const projectId = currentProject?.projectId || currentProject;
   if (!projectId || run.projectId !== projectId || binding.projectId !== projectId) fail('run_project_mismatch');
   if (binding.sessionId !== String(sessionId)) fail('run_session_mismatch');
   if (binding.accessMode === 'owner' && run.ownerBindingId !== binding.bindingId) fail('run_access_denied');

@@ -44,6 +44,19 @@ test('T3 implementation stays on value coding but its review demands an independ
   assert.equal(t1Review.independentContextRequired, false);
 });
 
+test('build stagnation never reroutes a read-only review turn into a planner turn', () => {
+  const review = resolveModelRoute({
+    runId: 'r-review-after-stagnation',
+    actionKind: 'review_engineering',
+    riskTier: 'T3',
+    stagnant: true,
+    retryCount: 9,
+  });
+  assert.equal(review.actionKind, 'review_engineering');
+  assert.equal(review.role, 'reviewer');
+  assert.equal(review.permissions, 'read_only');
+});
+
 test('an escalation is not demoted inside the same plan revision and obligation', () => {
   const locked = { ...base, currentPlanRevision: 3, escalatedObligations: [{ planRevision: 3, obligationId: 'default' }] };
   assert.equal(resolveModelRoute(locked).modelClass, 'frontier_reasoning');

@@ -16,10 +16,10 @@ import {
 // Fixed priority (§5.3). Stagnation outranks retry escalation, because more
 // attempts with a stronger model do not fix a plan that cannot work.
 const resolveEscalation = ({ actionKind, retryCount, stagnant, planInvalid, architectureDeviation, protectedObligationFailed, escalationLocked, threshold }) => {
+  if (!BUILD_ACTIONS.includes(actionKind)) return null;
   if (stagnant) return { action: 'replan', reasonCode: 'STAGNATION_REPLAN' };
   if (planInvalid) return { action: 'replan', reasonCode: 'PLAN_INVALID_REPLAN' };
   if (architectureDeviation) return { action: 'replan', reasonCode: 'ARCHITECTURE_DEVIATION_REPLAN' };
-  if (!BUILD_ACTIONS.includes(actionKind)) return null;
   if (retryCount >= threshold) return { action: 'implement', reasonCode: 'RETRY_ESCALATION' };
   if (protectedObligationFailed) return { action: 'debug', reasonCode: 'PROTECTED_OBLIGATION_FAILURE' };
   // §5.4: within one plan revision and obligation an escalation never demotes.

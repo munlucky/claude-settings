@@ -31,6 +31,9 @@ test('Kernel package materialization creates files on disk, validates mandatory 
     'package/kernel/skills.lock.json',
     'scripts/lib/skills-lock.mjs',
     'scripts/lib/candidate-identity.mjs',
+    'scripts/kernel/run/host-session.mjs',
+    'scripts/kernel/run/invocation-resolver.mjs',
+    'scripts/kernel/run/successor-key.mjs',
   ];
 
   for (const file of reqFiles) {

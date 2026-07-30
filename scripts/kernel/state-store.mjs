@@ -10,6 +10,7 @@ import { assertCommandBinding } from './run/obligation-compiler.mjs';
 import { normalizeModelRouteDecision, normalizeModelUsageReceipt } from './run/model-route-contract.mjs';
 import { digestOfEvidence, evaluateReviewReceipt, normalizeReviewReceipt, parseReviewEvidenceRef } from './proof/review-receipt.mjs';
 import { sanitizePersistentPayload, sanitizePersistentText } from './persistent-sanitizer.mjs';
+import { buildSuccessorKey } from './run/successor-key.mjs';
 
 const TIER_RANK = { T0: 0, T1: 1, T2: 2, T3: 3 };
 const EVIDENCE_RANK = { E0: 0, E1: 1, E2: 2 };
@@ -57,6 +58,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       required_obligations TEXT NOT NULL DEFAULT '[]',
       acceptance_criteria TEXT NOT NULL DEFAULT '[]',
       release_evidence_required INTEGER NOT NULL DEFAULT 0,
+      successor_key TEXT,
       updated_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS verifications (
@@ -487,6 +489,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
   addCol('runs', 'plan_revision', 'INTEGER DEFAULT 1');
   addCol('runs', 'workspace_id', 'TEXT');
   addCol('runs', 'owner_binding_id', 'TEXT');
+  addCol('runs', 'successor_key', 'TEXT');
   // Obligation binding authority (P0-2/P0-3).
   addCol('run_obligations', 'evidence_class', "TEXT DEFAULT 'hard'");
   addCol('run_obligations', 'verification_method', 'TEXT');
@@ -529,6 +532,9 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
   addCol('verifications', 'contract_revision', 'INTEGER DEFAULT 1');
   addCol('leases', 'fencing_token', 'INTEGER DEFAULT 0');
   addCol('leases', 'owner_pid', 'INTEGER');
+  addCol('session_bindings', 'closed_at', 'TEXT');
+  addCol('session_bindings', 'close_reason', 'TEXT');
+  addCol('session_bindings', 'successor_run_id', 'TEXT');
 
   try { db.exec(`ALTER TABLE runs ADD COLUMN source_identity TEXT;`); } catch {}
   try { db.exec(`ALTER TABLE runs ADD COLUMN mutation_revision INTEGER DEFAULT 0;`); } catch {}
@@ -559,6 +565,26 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
   try { db.exec(`ALTER TABLE waivers ADD COLUMN acceptance_coverage TEXT DEFAULT '[]';`); } catch {}
   try { db.exec(`ALTER TABLE evidence_packs ADD COLUMN mutation_revision INTEGER DEFAULT 0;`); } catch {}
 
+  // Fresh state and already-valid legacy state gain database-level owner
+  // invariants. If legacy corruption contains duplicate active owners, opening
+  // the store fails closed instead of silently selecting one.
+  try {
+    db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_project_session_active_owner
+      ON session_bindings(project_id, session_id)
+      WHERE status='active' AND access_mode='owner';
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_run_active_owner
+      ON session_bindings(run_id)
+      WHERE status='active' AND access_mode='owner';
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_runs_successor_key
+      ON runs(successor_key)
+      WHERE successor_key IS NOT NULL;
+    `);
+  } catch (error) {
+    db.close();
+    throw error;
+  }
+
   const now = () => new Date().toISOString();
 
   const safeJsonParse = (str, fallback = []) => {
@@ -571,6 +597,34 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
   const persistentJson = (value) => typeof value === 'string'
     ? sanitizePersistentText(value)
     : JSON.stringify(sanitizePersistentPayload(value));
+  const mapSessionBinding = (row) => row ? {
+    bindingId: row.binding_id,
+    sessionId: row.session_id,
+    provider: row.provider,
+    surface: row.surface,
+    runId: row.run_id,
+    projectId: row.project_id,
+    workspaceId: row.workspace_id,
+    workspaceRoot: row.workspace_root,
+    accessMode: row.access_mode,
+    status: row.status,
+    createdAt: row.created_at,
+    expiresAt: row.expires_at,
+    closedAt: row.closed_at,
+    closeReason: row.close_reason,
+    successorRunId: row.successor_run_id,
+    updatedAt: row.updated_at,
+  } : null;
+  const bindingConflict = (error) => {
+    if (String(error?.message || '').includes('UNIQUE constraint failed')) {
+      throw Object.assign(new Error('successor_binding_conflict'), {
+        code: 'successor_binding_conflict',
+        errorCode: 'successor_binding_conflict',
+        nextAction: 'inspect-active-owner-binding',
+      });
+    }
+    throw error;
+  };
 
   return {
     dbPath,
@@ -593,6 +647,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       implementationContext = null,
       workspaceId = null,
       ownerBindingId = null,
+      successorKey = null,
     }) {
       if (!sourceIdentity || typeof sourceIdentity !== 'string' || !sourceIdentityRegex.test(sourceIdentity)) {
         throw new Error('sourceIdentity is required and must be a valid candidate identity string for Kernel run');
@@ -601,8 +656,8 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         throw new Error('workspaceIdentity must be a sha256:<hex> digest when provided');
       }
       db.prepare(`
-        INSERT INTO runs(run_id, objective, state, status, revision, mutation_revision, source_identity, run_start_workspace_identity, current_workspace_identity, project_mode, proof_tier, evidence_tier, required_obligations, acceptance_criteria, release_evidence_required, project_id, knowledge_revision_start, knowledge_status, task_contract_json, contract_revision, finalization_status, route_json, implementation_context_json, workspace_id, owner_binding_id, updated_at)
-        VALUES(?, ?, 'FRAME', 'active', 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, 'pending', ?, ?, ?, ?, ?)
+        INSERT INTO runs(run_id, objective, state, status, revision, mutation_revision, source_identity, run_start_workspace_identity, current_workspace_identity, project_mode, proof_tier, evidence_tier, required_obligations, acceptance_criteria, release_evidence_required, project_id, knowledge_revision_start, knowledge_status, task_contract_json, contract_revision, finalization_status, route_json, implementation_context_json, workspace_id, owner_binding_id, successor_key, updated_at)
+        VALUES(?, ?, 'FRAME', 'active', 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, 'pending', ?, ?, ?, ?, ?, ?)
       `).run(
         runId,
         objective,
@@ -623,6 +678,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         implementationContext ? persistentJson(implementationContext) : null,
         workspaceId,
         ownerBindingId,
+        successorKey,
         now()
       );
       return this.getRun(runId);
@@ -812,6 +868,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
                plan_revision as planRevision,
                workspace_id as workspaceId,
                owner_binding_id as ownerBindingId,
+               successor_key as successorKey,
                updated_at as updatedAt
         FROM runs WHERE run_id=?
       `).get(runId);
@@ -854,6 +911,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         planRevision: Number(row.planRevision || 1),
         workspaceId: row.workspaceId || null,
         ownerBindingId: row.ownerBindingId || null,
+        successorKey: row.successorKey || null,
         updatedAt: row.updatedAt,
       };
     },
@@ -864,17 +922,367 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
     },
 
     createSessionBinding(binding) {
-      db.prepare(`INSERT INTO session_bindings(binding_id, session_id, provider, surface, run_id, project_id, workspace_id, workspace_root, access_mode, status, created_at, expires_at, updated_at)
-        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-        binding.bindingId, binding.sessionId, binding.provider, binding.surface, binding.runId,
-        binding.projectId, binding.workspaceId, binding.workspaceRoot, binding.accessMode,
-        binding.status, now(), binding.expiresAt, now(),
-      );
-      if (binding.accessMode === 'owner') {
-        db.prepare(`UPDATE runs SET owner_binding_id=?, workspace_id=COALESCE(workspace_id, ?), updated_at=? WHERE run_id=?`)
-          .run(binding.bindingId, binding.workspaceId, now(), binding.runId);
+      const create = db.transaction(() => {
+        const run = db.prepare(`
+          SELECT project_id as projectId, workspace_id as workspaceId,
+                 owner_binding_id as ownerBindingId
+          FROM runs WHERE run_id=?
+        `).get(binding.runId);
+        if (!run) {
+          throw Object.assign(new Error('run_access_denied'), {
+            code: 'run_access_denied',
+            errorCode: 'run_access_denied',
+            nextAction: 'inspect-run-binding',
+          });
+        }
+        if (run.projectId !== binding.projectId) {
+          throw Object.assign(new Error('run_project_mismatch'), {
+            code: 'run_project_mismatch',
+            errorCode: 'run_project_mismatch',
+            nextAction: 'relaunch-from-bound-project',
+          });
+        }
+        if (run.workspaceId && run.workspaceId !== binding.workspaceId) {
+          throw Object.assign(new Error('run_workspace_mismatch'), {
+            code: 'run_workspace_mismatch',
+            errorCode: 'run_workspace_mismatch',
+            nextAction: 'return-to-bound-workspace',
+          });
+        }
+        if (binding.accessMode === 'owner' && run.ownerBindingId) {
+          throw Object.assign(new Error('successor_binding_conflict'), {
+            code: 'successor_binding_conflict',
+            errorCode: 'successor_binding_conflict',
+            nextAction: 'inspect-active-owner-binding',
+          });
+        }
+
+        db.prepare(`INSERT INTO session_bindings(binding_id, session_id, provider, surface, run_id, project_id, workspace_id, workspace_root, access_mode, status, created_at, expires_at, updated_at)
+          VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+          binding.bindingId, binding.sessionId, binding.provider, binding.surface, binding.runId,
+          binding.projectId, binding.workspaceId, binding.workspaceRoot, binding.accessMode,
+          binding.status, now(), binding.expiresAt, now(),
+        );
+        if (binding.accessMode === 'owner') {
+          const updated = db.prepare(`
+            UPDATE runs
+            SET owner_binding_id=?, workspace_id=COALESCE(workspace_id, ?), updated_at=?
+            WHERE run_id=? AND project_id=? AND owner_binding_id IS NULL
+              AND (workspace_id IS NULL OR workspace_id=?)
+          `).run(
+            binding.bindingId,
+            binding.workspaceId,
+            now(),
+            binding.runId,
+            binding.projectId,
+            binding.workspaceId,
+          );
+          if (updated.changes !== 1) {
+            throw Object.assign(new Error('successor_binding_conflict'), {
+              code: 'successor_binding_conflict',
+              errorCode: 'successor_binding_conflict',
+              nextAction: 'inspect-active-owner-binding',
+            });
+          }
+        }
+      });
+      try {
+        create();
+      } catch (error) {
+        bindingConflict(error);
       }
-      return this.getActiveSessionBinding({ sessionId: binding.sessionId, runId: binding.runId });
+      return this.getActiveRunBinding({
+        projectId: binding.projectId,
+        sessionId: binding.sessionId,
+        runId: binding.runId,
+      });
+    },
+
+    createSuccessorRunAtomic({
+      projectId,
+      sessionId,
+      predecessorRunId,
+      predecessorBindingId,
+      successorRun,
+      successorBinding,
+      obligations = [],
+      steps = [],
+      successorKey,
+      predecessorLock = null,
+    } = {}) {
+      const taskContractDigest = successorRun?.taskContract?.digest;
+      const expectedSuccessorKey = buildSuccessorKey({
+        projectId,
+        sessionId,
+        predecessorRunId,
+        workspaceId: successorRun?.workspaceId,
+        taskContractDigest,
+      });
+      if (
+        !projectId
+        || !sessionId
+        || !predecessorRunId
+        || !predecessorBindingId
+        || !successorRun?.runId
+        || !successorBinding?.bindingId
+        || successorKey !== expectedSuccessorKey
+      ) {
+        throw Object.assign(new Error('successor_creation_conflict'), {
+          code: 'successor_creation_conflict',
+          errorCode: 'successor_creation_conflict',
+          nextAction: 'retry-successor-resolution',
+        });
+      }
+      const create = db.transaction(() => {
+        const existing = db.prepare(`
+          SELECT run_id as runId, project_id as projectId,
+                 workspace_id as workspaceId, task_contract_json as taskContractJson
+          FROM runs WHERE successor_key=?
+        `).get(successorKey);
+        if (existing) {
+          const existingContract = safeJsonParse(existing.taskContractJson, null);
+          const existingBinding = db.prepare(`
+            SELECT binding_id
+            FROM session_bindings
+            WHERE run_id=? AND project_id=? AND session_id=?
+              AND status='active' AND access_mode='owner'
+          `).get(existing.runId, projectId, sessionId);
+          const priorLineage = db.prepare(`
+            SELECT binding_id
+            FROM session_bindings
+            WHERE binding_id=? AND run_id=? AND project_id=? AND session_id=?
+              AND status='inactive' AND close_reason='successor_started'
+              AND successor_run_id=?
+          `).get(
+            predecessorBindingId,
+            predecessorRunId,
+            projectId,
+            sessionId,
+            existing.runId,
+          );
+          if (
+            existing.projectId !== projectId
+            || existing.workspaceId !== successorRun.workspaceId
+            || existingContract?.digest !== taskContractDigest
+            || !existingBinding
+            || !priorLineage
+          ) {
+            throw Object.assign(new Error('successor_creation_conflict'), {
+              code: 'successor_creation_conflict',
+              errorCode: 'successor_creation_conflict',
+              nextAction: 'inspect-successor-lineage',
+            });
+          }
+          return { created: false, runId: existing.runId };
+        }
+
+        const predecessor = db.prepare(`
+          SELECT run_id as runId, project_id as projectId,
+                 workspace_id as workspaceId, owner_binding_id as ownerBindingId,
+                 status, finalization_status as finalizationStatus
+          FROM runs WHERE run_id=?
+        `).get(predecessorRunId);
+        const predecessorBinding = db.prepare(`
+          SELECT * FROM session_bindings
+          WHERE binding_id=? AND run_id=? AND project_id=? AND session_id=?
+            AND status='active' AND access_mode='owner'
+        `).get(
+          predecessorBindingId,
+          predecessorRunId,
+          projectId,
+          sessionId,
+        );
+        const successorWorkspace = db.prepare(`
+          SELECT project_id as projectId
+          FROM project_workspaces
+          WHERE workspace_id=?
+        `).get(successorRun.workspaceId);
+        const validPredecessor = predecessor
+          && predecessor.projectId === projectId
+          && predecessor.ownerBindingId === predecessorBindingId
+          && predecessor.status === 'completed'
+          && predecessor.finalizationStatus === 'completed'
+          && predecessorBinding;
+        if (!validPredecessor) {
+          throw Object.assign(new Error('successor_not_allowed'), {
+            code: 'successor_not_allowed',
+            errorCode: 'successor_not_allowed',
+            nextAction: predecessor?.status === 'completed'
+              && predecessor?.finalizationStatus !== 'completed'
+              ? 'retry-finalization'
+              : 'inspect-predecessor-binding',
+          });
+        }
+        if (
+          successorRun.projectId !== projectId
+          || successorBinding.projectId !== projectId
+          || successorBinding.sessionId !== sessionId
+          || successorBinding.runId !== successorRun.runId
+          || successorRun.workspaceId !== successorBinding.workspaceId
+          || successorWorkspace?.projectId !== projectId
+          || successorBinding.provider !== predecessorBinding.provider
+          || successorRun.taskContract?.digest !== taskContractDigest
+        ) {
+          throw Object.assign(new Error('successor_creation_conflict'), {
+            code: 'successor_creation_conflict',
+            errorCode: 'successor_creation_conflict',
+            nextAction: 'retry-successor-resolution',
+          });
+        }
+
+        this.createRun({
+          ...successorRun,
+          ownerBindingId: null,
+          successorKey,
+        });
+        this.declareRunObligations(successorRun.runId, obligations);
+        this.createRunSteps(successorRun.runId, steps);
+
+        const closedAt = now();
+        const closed = db.prepare(`
+          UPDATE session_bindings
+          SET status='inactive', closed_at=?, close_reason='successor_started',
+              successor_run_id=?, updated_at=?
+          WHERE binding_id=? AND run_id=? AND project_id=? AND session_id=?
+            AND status='active' AND access_mode='owner'
+        `).run(
+          closedAt,
+          successorRun.runId,
+          closedAt,
+          predecessorBindingId,
+          predecessorRunId,
+          projectId,
+          sessionId,
+        );
+        if (closed.changes !== 1) {
+          throw Object.assign(new Error('successor_binding_conflict'), {
+            code: 'successor_binding_conflict',
+            errorCode: 'successor_binding_conflict',
+            nextAction: 'inspect-active-owner-binding',
+          });
+        }
+
+        db.prepare(`
+          INSERT INTO session_bindings(
+            binding_id, session_id, provider, surface, run_id, project_id,
+            workspace_id, workspace_root, access_mode, status, created_at,
+            expires_at, updated_at
+          ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, 'owner', 'active', ?, ?, ?)
+        `).run(
+          successorBinding.bindingId,
+          successorBinding.sessionId,
+          successorBinding.provider,
+          successorBinding.surface,
+          successorBinding.runId,
+          successorBinding.projectId,
+          successorBinding.workspaceId,
+          successorBinding.workspaceRoot,
+          closedAt,
+          successorBinding.expiresAt,
+          closedAt,
+        );
+        const owned = db.prepare(`
+          UPDATE runs SET owner_binding_id=?, updated_at=?
+          WHERE run_id=? AND project_id=? AND owner_binding_id IS NULL
+            AND workspace_id=?
+        `).run(
+          successorBinding.bindingId,
+          closedAt,
+          successorRun.runId,
+          projectId,
+          successorBinding.workspaceId,
+        );
+        if (owned.changes !== 1) {
+          throw Object.assign(new Error('successor_creation_conflict'), {
+            code: 'successor_creation_conflict',
+            errorCode: 'successor_creation_conflict',
+            nextAction: 'retry-successor-resolution',
+          });
+        }
+
+        if (predecessor.workspaceId) {
+          const currentLock = db.prepare(`
+            SELECT workspace_id as workspaceId, project_id as projectId,
+                   holder_run_id as holderRunId, session_token as sessionToken,
+                   fencing_token as fencingToken, expires_at as expiresAt
+            FROM workspace_mutation_locks_v2
+            WHERE workspace_id=?
+          `).get(predecessor.workspaceId);
+          const lockFailure = () => {
+            throw Object.assign(new Error('workspace_lock_handoff_failed'), {
+              code: 'workspace_lock_handoff_failed',
+              errorCode: 'workspace_lock_handoff_failed',
+              nextAction: 'reacquire-predecessor-workspace-lock',
+            });
+          };
+          if (predecessorLock) {
+            if (
+              !currentLock
+              || predecessorLock.workspaceId !== predecessor.workspaceId
+              || predecessorLock.projectId !== projectId
+              || predecessorLock.holderRunId !== predecessorRunId
+              || predecessorLock.sessionToken !== currentLock.sessionToken
+              || Number(predecessorLock.fencingToken) !== Number(currentLock.fencingToken)
+              || currentLock.projectId !== projectId
+              || currentLock.holderRunId !== predecessorRunId
+            ) {
+              lockFailure();
+            }
+            const released = db.prepare(`
+              DELETE FROM workspace_mutation_locks_v2
+              WHERE workspace_id=? AND project_id=? AND holder_run_id=?
+                AND session_token=? AND fencing_token=?
+            `).run(
+              predecessor.workspaceId,
+              projectId,
+              predecessorRunId,
+              predecessorLock.sessionToken,
+              Number(predecessorLock.fencingToken),
+            );
+            if (released.changes !== 1) lockFailure();
+          } else if (currentLock && Date.parse(currentLock.expiresAt) > Date.now()) {
+            lockFailure();
+          } else if (currentLock) {
+            db.prepare(`
+              DELETE FROM workspace_mutation_locks_v2
+              WHERE workspace_id=? AND expires_at=?
+            `).run(predecessor.workspaceId, currentLock.expiresAt);
+          }
+        }
+        db.prepare(`
+          DELETE FROM workspace_mutation_locks
+          WHERE project_id=? AND holder_run_id=?
+        `).run(projectId, predecessorRunId);
+        return { created: true, runId: successorRun.runId };
+      });
+
+      let result;
+      try {
+        result = create();
+      } catch (error) {
+        bindingConflict(error);
+      }
+      const run = this.getRun(result.runId);
+      const binding = this.getActiveRunBinding({
+        projectId,
+        sessionId,
+        runId: result.runId,
+      });
+      if (!run || !binding) {
+        throw Object.assign(new Error('successor_creation_conflict'), {
+          code: 'successor_creation_conflict',
+          errorCode: 'successor_creation_conflict',
+          nextAction: 'inspect-successor-lineage',
+        });
+      }
+      return {
+        created: result.created,
+        run,
+        binding,
+        predecessorBinding: mapSessionBinding(db.prepare(`
+          SELECT * FROM session_bindings WHERE binding_id=?
+        `).get(predecessorBindingId)),
+      };
     },
 
     adoptUnownedRunBinding(binding) {
@@ -909,22 +1317,302 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       const adopted = adopt();
       return {
         adopted,
-        binding: adopted ? this.getActiveSessionBinding({ sessionId: binding.sessionId, runId: binding.runId }) : null,
+        binding: adopted ? this.getActiveRunBinding({
+          projectId: binding.projectId,
+          sessionId: binding.sessionId,
+          runId: binding.runId,
+        }) : null,
       };
     },
 
+    getActiveOwnerBinding({ projectId, sessionId } = {}) {
+      if (!projectId || !sessionId) return null;
+      return mapSessionBinding(db.prepare(`
+        SELECT * FROM session_bindings
+        WHERE project_id=? AND session_id=? AND status='active' AND access_mode='owner'
+        ORDER BY updated_at DESC
+        LIMIT 1
+      `).get(projectId, sessionId));
+    },
+
+    getActiveRunBinding({ projectId, sessionId, runId } = {}) {
+      if (!projectId || !sessionId || !runId) return null;
+      return mapSessionBinding(db.prepare(`
+        SELECT * FROM session_bindings
+        WHERE project_id=? AND session_id=? AND run_id=? AND status='active'
+        ORDER BY updated_at DESC
+        LIMIT 1
+      `).get(projectId, sessionId, runId));
+    },
+
+    migrateLegacySessionBinding({
+      projectId,
+      legacySessionId,
+      canonicalSessionId,
+      provider,
+    } = {}) {
+      if (!projectId || !legacySessionId || !canonicalSessionId || !provider) {
+        throw Object.assign(new Error('provider_session_invalid'), {
+          code: 'provider_session_invalid',
+          errorCode: 'provider_session_invalid',
+          nextAction: 'relaunch-through-kernel-host',
+        });
+      }
+      const migrate = db.transaction(() => {
+        const canonical = db.prepare(`
+          SELECT * FROM session_bindings
+          WHERE project_id=? AND session_id=? AND status='active' AND access_mode='owner'
+          LIMIT 1
+        `).get(projectId, canonicalSessionId);
+        if (canonical) return mapSessionBinding(canonical);
+
+        const legacy = db.prepare(`
+          SELECT * FROM session_bindings
+          WHERE project_id=? AND session_id=? AND status='active' AND access_mode='owner'
+          LIMIT 1
+        `).get(projectId, legacySessionId);
+        if (!legacy) return null;
+        const inferredLegacyCodex = legacy.provider === 'unknown'
+          && provider === 'codex'
+          && legacy.run_id === `codex-${legacySessionId}`;
+        if (legacy.provider !== provider && !inferredLegacyCodex) {
+          throw Object.assign(new Error('provider_session_invalid'), {
+            code: 'provider_session_invalid',
+            errorCode: 'provider_session_invalid',
+            nextAction: 'relaunch-through-kernel-host',
+          });
+        }
+        try {
+          const updated = db.prepare(`
+            UPDATE session_bindings
+            SET session_id=?, provider=?, surface=COALESCE(surface, ?), updated_at=?
+            WHERE binding_id=? AND project_id=? AND session_id=?
+              AND provider=? AND status='active' AND access_mode='owner'
+          `).run(
+            canonicalSessionId,
+            provider,
+            provider,
+            now(),
+            legacy.binding_id,
+            projectId,
+            legacySessionId,
+            legacy.provider,
+          );
+          if (updated.changes !== 1) {
+            throw Object.assign(new Error('successor_binding_conflict'), {
+              code: 'successor_binding_conflict',
+              errorCode: 'successor_binding_conflict',
+              nextAction: 'inspect-active-owner-binding',
+            });
+          }
+        } catch (error) {
+          bindingConflict(error);
+        }
+        return mapSessionBinding(db.prepare(`
+          SELECT * FROM session_bindings WHERE binding_id=?
+        `).get(legacy.binding_id));
+      });
+      return migrate();
+    },
+
+    getActiveRunBindingScope({ sessionId, runId } = {}) {
+      if (!sessionId || !runId) return null;
+      const row = db.prepare(`
+        SELECT project_id as projectId
+        FROM session_bindings
+        WHERE session_id=? AND run_id=? AND status='active'
+        ORDER BY updated_at DESC
+        LIMIT 1
+      `).get(sessionId, runId);
+      return row || null;
+    },
+
+    listActiveOwnerBindings({ projectId, sessionId } = {}) {
+      if (!projectId || !sessionId) return [];
+      return db.prepare(`
+        SELECT * FROM session_bindings
+        WHERE project_id=? AND session_id=? AND status='active' AND access_mode='owner'
+        ORDER BY updated_at DESC
+      `).all(projectId, sessionId).map(mapSessionBinding);
+    },
+
+    diagnoseLifecycleState({ projectId = null, observedAt = now() } = {}) {
+      const findings = [];
+      const projectClause = projectId ? ' AND project_id=?' : '';
+      const projectArgs = projectId ? [projectId] : [];
+      const ambiguous = db.prepare(`
+        SELECT project_id as projectId, session_id as sessionId, COUNT(*) as count
+        FROM session_bindings
+        WHERE status='active' AND access_mode='owner'${projectClause}
+        GROUP BY project_id, session_id
+        HAVING COUNT(*) > 1
+      `).all(...projectArgs);
+      for (const row of ambiguous) {
+        findings.push({
+          code: 'ambiguous_session_binding',
+          severity: 'error',
+          projectId: row.projectId,
+          sessionId: row.sessionId,
+          count: Number(row.count),
+        });
+      }
+
+      const terminal = db.prepare(`
+        SELECT r.run_id as runId, r.project_id as projectId,
+               b.binding_id as bindingId, b.session_id as sessionId
+        FROM runs r
+        JOIN session_bindings b ON b.run_id=r.run_id
+        WHERE r.status='completed' AND b.status='active' AND b.access_mode='owner'
+          ${projectId ? 'AND r.project_id=?' : ''}
+      `).all(...projectArgs);
+      for (const row of terminal) {
+        findings.push({ code: 'terminal_run_active_binding', severity: 'warning', ...row });
+      }
+
+      const orphaned = db.prepare(`
+        SELECT r.run_id as runId, r.project_id as projectId,
+               r.owner_binding_id as ownerBindingId
+        FROM runs r
+        LEFT JOIN session_bindings b ON b.binding_id=r.owner_binding_id
+        WHERE r.owner_binding_id IS NOT NULL
+          AND (
+            b.binding_id IS NULL OR b.run_id<>r.run_id OR b.project_id<>r.project_id
+            OR b.access_mode<>'owner'
+          )
+          ${projectId ? 'AND r.project_id=?' : ''}
+      `).all(...projectArgs);
+      for (const row of orphaned) {
+        findings.push({ code: 'orphaned_run_owner', severity: 'error', ...row });
+      }
+
+      const bindings = db.prepare(`
+        SELECT binding_id as bindingId, session_id as sessionId, provider,
+               run_id as runId, project_id as projectId, workspace_id as workspaceId
+        FROM session_bindings
+        WHERE 1=1${projectClause}
+      `).all(...projectArgs);
+      for (const binding of bindings) {
+        const sessionProvider = String(binding.sessionId).match(/^([a-z][a-z0-9-]{0,31}):/)?.[1] || null;
+        const workspace = binding.workspaceId
+          ? db.prepare('SELECT project_id as projectId FROM project_workspaces WHERE workspace_id=?').get(binding.workspaceId)
+          : null;
+        const providerMismatch = sessionProvider
+          && binding.provider !== 'unknown'
+          && binding.provider !== 'unknown-host'
+          && sessionProvider !== binding.provider;
+        const workspaceMismatch = binding.workspaceId
+          && (!workspace || workspace.projectId !== binding.projectId);
+        if (providerMismatch || workspaceMismatch) {
+          findings.push({
+            code: 'binding_namespace_problem',
+            severity: 'error',
+            bindingId: binding.bindingId,
+            runId: binding.runId,
+            projectId: binding.projectId,
+            providerMismatch: Boolean(providerMismatch),
+            workspaceMismatch: Boolean(workspaceMismatch),
+          });
+        }
+      }
+
+      const locks = db.prepare(`
+        SELECT l.workspace_id as workspaceId, l.project_id as projectId,
+               l.holder_run_id as holderRunId, l.fencing_token as fencingToken,
+               l.expires_at as expiresAt, r.run_id as resolvedRunId,
+               r.project_id as runProjectId, r.workspace_id as runWorkspaceId,
+               w.project_id as workspaceProjectId
+        FROM workspace_mutation_locks_v2 l
+        LEFT JOIN runs r ON r.run_id=l.holder_run_id
+        LEFT JOIN project_workspaces w ON w.workspace_id=l.workspace_id
+        WHERE 1=1${projectId ? ' AND l.project_id=?' : ''}
+      `).all(...projectArgs);
+      const observedMs = Date.parse(observedAt);
+      for (const lock of locks) {
+        const expired = Date.parse(lock.expiresAt) <= observedMs;
+        const invalidOwner = !lock.resolvedRunId
+          || lock.runProjectId !== lock.projectId
+          || lock.runWorkspaceId !== lock.workspaceId
+          || lock.workspaceProjectId !== lock.projectId;
+        if (expired || invalidOwner) {
+          findings.push({
+            code: 'stale_workspace_lock',
+            severity: 'warning',
+            workspaceId: lock.workspaceId,
+            projectId: lock.projectId,
+            holderRunId: lock.holderRunId,
+            fencingToken: Number(lock.fencingToken),
+            expired,
+            invalidOwner,
+          });
+        }
+      }
+      return {
+        schemaVersion: 1,
+        status: findings.some((finding) => finding.severity === 'error') ? 'degraded' : (
+          findings.length > 0 ? 'warning' : 'ready'
+        ),
+        observedAt,
+        projectId,
+        findings,
+        counts: findings.reduce((counts, finding) => ({
+          ...counts,
+          [finding.code]: (counts[finding.code] || 0) + 1,
+        }), {}),
+      };
+    },
+
+    deactivateSessionBinding({
+      projectId,
+      sessionId,
+      bindingId,
+      reason,
+      successorRunId = null,
+    } = {}) {
+      if (!projectId || !sessionId || !bindingId || !reason) {
+        throw Object.assign(new Error('host_binding_missing'), { code: 'host_binding_missing' });
+      }
+      const deactivate = db.transaction(() => {
+        const row = db.prepare(`
+          SELECT * FROM session_bindings
+          WHERE binding_id=? AND project_id=? AND session_id=?
+        `).get(bindingId, projectId, sessionId);
+        if (!row) throw Object.assign(new Error('host_binding_missing'), { code: 'host_binding_missing' });
+        if (row.status !== 'active') {
+          throw Object.assign(new Error('binding_already_inactive'), {
+            code: 'binding_already_inactive',
+            errorCode: 'binding_already_inactive',
+            nextAction: 'inspect-active-owner-binding',
+          });
+        }
+        if (row.access_mode === 'owner') {
+          const run = db.prepare('SELECT owner_binding_id FROM runs WHERE run_id=? AND project_id=?')
+            .get(row.run_id, projectId);
+          if (!run || run.owner_binding_id !== bindingId) {
+            throw Object.assign(new Error('run_access_denied'), { code: 'run_access_denied' });
+          }
+        }
+        const closedAt = now();
+        const updated = db.prepare(`
+          UPDATE session_bindings
+          SET status='inactive', closed_at=?, close_reason=?, successor_run_id=?, updated_at=?
+          WHERE binding_id=? AND project_id=? AND session_id=? AND status='active'
+        `).run(closedAt, String(reason), successorRunId, closedAt, bindingId, projectId, sessionId);
+        if (updated.changes !== 1) {
+          throw Object.assign(new Error('binding_already_inactive'), { code: 'binding_already_inactive' });
+        }
+        return mapSessionBinding(db.prepare('SELECT * FROM session_bindings WHERE binding_id=?').get(bindingId));
+      });
+      return deactivate();
+    },
+
+    // Compatibility-only surface for legacy callers. Control-plane access uses
+    // the project-scoped APIs above and never selects authority by session alone.
     getActiveSessionBinding({ sessionId, runId = null } = {}) {
       if (!sessionId) return null;
       const row = runId
         ? db.prepare(`SELECT * FROM session_bindings WHERE session_id=? AND run_id=? AND status='active' ORDER BY updated_at DESC LIMIT 1`).get(sessionId, runId)
         : db.prepare(`SELECT * FROM session_bindings WHERE session_id=? AND status='active' ORDER BY updated_at DESC LIMIT 1`).get(sessionId);
-      if (!row) return null;
-      return {
-        bindingId: row.binding_id, sessionId: row.session_id, provider: row.provider, surface: row.surface,
-        runId: row.run_id, projectId: row.project_id, workspaceId: row.workspace_id,
-        workspaceRoot: row.workspace_root, accessMode: row.access_mode, status: row.status,
-        createdAt: row.created_at, expiresAt: row.expires_at, updatedAt: row.updated_at,
-      };
+      return mapSessionBinding(row);
     },
 
     registerProjectWorkspace(workspace) {
@@ -974,6 +1662,22 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
 
     acquireWorkspaceMutationLockV2({ workspaceId, projectId, runId, sessionToken, ttlMs = 60000 } = {}) {
       if (!workspaceId || !projectId || !runId || !sessionToken) throw new Error('workspace mutation lock requires workspaceId, projectId, runId, and sessionToken');
+      const workspace = this.getProjectWorkspace(workspaceId);
+      const run = this.getRunMetadata(runId);
+      if (!workspace || workspace.projectId !== projectId || !run || run.projectId !== projectId) {
+        throw Object.assign(new Error('run_project_mismatch'), {
+          code: 'run_project_mismatch',
+          errorCode: 'run_project_mismatch',
+          nextAction: 'register-a-project-worktree',
+        });
+      }
+      if (run.workspaceId && run.workspaceId !== workspaceId) {
+        throw Object.assign(new Error('run_workspace_mismatch'), {
+          code: 'run_workspace_mismatch',
+          errorCode: 'run_workspace_mismatch',
+          nextAction: 'return-to-bound-workspace',
+        });
+      }
       const acquiredAt = now();
       const expiresAt = new Date(Date.now() + ttlMs).toISOString();
       db.exec('BEGIN IMMEDIATE');
@@ -999,6 +1703,48 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
     getWorkspaceMutationLockV2(workspaceId) {
       const row = db.prepare(`SELECT workspace_id as workspaceId, project_id as projectId, holder_run_id as holderRunId, session_token as sessionToken, fencing_token as fencingToken, acquired_at as acquiredAt, expires_at as expiresAt FROM workspace_mutation_locks_v2 WHERE workspace_id=?`).get(workspaceId);
       return !row || Date.parse(row.expiresAt) <= Date.now() ? null : row;
+    },
+
+    releaseWorkspaceMutationLockV2({
+      workspaceId,
+      runId,
+      sessionToken,
+      fencingToken,
+    } = {}) {
+      const fail = () => {
+        throw Object.assign(new Error('workspace_lock_handoff_failed'), {
+          code: 'workspace_lock_handoff_failed',
+          errorCode: 'workspace_lock_handoff_failed',
+          nextAction: 'reacquire-workspace-lock',
+        });
+      };
+      if (!workspaceId || !runId || !sessionToken || !Number.isInteger(Number(fencingToken))) {
+        fail();
+      }
+      const release = db.transaction(() => {
+        const current = db.prepare(`
+          SELECT workspace_id as workspaceId, holder_run_id as holderRunId,
+                 session_token as sessionToken, fencing_token as fencingToken
+          FROM workspace_mutation_locks_v2
+          WHERE workspace_id=?
+        `).get(workspaceId);
+        if (
+          !current
+          || current.holderRunId !== runId
+          || current.sessionToken !== sessionToken
+          || Number(current.fencingToken) !== Number(fencingToken)
+        ) {
+          fail();
+        }
+        const released = db.prepare(`
+          DELETE FROM workspace_mutation_locks_v2
+          WHERE workspace_id=? AND holder_run_id=? AND session_token=?
+            AND fencing_token=?
+        `).run(workspaceId, runId, sessionToken, Number(fencingToken));
+        if (released.changes !== 1) fail();
+        return { released: true, lock: current };
+      });
+      return release();
     },
 
     getWorkspaceMutationLock(projectId) {

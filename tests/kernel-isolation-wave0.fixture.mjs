@@ -147,6 +147,29 @@ test('workspace-level lock permits distinct worktrees in the same project', asyn
   const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-isolation-lock-state-'));
   const store = await openKernelStateStore({ runtimeHome });
   try {
+    for (const workspaceId of ['worktree-a', 'worktree-b']) {
+      store.registerProjectWorkspace({
+        workspaceId,
+        identity: { projectId: 'shared-project' },
+        canonicalRoot: `C:\\fixtures\\${workspaceId}`,
+        gitCommonDir: null,
+        gitWorktreeDir: null,
+      });
+    }
+    store.createRun({
+      runId: 'run-a',
+      objective: 'run-a',
+      sourceIdentity: `sha256:${'a'.repeat(64)}`,
+      projectId: 'shared-project',
+      workspaceId: 'worktree-a',
+    });
+    store.createRun({
+      runId: 'run-b',
+      objective: 'run-b',
+      sourceIdentity: `sha256:${'b'.repeat(64)}`,
+      projectId: 'shared-project',
+      workspaceId: 'worktree-b',
+    });
     const first = store.acquireWorkspaceMutationLockV2({
       projectId: 'shared-project',
       workspaceId: 'worktree-a',

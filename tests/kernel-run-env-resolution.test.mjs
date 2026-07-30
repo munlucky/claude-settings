@@ -41,7 +41,8 @@ test('Kernel host injects run, project, session, and workspace identity process-
   });
   assert.equal(env.MOON_RELAY_KERNEL_RUN_ID, 'run-1');
   assert.equal(env.MOON_RELAY_KERNEL_PROJECT_ID, 'project-1');
-  assert.equal(env.MOON_RELAY_KERNEL_SESSION_ID, 'session-1');
+  assert.equal(env.MOON_RELAY_KERNEL_SESSION_ID, 'codex-cli:session-1');
+  assert.equal(env.MOON_RELAY_KERNEL_PROVIDER, 'codex-cli');
   assert.equal(env.MOON_RELAY_KERNEL_WORKSPACE_ID, 'workspace-1');
 });
 
@@ -91,7 +92,8 @@ test('Codex thread identity bootstraps next without explicit Kernel binding vari
 
   assert.equal(result.status, 0, result.stderr || result.stdout);
   const payload = JSON.parse(result.stdout);
-  assert.equal(payload.runId, `codex-${threadId}`);
+  assert.match(payload.runId, /^run-[0-9a-f-]{36}$/i);
+  assert.doesNotMatch(payload.runId, new RegExp(threadId));
   assert.ok(payload.action);
 });
 

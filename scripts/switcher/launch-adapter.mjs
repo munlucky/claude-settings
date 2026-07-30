@@ -2,6 +2,7 @@ import path from 'node:path';
 import { spawn, execFileSync } from 'node:child_process';
 import { SURFACE_ENV } from './constants.mjs';
 import { resolveTrackRoots } from './paths.mjs';
+import { canonicalizeHostSessionId, providerForSurface } from '../kernel/run/host-session.mjs';
 
 function resolveClaudeDesktopAumid() {
   if (process.platform !== 'win32') return null;
@@ -29,11 +30,13 @@ export function buildProcessEnvironment({ surface, track, roots, workspaceRoot =
   const env = { ...baseEnv };
   if (SURFACE_ENV[surface]) env[SURFACE_ENV[surface]] = roots.providerHome;
   if (track === 'kernel') {
+    const provider = providerForSurface(surface);
     env.MOON_RELAY_KERNEL_HOME = roots.runtimeHome;
     env.PATH = `${path.join(roots.runtimeHome, 'bin')}${path.delimiter}${env.PATH || ''}`;
     if (runId) env.MOON_RELAY_KERNEL_RUN_ID = String(runId);
     if (projectId) env.MOON_RELAY_KERNEL_PROJECT_ID = String(projectId);
-    if (sessionId) env.MOON_RELAY_KERNEL_SESSION_ID = String(sessionId);
+    if (sessionId) env.MOON_RELAY_KERNEL_SESSION_ID = canonicalizeHostSessionId({ provider, sessionId });
+    env.MOON_RELAY_KERNEL_PROVIDER = provider;
     if (workspaceId) env.MOON_RELAY_KERNEL_WORKSPACE_ID = String(workspaceId);
     // Older switcher builds incorrectly exported the Kernel runtime through
     // MOONSHOT_RELAY_HOME. Do not propagate that poisoned alias into another

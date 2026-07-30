@@ -23,7 +23,8 @@ test('Kernel task binding is process-scoped in provider launch specs', () => {
   });
   assert.equal(spec.env.MOON_RELAY_KERNEL_RUN_ID, 'run-1');
   assert.equal(spec.env.MOON_RELAY_KERNEL_PROJECT_ID, 'project-1');
-  assert.equal(spec.env.MOON_RELAY_KERNEL_SESSION_ID, 'session-1');
+  assert.equal(spec.env.MOON_RELAY_KERNEL_SESSION_ID, 'codex-cli:session-1');
+  assert.equal(spec.env.MOON_RELAY_KERNEL_PROVIDER, 'codex-cli');
   assert.equal(spec.env.MOON_RELAY_KERNEL_WORKSPACE_ID, 'workspace-1');
 });
 

@@ -51,7 +51,7 @@ test('an owner-bound two-command run supplies truthful implementation provenance
       stage: 'engineering',
       obligationId: 'security-review',
     });
-    assert.equal(capsule.implementationReceipt.actorSessionId, hashSessionId('owner-session'));
+    assert.equal(capsule.implementationReceipt.actorSessionId, hashSessionId('unknown-host:owner-session'));
     assert.equal(capsule.implementationReceipt.usageReceiptId, undefined);
   } finally {
     await cp.close();

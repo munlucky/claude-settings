@@ -22,7 +22,8 @@ const DEFAULT_SOURCE_SNAPSHOT_ROOT = `${DEFAULT_STATE_ROOT}/source-snapshots`;
 const DEFAULT_CODEX_CLI_CACHE_ROOT = `${DEFAULT_STATE_ROOT}/codex-cli-cache`;
 const DEFAULT_PREPARED_WORKSPACE_ROOT = `${DEFAULT_STATE_ROOT}/prepared-workspaces`;
 const DEFAULT_DOCKER_IMAGE = 'moonshot-relay-harness-lab:local';
-const DEFAULT_CODEX_CLI_VERSION = '0.128.0';
+const DEFAULT_CODEX_CLI_VERSION = '0.145.0';
+const OFFICIAL_NPM_REGISTRY = 'https://registry.npmjs.org';
 const CONTAINER_SOURCE_ROOT = '/harness-source';
 const CONTAINER_WORKSPACE_ROOT = '/workspace';
 const CONTAINER_OUTPUT_ROOT = '/harness-run/output';
@@ -1014,6 +1015,7 @@ function dockerScript(runId, {
     `export HARNESS_LAB_CODEX_BIN='${codexBin}'`,
     `codex --version > '${CONTAINER_OUTPUT_ROOT}/${escapedRunId}/codex-cli-version.txt'`,
     `node bin/moonshot-relay.mjs install --runtime all --moonshot-home '${moonshotHome}' --codex-home '${codexHome}' --claude-home '${claudeHome}' --json > '${CONTAINER_OUTPUT_ROOT}/${escapedRunId}/install-result.json'`,
+    `ln -s /workspace/node_modules '${moonshotHome}/node_modules'`,
     useHostCodexAuth
       ? `cp '${CONTAINER_CODEX_AUTH_SOURCE_ROOT}/auth.json' '${codexHome}/auth.json' && chmod 600 '${codexHome}/auth.json'`
       : '',
@@ -1940,8 +1942,22 @@ async function ensureCodexCliCache(version = DEFAULT_CODEX_CLI_VERSION) {
       tarballs,
     };
   }
-  run(npmCommand(), ['pack', `@openai/codex@${version}`, '--pack-destination', cacheRoot]);
-  run(npmCommand(), ['pack', `@openai/codex@${version}-linux-x64`, '--pack-destination', cacheRoot]);
+  run(npmCommand(), [
+    'pack',
+    `@openai/codex@${version}`,
+    '--pack-destination',
+    cacheRoot,
+    '--registry',
+    OFFICIAL_NPM_REGISTRY,
+  ]);
+  run(npmCommand(), [
+    'pack',
+    `@openai/codex@${version}-linux-x64`,
+    '--pack-destination',
+    cacheRoot,
+    '--registry',
+    OFFICIAL_NPM_REGISTRY,
+  ]);
   if (!existsSync(cliPath) || !existsSync(linuxX64Path)) {
     throw new Error(`Codex CLI cache incomplete after npm pack: ${cacheRoot}`);
   }

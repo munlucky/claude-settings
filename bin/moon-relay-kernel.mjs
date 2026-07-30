@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { resolveKernelRuntimeHome, readProjectTrack } from '../scripts/kernel/runtime-home.mjs';
 import { resolveKernelNode } from '../scripts/kernel/runtime-resolver.mjs';
 import { computeKernelSourceIdentity } from '../scripts/kernel/control-plane.mjs';
+import { canonicalizeHostSessionId } from '../scripts/kernel/run/host-session.mjs';
 
 const args = process.argv.slice(2);
 const command = args[0] || 'doctor';
@@ -67,12 +68,25 @@ const assertKernelTrack = async (root = projectRoot) => {
 // absent, so direct skill invocations can bootstrap without weakening the
 // cross-session/project preflight.
 const codexThreadId = process.env.CODEX_THREAD_ID || null;
-const sessionId = getArgValue('--session-id') || process.env.MOON_RELAY_KERNEL_SESSION_ID || codexThreadId || null;
-const inferredRunId = process.env.MOON_RELAY_KERNEL_RUN_ID || (codexThreadId ? `codex-${codexThreadId}` : null);
+const nativeSessionId = getArgValue('--session-id') || process.env.MOON_RELAY_KERNEL_SESSION_ID || codexThreadId || null;
+const scopedSessionProvider = nativeSessionId?.match(/^([a-z][a-z0-9-]{0,31}):/)?.[1] || null;
+const hostProvider = getArgValue('--provider')
+  || process.env.MOON_RELAY_KERNEL_PROVIDER
+  || scopedSessionProvider
+  || (codexThreadId ? 'codex' : 'unknown-host');
+const sessionId = nativeSessionId
+  ? canonicalizeHostSessionId({ provider: hostProvider, sessionId: nativeSessionId })
+  : null;
+const legacySessionId = nativeSessionId && sessionId !== nativeSessionId && !nativeSessionId.includes(':')
+  ? nativeSessionId
+  : null;
+const inferredRunId = getArgValue('--run-id') || process.env.MOON_RELAY_KERNEL_RUN_ID || null;
 const kernelEnv = sessionId || inferredRunId
   ? {
       ...process.env,
       ...(sessionId ? { MOON_RELAY_KERNEL_SESSION_ID: sessionId } : {}),
+      ...(sessionId ? { MOON_RELAY_KERNEL_PROVIDER: hostProvider } : {}),
+      ...(legacySessionId ? { MOON_RELAY_KERNEL_LEGACY_SESSION_ID: legacySessionId } : {}),
       ...(inferredRunId ? { MOON_RELAY_KERNEL_RUN_ID: inferredRunId } : {}),
     }
   : process.env;
@@ -97,9 +111,43 @@ try {
   if (command === '--version' || command === 'version') {
     output({ productId: 'moon-relay-kernel', version: '0.1.0' });
   } else if (command === 'doctor') {
-    const runtimeHome = resolveKernelRuntimeHome();
+    const runtimeHome = runtimeHomeArg || resolveKernelRuntimeHome();
     const activeTrack = await readProjectTrack(process.cwd());
-    output({ productId: 'moon-relay-kernel', runtimeHome, activeTrack, status: activeTrack === 'kernel' ? 'ready' : 'wrong_harness' });
+    if (activeTrack !== 'kernel') {
+      output({ productId: 'moon-relay-kernel', runtimeHome, activeTrack, status: 'wrong_harness' });
+    } else {
+      let store;
+      let diagnostics;
+      try {
+        const { openKernelStateStore } = await import('../scripts/kernel/state-store.mjs');
+        const { resolveKernelProjectIdentity } = await import('../scripts/kernel/project-identity.mjs');
+        store = await openKernelStateStore({ runtimeHome });
+        diagnostics = store.diagnoseLifecycleState({
+          projectId: resolveKernelProjectIdentity({ cwd: process.cwd() }).projectId,
+        });
+      } catch (error) {
+        const ambiguous = String(error?.message || '').includes('UNIQUE constraint failed');
+        diagnostics = {
+          schemaVersion: 1,
+          status: 'degraded',
+          findings: [{
+            code: ambiguous ? 'ambiguous_session_binding' : 'kernel_state_unavailable',
+            severity: 'error',
+            message: error.message,
+          }],
+          counts: { [ambiguous ? 'ambiguous_session_binding' : 'kernel_state_unavailable']: 1 },
+        };
+      } finally {
+        store?.close();
+      }
+      output({
+        productId: 'moon-relay-kernel',
+        runtimeHome,
+        activeTrack,
+        status: diagnostics.status,
+        diagnostics,
+      });
+    }
   } else if (command === 'assert-track') {
     const runtimeHome = resolveKernelRuntimeHome();
     const activeTrack = await readProjectTrack(process.cwd());
@@ -158,18 +206,53 @@ try {
     // needs a separate `start` command (P0-1).
     const cp = await openControlPlane();
     const positionalRunId = args[1] && !args[1].startsWith('--') ? args[1] : null;
-    const runId = await cp.resolveRunId({
-      explicitRunId: getArgValue('--run-id') || positionalRunId,
-      envRunId: kernelEnv.MOON_RELAY_KERNEL_RUN_ID || null,
-    });
     const contractFile = getArgValue('--contract-json') || getArgValue('--objective-json');
+    const explicitRunId = getArgValue('--run-id') || positionalRunId;
+    const taskContract = contractFile
+      ? JSON.parse(readFileSync(path.resolve(contractFile), 'utf8'))
+      : null;
+    let invocation;
+    if (contractFile) {
+      invocation = cp.resolveBoundInvocation({
+        explicitRunId,
+        envRunId: kernelEnv.MOON_RELAY_KERNEL_RUN_ID || null,
+        taskContract,
+      });
+    } else {
+      const runId = await cp.resolveRunId({
+        explicitRunId,
+        envRunId: kernelEnv.MOON_RELAY_KERNEL_RUN_ID || null,
+      });
+      invocation = { mode: 'resume', runId };
+    }
     let res;
     if (contractFile) {
-      const taskContract = JSON.parse(readFileSync(path.resolve(contractFile), 'utf8'));
-      const ensured = await cp.ensureRun({ runId, objective: taskContract.objective, taskContract });
-      res = ensured.next;
+      if (invocation.mode === 'successor') {
+        const successor = await cp.startSuccessor({
+          invocation,
+          objective: taskContract.objective,
+          taskContract,
+        });
+        res = successor.next;
+      } else if (invocation.mode === 'finalization-retry') {
+        throw Object.assign(new Error('finalization_incomplete'), {
+          code: 'finalization_incomplete',
+          errorCode: 'finalization_incomplete',
+          nextAction: 'retry-finalization',
+          runId: invocation.runId,
+        });
+      } else if (invocation.mode === 'done') {
+        res = await cp.next(invocation.runId);
+      } else {
+        const ensured = await cp.ensureRun({
+          runId: invocation.runId,
+          objective: taskContract.objective,
+          taskContract,
+        });
+        res = ensured.next;
+      }
     } else {
-      res = await cp.next(runId);
+      res = await cp.next(invocation.runId);
     }
     await cp.close();
     output(res);
@@ -278,6 +361,13 @@ try {
     throw new Error(`Unknown command: ${command}`);
   }
 } catch (error) {
-  console.error(json ? JSON.stringify({ schemaVersion: 1, status: 'error', errorCode: error.code || error.message, message: error.message }) : error.message);
+  console.error(json ? JSON.stringify({
+    schemaVersion: 1,
+    status: 'error',
+    errorCode: error.errorCode || error.code || error.message,
+    message: error.message,
+    ...(error.nextAction ? { nextAction: error.nextAction } : {}),
+    ...(error.runId ? { runId: error.runId } : {}),
+  }) : error.message);
   process.exitCode = 1;
 }

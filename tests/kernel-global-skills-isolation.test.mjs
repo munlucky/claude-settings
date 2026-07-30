@@ -78,6 +78,7 @@ test('a Kernel launch leaves the account-root skills directory untouched', async
       track: 'kernel',
       sourceRoot: process.cwd(),
       dryRun: true,
+      processProvider: async () => [],
       launchSpec: { command: 'claude', args: [], roots: { runtimeHome, providerHome }, env: {} },
     });
 
@@ -101,6 +102,7 @@ test('a Kernel launch refuses a shared mutable provider surface and leaves no jo
       track: 'kernel',
       sourceRoot: process.cwd(),
       dryRun: false,
+      processProvider: async () => [],
       spawnImpl: () => { spawned += 1; return { pid: 1234, unref() {} }; },
       launchSpec: { command: 'claude', args: [], roots: { runtimeHome, providerHome }, env: {} },
     });
@@ -123,6 +125,7 @@ test('a Kernel launch refuses a provider home that does not serve the entrypoint
       track: 'kernel',
       sourceRoot: process.cwd(),
       dryRun: true,
+      processProvider: async () => [],
       launchSpec: { command: 'claude', args: [], roots: { runtimeHome, providerHome }, env: {} },
     });
 

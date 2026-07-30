@@ -914,8 +914,15 @@ test('docker prepare script copies source and installs dependencies before stric
   assert.match(script, /-C '\/harness-source' -cf - \. \| tar -C '\/prepared\/workspace' -xf -/);
   assert.match(script, /cd '\/prepared\/workspace'/);
   assert.match(script, /npm ci --no-audit --no-fund/);
-  assert.match(script, /npm install --prefix '\/prepared\/codex-cli' '\/codex-cache\/openai-codex-0\.128\.0\.tgz' '@openai\/codex-linux-x64@file:\/codex-cache\/openai-codex-0\.128\.0-linux-x64\.tgz'/);
+  assert.match(script, /npm install --prefix '\/prepared\/codex-cli' '\/codex-cache\/openai-codex-0\.145\.0\.tgz' '@openai\/codex-linux-x64@file:\/codex-cache\/openai-codex-0\.145\.0-linux-x64\.tgz'/);
   assert.match(script, /'\/prepared\/codex-cli\/node_modules\/\.bin\/codex' --version > '\/prepared\/codex-cli-version\.txt'/);
+});
+
+test('Codex CLI cache fetches versioned packages from the official npm registry', async () => {
+  const source = await readFile(path.join(root, 'tools', 'harness-lab', 'harness-loop.mjs'), 'utf8');
+  assert.match(source, /const DEFAULT_CODEX_CLI_VERSION = '0\.145\.0'/);
+  assert.match(source, /const OFFICIAL_NPM_REGISTRY = 'https:\/\/registry\.npmjs\.org'/);
+  assert.match(source, /'--registry',\s+OFFICIAL_NPM_REGISTRY/g);
 });
 
 test('docker loop script runs the lab from prepared read-only workspace', () => {
@@ -934,6 +941,7 @@ test('docker loop script runs the lab from prepared read-only workspace', () => 
   assert.match(script, /--codex-home '\/harness-run\/homes\/candidate-contract\/candidate\/codex'/);
   assert.match(script, /--claude-home '\/harness-run\/homes\/candidate-contract\/candidate\/claude'/);
   assert.match(script, /> '\/harness-run\/output\/candidate-contract\/install-result\.json'/);
+  assert.match(script, /ln -s \/workspace\/node_modules '\/harness-run\/homes\/candidate-contract\/candidate\/moonshot-relay\/node_modules'/);
   assert.match(script, /cp package\/profile-templates\/codex\/\.codex\/config\.toml '\/harness-run\/homes\/candidate-contract\/candidate\/codex\/config\.toml'/);
   assert.match(script, /export MOONSHOT_RELAY_HOME='\/harness-run\/homes\/candidate-contract\/candidate\/moonshot-relay'/);
   assert.match(script, /export CODEX_HOME='\/harness-run\/homes\/candidate-contract\/candidate\/codex'/);
