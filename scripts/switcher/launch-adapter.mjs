@@ -92,6 +92,19 @@ export function spawnTrack(spec, { spawnImpl = spawn } = {}) {
       return { pid: child.pid || null, status: 'launch_requested', child, launcher: 'cmd_shell_activation' };
     }
   }
+  if (process.platform === 'darwin' && (spec.surface === 'claude_cli' || spec.surface === 'claude')) {
+    const openArgs = ['-a', 'Claude'];
+    if (spec.args.length) openArgs.push('--args', ...spec.args);
+    const child = spawnImpl('open', openArgs, {
+      env: spec.env,
+      cwd: spec.cwd || process.cwd(),
+      detached: true,
+      stdio: 'ignore',
+    });
+    child.on?.('error', () => {});
+    child.unref?.();
+    return { pid: child.pid || null, status: 'launch_requested', child, launcher: 'macos_open' };
+  }
   if (process.platform === 'win32' && spec.surface?.endsWith('_cli')) {
     const cmdExecutable = process.env.ComSpec || path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'cmd.exe');
     const resolvedTarget = resolveCommandPath(spec.command);
