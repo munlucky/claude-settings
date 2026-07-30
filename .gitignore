@@ -12,6 +12,8 @@ dist/
 .moonshot-relay/
 .moonshot-state/
 state/
+.moon-relay/
+/AGENTS.override.md
 .claude/browser-runtime/
 .claude/cache/
 .claude/traces/
