@@ -18,8 +18,126 @@ import { canonicalDigest } from '../canonical-digest.mjs';
 import { gitLsFiles } from '../../lib/git-safe.mjs';
 import { observeWorkspaceIdentity } from './workspace-identity.mjs';
 import { projectRunState } from '../state-projector.mjs';
+import { buildActiveWave, isApprovalSource, waveStatusIsActive } from './active-wave.mjs';
 
 export const createWorkCursorApi = ({ store, projectRoot, runtimeHome }) => ({
+  getActiveWave(runId) {
+    return store.getActiveWave ? store.getActiveWave(runId) : null;
+  },
+
+  async beginWave(runId, steps = [], options = {}) {
+    const run = store.getRun(runId);
+    if (!run) throw new Error(`Run ${runId} not found`);
+    if (steps.length < 2) throw Object.assign(new Error('Wayfinder requires at least two executable steps'), { code: 'WAVE_TOO_SMALL' });
+    if (run.taskContract?.safeWave?.approved !== true || !run.taskContract.safeWave.approvedBy || !run.taskContract.safeWave.integrationVerification?.commandRef) {
+      throw Object.assign(new Error('Safe Wave approval is not persisted for this run'), { code: 'WAVE_NOT_APPROVED' });
+    }
+    if (!isApprovalSource(options.approvalSource)) {
+      throw Object.assign(new Error('Wayfinder approval source is not a permitted Kernel source'), { code: 'WAVE_APPROVAL_SOURCE_INVALID' });
+    }
+    const wave = buildActiveWave({
+      run,
+      steps,
+      baseCommitSha: options.baseCommitSha,
+      baseMutationRevision: options.baseMutationRevision ?? run.mutationRevision,
+      baseWorkspaceIdentity: options.baseWorkspaceIdentity,
+      integrationCommandRef: options.integrationCommandRef || run.taskContract.safeWave.integrationVerification.commandRef,
+      approvalSource: options.approvalSource,
+      workerLimit: options.workerLimit,
+      waveId: options.waveId,
+    });
+    const created = store.createRunWave(wave, { stepIds: steps.map((step) => step.stepId) });
+    for (const step of steps) {
+      store.updateRunStep(runId, step.stepId, {
+        state: 'running',
+        startedAt: step.startedAt || new Date().toISOString(),
+        baseWorkspaceIdentity: options.baseWorkspaceIdentity,
+        integrationState: 'pending',
+      });
+    }
+    return store.updateRunWave(created.waveId, { status: 'preparing' });
+  },
+
+  updateWave(runId, waveId, patch = {}) {
+    const wave = store.getRunWave(waveId);
+    if (!wave || wave.runId !== runId) throw new Error('wave-run-mismatch');
+    return store.updateRunWave(waveId, patch);
+  },
+
+  bindStepAttempt(runId, waveId, stepId, binding = {}) {
+    const wave = store.getRunWave(waveId);
+    const step = store.getRunStep(runId, stepId);
+    if (!wave || wave.runId !== runId || !step || step.waveId !== waveId) throw Object.assign(new Error('step-wave-mismatch'), { code: 'STEP_WAVE_MISMATCH' });
+    store.updateRunStep(runId, stepId, {
+      state: 'running',
+      executionWorkspaceId: binding.workspaceId || null,
+      baseWorkspaceIdentity: binding.baseWorkspaceIdentity || wave.baseWorkspaceIdentity,
+      capsuleDigest: binding.capsuleId || binding.capsuleDigest || null,
+    });
+    return store.recordStepAttempt(runId, {
+      stepId,
+      actorSessionId: binding.actorSessionId,
+      capsuleId: binding.capsuleId,
+      capsuleDigest: binding.capsuleDigest,
+      waveId,
+      workspaceId: binding.workspaceId,
+      workspaceRootHash: binding.workspaceRootHash,
+      baseWorkspaceIdentity: binding.baseWorkspaceIdentity || wave.baseWorkspaceIdentity,
+      workspaceIdentityStart: binding.workspaceIdentity || binding.baseWorkspaceIdentity || wave.baseWorkspaceIdentity,
+      verificationRefs: binding.verificationRefs || [],
+      knowledgeObservationRefs: binding.knowledgeObservationRefs || [],
+    });
+  },
+
+  updateStepAttempt(attemptId, patch = {}) {
+    return store.updateStepAttempt(attemptId, patch);
+  },
+
+  recordStepResult(runId, waveId, stepId, result) {
+    return store.recordStepResult(runId, waveId, stepId, result);
+  },
+
+  failStepAttempt(runId, waveId, stepId, failure) {
+    const step = store.getRunStep(runId, stepId);
+    if (!step || step.waveId !== waveId) throw Object.assign(new Error('step-wave-mismatch'), { code: 'STEP_WAVE_MISMATCH' });
+    const attempt = store.getStepAttempts(runId, { stepId }).filter((entry) => entry.waveId === waveId).at(-1);
+    if (attempt) store.finishStepAttempt(attempt.id, { status: 'failed', failureReasons: [failure?.code || failure?.message || String(failure || 'worker-failed')] });
+    return this.failStep(runId, stepId, { reason: failure?.code || failure?.message || 'worker-failed' });
+  },
+
+  beginIntegration(runId, waveId) {
+    const wave = store.getRunWave(waveId);
+    if (!wave || wave.runId !== runId) throw new Error('wave-run-mismatch');
+    if (wave.status === 'dispatching') store.updateRunWave(waveId, { status: 'collecting' });
+    if (store.getRunWave(waveId).status === 'collecting') return store.updateRunWave(waveId, { status: 'integrating' });
+    return store.getRunWave(waveId);
+  },
+
+  recordIntegrationReceipt(runId, waveId, receipt) {
+    const wave = store.getRunWave(waveId);
+    if (!wave || wave.runId !== runId) throw new Error('wave-run-mismatch');
+    return store.recordWaveIntegrationReceipt(receipt);
+  },
+
+  completeWave(runId, waveId, receipt = null) {
+    const wave = store.getRunWave(waveId);
+    if (!wave || wave.runId !== runId) throw new Error('wave-run-mismatch');
+    if (wave.status === 'integrating') store.updateRunWave(waveId, { status: 'verifying' });
+    return store.completeRunWave(runId, waveId, receipt);
+  },
+
+  abortWave(runId, waveId, reason) {
+    return store.failRunWave(runId, waveId, reason, 'aborted');
+  },
+
+  failWave(runId, waveId, reason) {
+    return store.failRunWave(runId, waveId, reason, 'failed');
+  },
+
+  markStepIntegrated(runId, stepId, receiptId) {
+    return store.markStepIntegrated(runId, stepId, { receiptId });
+  },
+
   // --- Run Step Ledger (K2) -------------------------------------------
   // No model-visible command is added: `next` returns the current step inside
   // the action it already returned, and `report` answers it.
@@ -132,6 +250,17 @@ export const createWorkCursorApi = ({ store, projectRoot, runtimeHome }) => ({
     const run = store.getRun(runId);
     if (!run) return { steps: [], reason: 'run-not-found', mode: 'sequential' };
     const steps = this.ensureRunStepsMigrated(runId);
+    const activeWave = store.getActiveWave ? store.getActiveWave(runId) : null;
+    if (activeWave && waveStatusIsActive(activeWave.status)) {
+      const activeSteps = steps.filter((step) => step.waveId === activeWave.waveId && step.planRevision === activeWave.planRevision);
+      return {
+        steps: activeSteps,
+        reason: 'active-wave',
+        mode: activeSteps.length > 1 ? 'parallel' : 'sequential',
+        activeWave,
+        integrationVerification: { commandRef: activeWave.integrationCommandRef },
+      };
+    }
     const safeWave = run.taskContract?.safeWave || null;
 
     let integrationVerification = null;
@@ -157,6 +286,7 @@ export const createWorkCursorApi = ({ store, projectRoot, runtimeHome }) => ({
       reason: blockedReason || selection.reason,
       mode: selection.steps.length > 1 ? 'parallel' : 'sequential',
       integrationVerification,
+      activeWave: null,
     };
   },
 
@@ -183,6 +313,39 @@ export const createWorkCursorApi = ({ store, projectRoot, runtimeHome }) => ({
     const steps = this.ensureRunStepsMigrated(runId);
     if (steps.length === 0) return { step: null };
     const scoped = steps.filter((step) => step.planRevision === run.planRevision);
+    const activeWave = store.getActiveWave ? store.getActiveWave(runId) : null;
+
+    if (activeWave) {
+      if (!report.stepId) {
+        return { rejection: [{ obligationId: 'step', command: 'kernel report', errorSummary: 'An Active Wave report must name its stepId' }] };
+      }
+      const named = scoped.find((step) => step.stepId === report.stepId);
+      if (!named || named.waveId !== activeWave.waveId || !activeWave.stepIds.includes(named.stepId)) {
+        return { rejection: [{ obligationId: 'step', command: 'kernel report', errorSummary: `Step "${report.stepId}" is not a member of the Active Wave` }] };
+      }
+      if (report.waveId && report.waveId !== activeWave.waveId) {
+        return { rejection: [{ obligationId: 'wave', command: 'kernel report', errorSummary: 'Report waveId does not match the Active Wave' }] };
+      }
+      if (report.planRevision !== undefined && Number(report.planRevision) !== Number(activeWave.planRevision)) {
+        return { rejection: [{ obligationId: 'step', command: 'kernel report', errorSummary: 'Report planRevision does not match the Active Wave' }] };
+      }
+      if (!['running', 'reported', 'verifying'].includes(named.state)) {
+        return { rejection: [{ obligationId: 'step', command: 'kernel report', errorSummary: `Step "${named.stepId}" is ${named.state} and cannot be reported in this Wave` }] };
+      }
+      const attempt = store.getStepAttempts(runId, { stepId: named.stepId }).filter((entry) => entry.waveId === activeWave.waveId).at(-1);
+      if (!attempt) return { rejection: [{ obligationId: 'step', command: 'kernel report', errorSummary: `Step "${named.stepId}" has no active Wave attempt binding` }] };
+      if (attempt.capsuleDigest && report.capsuleId !== attempt.capsuleDigest) {
+        return { rejection: [{ obligationId: 'capsule', command: 'kernel report', errorSummary: 'Report capsule does not match the bound Wave attempt' }] };
+      }
+      const actorSessionId = report.actorSessionId || report.sessionId || report.workerSessionId;
+      if (attempt.actorSessionId && actorSessionId !== attempt.actorSessionId) {
+        return { rejection: [{ obligationId: 'session', command: 'kernel report', errorSummary: 'Report session does not match the bound Worker session' }] };
+      }
+      if (attempt.workspaceId && report.workspaceId !== attempt.workspaceId) {
+        return { rejection: [{ obligationId: 'workspace', command: 'kernel report', errorSummary: 'Report workspace does not match the bound Step Worktree' }] };
+      }
+      return { step: named, activeWave, attempt };
+    }
 
     if (report.stepId) {
       const named = scoped.find((step) => step.stepId === report.stepId);
@@ -237,8 +400,9 @@ export const createWorkCursorApi = ({ store, projectRoot, runtimeHome }) => ({
   // comes from persisted state, the command catalog, and a scoped repository
   // scan — never from the conversation. Built deterministically, so a fresh
   // process rebuilds the same capsule id from the same SQLite state.
-  async buildCapsule(runId, { role = 'implementer', decision = null, step = null, objective = null, changedPaths = [] } = {}) {
-    const run = store.getRun(runId);
+  async buildCapsule(runId, { role = 'implementer', decision = null, step = null, objective = null, changedPaths = [], workspaceIdentity = null } = {}) {
+    const persistedRun = store.getRun(runId);
+    const run = workspaceIdentity ? { ...persistedRun, currentWorkspaceIdentity: workspaceIdentity } : persistedRun;
     if (!run) throw new Error(`Run ${runId} not found`);
     // The capsule is scoped to the step the ledger says is current (K2), so a
     // decomposed run hands each worker only its own unit.
@@ -381,8 +545,11 @@ export const createWorkCursorApi = ({ store, projectRoot, runtimeHome }) => ({
 
     // A named capsule must still describe this run; naming a stale one is an
     // error rather than something to silently fall back from.
+    const capsuleRun = step?.baseWorkspaceIdentity
+      ? { ...run, currentWorkspaceIdentity: step.baseWorkspaceIdentity }
+      : run;
     if (report.capsuleId) {
-      const staleness = capsuleStaleness({ capsule, run });
+      const staleness = capsuleStaleness({ capsule, run: capsuleRun });
       if (staleness.stale) {
         return [{ obligationId: 'capsule', command: 'kernel report', errorSummary: `Execution capsule "${capsule.capsuleId}" no longer describes this run: ${staleness.reasons.join(', ')}. Request the current action again to receive a fresh capsule.` }];
       }
@@ -393,7 +560,7 @@ export const createWorkCursorApi = ({ store, projectRoot, runtimeHome }) => ({
     // own scope governs — a superseded capsule must never widen or narrow the
     // replacement step's boundary.
     const capsuleGoverns = Boolean(capsule)
-      && !capsuleStaleness({ capsule, run }).stale
+      && !capsuleStaleness({ capsule, run: capsuleRun }).stale
       && (!capsule.stepId || (Boolean(step) && capsule.stepId === step.stepId));
     const scope = capsuleGoverns
       ? { source: 'capsule', label: `work unit ${capsule.capsuleId}`, obligationId: 'capsule', allowedPaths: capsule.workUnit?.allowedPaths || [], forbiddenPaths: capsule.workUnit?.forbiddenPaths || [] }

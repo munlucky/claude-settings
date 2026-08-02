@@ -13,6 +13,7 @@ import { resolveOptimizationModes } from './provider-prompt-policy.mjs';
 import { resolveCodexModelPolicy } from './codex-model-policy.mjs';
 import { resolveClaudeEffort } from './claude-effort-policy.mjs';
 import { buildModelCapsuleView } from './model-capsule-view.mjs';
+import { dispatchKernelRun } from './wave-dispatcher.mjs';
 
 // A decision carries no risk-shape data (security/migration/...) to the Host
 // today, only actionKind/riskTier/reasonCodes, so the recommendation below is
@@ -172,6 +173,34 @@ export const dispatchKernelTurn = async ({
   now = () => new Date().toISOString(),
 } = {}) => {
   if (!adapter) throw new Error('dispatchKernelTurn requires a Host adapter');
+  const wayfinderMode = String(env.MOON_RELAY_KERNEL_WAYFINDER_MODE || 'shadow').toLowerCase();
+  if (wayfinderMode === 'on' && actionContext.skipWayfinder !== true && controlPlane?.getExecutableSteps) {
+    return dispatchKernelRun({
+      controlPlane,
+      runId,
+      adapter,
+      projectRoot: controlPlane.projectRoot,
+      runtimeHome,
+      stateStore: controlPlane.stateStore,
+      parentSessionId,
+      env,
+      sequentialDispatcher: () => dispatchKernelTurn({
+        controlPlane,
+        runId,
+        adapter,
+        registry,
+        runtimeHome,
+        env,
+        overrides,
+        actionContext: { ...actionContext, skipWayfinder: true },
+        parentSessionId,
+        toolPolicy,
+        permissionPolicy,
+        economics,
+        now,
+      }),
+    });
+  }
   const hostCapabilities = adapter.capabilities;
   const turn = await controlPlane.hostNext(runId, { hostCapabilities, actionContext });
   if (turn.status === 'not_found') return turn;

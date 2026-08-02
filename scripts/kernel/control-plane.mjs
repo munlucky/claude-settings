@@ -254,6 +254,11 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
   };
 
   return {
+    // Internal Host hooks. They do not add a model-visible command or stage;
+    // the Host uses them to build a Wave behind next/report.
+    projectRoot,
+    stateStore: store,
+    discoverProjectCommands: () => discoverProjectCommands({ projectRoot }),
     // K1 + K2 live in one module: the current work unit and the bounded context
     // it is executed with. Spread as methods so `this` stays the control plane.
     ...createWorkCursorApi({ store, projectRoot, runtimeHome }),
@@ -930,18 +935,19 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       const run = store.getRun(runId);
       if (!run) return { schemaVersion: 1, runId, status: 'not_found' };
       const capabilities = normalizeHostCapabilities(hostCapabilities);
-      let modelInput = await this.next(runId);
+      let modelInput = await this.next(runId, { stepId: actionContext.stepId || null });
       if (modelInput.action?.type === 'baseline-required') {
         await this.captureBaseline(runId, {
           commandRefs: modelInput.action.commandRefs,
           timeoutMs: actionContext.baselineTimeoutMs || 120000,
         });
-        modelInput = await this.next(runId);
+        modelInput = await this.next(runId, { stepId: actionContext.stepId || null });
       }
       let mutationLock = null;
+      const workspaceIdForTurn = actionContext.workspaceId || run.workspaceId || effectiveWorkspaceId;
       if (['implement', 'fix'].includes(modelInput.action?.type)) {
         const lockResult = store.acquireWorkspaceMutationLockV2({
-          workspaceId: run.workspaceId || effectiveWorkspaceId,
+          workspaceId: workspaceIdForTurn,
           projectId: run.projectId,
           runId,
           sessionToken: holder,
@@ -982,7 +988,13 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
             obligationId: decision.obligationId,
             changedPaths: actionContext.changedPaths || [],
           })
-          : await this.buildCapsule(runId, { role: 'implementer', decision, changedPaths: actionContext.changedPaths || [] });
+          : await this.buildCapsule(runId, {
+            role: 'implementer',
+            decision,
+            step: actionContext.stepId ? this.ensureRunStepsMigrated(runId).find((entry) => entry.stepId === actionContext.stepId) : null,
+            changedPaths: actionContext.changedPaths || [],
+            workspaceIdentity: actionContext.workspaceIdentity || null,
+          });
         if (modelInput.action) modelInput.action.capsuleId = executionCapsule.capsuleId;
       }
 
@@ -1388,7 +1400,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     },
 
     // Model-visible command 1 of 2: what to do now.
-    async next(runId) {
+    async next(runId, { stepId = null } = {}) {
       try {
         preflight(runId, 'next');
       } catch (error) {
@@ -1447,7 +1459,10 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       }
       // K2: the model is handed ONE work unit, never the whole plan. A synthetic
       // step carries the run itself, so a simple task looks exactly as before.
-      const step = this.getCurrentStep(runId);
+      const requestedStep = stepId
+        ? this.ensureRunStepsMigrated(runId).find((entry) => entry.stepId === stepId && entry.planRevision === run.planRevision)
+        : null;
+      const step = requestedStep || this.getCurrentStep(runId);
       if (step && ['implement', 'fix', 'review', 'report'].includes(payload.action?.type)) {
         payload.action.step = {
           stepId: step.stepId,
@@ -1713,8 +1728,18 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       // rows so retry counting survives restarts.
       const attempt = store.recordAttempt(runId, { attemptNumber: store.nextAttemptNumber(runId), state: run.state, status: 'started' });
 
-      const observation = observeWorkspaceIdentity({ projectRoot });
-      const observed = store.observeWorkspaceIdentity(runId, observation.identity);
+      const waveAttempt = stepResolution.attempt || null;
+      const boundWorkspaceId = report.workspaceId || waveAttempt?.workspaceId || null;
+      const boundWorkspace = boundWorkspaceId && store.getProjectWorkspace
+        ? store.getProjectWorkspace(boundWorkspaceId)
+        : null;
+      const observation = observeWorkspaceIdentity({ projectRoot: boundWorkspace?.canonicalRoot || projectRoot });
+      // A Worker Worktree has its own identity and mutation lock. Observing it
+      // must not advance the Parent Delivery Workspace mutation revision; the
+      // revision advances once, after Integration materializes the Wave.
+      const observed = stepResolution.activeWave
+        ? { changed: false, run: store.getRun(runId) }
+        : store.observeWorkspaceIdentity(runId, observation.identity);
 
       // The step moves to `running` and opens its own attempt row, so retries
       // and failures are counted per unit of work rather than per run.
@@ -1723,12 +1748,15 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         if (['ready', 'failed', 'planned'].includes(activeStep.state)) {
           this.startStep(runId, activeStep.stepId, { workspaceIdentity: observation.identity, capsuleDigest: report.capsuleId ? store.getExecutionCapsule(report.capsuleId, { runId })?.provenance?.capsuleDigest : null });
         }
-        stepAttempt = store.recordStepAttempt(runId, {
+        stepAttempt = waveAttempt || store.recordStepAttempt(runId, {
           stepId: activeStep.stepId,
-          capsuleDigest: report.capsuleId ? store.getExecutionCapsule(report.capsuleId, { runId })?.provenance?.capsuleDigest || null : null,
+          capsuleDigest: report.capsuleId ? store.getExecutionCapsule(report.capsuleId, { runId })?.provenance?.capsuleDigest || report.capsuleId : null,
           workspaceIdentityStart: observation.identity,
           summary: report.summary || null,
           changedPaths: report.changedPaths,
+          waveId: stepResolution.activeWave?.waveId || null,
+          workspaceId: report.workspaceId || null,
+          baseWorkspaceIdentity: stepResolution.activeWave?.baseWorkspaceIdentity || null,
         });
       }
 
@@ -1942,7 +1970,16 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       const stepOutcome = activeStep
         ? this.settleStep(runId, { step: activeStep, attempt: stepAttempt, report, failures, outstanding, observation })
         : null;
-      const stepsSettled = allStepsPassed(store.getRunSteps(runId), refreshed.planRevision);
+      const currentSteps = store.getRunSteps(runId, { planRevision: refreshed.planRevision });
+      const wayfinderWaveIds = [...new Set(currentSteps.map((step) => step.waveId).filter(Boolean))];
+      const deliveryIdentity = store.getRun(runId)?.currentWorkspaceIdentity;
+      const integrationsFresh = wayfinderWaveIds.every((waveId) => {
+        const wave = store.getRunWave?.(waveId);
+        const receipts = store.getWaveIntegrationReceipts?.(waveId) || [];
+        return wave?.status === 'integrated'
+          && receipts.some((receipt) => receipt.status === 'integrated' && (!deliveryIdentity || receipt.deliveryWorkspaceIdentity === deliveryIdentity));
+      });
+      const stepsSettled = allStepsPassed(currentSteps, refreshed.planRevision) && integrationsFresh;
 
       let finalization = null;
       if (failures.length === 0 && outstanding.length === 0 && stepsSettled && verifications.length > 0 && refreshed.state === 'PROVE') {
