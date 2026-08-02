@@ -2293,7 +2293,19 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       const wave = this.getRunWave(waveId);
       if (!wave || wave.runId !== runId) throw new Error('wave-run-mismatch');
       if (wave.status !== status) this.updateRunWave(waveId, { status, failureCode });
-      db.prepare(`UPDATE run_steps SET integration_state=CASE WHEN integration_state='integrated' THEN 'superseded' ELSE integration_state END, updated_at=? WHERE run_id=? AND wave_id=?`).run(now(), runId, waveId);
+      // A failed integration must return the affected Steps to the executable
+      // frontier. Leaving them as passed/pending makes the failed Wave terminal
+      // from the ledger's perspective: selectExecutableSteps only considers
+      // ready/failed Steps and dependency satisfaction rejects pending
+      // integration. Preserve genuinely integrated results, but make every
+      // other Step retryable with an explicit failed integration state.
+      db.prepare(`
+        UPDATE run_steps
+        SET state=CASE WHEN integration_state='integrated' THEN state ELSE 'failed' END,
+            integration_state=CASE WHEN integration_state='integrated' THEN 'superseded' ELSE 'failed' END,
+            updated_at=?
+        WHERE run_id=? AND wave_id=?
+      `).run(now(), runId, waveId);
       return this.getRunWave(waveId);
     },
 

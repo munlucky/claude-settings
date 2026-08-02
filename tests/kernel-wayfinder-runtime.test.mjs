@@ -6,7 +6,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
 import { buildActiveWave, resolveWayfinderAdmission } from '../scripts/kernel/run/active-wave.mjs';
-import { hostSupportsWayfinder } from '../scripts/host/kernel/wave-dispatcher.mjs';
+import { createCodexAdapter } from '../scripts/host/kernel/adapters/codex.mjs';
+import { dispatchKernelStep, hostSupportsWayfinder } from '../scripts/host/kernel/wave-dispatcher.mjs';
 import { observeWorkspaceIdentity } from '../scripts/kernel/run/workspace-identity.mjs';
 
 const git = (cwd, args) => {
@@ -103,9 +104,73 @@ test('Active Wave accepts independently bound reports and rejects cross-worker r
     assert.equal(acceptedB.step.stepId, executable.steps[1].stepId);
     const crossWorker = controlPlane.resolveReportStep('run-wave-report', { stepId: executable.steps[0].stepId, waveId: wave.waveId, capsuleId: 'capsule-b', actorSessionId: 'worker-b', workspaceId: 'workspace-b', planRevision: run.planRevision, changedPaths: [] });
     assert.equal(crossWorker.rejection[0].obligationId, 'capsule');
+
+    controlPlane.failWave('run-wave-report', wave.waveId, 'integration-verification-failed');
+    const retryable = controlPlane.getRunSteps('run-wave-report', { planRevision: run.planRevision });
+    assert.deepEqual(retryable.map((step) => step.state), ['failed', 'failed']);
+    assert.deepEqual(retryable.map((step) => step.integrationState), ['failed', 'failed']);
+    assert.equal(controlPlane.getExecutableSteps('run-wave-report').steps.length, 2);
   } finally {
     if (controlPlane) await controlPlane.close();
     await rm(projectRoot, { recursive: true, force: true });
     await rm(runtimeHome, { recursive: true, force: true });
   }
+});
+
+test('Wayfinder worker adapters preserve the isolated session boundary', async () => {
+  let received = null;
+  const adapter = createCodexAdapter({
+    launch: async (request) => {
+      received = request;
+      return { status: 'completed', sessionId: 'worker-session' };
+    },
+  });
+  await adapter.dispatch({
+    decision: { modelClass: 'value_coding', permissions: 'workspace_write', role: 'implementer', actionKind: 'implement' },
+    resolution: { model: 'worker-model', effort: 'medium', enforcementIntent: 'enforced' },
+    strategy: 'session-model-override',
+    executionContract: {},
+    workingDirectory: 'C:/runtime/step-a',
+    environment: { MOON_RELAY_KERNEL_STEP_ID: 'step-a' },
+    parentSessionId: 'parent-session',
+    concurrencyGroup: 'wave-1',
+    childSession: { maxNestedAgents: 0, canDelegate: false, canCommit: false },
+  });
+  assert.equal(received.workingDirectory, 'C:/runtime/step-a');
+  assert.equal(received.environment.MOON_RELAY_KERNEL_STEP_ID, 'step-a');
+  assert.equal(received.parentSessionId, 'parent-session');
+  assert.equal(received.concurrencyGroup, 'wave-1');
+  assert.deepEqual(received.childSession, { maxNestedAgents: 0, canDelegate: false, canCommit: false });
+});
+
+test('Wayfinder worker completion requires an accepted Step report', async () => {
+  const step = { stepId: 'step-a', objective: 'update a' };
+  const workspace = { workspaceId: 'workspace-a', workspaceRoot: 'C:/runtime/step-a', baseWorkspaceIdentity: 'sha256:base' };
+  const controlPlane = {
+    bindStepAttempt: async () => ({ id: 'attempt-a', actorSessionId: 'worker-a' }),
+    hostNext: async () => ({ runId: 'run-a', executionCapsule: null, hostDirective: { modelRouteDecision: {} }, modelInput: {} }),
+    report: async () => ({ status: 'in-progress', step: { state: 'passed' } }),
+  };
+  const passed = await dispatchKernelStep({
+    controlPlane,
+    runId: 'run-a',
+    waveId: 'wave-a',
+    step,
+    workspace,
+    adapter: {},
+    dispatchStep: async () => ({ status: 'completed', report: { stepId: 'step-a' } }),
+  });
+  assert.equal(passed.status, 'passed');
+
+  const missingReport = await dispatchKernelStep({
+    controlPlane,
+    runId: 'run-a',
+    waveId: 'wave-a',
+    step,
+    workspace,
+    adapter: {},
+    dispatchStep: async () => ({ status: 'completed' }),
+  });
+  assert.equal(missingReport.status, 'failed');
+  assert.equal(missingReport.failureCode, 'worker-report-missing');
 });

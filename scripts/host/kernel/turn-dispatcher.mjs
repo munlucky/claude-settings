@@ -157,6 +157,97 @@ export const buildTurnPromptEnvelope = ({ modelInput = {}, decision, resolution,
   });
 };
 
+// Wayfinder workers still use the normal Host routing boundary. The wave
+// dispatcher obtains the Kernel directive for each Step, then calls this
+// helper before it reaches an adapter so model resolution, route admission,
+// dispatch-time revalidation, and the prompt envelope cannot be skipped by the
+// parallel path.
+export const prepareWayfinderWorkerDispatch = async ({
+  controlPlane,
+  runId,
+  adapter,
+  hosted,
+  step,
+  registry = null,
+  runtimeHome,
+  env = process.env,
+  overrides = {},
+  toolPolicy = {},
+  permissionPolicy = {},
+  economics = {},
+} = {}) => {
+  const hostCapabilities = adapter?.capabilities || {};
+  const modelInput = hosted?.modelInput || {};
+  const hostDirective = hosted?.hostDirective || {};
+  const decision = hostDirective.modelRouteDecision;
+  if (!decision) return { status: 'failed', failureCode: 'worker-route-missing' };
+  if (decision.modelClass === 'kernel') return { status: 'failed', failureCode: 'kernel-owned-worker-action' };
+
+  const modelRegistry = registry || createModelRegistry({ surface: hostCapabilities.surface, runtimeHome, env, overrides });
+  let resolution = modelRegistry.resolve(decision.modelClass, overrides);
+  const modelPolicyMode = resolveOptimizationModes(env).modelPolicyMode;
+  const modelPolicyRecommendation = resolveTurnModelPolicy({ decision, hostCapabilities });
+  if (modelPolicyMode === 'on' && modelPolicyRecommendation && resolution.source !== 'invocation-override') {
+    const appliedModel = modelPolicyRecommendation.model || resolution.model;
+    resolution = {
+      ...resolution,
+      model: appliedModel,
+      effort: modelPolicyRecommendation.effort || resolution.effort,
+      ...(appliedModel ? { source: 'model-policy', enforcementIntent: 'enforced' } : {}),
+    };
+  }
+
+  const executionCapsule = hosted.executionCapsule || hostDirective.executionCapsule || null;
+  const policies = currentHostPolicies({ registry: modelRegistry, capabilities: hostCapabilities, toolPolicy, permissionPolicy });
+  const admission = await controlPlane.admitRoute(runId, {
+    decision,
+    resolution,
+    capabilities: hostCapabilities,
+    capsule: executionCapsule,
+    step,
+    policies,
+    economics,
+  });
+  if (admission.decision === 'blocked' || admission.decision === 'redecision_required') {
+    return { status: 'failed', failureCode: admission.rejectionCode || admission.decision, modelInput, hostDirective, decision, resolution, executionCapsule, admission };
+  }
+
+  const revalidated = revalidateBeforeDispatch({
+    admission,
+    registry: modelRegistry,
+    capabilities: hostCapabilities,
+    toolPolicy,
+    permissionPolicy,
+  });
+  if (!revalidated.valid) {
+    const drifted = await controlPlane.admitRoute(runId, {
+      decision,
+      resolution,
+      capabilities: hostCapabilities,
+      capsule: executionCapsule,
+      step,
+      policies: currentHostPolicies({ registry: modelRegistry, capabilities: hostCapabilities, toolPolicy, permissionPolicy }),
+      economics,
+    });
+    return { status: 'failed', failureCode: revalidated.rejectionCode || 'route-admission-drift', modelInput, hostDirective, decision, resolution, executionCapsule, admission: drifted, drift: revalidated.drift };
+  }
+
+  return {
+    status: 'ready',
+    runId,
+    modelInput,
+    hostDirective,
+    decision,
+    resolution,
+    executionCapsule,
+    modelVisibleCapsule: executionCapsule ? buildModelCapsuleView(executionCapsule, { role: decision.role }) : null,
+    executionContract: buildExecutionContract(modelInput, decision),
+    admission,
+    strategy: hostDirective.enforcementStrategy,
+    envelope: buildTurnPromptEnvelope({ modelInput, decision, resolution, hostCapabilities, env }),
+  };
+};
+
 export const dispatchKernelTurn = async ({
   controlPlane,
   runId,
@@ -184,6 +275,20 @@ export const dispatchKernelTurn = async ({
       stateStore: controlPlane.stateStore,
       parentSessionId,
       env,
+      prepareDispatch: ({ hosted, step }) => prepareWayfinderWorkerDispatch({
+        controlPlane,
+        runId,
+        adapter,
+        hosted,
+        step,
+        registry,
+        runtimeHome,
+        env,
+        overrides,
+        toolPolicy,
+        permissionPolicy,
+        economics,
+      }),
       sequentialDispatcher: () => dispatchKernelTurn({
         controlPlane,
         runId,

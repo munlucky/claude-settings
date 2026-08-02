@@ -23,33 +23,36 @@ const fallback = async ({ sequentialDispatcher, reason, context }) => {
   return { schemaVersion: 1, dispatched: false, fallback: true, reason };
 };
 
-const dispatchDefaultStep = async ({ adapter, hosted, workspace, parentSessionId, waveId, step, env = process.env }) => {
+const dispatchDefaultStep = async ({ adapter, hosted, dispatchContext = null, workspace, parentSessionId, waveId, step, env = process.env }) => {
   if (!adapter?.dispatch) throw new Error('Wayfinder adapter requires dispatch');
-  const capsule = hosted.executionCapsule
+  const context = dispatchContext || hosted;
+  if (!context.resolution) throw Object.assign(new Error('Wayfinder worker dispatch requires an admitted model resolution'), { code: 'WORKER_ROUTE_UNRESOLVED' });
+  const capsule = context.executionCapsule
     ? {
-      ...hosted.executionCapsule,
-      permissions: { ...hosted.executionCapsule.permissions, canCommit: false, canDelegate: false },
+      ...context.executionCapsule,
+      permissions: { ...context.executionCapsule.permissions, canCommit: false, canDelegate: false },
     }
     : null;
   return adapter.dispatch({
-    decision: hosted.hostDirective?.modelRouteDecision || hosted.decision || {},
-    resolution: hosted.resolution || null,
-    strategy: hosted.hostDirective?.enforcementStrategy || 'isolated',
-    executionCapsule: hosted.modelVisibleCapsule || capsule,
-    executionContract: hosted.executionContract || {
+    decision: context.decision || context.hostDirective?.modelRouteDecision || hosted.hostDirective?.modelRouteDecision || {},
+    resolution: context.resolution,
+    strategy: context.strategy || context.hostDirective?.enforcementStrategy || hosted.hostDirective?.enforcementStrategy || 'isolated',
+    executionCapsule: context.modelVisibleCapsule || capsule,
+    executionContract: context.executionContract || hosted.executionContract || {
       objective: step.objective,
       role: 'worker',
       permissions: { filesystem: 'workspace_write', canCommit: false, canDelegate: false },
       action: { type: 'implement', guidance: step.objective },
     },
+    envelope: context.envelope || hosted.envelope || null,
     workingDirectory: workspace.workspaceRoot,
     environment: {
       ...env,
-      MOON_RELAY_KERNEL_RUN_ID: hosted.runId || step.runId,
+      MOON_RELAY_KERNEL_RUN_ID: context.runId || hosted.runId || step.runId,
       MOON_RELAY_KERNEL_WAVE_ID: waveId,
       MOON_RELAY_KERNEL_STEP_ID: step.stepId,
       MOON_RELAY_KERNEL_WORKSPACE_ID: workspace.workspaceId,
-      MOON_RELAY_KERNEL_SESSION_ID: hosted.actorSessionId || `worker:${step.stepId}`,
+      MOON_RELAY_KERNEL_SESSION_ID: context.actorSessionId || hosted.actorSessionId || `worker:${step.stepId}`,
     },
     parentSessionId,
     concurrencyGroup: waveId,
@@ -68,6 +71,7 @@ export const dispatchKernelStep = async ({
   parentSessionId = null,
   actionContext = {},
   dispatchStep = null,
+  prepareDispatch = null,
   env = process.env,
 } = {}) => {
   let boundAttempt = null;
@@ -100,9 +104,16 @@ export const dispatchKernelStep = async ({
       capsuleDigest: hosted.executionCapsule.provenance?.capsuleDigest || null,
     });
   }
+  const dispatchContext = typeof prepareDispatch === 'function'
+    ? await prepareDispatch({ hosted, step, workspace, waveId, parentSessionId })
+    : null;
+  if (dispatchContext?.status === 'failed') return { status: 'failed', failureCode: dispatchContext.failureCode || 'worker-route-rejected', hosted, dispatchContext, attempt: boundAttempt };
+  if (!dispatchContext && typeof dispatchStep !== 'function') {
+    return { status: 'failed', failureCode: 'worker-route-unresolved', hosted, attempt: boundAttempt };
+  }
   const result = await (typeof dispatchStep === 'function'
-    ? dispatchStep({ hosted, adapter, step, workspace, waveId, parentSessionId })
-    : dispatchDefaultStep({ adapter, hosted, workspace, parentSessionId, waveId, step, env }));
+    ? dispatchStep({ hosted, dispatchContext, adapter, step, workspace, waveId, parentSessionId })
+    : dispatchDefaultStep({ adapter, hosted, dispatchContext, workspace, parentSessionId, waveId, step, env }));
   let reportResult = null;
   const workerReport = result?.report || result?.kernelReport || null;
   if (workerReport && controlPlane?.report) {
@@ -115,13 +126,22 @@ export const dispatchKernelStep = async ({
       actorSessionId: boundAttempt?.actorSessionId || workerReport.actorSessionId,
     });
   }
+  const workerCompleted = ['passed', 'completed', 'success'].includes(result?.status || result?.resultStatus);
+  const reportAccepted = reportResult?.step?.state === 'passed';
+  const failureCode = !workerReport
+    ? 'worker-report-missing'
+    : !reportResult
+      ? 'worker-report-unprocessed'
+      : !reportAccepted
+        ? reportResult.status || 'worker-report-not-passed'
+        : null;
   return {
-    status: reportResult?.status === 'step-rejected' || reportResult?.status === 'scope-rejected' || reportResult?.status === 'evidence-rejected'
-      ? 'failed'
-      : (result?.status || result?.resultStatus || (reportResult?.step?.state === 'passed' ? 'passed' : 'passed')),
+    status: workerCompleted && reportAccepted ? 'passed' : 'failed',
+    failureCode,
     result,
     reportResult,
     hosted,
+    dispatchContext,
     attempt: boundAttempt,
   };
 };
@@ -137,6 +157,7 @@ export const dispatchKernelWave = async ({
   env = process.env,
   sequentialDispatcher = null,
   dispatchStep = null,
+  prepareDispatch = null,
   executeIntegrationVerification = null,
   now = () => new Date().toISOString(),
 } = {}) => {
@@ -179,6 +200,7 @@ export const dispatchKernelWave = async ({
       projectId: run.projectId,
       runtimeHome,
       stateStore,
+      steps: executable.steps || [],
     });
   } catch (error) {
     if (controlPlane.abortWave) await controlPlane.abortWave(runId, wave.waveId, error.code || 'worktree-preparation-failed');
@@ -188,7 +210,7 @@ export const dispatchKernelWave = async ({
   const workspaceByStep = new Map(workspaces.steps.map((workspace) => [workspace.stepId, workspace]));
   const dispatched = await Promise.allSettled((executable.steps || []).map(async (step) => {
     const workspace = workspaceByStep.get(step.stepId);
-    const outcome = await dispatchKernelStep({ controlPlane, runId, waveId: wave.waveId, step, workspace, adapter, hostCapabilities: capabilities, parentSessionId, dispatchStep, env });
+    const outcome = await dispatchKernelStep({ controlPlane, runId, waveId: wave.waveId, step, workspace, adapter, hostCapabilities: capabilities, parentSessionId, dispatchStep, prepareDispatch, env });
     if (outcome.status !== 'passed' && outcome.status !== 'completed' && outcome.status !== 'success') {
       if (controlPlane.failStepAttempt) await controlPlane.failStepAttempt(runId, wave.waveId, step.stepId, { code: outcome.failureCode || 'worker-failed' });
       return { step, workspace, outcome, status: 'failed' };

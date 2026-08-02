@@ -69,7 +69,7 @@ export const createCodexAdapter = ({ launch = null, capabilities = {}, runtimeHo
   return {
     surface: 'codex',
     capabilities: resolved,
-    async dispatch({ decision, resolution, strategy, executionCapsule = null, executionContract, envelope = null }) {
+    async dispatch({ decision, resolution, strategy, executionCapsule = null, executionContract, envelope = null, workingDirectory = null, environment = null, parentSessionId = null, concurrencyGroup = null, childSession = null }) {
       const invocation = buildCodexInvocation({ decision, resolution, capabilities: resolved });
       if (!launch || invocation.mechanism === 'unsupported') {
         return { status: 'unsupported', resultStatus: 'completed', invocation };
@@ -78,7 +78,7 @@ export const createCodexAdapter = ({ launch = null, capabilities = {}, runtimeHo
         profilesMaterialized = materializeCodexProfiles({ runtimeHome, env });
         await profilesMaterialized;
       }
-      const result = (await launch({ invocation, executionCapsule, executionContract, decision, strategy, envelope })) || {};
+      const result = (await launch({ invocation, executionCapsule, executionContract, decision, strategy, envelope, workingDirectory, environment, parentSessionId, concurrencyGroup, childSession })) || {};
       return {
         status: result.status || 'completed',
         resultStatus: result.resultStatus || (result.status === 'failed' ? 'failed' : 'completed'),
