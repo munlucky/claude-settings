@@ -208,6 +208,10 @@ export const normalizeReport = (payload = {}) => {
     // The bounded context (K1) and the work unit (K2) this report answers.
     capsuleId: payload.capsuleId ? String(payload.capsuleId) : null,
     stepId: payload.stepId ? String(payload.stepId) : null,
+    waveId: payload.waveId ? String(payload.waveId) : null,
+    planRevision: payload.planRevision === undefined || payload.planRevision === null ? undefined : Number(payload.planRevision),
+    actorSessionId: payload.actorSessionId || payload.sessionId || payload.workerSessionId ? String(payload.actorSessionId || payload.sessionId || payload.workerSessionId) : null,
+    workspaceId: payload.workspaceId ? String(payload.workspaceId) : null,
     changedPaths: Array.isArray(payload.changedPaths) ? payload.changedPaths.map(String) : [],
     risks: Array.isArray(payload.risks) ? payload.risks.map(String) : [],
     verifications,

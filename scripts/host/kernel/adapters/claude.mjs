@@ -50,13 +50,13 @@ export const buildClaudeInvocation = ({ decision, resolution }) => {
 export const createClaudeAdapter = ({ launch = null, capabilities = {} } = {}) => ({
   surface: 'claude',
   capabilities: { ...CLAUDE_CAPABILITIES, ...capabilities },
-  async dispatch({ decision, resolution, strategy, executionCapsule = null, executionContract, envelope = null }) {
+  async dispatch({ decision, resolution, strategy, executionCapsule = null, executionContract, envelope = null, workingDirectory = null, environment = null, parentSessionId = null, concurrencyGroup = null, childSession = null }) {
     const invocation = buildClaudeInvocation({ decision, resolution });
     if (!launch) return { status: 'unsupported', resultStatus: 'completed', invocation };
     // The envelope carries the cache-stable segments and breakpoint digests
     // (Wave 3/5); a launcher that speaks the Claude API reads it for
     // cache_control placement, but this adapter still owns no provider SDK.
-    const result = (await launch({ invocation, executionCapsule, executionContract, decision, strategy, envelope })) || {};
+    const result = (await launch({ invocation, executionCapsule, executionContract, decision, strategy, envelope, workingDirectory, environment, parentSessionId, concurrencyGroup, childSession })) || {};
     return {
       status: result.status || 'completed',
       resultStatus: result.resultStatus || (result.status === 'failed' ? 'failed' : 'completed'),

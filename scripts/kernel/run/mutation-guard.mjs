@@ -57,17 +57,27 @@ export const assertMutationAllowed = ({
   const run = stateStore.getRun(runId);
   if (!run || run.status !== 'active') fail('mutation_run_inactive', runId);
   const step = stateStore.getRunStep(runId, stepId);
-  if (!step || !['ready', 'active'].includes(step.state)) fail('mutation_step_inactive', stepId);
+  if (!step || !['ready', 'running', 'active'].includes(step.state)) fail('mutation_step_inactive', stepId);
   const capsule = stateStore.getExecutionCapsule(capsuleId, { runId });
   if (!capsule || capsule.stepId !== stepId || capsule.role !== 'implementer') fail('mutation_capsule_invalid', capsuleId);
-  const stale = capsuleStaleness({ capsule, run });
+  const capsuleRun = step.baseWorkspaceIdentity
+    ? { ...run, currentWorkspaceIdentity: step.baseWorkspaceIdentity }
+    : run;
+  const stale = capsuleStaleness({ capsule, run: capsuleRun });
   if (stale.stale) fail('mutation_capsule_stale', stale.reasons.join(', '));
   if (capsule.expiresAt && Date.parse(capsule.expiresAt) <= Date.now()) fail('mutation_capsule_expired', capsuleId);
   if (['git_reset', 'destructive_command'].includes(operation)) fail('mutation_operation_forbidden', operation);
   if (operation === 'git_commit' && capsule.permissions?.canCommit !== true) fail('mutation_operation_forbidden', operation);
 
-  const lock = run.workspaceId
-    ? stateStore.getWorkspaceMutationLockV2(run.workspaceId)
+  const effectiveWorkspaceId = step.executionWorkspaceId || run.workspaceId;
+  const registeredWorkspace = effectiveWorkspaceId && stateStore.getProjectWorkspace
+    ? stateStore.getProjectWorkspace(effectiveWorkspaceId)
+    : null;
+  if (registeredWorkspace && path.resolve(workspaceRoot) !== path.resolve(registeredWorkspace.canonicalRoot)) {
+    fail('mutation_workspace_mismatch', stepId);
+  }
+  const lock = effectiveWorkspaceId
+    ? stateStore.getWorkspaceMutationLockV2(effectiveWorkspaceId)
     : stateStore.getWorkspaceMutationLock(run.projectId);
   if (!lock) {
     fail('workspace_mutation_lock_missing', run.projectId);
@@ -90,5 +100,5 @@ export const assertMutationAllowed = ({
     forbiddenPaths: capsule.workUnit?.forbiddenPaths || [],
   });
   if (violations.length) fail('mutation_path_forbidden', violations.map((item) => item.path).join(', '));
-  return { allowed: true, runId, stepId, capsuleId, operation, targetPaths: relativePaths, fencingToken: lock?.fencingToken || null };
+  return { allowed: true, runId, stepId, workspaceId: effectiveWorkspaceId || null, capsuleId, operation, targetPaths: relativePaths, fencingToken: lock?.fencingToken || null };
 };

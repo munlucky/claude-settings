@@ -45,12 +45,13 @@ export const assertStepTransition = (from, to) => {
   return true;
 };
 
-// Dependencies are satisfied only by a PASSED step. A dependency that merely
-// reported is not done, and treating it as done is how a cursor advances past
-// unfinished work.
+import { dependenciesSatisfiedWithIntegration } from './active-wave.mjs';
+
+// Dependencies are satisfied only by a PASSED step. A Wayfinder dependency is
+// additionally blocked until its result has been integrated into Delivery.
 export const dependenciesSatisfied = (step, steps = []) => {
   const byId = new Map(steps.map((entry) => [entry.stepId, entry]));
-  return (step.dependencyIds || []).every((dependencyId) => byId.get(dependencyId)?.state === 'passed');
+  return dependenciesSatisfiedWithIntegration(step, steps);
 };
 
 export const liveSteps = (steps = [], planRevision = null) => steps.filter((step) => (
@@ -127,7 +128,9 @@ export const allStepsPassed = (steps = [], planRevision = null) => {
   // not a finished one — treating that as settled would let a lost replacement
   // step complete the run.
   if (scoped.length === 0) return steps.length === 0;
-  return scoped.every((step) => TERMINAL_STEP_STATES.includes(step.state))
+  return scoped.every((step) => TERMINAL_STEP_STATES.includes(step.state)
+      && (step.integrationState || 'not-required') !== 'pending'
+      && (step.integrationState || 'not-required') !== 'failed')
     && scoped.some((step) => step.state === 'passed');
 };
 
