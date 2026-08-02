@@ -15,6 +15,7 @@ import { normalizeChangedContract } from '../change-contract.mjs';
 import { resolveRecordType } from '../knowledge/records.mjs';
 import { projectRunState } from '../state-projector.mjs';
 import { resolveRunArtifactPaths } from '../artifact-paths.mjs';
+import { deduplicateKnowledgeCandidates, deriveKnowledgeStatus, extractStructuredKnowledgeCandidates } from '../knowledge/capture.mjs';
 import { mkdir, writeFile, rename } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -76,8 +77,19 @@ export const recordKnowledgeObservations = async ({ store, runtimeHome, runId, o
       sourceRefs: observation.sourceRefs || [],
       evidenceRefs: observation.evidenceRefs || [],
       status: 'pending',
+      sourceKind: 'explicit',
       ...observation,
       candidateId,
+    });
+  }
+
+  const uniqueCandidates = deduplicateKnowledgeCandidates(candidates);
+  for (const candidate of uniqueCandidates) {
+    store.recordKnowledgeCandidate(candidate.candidateId, runId, {
+      projectId: run.projectId,
+      proposedType: candidate.proposedType || 'semantic_fact',
+      status: 'pending',
+      candidateJson: candidate,
     });
   }
 
@@ -85,7 +97,7 @@ export const recordKnowledgeObservations = async ({ store, runtimeHome, runId, o
     projectId: run.projectId,
     runId,
     stateStore: store,
-    candidates,
+    candidates: uniqueCandidates,
     evidencePack: latestEvidencePack(store, runId),
     env: { MOON_RELAY_KERNEL_HOME: runtimeHome },
   });
@@ -105,11 +117,12 @@ export const recordKnowledgeObservations = async ({ store, runtimeHome, runId, o
     });
   }
 
-  persistReviewReceipt(store, runId, run.projectId, candidates.length, reviewResult);
-  return reviewResult;
+  persistReviewReceipt(store, runId, run.projectId, uniqueCandidates.length, reviewResult);
+  return { ...reviewResult, submittedCount: uniqueCandidates.length, explicitCount: uniqueCandidates.length };
 };
 
 const blockedReceipt = (store, runId, receipt) => {
+  if (receipt.knowledgeStatus && typeof store.setKnowledgeStatus === 'function') store.setKnowledgeStatus(runId, receipt.knowledgeStatus);
   store.recordFinalizationReceipt(runId, receipt);
   store.setFinalizationStatus(runId, 'blocked');
   return receipt;
@@ -124,6 +137,7 @@ export const finalizeRun = async ({
   changedPaths = [],
   changedFileCount = null,
   knowledgeObservations = [],
+  structuredSignals = {},
   approvals = [],
 }) => {
   const run = store.getRun(runId);
@@ -162,22 +176,62 @@ export const finalizeRun = async ({
   }
 
   // Step 1: observation review BEFORE completion assessment.
-  let reviewResult = { status: 'no_candidates', verifiedCandidates: [], rejectedCandidates: [] };
-  if (Array.isArray(knowledgeObservations) && knowledgeObservations.length > 0) {
-    reviewResult = await recordKnowledgeObservations({ store, runtimeHome, runId, observations: knowledgeObservations });
-  } else {
-    const dbCandidates = store.getKnowledgeCandidates(runId).map((candidate) => candidate.candidateJson);
-    if (dbCandidates.length > 0) {
-      reviewResult = await reviewKnowledgeCandidates({
+  let reviewResult = { status: 'no_candidates', verifiedCandidates: [], rejectedCandidates: [], needsApprovalCandidates: [], pendingVerificationCandidates: [] };
+  const explicitCandidates = Array.isArray(knowledgeObservations) && knowledgeObservations.length > 0
+    ? knowledgeObservations.map((observation) => ({ ...observation, sourceKind: 'explicit' }))
+    : [];
+  const autoCandidates = extractStructuredKnowledgeCandidates({
+    run,
+    signals: structuredSignals,
+    priorRunSignals: typeof store.getProjectRunSignals === 'function'
+      ? store.getProjectRunSignals(run.projectId, { excludeRunId: runId })
+      : [],
+  });
+  const submittedCandidates = deduplicateKnowledgeCandidates([
+    ...explicitCandidates.map((candidate, index) => ({
+      ...candidate,
+      candidateId: candidate.candidateId || candidate.id || `cand-explicit-${runId}-${index + 1}`,
+      runId,
+      projectId: run.projectId,
+    })),
+    ...autoCandidates,
+  ]);
+  const dbCandidates = store.getKnowledgeCandidates(runId).map((candidate) => candidate.candidateJson);
+  const candidatesForReview = submittedCandidates.length > 0 ? submittedCandidates : dbCandidates;
+  if (candidatesForReview.length > 0) {
+    for (const candidate of submittedCandidates) {
+      store.recordKnowledgeCandidate(candidate.candidateId, runId, {
         projectId: run.projectId,
-        runId,
-        stateStore: store,
-        candidates: dbCandidates,
-        evidencePack: latestEvidencePack(store, runId),
-        env: { MOON_RELAY_KERNEL_HOME: runtimeHome },
+        proposedType: candidate.proposedType || 'semantic_fact',
+        status: 'pending',
+        candidateJson: candidate,
       });
-      persistReviewReceipt(store, runId, run.projectId, dbCandidates.length, reviewResult);
     }
+    reviewResult = await reviewKnowledgeCandidates({
+      projectId: run.projectId,
+      runId,
+      stateStore: store,
+      candidates: candidatesForReview,
+      evidencePack: latestEvidencePack(store, runId),
+      env: { MOON_RELAY_KERNEL_HOME: runtimeHome },
+    });
+    persistReviewReceipt(store, runId, run.projectId, candidatesForReview.length, reviewResult);
+    const allReviewed = [
+      ...(reviewResult.verifiedCandidates || []),
+      ...(reviewResult.rejectedCandidates || []),
+      ...(reviewResult.needsApprovalCandidates || []),
+      ...(reviewResult.pendingVerificationCandidates || []),
+    ];
+    for (const candidate of allReviewed) {
+      store.recordKnowledgeCandidate(candidate.candidateId, runId, {
+        projectId: run.projectId,
+        proposedType: candidate.proposedType || 'semantic_fact',
+        status: candidate.status,
+        candidateJson: candidate,
+      });
+    }
+  } else {
+    persistReviewReceipt(store, runId, run.projectId, 0, reviewResult);
   }
 
   if (!['passed', 'no_candidates'].includes(reviewResult.status)) {
@@ -246,6 +300,13 @@ export const finalizeRun = async ({
   }
 
   // Step 4: transactional knowledge commit.
+  let knowledgeCaptureStatus = deriveKnowledgeStatus({
+    explicitCount: explicitCandidates.length,
+    autoCount: autoCandidates.length,
+    rejectedCount: reviewResult.rejectedCandidates?.length || 0,
+    pendingVerificationCount: reviewResult.pendingVerificationCandidates?.length || 0,
+    pendingApprovalCount: reviewResult.needsApprovalCandidates?.length || 0,
+  });
   let knowledgeStatus = 'skipped';
   let commitReceipt = null;
   let knowledgeCommitError = null;
@@ -255,6 +316,7 @@ export const finalizeRun = async ({
     // revision CAS and mask the step that actually failed.
     commitReceipt = priorCommit.receiptJson;
     knowledgeStatus = priorCommit.status;
+    knowledgeCaptureStatus = priorCommit.status === 'committed' ? 'knowledge_committed' : 'no_new_knowledge';
   } else {
     try {
       commitReceipt = await commitProjectKnowledge({
@@ -265,6 +327,7 @@ export const finalizeRun = async ({
         env: { MOON_RELAY_KERNEL_HOME: runtimeHome },
       });
       knowledgeStatus = commitReceipt.status || 'committed';
+      knowledgeCaptureStatus = knowledgeStatus === 'committed' ? 'knowledge_committed' : 'no_new_knowledge';
     } catch (error) {
       knowledgeStatus = 'failed';
       knowledgeCommitError = error.message;
@@ -315,6 +378,7 @@ export const finalizeRun = async ({
     projectId: run.projectId,
     completionStatus: completionEval.decision,
     knowledgeStatus,
+    knowledgeCaptureStatus,
     projectionStatus: commitReceipt?.projectionStatus || 'completed',
     gitCloseoutStatus,
     finalizationStatus,
@@ -329,6 +393,7 @@ export const finalizeRun = async ({
   };
 
   store.recordFinalizationReceipt(runId, finalizationReceipt);
+  if (typeof store.setKnowledgeStatus === 'function') store.setKnowledgeStatus(runId, knowledgeStatus);
   store.setFinalizationStatus(runId, finalizationStatus);
   if (run.projectId) {
     const dir = resolveRunArtifactPaths({ runtimeHome, projectId: run.projectId, runId }).finalization;

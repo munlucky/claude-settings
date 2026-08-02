@@ -6,6 +6,7 @@ export async function reviewKnowledgeCandidates({
   runId = null,
   stateStore = null,
   evidencePack = null,
+  allowLegacyEvidencePackFallback = stateStore === null,
   env = process.env,
 } = {}) {
   if (!candidates || candidates.length === 0) {
@@ -108,28 +109,62 @@ export async function reviewKnowledgeCandidates({
 
     // 4. Evidence binding check (Fail-closed - Section 6)
     let candidateEvidenceDigest = null;
-    if (evidencePack && (evidencePack.status === 'pass' || evidencePack.status === 'passed') && evidencePack.digest) {
-      candidateEvidenceDigest = evidencePack.digest;
-    } else if (Array.isArray(candidate.evidenceRefs) && candidate.evidenceRefs.length > 0) {
-      const ref = candidate.evidenceRefs[0];
+    const verifications = stateStore && runId ? stateStore.getVerifications(runId) : [];
+    const candidateRefs = Array.isArray(candidate.evidenceRefs) ? candidate.evidenceRefs : [];
+    const acceptanceIds = new Set([...(candidate.acceptanceIds || []), ...(candidate.evidenceBinding?.acceptanceIds || [])].map(String));
+    const obligationIds = new Set([...(candidate.obligationIds || []), ...(candidate.evidenceBinding?.obligationIds || [])].map(String));
+    const matchingVerification = verifications.filter((v) => {
+      if (v.status !== 'passed' || Number(v.exitCode) !== 0 || !v.evidenceDigest) return false;
+      if (candidateRefs.length > 0 && !candidateRefs.some((ref) => ref === v.evidenceDigest || ref === v.evidenceRef)) return false;
+      if (acceptanceIds.size > 0 && !(v.acceptanceCoverage || []).some((id) => acceptanceIds.has(String(id)))) return false;
+      if (obligationIds.size > 0 && !obligationIds.has(String(v.obligationId))) return false;
+      return true;
+    });
+    // A single verification is a safe compatibility bridge for legacy
+    // explicit observations. It is deliberately not the "last verification"
+    // fallback: when several receipts exist, the observation must name its
+    // acceptance, obligation, or evidence ref.
+    const selectedVerification = matchingVerification.length > 0
+      ? matchingVerification[0]
+      : (stateStore && candidateRefs.length === 0 && acceptanceIds.size === 0 && obligationIds.size === 0 && verifications.length === 1
+        ? verifications[0]
+        : null);
+    const structuredReceipt = candidate.sourceKind === 'auto'
+      ? candidateRefs.find((ref) => /^(?:failure|blocker|review|source|receipt):\/\//i.test(String(ref)))
+      : null;
+    if (selectedVerification) {
+      candidateEvidenceDigest = selectedVerification.evidenceDigest;
       if (stateStore && runId) {
-        const verifications = stateStore.getVerifications(runId);
-        const match = verifications.find((v) => v.evidenceDigest === ref && v.status === 'passed' && Number(v.exitCode) === 0);
-        if (match) {
-          candidateEvidenceDigest = ref;
-          stateStore.recordCandidateEvidenceBinding({
-            candidateId: candidate.candidateId,
-            runId,
-            evidenceDigest: ref,
-            obligationId: match.obligationId || 'default',
-            sourceIdentity: match.sourceIdentity,
-            mutationRevision: match.verifiedMutationRevision,
-            bindingType: 'verification',
-          });
-        }
-      } else {
-        candidateEvidenceDigest = ref;
+        stateStore.recordCandidateEvidenceBinding({
+          candidateId: candidate.candidateId,
+          runId,
+          evidenceDigest: selectedVerification.evidenceDigest,
+          obligationId: selectedVerification.obligationId || 'default',
+          sourceIdentity: selectedVerification.sourceIdentity,
+          mutationRevision: selectedVerification.verifiedMutationRevision,
+          bindingType: candidate.sourceKind === 'auto' ? 'structured-signal' : 'verification',
+        });
       }
+    } else if (structuredReceipt) {
+      candidateEvidenceDigest = structuredReceipt;
+      if (stateStore && runId) {
+        const currentRun = stateStore.getRun(runId);
+        stateStore.recordCandidateEvidenceBinding({
+          candidateId: candidate.candidateId,
+          runId,
+          evidenceDigest: structuredReceipt,
+          obligationId: candidate.obligationIds?.[0] || 'structured-signal',
+          sourceIdentity: currentRun?.sourceIdentity || 'structured-signal',
+          mutationRevision: currentRun?.mutationRevision || 0,
+          bindingType: 'structured-signal',
+        });
+      }
+    } else if (candidateRefs.length > 0 && !stateStore) {
+      candidateEvidenceDigest = candidateRefs[0];
+    } else if (allowLegacyEvidencePackFallback && evidencePack && (evidencePack.status === 'pass' || evidencePack.status === 'passed') && evidencePack.digest) {
+      candidateEvidenceDigest = evidencePack.digest;
+    } else if (candidate.sourceDigest && /^sha256:[a-f0-9]{64}$/i.test(candidate.sourceDigest)) {
+      candidateEvidenceDigest = candidate.sourceDigest;
     }
 
     if (!candidateEvidenceDigest) {
@@ -143,6 +178,12 @@ export async function reviewKnowledgeCandidates({
       ...candidate,
       status: 'verified',
       evidenceRefs: [candidateEvidenceDigest],
+      evidenceBinding: {
+        ...(candidate.evidenceBinding || {}),
+        evidenceRefs: [candidateEvidenceDigest],
+        obligationId: selectedVerification?.obligationId || candidate.obligationId || null,
+        verificationId: selectedVerification?.id || null,
+      },
     });
     candidateReviews.push({ candidateId: candidate.candidateId, decision: 'verified', evidenceRef: candidateEvidenceDigest });
   }

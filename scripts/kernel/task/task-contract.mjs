@@ -77,7 +77,9 @@ const RISK_FLAGS = [
   'migration', 'dataStorageChange', 'externalIntegration', 'componentBoundaryChange',
   'irreversibleDecision', 'crossLayer', 'complex', 'newDependency', 'ambiguityChangesOutcome',
   'domainTerminologyConflict', 'destructiveSchemaChange', 'schemaChange', 'acceptanceAmbiguity',
-  'baselineRequired',
+  'baselineRequired', 'acceptanceUnverifiable', 'objectiveNonGoalConflict', 'architectureBoundary',
+  'irreversibleDecision', 'independentDeliverables', 'longLivedResume', 'safeParallelSplit',
+  'testSurfaceAvailable', 'repeatedFailure', 'repeatedBlocker', 'rootCauseAmbiguous',
 ];
 
 const normalizeSafeWave = (input) => {
@@ -117,6 +119,10 @@ export const normalizeTaskContract = (input = {}, { objective, changedFileCount 
     surfaces: asStringList(contract.surfaces),
     taskClass: String(contract.taskClass || 'feature'),
     requestedTier: contract.riskTier || contract.proofTier || contract.requestedTier || null,
+    changeClass: typeof contract.changeClass === 'string' ? contract.changeClass : null,
+    scopeExtension: contract.scopeExtension === true,
+    defectWithinScope: contract.defectWithinScope === true,
+    replacement: contract.replacement === true,
     requiredObligations: asStringList(contract.requiredObligations),
     // Work-unit scope (K1). Declared here so an Execution Capsule can bound a
     // worker to the paths the contract actually authorises; an empty list means
@@ -146,6 +152,10 @@ export const contractDigest = (contract) => `sha256:${createHash('sha256').updat
   surfaces: contract.surfaces,
   taskClass: contract.taskClass,
   requestedTier: contract.requestedTier,
+  changeClass: contract.changeClass,
+  scopeExtension: contract.scopeExtension,
+  defectWithinScope: contract.defectWithinScope,
+  replacement: contract.replacement,
   requiredObligations: contract.requiredObligations,
   steps: contract.steps,
   safeWave: contract.safeWave,

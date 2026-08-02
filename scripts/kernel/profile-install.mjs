@@ -95,6 +95,15 @@ export async function installKernelProfile({ sourceRoot = process.cwd(), runtime
     // profile-local duplicate can never win. Launch-time mutation of the
     // operator's account-root skills directory is not a substitute for this.
     await copyTree(canonicalSkill, safeJoin(root, KERNEL_SKILL_INSTALL_REL));
+    // Copy each canonical file to its exact destination as well. This keeps
+    // the manifest checksum bound to the canonical bytes when a profile ships
+    // a stale duplicate directory and the platform's recursive copy behavior
+    // does not replace an existing directory entry.
+    for (const rel of await files(canonicalSkill)) {
+      const target = safeJoin(root, path.join(KERNEL_SKILL_INSTALL_REL, rel));
+      await mkdir(path.dirname(target), { recursive: true });
+      await cp(path.join(canonicalSkill, rel), target, { force: true });
+    }
     const marker = { schemaVersion: 1, productId: PROFILE_PRODUCT_ID, track: 'kernel', runtime, ownership: 'manifest-owned-static-only' };
     await atomicWrite(markerPath, JSON.stringify(marker, null, 2));
     if (skillsRoot && runtime === 'antigravity') {
@@ -195,4 +204,3 @@ export async function rollbackKernelProfile({ targetRoot, backupPath } = {}) {
 
   return { status: 'rolled_back', targetRoot: root, backupPath: backup };
 }
-

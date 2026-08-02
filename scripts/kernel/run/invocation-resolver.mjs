@@ -1,6 +1,7 @@
 import { canonicalizeHostSessionId } from './host-session.mjs';
 import { createOpaqueRunId } from './run-identity.mjs';
 import { normalizeTaskContract } from '../task/task-contract.mjs';
+import { classifyContractChange } from '../change-contract.mjs';
 
 const codedError = (code, nextAction) => Object.assign(new Error(code), {
   code,
@@ -66,6 +67,7 @@ export const resolveBoundInvocation = ({
           binding: null,
           reason: 'explicit-unbound-run',
           taskContract: contract,
+          changeClass: contract ? classifyContractChange({ previous: requestedRun.taskContract, next: contract }) : null,
         };
       }
     }
@@ -79,6 +81,7 @@ export const resolveBoundInvocation = ({
       binding: null,
       reason: 'no-active-owner-binding',
       taskContract: contract,
+      changeClass: null,
     };
   }
 
@@ -114,6 +117,7 @@ export const resolveBoundInvocation = ({
         binding,
         reason: 'completed-run-finalization-incomplete',
         taskContract: contract,
+        changeClass: contract ? classifyContractChange({ previous: run.taskContract, next: contract }) : null,
       };
     }
     if (!contract || run.taskContract?.digest === contract.digest) {
@@ -124,6 +128,7 @@ export const resolveBoundInvocation = ({
         binding,
         reason: contract ? 'same-contract-already-complete' : 'no-new-task-contract',
         taskContract: contract,
+        changeClass: null,
       };
     }
     return {
@@ -133,6 +138,7 @@ export const resolveBoundInvocation = ({
       binding,
       reason: 'new-contract-after-completed-finalization',
       taskContract: contract,
+      changeClass: classifyContractChange({ previous: run.taskContract, next: contract }),
     };
   }
 
@@ -145,5 +151,6 @@ export const resolveBoundInvocation = ({
       ? 'active-run-contract-changed'
       : 'active-owner-binding',
     taskContract: contract,
+    changeClass: contract ? classifyContractChange({ previous: run.taskContract, next: contract }) : null,
   };
 };
