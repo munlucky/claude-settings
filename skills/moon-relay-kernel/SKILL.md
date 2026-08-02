@@ -13,3 +13,5 @@ description: Single public entrypoint for Moon Relay Kernel task routing and ada
 6. A protected or high-risk judgment (security review and anything auth, payment, migration, or data-loss shaped) is satisfied only by a review the Kernel itself recorded from an independent reviewer session; name that review's receipt id in the judgment instead of asserting a reviewer identity in the report.
 7. Treat Kernel completion decisions as the only completion authority; a run is done only when `next` returns the `done` action, never from narration.
 8. When blocked, report the blocker reason (question, permission, external-dependency, unsupported-verification, unsafe-command, network-policy) instead of improvising.
+
+When a run establishes a reusable project invariant, required verification, architecture decision, or known failure pattern, include it in knowledgeObservations with the evidence refs that support it.

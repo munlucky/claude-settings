@@ -29,6 +29,17 @@ export function mapCandidateToCanonicalRecord(candidate, { runId, projectId, rev
     confidence: typeof candidate.confidence === 'number' ? candidate.confidence : 0.9,
   });
 
+  if (type === 'required_verification') {
+    const verification = candidate.verification && typeof candidate.verification === 'object' ? candidate.verification : {};
+    record.verification = {
+      commandRefs: [...new Set([...(Array.isArray(verification.commandRefs) ? verification.commandRefs : []), ...(verification.commandRef ? [verification.commandRef] : [])].map(String).filter(Boolean))],
+      receiptContractRef: verification.receiptContractRef ? String(verification.receiptContractRef) : null,
+      freshnessInputs: [...new Set((Array.isArray(verification.freshnessInputs) ? verification.freshnessInputs : []).map(String).filter(Boolean))],
+    };
+    record.receiptContractRef = record.verification.receiptContractRef;
+    record.freshnessInputs = record.verification.freshnessInputs;
+  }
+
   if (type === 'semantic_fact') {
     record.factJson = candidate.candidateJson || candidate;
   } else if (type === 'tacit_practice') {

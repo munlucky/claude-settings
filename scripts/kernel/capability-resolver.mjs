@@ -36,6 +36,11 @@ const conditionState = (task = {}) => {
     reviewSpec: ['T2', 'T3'].includes(riskTier) || task.publicContract === true || task.acceptanceAmbiguity === true,
     reviewStandards: ['T1', 'T2', 'T3'].includes(riskTier) && task.behaviorChanging === true,
     reviewComplexity: task.complex === true || task.newDependency === true || Number(task.filesChanged || 0) > 8,
+    requirements: task.acceptanceUnverifiable === true || task.objectiveNonGoalConflict === true || task.ambiguityChangesOutcome === true,
+    design: task.architectureBoundary === true || task.publicContract === true || task.migration === true || task.irreversibleDecision === true,
+    planning: task.independentDeliverables === true || task.longLivedResume === true || task.safeParallelSplit === true,
+    focusedTest: task.behaviorChanging === true && task.testSurfaceAvailable === true,
+    systematicDebugging: task.repeatedFailure === true || task.repeatedBlocker === true || task.rootCauseAmbiguous === true,
     verification: routeIncludesExecute || task.explicitCompletionAttempt === true,
     gitCloseoutRequested: task.gitCloseoutRequested === true,
     completionAccepted: task.completionAccepted === true,
@@ -53,6 +58,11 @@ const isActive = (id, state) => {
   if (id === 'kernel-review-spec') return state.reviewSpec;
   if (id === 'kernel-review-standards') return state.reviewStandards;
   if (id === 'kernel-review-complexity') return state.reviewComplexity;
+  if (id === 'kernel-requirements-analysis') return state.requirements;
+  if (id === 'kernel-conditional-design') return state.design;
+  if (id === 'kernel-conditional-planning') return state.planning;
+  if (id === 'kernel-focused-test-guidance') return state.focusedTest;
+  if (id === 'kernel-systematic-debugging') return state.systematicDebugging;
   if (id === 'kernel-verification-before-completion') return state.verification;
   if (id === 'kernel-commit-closeout') {
     return Boolean(state.gitCloseoutRequested && state.completionAccepted && state.knowledgeCommitReceiptExists);

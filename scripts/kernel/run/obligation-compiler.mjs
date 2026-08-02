@@ -13,6 +13,7 @@
 import { KERNEL_POLICY } from '../policy.mjs';
 import { isProtectedObligation } from '../proof/protected-obligations.mjs';
 import { discoverProjectCommands, commandRefsForClasses } from '../proof/command-catalog.mjs';
+import { matchPathScope } from '../knowledge/path-scope.mjs';
 
 export class ObligationBindingError extends Error {
   constructor(code, message, detail = {}) {
@@ -87,12 +88,14 @@ export const compileRunObligations = ({
   contract,
   contractRevision = 1,
   commands = null,
+  knowledgeRecords = [],
+  changedPaths = [],
 } = {}) => {
   const projectCommands = commands || discoverProjectCommands({ projectRoot });
   const tierObligations = [...requiredChecks];
   const compiled = new Map();
 
-  const declare = (obligationId, { sourceType, sourceRef = null, acceptanceIds = [], commandRefs = null, evidenceClass = null, method = null }) => {
+  const declare = (obligationId, { sourceType, sourceRef = null, acceptanceIds = [], commandRefs = null, evidenceClass = null, method = null, metadata = null }) => {
     const policy = obligationPolicyFor(obligationId);
     const resolvedClass = evidenceClass || policy.evidenceClass;
 
@@ -136,6 +139,7 @@ export const compileRunObligations = ({
       protected: isProtectedObligation(obligationId),
       sourceType,
       sourceRef,
+      ...(metadata ? { metadata } : {}),
       contractRevision,
       satisfiable: resolvedClass === 'judgment' || allowed.length > 0,
     };
@@ -167,6 +171,33 @@ export const compileRunObligations = ({
       commandRefs: item.evidencePlan?.commandRefs?.length ? item.evidencePlan.commandRefs : null,
       evidenceClass: item.evidencePlan?.class || null,
       method: item.evidencePlan?.method || null,
+    });
+  }
+
+  // Project-owned required_verification records are executable only when the
+  // changed scope intersects the record's declared scope. The Kernel carries
+  // command refs and freshness metadata but does not interpret project domain
+  // semantics or invent pass rules.
+  for (const record of Array.isArray(knowledgeRecords) ? knowledgeRecords : []) {
+    const type = record?.type || record?.recordType;
+    if (type !== 'required_verification' || ['superseded', 'rejected', 'archived'].includes(record.status)) continue;
+    const scope = Array.isArray(record.scope) ? record.scope : [];
+    if (!Array.isArray(changedPaths) || changedPaths.length === 0) continue;
+    if (scope.length > 0 && !changedPaths.some((changedPath) => matchPathScope(changedPath, scope))) continue;
+    const verification = record.verification || record.recordJson?.verification || {};
+    const commandRefs = Array.isArray(verification.commandRefs) ? verification.commandRefs : [];
+    const obligationId = String(verification.obligationId || `required-verification-${record.id || record.recordId || 'record'}`);
+    declare(obligationId, {
+      sourceType: 'knowledge',
+      sourceRef: record.id || record.recordId || null,
+      commandRefs,
+      evidenceClass: 'hard',
+      method: verification.method || null,
+      metadata: {
+        scope,
+        receiptContractRef: verification.receiptContractRef || record.receiptContractRef || null,
+        freshnessInputs: Array.isArray(verification.freshnessInputs) ? verification.freshnessInputs : (record.freshnessInputs || []),
+      },
     });
   }
 

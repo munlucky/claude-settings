@@ -53,6 +53,8 @@ import { resolveBoundInvocation as resolveInvocation } from './run/invocation-re
 import { buildSuccessorKey } from './run/successor-key.mjs';
 import { registerWorkspace } from './run/workspace-registration.mjs';
 import { resolveRunArtifactPaths } from './artifact-paths.mjs';
+import { buildStructuredRunSignals, failureFingerprint } from './knowledge/capture.mjs';
+import { buildEvidenceIdentity, buildEvidenceReuseReceipt } from './proof/evidence-reuse.mjs';
 
 export const computeKernelSourceIdentity = ({ projectRoot = process.cwd(), objective = '', taskContract = {} } = {}) => {
   const sourceDigest = gitTreeDigest(projectRoot) || sha256Hex({ projectRoot, objective });
@@ -329,6 +331,8 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         contract,
         contractRevision: 1,
         commands: projectCommands,
+        knowledgeRecords: store.listKnowledgeRecords({ projectId, statuses: ['committed'] }),
+        changedPaths: normalizedChangeSet.changedPaths,
       });
 
       const workspaceObservation = observeWorkspaceIdentity({ projectRoot });
@@ -443,6 +447,8 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         contract,
         contractRevision: 1,
         commands: discoverProjectCommands({ projectRoot }),
+        knowledgeRecords: store.listKnowledgeRecords({ projectId, statuses: ['committed'] }),
+        changedPaths: normalizedChangeSet.changedPaths,
       });
       const workspaceObservation = observeWorkspaceIdentity({ projectRoot });
       const successorRun = {
@@ -1211,12 +1217,72 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     // Hard evidence path: the Kernel runtime resolves a trusted manifest
     // command, executes it itself, and binds the result to the workspace
     // identity observed immediately before execution.
-    async executeProof(runId, { obligationId = 'default', commandRef, timeoutMs, acceptanceCoverage = [], flakyRerun = false, discovered = null, networkPolicy = 'inherited' } = {}) {
+    async executeProof(runId, { obligationId = 'default', commandRef, timeoutMs, acceptanceCoverage = [], flakyRerun = false, discovered = null, networkPolicy = 'inherited', evidenceIdentity: requestedEvidenceIdentity = null, freshnessInputs = null, allowEvidenceReuse = true } = {}) {
       const run = store.getRun(runId);
       if (!run) throw new Error(`Run ${runId} not found`);
 
       const observation = observeWorkspaceIdentity({ projectRoot });
       store.observeWorkspaceIdentity(runId, observation.identity);
+
+      const evidenceIdentity = requestedEvidenceIdentity || buildEvidenceIdentity({
+        commandRef,
+        sourceInputDigest: observation.identity,
+        networkPolicy,
+        freshnessInputs: freshnessInputs || undefined,
+      });
+      const reusable = allowEvidenceReuse && !discovered && typeof store.findExactReusableVerification === 'function'
+        ? store.findExactReusableVerification({
+          projectId: run.projectId,
+          obligationId,
+          evidenceIdentity,
+          excludeRunId: runId,
+        })
+        : null;
+      if (reusable) {
+        const reuseReceipt = buildEvidenceReuseReceipt({
+          runId,
+          obligationId,
+          priorRunId: reusable.runId,
+          priorVerificationId: reusable.id,
+          mutationRevision: run.mutationRevision,
+          identity: evidenceIdentity,
+          evidenceDigest: reusable.evidenceDigest,
+        });
+        const updated = store.recordVerification(runId, {
+          obligationId,
+          status: 'passed',
+          evidenceRef: `evidence://reuse/${reuseReceipt.receiptId}`,
+          commandRef,
+          command: reusable.command || commandRef,
+          exitCode: 0,
+          evidenceDigest: reusable.evidenceDigest,
+          acceptanceCoverage,
+          verifiedSourceIdentity: observation.identity,
+          executor: 'kernel-runtime',
+          networkIsolation: networkPolicy,
+          evidenceIdentity,
+          reuseOfVerificationId: reusable.id,
+          reuseReceipt,
+        });
+        persistReleaseEvidenceIfNeeded(runId, updated);
+        await projectRunState(updated, { runtimeHome });
+        return {
+          run: updated,
+          execution: {
+            status: 'passed',
+            recordedStatus: 'passed',
+            reused: true,
+            reuseReceipt,
+            outputDigest: reusable.evidenceDigest,
+            evidenceRef: `evidence://reuse/${reuseReceipt.receiptId}`,
+            command: reusable.command || commandRef,
+            args: [],
+            exitCode: 0,
+            flaky: false,
+            workspaceMutatedByProof: false,
+          },
+        };
+      }
 
       const evidenceDir = run.projectId
         ? resolveRunArtifactPaths({ runtimeHome, projectId: run.projectId, runId }).evidence
@@ -1258,6 +1324,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         verifiedSourceIdentity: workspaceMutatedByProof ? postObservation.identity : observation.identity,
         executor: 'kernel-runtime',
         networkIsolation: execution.networkIsolation,
+        evidenceIdentity,
       });
       persistReleaseEvidenceIfNeeded(runId, updated);
 
@@ -1576,7 +1643,35 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         if (revised) await this.reviseContract(runId, revised);
       }
 
+      // Project-owned required_verification records are compiled when the
+      // actual changed scope becomes known. This keeps a report's binding
+      // exact without requiring the project to predict paths in the initial
+      // compact contract.
+      if (report.changedPaths.length > 0 && typeof store.listKnowledgeRecords === 'function') {
+        const currentContractRun = store.getRun(runId);
+        const scopedObligations = compileRunObligations({
+          projectRoot,
+          requiredChecks: [],
+          contract: currentContractRun.taskContract,
+          contractRevision: currentContractRun.contractRevision,
+          commands: discoverProjectCommands({ projectRoot }),
+          knowledgeRecords: store.listKnowledgeRecords({ projectId: currentContractRun.projectId, statuses: ['committed'] }),
+          changedPaths: report.changedPaths,
+        }).filter((obligation) => obligation.sourceType === 'knowledge');
+        if (scopedObligations.length > 0) {
+          store.declareRunObligations(runId, scopedObligations);
+          store.escalateRun(runId, { addObligations: scopedObligations.map((obligation) => obligation.obligationId) });
+        }
+      }
+
       if (report.blocker) {
+        if (typeof store.recordRunSignals === 'function') {
+          store.recordRunSignals(runId, buildStructuredRunSignals({
+            runId,
+            blocker: { ...report.blocker, blockerReceipt: `blocker://${runId}/${report.blocker.reason}` },
+            changedPaths: report.changedPaths,
+          }));
+        }
         store.markRunBlocked(runId, report.blocker.reason);
         await projectRunState(store.getRun(runId), { runtimeHome });
         return { schemaVersion: 1, runId, status: 'blocked', blockedReason: report.blocker.reason, blockedDetail: report.blocker.detail || null, next: await this.next(runId) };
@@ -1694,18 +1789,22 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         for (const request of report.verifications) {
           const obligationId = request.obligationId || request.commandRef;
           try {
+            const declaredObligation = store.getRunObligation(runId, obligationId);
             const { execution } = await this.executeProof(runId, {
               obligationId,
               commandRef: request.commandRef,
               timeoutMs: request.timeoutMs,
               acceptanceCoverage: request.acceptanceCoverage || [],
               networkPolicy: request.networkPolicy || 'inherited',
+              evidenceIdentity: request.evidenceIdentity || null,
+              freshnessInputs: request.freshnessInputs || declaredObligation?.metadata?.freshnessInputs || null,
+              allowEvidenceReuse: request.allowEvidenceReuse !== false,
             });
             // recordedStatus reflects flaky/self-mutation blocking policy, not
             // just the raw command exit; use it so the report is consistent
             // with what completion authority actually sees.
             const effectiveStatus = execution.recordedStatus || execution.status;
-            executed.push({ obligationId, commandRef: request.commandRef, status: effectiveStatus, exitCode: execution.exitCode, evidenceDigest: execution.outputDigest, flaky: Boolean(execution.flaky), workspaceMutatedByProof: Boolean(execution.workspaceMutatedByProof) });
+            executed.push({ obligationId, commandRef: request.commandRef, status: effectiveStatus, exitCode: execution.exitCode, evidenceDigest: execution.outputDigest, newRegression: request.newRegression === true, flaky: Boolean(execution.flaky), workspaceMutatedByProof: Boolean(execution.workspaceMutatedByProof) });
             if (effectiveStatus !== 'passed') {
               const flakyNote = execution.flaky ? ' (flaky: divergent pass/fail — requires a waiver to pass)' : '';
               const mutationNote = execution.workspaceMutatedByProof ? ' (verification command mutated tracked source; evidence invalid)' : '';
@@ -1819,6 +1918,21 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
 
       const refreshed = store.getRun(runId);
       const verifications = store.getVerifications(runId);
+      const structuredSignals = buildStructuredRunSignals({
+        runId,
+        failures: failures.map((failure) => ({ ...failure, fingerprint: failure.fingerprint || failureFingerprint(failure) })),
+        judgments: report.judgments,
+        executed,
+        changedPaths: report.changedPaths,
+        verifications,
+      });
+      structuredSignals.invariantObservations = report.knowledgeObservations
+        .filter((observation) => ['ontology_constraint', 'invariant', 'invariant_observation'].includes(observation?.proposedType || observation?.type))
+        .map((observation) => ({ ...observation, evidenceRefs: observation.evidenceRefs || observation.evidenceRef || observation.evidenceDigest, scope: observation.scope || report.changedPaths }));
+      structuredSignals.supersessionEvidence = report.knowledgeObservations
+        .filter((observation) => Array.isArray(observation?.supersedes) || observation?.supersedes || observation?.supersedesId)
+        .map((observation) => ({ ...observation, evidenceRefs: observation.evidenceRefs || observation.evidenceRef || observation.evidenceDigest, scope: observation.scope || report.changedPaths }));
+      if (typeof store.recordRunSignals === 'function') store.recordRunSignals(runId, structuredSignals);
       const completionPreview = store.evaluateCompletion(runId);
       const outstanding = completionPreview.unsatisfiedObligations.map((entry) => entry.obligationId);
 
@@ -1840,6 +1954,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
           gitCloseoutRequest: report.gitCloseoutRequest,
           changedPaths: report.changedPaths,
           knowledgeObservations: report.knowledgeObservations,
+          structuredSignals,
         });
       }
 

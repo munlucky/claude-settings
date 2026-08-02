@@ -11,6 +11,8 @@ import { normalizeModelRouteDecision, normalizeModelUsageReceipt } from './run/m
 import { digestOfEvidence, evaluateReviewReceipt, normalizeReviewReceipt, parseReviewEvidenceRef } from './proof/review-receipt.mjs';
 import { sanitizePersistentPayload, sanitizePersistentText } from './persistent-sanitizer.mjs';
 import { buildSuccessorKey } from './run/successor-key.mjs';
+import { emptyKnowledgeDoctorFinding } from './knowledge/capture.mjs';
+import { exactEvidenceIdentityMatch } from './proof/evidence-reuse.mjs';
 
 const TIER_RANK = { T0: 0, T1: 1, T2: 2, T3: 3 };
 const EVIDENCE_RANK = { E0: 0, E1: 1, E2: 2 };
@@ -59,6 +61,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       acceptance_criteria TEXT NOT NULL DEFAULT '[]',
       release_evidence_required INTEGER NOT NULL DEFAULT 0,
       successor_key TEXT,
+      run_signals_json TEXT NOT NULL DEFAULT '{}',
       updated_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS verifications (
@@ -74,6 +77,9 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       exit_code INTEGER,
       evidence_digest TEXT,
       acceptance_coverage TEXT NOT NULL DEFAULT '[]',
+      evidence_identity_json TEXT NOT NULL DEFAULT '{}',
+      reuse_of_verification_id INTEGER,
+      reuse_receipt_json TEXT,
       observed_at TEXT NOT NULL,
       FOREIGN KEY(run_id) REFERENCES runs(run_id)
     );
@@ -492,6 +498,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
   addCol('runs', 'successor_key', 'TEXT');
   // Obligation binding authority (P0-2/P0-3).
   addCol('run_obligations', 'evidence_class', "TEXT DEFAULT 'hard'");
+  addCol('run_obligations', 'metadata_json', "TEXT DEFAULT '{}'");
   addCol('run_obligations', 'verification_method', 'TEXT');
   addCol('run_obligations', 'allowed_command_refs', "TEXT DEFAULT '[]'");
   addCol('run_obligations', 'acceptance_ids', "TEXT DEFAULT '[]'");
@@ -555,6 +562,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
   try { db.exec(`ALTER TABLE runs ADD COLUMN knowledge_revision_start TEXT;`); } catch {}
   try { db.exec(`ALTER TABLE runs ADD COLUMN knowledge_revision_close TEXT;`); } catch {}
   try { db.exec(`ALTER TABLE runs ADD COLUMN knowledge_status TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE runs ADD COLUMN run_signals_json TEXT NOT NULL DEFAULT '{}';`); } catch {}
   try { db.exec(`ALTER TABLE runs ADD COLUMN context_pack_ref TEXT;`); } catch {}
   try { db.exec(`ALTER TABLE verifications ADD COLUMN obligation_id TEXT DEFAULT 'default';`); } catch {}
   try { db.exec(`ALTER TABLE verifications ADD COLUMN acceptance_coverage TEXT DEFAULT '[]';`); } catch {}
@@ -564,6 +572,9 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
   try { db.exec(`ALTER TABLE waivers ADD COLUMN approval_receipt TEXT;`); } catch {}
   try { db.exec(`ALTER TABLE waivers ADD COLUMN acceptance_coverage TEXT DEFAULT '[]';`); } catch {}
   try { db.exec(`ALTER TABLE evidence_packs ADD COLUMN mutation_revision INTEGER DEFAULT 0;`); } catch {}
+  try { db.exec(`ALTER TABLE verifications ADD COLUMN evidence_identity_json TEXT NOT NULL DEFAULT '{}';`); } catch {}
+  try { db.exec(`ALTER TABLE verifications ADD COLUMN reuse_of_verification_id INTEGER;`); } catch {}
+  try { db.exec(`ALTER TABLE verifications ADD COLUMN reuse_receipt_json TEXT;`); } catch {}
 
   // Fresh state and already-valid legacy state gain database-level owner
   // invariants. If legacy corruption contains duplicate active owners, opening
@@ -712,8 +723,8 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
     declareRunObligations(runId, obligations = []) {
       for (const obligation of obligations) {
         db.prepare(`
-          INSERT INTO run_obligations(run_id, obligation_id, source_type, source_ref, status, evidence_class, verification_method, allowed_command_refs, rejected_command_refs, acceptance_ids, protected, contract_revision, created_at, updated_at)
-          VALUES(?, ?, ?, ?, 'required', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO run_obligations(run_id, obligation_id, source_type, source_ref, status, evidence_class, verification_method, allowed_command_refs, rejected_command_refs, acceptance_ids, protected, contract_revision, metadata_json, created_at, updated_at)
+          VALUES(?, ?, ?, ?, 'required', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(run_id, obligation_id) DO UPDATE SET
             evidence_class=excluded.evidence_class,
             verification_method=excluded.verification_method,
@@ -722,6 +733,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
             acceptance_ids=excluded.acceptance_ids,
             protected=excluded.protected,
             contract_revision=excluded.contract_revision,
+            metadata_json=excluded.metadata_json,
             updated_at=excluded.updated_at
         `).run(
           runId,
@@ -735,6 +747,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
           JSON.stringify(obligation.acceptanceIds || []),
           obligation.protected ? 1 : 0,
           Number(obligation.contractRevision) || 1,
+          JSON.stringify(obligation.metadata || {}),
           now(),
           now(),
         );
@@ -785,6 +798,12 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       return this.getRun(runId);
     },
 
+    setKnowledgeStatus(runId, status) {
+      if (!this.getRun(runId)) throw new Error(`Run ${runId} not found`);
+      db.prepare(`UPDATE runs SET knowledge_status=?, updated_at=? WHERE run_id=?`).run(String(status || 'no_candidates_submitted'), now(), runId);
+      return this.getRun(runId);
+    },
+
     // A replan is a durable event; counting it keeps the measurement honest.
     incrementReplanCount(runId) {
       if (!this.getRun(runId)) throw new Error(`Run ${runId} not found`);
@@ -808,6 +827,31 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       if (run.status !== 'blocked') return run;
       db.prepare(`UPDATE runs SET status='active', blocked_reason=NULL, intervention_count=intervention_count+1, revision=revision+1, updated_at=? WHERE run_id=?`).run(now(), runId);
       return this.getRun(runId);
+    },
+
+    recordRunSignals(runId, signals = {}) {
+      const run = this.getRun(runId);
+      if (!run) throw new Error(`Run ${runId} not found`);
+      const prior = run.runSignals && typeof run.runSignals === 'object' ? run.runSignals : {};
+      const mergeSignals = (left = [], right = []) => [...left, ...right].filter(Boolean);
+      const merged = {
+        ...prior,
+        ...signals,
+        failures: mergeSignals(prior.failures, signals.failures),
+        blockers: mergeSignals(prior.blockers, signals.blockers),
+        architectureJudgments: mergeSignals(prior.architectureJudgments, signals.architectureJudgments),
+        regressionVerifications: mergeSignals(prior.regressionVerifications, signals.regressionVerifications),
+        invariantObservations: mergeSignals(prior.invariantObservations, signals.invariantObservations),
+        supersessionEvidence: mergeSignals(prior.supersessionEvidence, signals.supersessionEvidence),
+      };
+      db.prepare(`UPDATE runs SET run_signals_json=?, updated_at=? WHERE run_id=?`).run(persistentJson(merged), now(), runId);
+      return this.getRun(runId);
+    },
+
+    getProjectRunSignals(projectId, { excludeRunId = null } = {}) {
+      const rows = db.prepare(`SELECT run_id as runId, run_signals_json as runSignalsJson FROM runs WHERE project_id=? AND run_signals_json IS NOT NULL ${excludeRunId ? 'AND run_id<>?' : ''} ORDER BY updated_at ASC`)
+        .all(...(excludeRunId ? [projectId, excludeRunId] : [projectId]));
+      return rows.map((row) => ({ runId: row.runId, ...(safeJsonParse(row.runSignalsJson, {}) || {}) }));
     },
 
     // Mutation revision advances only when the observed workspace identity
@@ -869,6 +913,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
                workspace_id as workspaceId,
                owner_binding_id as ownerBindingId,
                successor_key as successorKey,
+               run_signals_json as runSignalsJson,
                updated_at as updatedAt
         FROM runs WHERE run_id=?
       `).get(runId);
@@ -912,6 +957,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         workspaceId: row.workspaceId || null,
         ownerBindingId: row.ownerBindingId || null,
         successorKey: row.successorKey || null,
+        runSignals: row.runSignalsJson ? safeJsonParse(row.runSignalsJson, {}) : {},
         updatedAt: row.updatedAt,
       };
     },
@@ -1546,6 +1592,20 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
           });
         }
       }
+      if (projectId) {
+        const completedRuns = db.prepare(`SELECT COUNT(*) as count FROM runs WHERE project_id=? AND status='completed'`).get(projectId);
+        const mutationRuns = db.prepare(`SELECT COUNT(*) as count FROM runs WHERE project_id=? AND status='completed' AND mutation_revision>0`).get(projectId);
+        const candidateCount = db.prepare(`SELECT COUNT(*) as count FROM knowledge_candidates WHERE project_id=?`).get(projectId);
+        const committedCount = db.prepare(`SELECT COUNT(*) as count FROM knowledge_records WHERE project_id=? AND status='committed'`).get(projectId);
+        const doctorFinding = emptyKnowledgeDoctorFinding({
+          completedRuns: Number(completedRuns?.count || 0),
+          mutationRuns: Number(mutationRuns?.count || 0),
+          knowledgeRevision: this.getProjectKnowledgeRevision(projectId),
+          candidateCount: Number(candidateCount?.count || 0),
+          committedCount: Number(committedCount?.count || 0),
+        });
+        if (doctorFinding) findings.push({ projectId, ...doctorFinding });
+      }
       return {
         schemaVersion: 1,
         status: findings.some((finding) => finding.severity === 'error') ? 'degraded' : (
@@ -1865,11 +1925,12 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
     },
 
     getRunObligations(runId) {
-      return db.prepare(`SELECT run_id as runId, obligation_id as obligationId, source_type as sourceType, source_ref as sourceRef, status, evidence_class as evidenceClass, verification_method as verificationMethod, allowed_command_refs as allowedCommandRefs, rejected_command_refs as rejectedCommandRefs, acceptance_ids as acceptanceIds, protected, contract_revision as contractRevision, created_at as createdAt, updated_at as updatedAt FROM run_obligations WHERE run_id=?`).all(runId).map((row) => ({
+      return db.prepare(`SELECT run_id as runId, obligation_id as obligationId, source_type as sourceType, source_ref as sourceRef, status, evidence_class as evidenceClass, verification_method as verificationMethod, allowed_command_refs as allowedCommandRefs, rejected_command_refs as rejectedCommandRefs, acceptance_ids as acceptanceIds, protected, contract_revision as contractRevision, metadata_json as metadataJson, created_at as createdAt, updated_at as updatedAt FROM run_obligations WHERE run_id=?`).all(runId).map((row) => ({
         ...row,
         allowedCommandRefs: safeJsonParse(row.allowedCommandRefs, []),
         rejectedCommandRefs: safeJsonParse(row.rejectedCommandRefs, []),
         acceptanceIds: safeJsonParse(row.acceptanceIds, []),
+        metadata: safeJsonParse(row.metadataJson, {}),
         protected: Boolean(row.protected),
       }));
     },
@@ -2611,7 +2672,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       }
     },
 
-    recordVerification(runId, { obligationId = 'default', status, evidenceRef, sourceIdentity, command, commandRef = null, exitCode = 0, evidenceDigest, acceptanceCoverage = [], verifiedSourceIdentity = null, executor = 'caller-attested', networkIsolation = null, evidenceClass = null }) {
+    recordVerification(runId, { obligationId = 'default', status, evidenceRef, sourceIdentity, command, commandRef = null, exitCode = 0, evidenceDigest, acceptanceCoverage = [], verifiedSourceIdentity = null, executor = 'caller-attested', networkIsolation = null, evidenceClass = null, evidenceIdentity = null, reuseOfVerificationId = null, reuseReceipt = null }) {
       const run = this.getRun(runId);
       if (!run) throw new Error(`Run ${runId} not found`);
       if (run.status === 'completed') throw new Error(`Cannot add verification to completed run ${runId}`);
@@ -2657,9 +2718,9 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       db.exec('BEGIN IMMEDIATE TRANSACTION');
       try {
         db.prepare(`
-          INSERT INTO verifications(run_id, obligation_id, status, evidence_ref, verified_runtime_revision, verified_mutation_revision, source_identity, verified_source_identity, executor, network_isolation, command, exit_code, evidence_digest, acceptance_coverage, evidence_class, contract_revision, observed_at)
-          VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(runId, obligationId, status, evidenceRef || null, run.revision, run.mutationRevision, sourceIdentity, verifiedSourceIdentity, executor, networkIsolation, command || null, exitCode, evidenceDigest || null, JSON.stringify(acceptanceCoverage), resolvedEvidenceClass, Number(run.contractRevision || 1), now());
+          INSERT INTO verifications(run_id, obligation_id, status, evidence_ref, verified_runtime_revision, verified_mutation_revision, source_identity, verified_source_identity, executor, network_isolation, command, exit_code, evidence_digest, acceptance_coverage, evidence_class, contract_revision, evidence_identity_json, reuse_of_verification_id, reuse_receipt_json, observed_at)
+          VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(runId, obligationId, status, evidenceRef || null, run.revision, run.mutationRevision, sourceIdentity, verifiedSourceIdentity, executor, networkIsolation, command || null, exitCode, evidenceDigest || null, JSON.stringify(acceptanceCoverage), resolvedEvidenceClass, Number(run.contractRevision || 1), persistentJson(evidenceIdentity || {}), reuseOfVerificationId || null, reuseReceipt ? persistentJson(reuseReceipt) : null, now());
 
         if (evidenceDigest && sha256Regex.test(evidenceDigest)) {
           db.prepare(`INSERT INTO evidence_lineage(run_id, evidence_digest, created_at) VALUES(?, ?, ?)`).run(runId, evidenceDigest, now());
@@ -2690,7 +2751,30 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
     },
 
     getVerifications(runId) {
-      return db.prepare(`SELECT id, obligation_id as obligationId, status, evidence_ref as evidenceRef, verified_runtime_revision as verifiedRuntimeRevision, verified_mutation_revision as verifiedMutationRevision, source_identity as sourceIdentity, verified_source_identity as verifiedSourceIdentity, executor, network_isolation as networkIsolation, command, exit_code as exitCode, evidence_digest as evidenceDigest, acceptance_coverage as acceptanceCoverage, evidence_class as evidenceClass, contract_revision as contractRevision, observed_at as observedAt FROM verifications WHERE run_id=? AND id IN (SELECT MAX(v2.id) FROM verifications v2 WHERE v2.run_id=? GROUP BY v2.obligation_id) ORDER BY id ASC`).all(runId, runId).map((v) => ({ ...v, acceptanceCoverage: safeJsonParse(v.acceptanceCoverage) }));
+      return db.prepare(`SELECT id, run_id as runId, obligation_id as obligationId, status, evidence_ref as evidenceRef, verified_runtime_revision as verifiedRuntimeRevision, verified_mutation_revision as verifiedMutationRevision, source_identity as sourceIdentity, verified_source_identity as verifiedSourceIdentity, executor, network_isolation as networkIsolation, command, exit_code as exitCode, evidence_digest as evidenceDigest, acceptance_coverage as acceptanceCoverage, evidence_class as evidenceClass, contract_revision as contractRevision, evidence_identity_json as evidenceIdentityJson, reuse_of_verification_id as reuseOfVerificationId, reuse_receipt_json as reuseReceiptJson, observed_at as observedAt FROM verifications WHERE run_id=? AND id IN (SELECT MAX(v2.id) FROM verifications v2 WHERE v2.run_id=? GROUP BY v2.obligation_id) ORDER BY id ASC`).all(runId, runId).map((v) => ({ ...v, acceptanceCoverage: safeJsonParse(v.acceptanceCoverage), evidenceIdentity: safeJsonParse(v.evidenceIdentityJson, {}), reuseReceipt: v.reuseReceiptJson ? safeJsonParse(v.reuseReceiptJson, null) : null }));
+    },
+
+    findExactReusableVerification({ projectId, obligationId, evidenceIdentity, excludeRunId = null } = {}) {
+      if (!projectId || !obligationId || !evidenceIdentity) return null;
+      const rows = db.prepare(`
+        SELECT v.id, v.run_id as runId, v.obligation_id as obligationId, v.status,
+               v.evidence_ref as evidenceRef, v.verified_mutation_revision as verifiedMutationRevision,
+               v.source_identity as sourceIdentity, v.verified_source_identity as verifiedSourceIdentity,
+               v.executor, v.command, v.exit_code as exitCode, v.evidence_digest as evidenceDigest,
+               v.evidence_identity_json as evidenceIdentityJson, v.observed_at as observedAt,
+               r.project_id as projectId
+        FROM verifications v
+        JOIN runs r ON r.run_id=v.run_id
+        WHERE r.project_id=? AND v.obligation_id=? AND v.status='passed' AND v.exit_code=0
+          AND v.evidence_digest IS NOT NULL
+          ${excludeRunId ? 'AND v.run_id<>?' : ''}
+        ORDER BY v.id DESC
+      `).all(...(excludeRunId ? [projectId, obligationId, excludeRunId] : [projectId, obligationId]));
+      for (const row of rows) {
+        const candidate = { ...row, evidenceIdentity: safeJsonParse(row.evidenceIdentityJson, {}) };
+        if (exactEvidenceIdentityMatch(candidate.evidenceIdentity, evidenceIdentity)) return candidate;
+      }
+      return null;
     },
 
     addWaiver(runId, { obligationId, approvedBy, reason, approvalReceipt, acceptanceCoverage = [] }) {
