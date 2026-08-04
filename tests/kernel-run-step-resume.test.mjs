@@ -13,7 +13,10 @@ import { openKernelStateStore } from '../scripts/kernel/state-store.mjs';
 const CONTRACT = {
   complex: true,
   riskTier: 'T2',
-  acceptance: ['auth rejects expired tokens', 'the suite stays clean'],
+  acceptance: [
+    { acceptance: 'auth rejects expired tokens', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'], obligationId: 'unit-test' } },
+    { acceptance: 'the suite stays clean', evidencePlan: { class: 'hard', method: 'static-analysis', commandRefs: ['lint'], obligationId: 'static-analysis' } },
+  ],
   steps: [
     { objective: 'Implement token expiry', allowedPaths: ['src/auth/**'], acceptanceIds: ['AC-1'], obligationIds: ['unit-test'] },
     { objective: 'Cover it with a regression test', allowedPaths: ['tests/**'], acceptanceIds: ['AC-2'], obligationIds: ['static-analysis'] },

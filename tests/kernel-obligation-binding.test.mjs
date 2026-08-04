@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { existsSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
 import { compileRunObligations } from '../scripts/kernel/run/obligation-compiler.mjs';
-import { normalizeTaskContract } from '../scripts/kernel/task/task-contract.mjs';
+import { mergeContractRevisionWithBindings, normalizeTaskContract } from '../scripts/kernel/task/task-contract.mjs';
 import { discoverProjectCommands, classifyCommandName } from '../scripts/kernel/proof/command-catalog.mjs';
 
 const SCRIPTS = {
@@ -209,6 +210,130 @@ test('F1: an honest evidence plan still binds across the test family', async () 
   }
 });
 
+test('P0-2: an explicit AC plan narrows a reused obligation to its named commands', async () => {
+  const fixture = await setup({
+    scripts: {
+      ...SCRIPTS,
+      'test:a': 'node -e "process.exit(0)"',
+      'test:b': 'node -e "process.exit(0)"',
+    },
+  });
+  const cp = await createKernelControlPlane(fixture);
+  try {
+    await cp.startRun({
+      runId: 'r-plan-reuse',
+      objective: 'x',
+      taskContract: {
+        acceptance: [{
+          id: 'AC-1',
+          acceptance: 'works',
+          evidencePlan: {
+            class: 'hard',
+            method: 'unit-test',
+            commandRefs: ['test:b'],
+            obligationId: 'unit-test',
+          },
+        }],
+      },
+    });
+    const bound = cp.stateStore.getRunObligation('r-plan-reuse', 'unit-test');
+    assert.deepEqual(bound.allowedCommandRefs, ['test:b']);
+
+    await mutate(fixture.projectRoot, 1);
+    const unrelated = await cp.report('r-plan-reuse', {
+      summary: 'unplanned command',
+      verifications: [{ obligationId: 'unit-test', commandRef: 'test:a', acceptanceCoverage: ['AC-1'] }],
+    });
+    assert.equal(unrelated.status, 'evidence-rejected');
+    assert.equal(unrelated.executed.length, 0, 'an unplanned but same-family command is rejected before execution');
+    assert.match(unrelated.failures[0].errorSummary, /not bound to obligation "unit-test"/);
+    assert.deepEqual(unrelated.failures[0].allowedCommandRefs, ['test:b']);
+
+    const planned = await cp.report('r-plan-reuse', {
+      summary: 'planned command',
+      verifications: [{ obligationId: 'unit-test', commandRef: 'test:b', acceptanceCoverage: ['AC-1'] }],
+    });
+    assert.equal(planned.executed[0].status, 'passed');
+  } finally {
+    await cp.close();
+    await cleanup(fixture);
+  }
+});
+
+test('P0-2: direct executeProof rejects an unbound command before running it', async () => {
+  const fixture = await setup({
+    scripts: {
+      ...SCRIPTS,
+      'test:unbound': 'node -e "require(\'fs\').writeFileSync(\'unbound-proof-ran\', \'yes\')"',
+    },
+  });
+  const cp = await createKernelControlPlane(fixture);
+  try {
+    await cp.startRun({
+      runId: 'r-direct-binding',
+      objective: 'x',
+      taskContract: {
+        acceptance: [{ acceptance: 'works', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'] } }],
+      },
+    });
+    await cp.transition('r-direct-binding', 'EXECUTE');
+    await cp.transition('r-direct-binding', 'PROVE');
+
+    await assert.rejects(
+      () => cp.executeProof('r-direct-binding', { obligationId: 'acceptance-ac-1', commandRef: 'test:unbound' }),
+      (error) => {
+        assert.equal(error.code, 'COMMAND_NOT_BOUND_TO_OBLIGATION');
+        return true;
+      },
+    );
+    assert.equal(existsSync(path.join(fixture.projectRoot, 'unbound-proof-ran')), false, 'the rejected direct proof must not execute its command');
+    assert.equal(cp.stateStore.getVerifications('r-direct-binding').length, 0);
+  } finally {
+    await cp.close();
+    await cleanup(fixture);
+  }
+});
+
+test('P0-2: an approved discovered command is not falsely rejected for a required_verification obligation', async () => {
+  const fixture = await setup();
+  const cp = await createKernelControlPlane(fixture);
+  try {
+    const runId = 'r-discovered-required-verification';
+    const run = await cp.startRun({ runId, objective: 'x' });
+    cp.stateStore.declareRunObligations(runId, [{
+      obligationId: 'required-verification-fixture',
+      sourceType: 'knowledge',
+      sourceRef: 'knowledge-fixture',
+      evidenceClass: 'hard',
+      verificationMethod: 'unit-test',
+      allowedCommandRefs: ['test:ok'],
+      rejectedCommandRefs: [],
+      acceptanceIds: [],
+      protected: false,
+      contractRevision: run.contractRevision,
+      metadata: { scope: ['app.mjs'] },
+    }]);
+    await cp.transition(runId, 'EXECUTE');
+    await cp.transition(runId, 'PROVE');
+
+    const result = await cp.executeProof(runId, {
+      obligationId: 'required-verification-fixture',
+      commandRef: 'test:ok',
+      discovered: {
+        command: 'node',
+        args: ['-e', 'process.exit(0)'],
+        approval: { approvedBy: 'kernel-test', approvalReceipt: 'approval://required-verification-fixture' },
+      },
+    });
+    assert.equal(result.execution.status, 'passed');
+    assert.equal(result.execution.trust, 'approved-discovered');
+    assert.equal(cp.stateStore.getVerifications(runId)[0].commandRef, null, 'discovered evidence has no trusted manifest commandRef');
+  } finally {
+    await cp.close();
+    await cleanup(fixture);
+  }
+});
+
 test('F2: a shorter revision cannot overwrite an earlier criterion in place', async () => {
   const fixture = await setup();
   const cp = await createKernelControlPlane(fixture);
@@ -369,6 +494,59 @@ test('P0-5: an evidence plan supplied after FRAME is persisted as a contract rev
   }
 });
 
+test('P0-2: AC coverage is canonicalized and cannot cross obligation boundaries', async () => {
+  const fixture = await setup();
+  const cp = await createKernelControlPlane(fixture);
+  try {
+    await cp.startRun({
+      runId: 'r-coverage-binding',
+      objective: 'x',
+      taskContract: {
+        acceptance: [
+          { id: 'AC-1', acceptance: 'auth behavior holds', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'] } },
+          { id: 'AC-2', acceptance: 'static contract holds', evidencePlan: { class: 'hard', method: 'static-analysis', commandRefs: ['lint'] } },
+        ],
+      },
+    });
+    await mutate(fixture.projectRoot, 1);
+
+    const unknown = await cp.report('r-coverage-binding', {
+      summary: 'unknown AC coverage',
+      verifications: [{ obligationId: 'acceptance-ac-1', commandRef: 'test:ok', acceptanceCoverage: ['AC-999'] }],
+    });
+    assert.equal(unknown.status, 'evidence-rejected');
+    assert.equal(unknown.executed.length, 0, 'unknown acceptance ids are rejected before command execution');
+    assert.equal(unknown.failures[0].errorCode, 'ACCEPTANCE_COVERAGE_UNKNOWN');
+
+    const crossBound = await cp.report('r-coverage-binding', {
+      summary: 'cross-bound AC coverage',
+      verifications: [{ obligationId: 'acceptance-ac-1', commandRef: 'test:ok', acceptanceCoverage: ['AC-2'] }],
+    });
+    assert.equal(crossBound.status, 'evidence-rejected');
+    assert.equal(crossBound.failures[0].errorCode, 'ACCEPTANCE_COVERAGE_NOT_BOUND');
+  } finally {
+    await cp.close();
+    await cleanup(fixture);
+  }
+});
+
+test('P0-5: an unknown AC in a late evidence-plan submission is rejected, not ignored', async () => {
+  const fixture = await setup();
+  const cp = await createKernelControlPlane(fixture);
+  try {
+    await cp.startRun({ runId: 'r-unknown-plan', objective: 'x', taskContract: { acceptance: ['works'] } });
+    const rejected = await cp.report('r-unknown-plan', {
+      summary: 'unknown plan',
+      evidencePlans: [{ acceptanceId: 'AC-404', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'] } }],
+    });
+    assert.equal(rejected.status, 'evidence-rejected');
+    assert.equal(rejected.failures[0].errorCode, 'EVIDENCE_PLAN_UNKNOWN_ACCEPTANCE');
+  } finally {
+    await cp.close();
+    await cleanup(fixture);
+  }
+});
+
 test('P0-4: a contract revision can refine scope but never shrink it', async () => {
   const fixture = await setup();
   const cp = await createKernelControlPlane(fixture);
@@ -424,7 +602,13 @@ test('P0-6: a finished report releases its lease so the next process is not lock
   const fixture = await setup();
   const firstProcess = await createKernelControlPlane(fixture);
   try {
-    await firstProcess.startRun({ runId: 'r-lease', objective: 'x', taskContract: { acceptance: ['works'] } });
+    await firstProcess.startRun({
+      runId: 'r-lease',
+      objective: 'x',
+      taskContract: {
+        acceptance: [{ acceptance: 'works', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'] } }],
+      },
+    });
     await mutate(fixture.projectRoot, 1);
     const failed = await firstProcess.report('r-lease', {
       summary: 'attempt',
@@ -440,7 +624,10 @@ test('P0-6: a finished report releases its lease so the next process is not lock
   try {
     const passed = await secondProcess.report('r-lease', {
       summary: 'retry',
-      verifications: [{ obligationId: 'default', commandRef: 'test:ok', acceptanceCoverage: ['works'] }],
+      verifications: [
+        { obligationId: 'default', commandRef: 'test:ok', acceptanceCoverage: [] },
+        { obligationId: 'acceptance-ac-1', commandRef: 'test:ok', acceptanceCoverage: ['AC-1'] },
+      ],
     });
     assert.notEqual(passed.status, 'lease-conflict');
     assert.equal(passed.status, 'completed');
@@ -474,13 +661,22 @@ test('P0-7: accepted completion with incomplete finalization is neither done nor
   const fixture = await setup();
   const cp = await createKernelControlPlane(fixture);
   try {
-    await cp.startRun({ runId: 'r-final', objective: 'x', taskContract: { acceptance: ['works'] } });
+    await cp.startRun({
+      runId: 'r-final',
+      objective: 'x',
+      taskContract: {
+        acceptance: [{ acceptance: 'works', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'] } }],
+      },
+    });
     await mutate(fixture.projectRoot, 1);
 
     // Git closeout is requested but cannot succeed against this fixture.
     const reported = await cp.report('r-final', {
       summary: 'fix',
-      verifications: [{ obligationId: 'default', commandRef: 'test:ok', acceptanceCoverage: ['works'] }],
+      verifications: [
+        { obligationId: 'default', commandRef: 'test:ok', acceptanceCoverage: [] },
+        { obligationId: 'acceptance-ac-1', commandRef: 'test:ok', acceptanceCoverage: ['AC-1'] },
+      ],
       gitCloseoutRequest: { requested: true, mode: 'commit', message: 'sentinel closeout' },
     });
 
@@ -508,14 +704,23 @@ test('F4: a requested Git closeout that did not complete keeps finalization part
   const fixture = await setup();
   const cp = await createKernelControlPlane(fixture);
   try {
-    await cp.startRun({ runId: 'r-f4', objective: 'x', taskContract: { acceptance: ['works'] } });
+    await cp.startRun({
+      runId: 'r-f4',
+      objective: 'x',
+      taskContract: {
+        acceptance: [{ acceptance: 'works', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'] } }],
+      },
+    });
     await mutate(fixture.projectRoot, 1);
 
     // A closeout is requested but cannot complete against this fixture.
     const first = await cp.report('r-f4', {
       summary: 'fix',
       changedPaths: ['app.mjs'],
-      verifications: [{ obligationId: 'default', commandRef: 'test:ok', acceptanceCoverage: ['works'] }],
+      verifications: [
+        { obligationId: 'default', commandRef: 'test:ok', acceptanceCoverage: [] },
+        { obligationId: 'acceptance-ac-1', commandRef: 'test:ok', acceptanceCoverage: ['AC-1'] },
+      ],
       gitCloseoutRequest: { requested: true, mode: 'commit', message: 'closeout' },
     });
     assert.equal(first.finalization.completionStatus, 'accepted');
@@ -565,13 +770,21 @@ test('P1-1: report follows the stored route instead of the shortest path to PROV
   const fixture = await setup();
   const cp = await createKernelControlPlane(fixture);
   try {
-    await cp.startRun({ runId: 'r-route', objective: 'x', taskContract: { publicContract: true, acceptance: ['works'] } });
+    await cp.startRun({
+      runId: 'r-route',
+      objective: 'x',
+      taskContract: {
+        publicContract: true,
+        acceptance: [{ acceptance: 'works', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'] } }],
+      },
+    });
     await mutate(fixture.projectRoot, 1);
     await cp.report('r-route', {
       summary: 'implement',
       verifications: [
-        { obligationId: 'unit-test', commandRef: 'test:ok', acceptanceCoverage: ['works'] },
+        { obligationId: 'unit-test', commandRef: 'test:ok', acceptanceCoverage: [] },
         { obligationId: 'static-analysis', commandRef: 'lint' },
+        { obligationId: 'acceptance-ac-1', commandRef: 'test:ok', acceptanceCoverage: ['AC-1'] },
       ],
     });
     const attempts = (await cp.status('r-route')).run;
@@ -600,6 +813,159 @@ test('P1-2/P1-3: next carries stage guidance, obligations, and repository eviden
     // The internal project-mode classification is never named to the model.
     assert.ok(!JSON.stringify(next).includes('brownfield'));
     assert.ok(!JSON.stringify(next).includes('greenfield'));
+  } finally {
+    await cp.close();
+    await cleanup(fixture);
+  }
+});
+
+test('successor contract merge rebases local step AC ids to canonical merged ids', () => {
+  const previous = normalizeTaskContract({
+    acceptance: [{
+      id: 'AC-1',
+      acceptance: 'the predecessor invariant holds',
+      evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'], obligationId: 'predecessor-check' },
+    }],
+    requiredObligations: ['predecessor-check'],
+    steps: [{
+      objective: 'predecessor',
+      allowedPaths: ['app.mjs'],
+      acceptanceIds: ['AC-1'],
+      obligationIds: ['predecessor-check'],
+    }],
+  }, { objective: 'predecessor' });
+  const successor = normalizeTaskContract({
+    acceptance: [{
+      id: 'AC-1',
+      acceptance: 'the successor binding is rebased',
+      evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'], obligationId: 'successor-check' },
+    }],
+    requiredObligations: ['successor-check'],
+    steps: [{
+      objective: 'successor',
+      allowedPaths: ['app.mjs'],
+      acceptanceIds: ['AC-1'],
+      obligationIds: ['successor-check'],
+    }],
+  }, { objective: 'successor' });
+
+  const merged = mergeContractRevisionWithBindings(previous, successor);
+  assert.deepEqual(merged.contract.acceptance.map((item) => item.id), ['AC-1', 'AC-2']);
+  assert.equal(merged.acceptanceIdMap['AC-1'], 'AC-2');
+  assert.deepEqual(merged.contract.steps[0].acceptanceIds, ['AC-2']);
+  assert.deepEqual(merged.contract.steps[0].obligationIds, ['successor-check']);
+});
+
+test('successor contract merge fails closed for unknown or omitted acceptance bindings', () => {
+  const previous = normalizeTaskContract({
+    acceptance: [{ acceptance: 'old', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'], obligationId: 'old-check' } }],
+    requiredObligations: ['old-check'],
+    steps: [{ objective: 'old', acceptanceIds: ['AC-1'], obligationIds: ['old-check'] }],
+  }, { objective: 'old' });
+  const unknown = normalizeTaskContract({
+    acceptance: [{ acceptance: 'new', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'], obligationId: 'new-check' } }],
+    requiredObligations: ['new-check'],
+    steps: [{ objective: 'new', acceptanceIds: ['AC-999'], obligationIds: ['new-check'] }],
+  }, { objective: 'new' });
+  assert.throws(
+    () => mergeContractRevisionWithBindings(previous, unknown),
+    (error) => error.code === 'CONTRACT_STEP_ACCEPTANCE_UNKNOWN',
+  );
+
+  const omitted = normalizeTaskContract({
+    acceptance: [{ acceptance: 'new', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'], obligationId: 'new-check' } }],
+    requiredObligations: ['new-check'],
+    steps: [{ objective: 'new', acceptanceIds: [], obligationIds: ['new-check'] }],
+  }, { objective: 'new' });
+  assert.throws(
+    () => mergeContractRevisionWithBindings(previous, omitted),
+    (error) => error.code === 'CONTRACT_STEP_ACCEPTANCE_OMITTED',
+  );
+});
+
+test('contract revision atomically rebases steps and keeps predecessor coverage canonical', async () => {
+  const fixture = await setup();
+  const cp = await createKernelControlPlane(fixture);
+  try {
+    await cp.startRun({
+      runId: 'r-merge-rebase',
+      objective: 'predecessor',
+      taskContract: {
+        acceptance: [{ acceptance: 'old', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'], obligationId: 'old-check' } }],
+        requiredObligations: ['old-check'],
+        steps: [{ objective: 'predecessor', allowedPaths: ['app.mjs'], acceptanceIds: ['AC-1'], obligationIds: ['old-check'] }],
+      },
+    });
+    await cp.transition('r-merge-rebase', 'EXECUTE');
+    await cp.transition('r-merge-rebase', 'PROVE');
+    await cp.recordProof('r-merge-rebase', {
+      obligationId: 'old-check',
+      status: 'passed',
+      evidenceRef: 'proof://old',
+      command: 'npm run test:ok',
+      commandRef: 'test:ok',
+      evidenceDigest: `sha256:${'a'.repeat(64)}`,
+      acceptanceCoverage: ['AC-1'],
+    });
+
+    await cp.ensureRun({
+      runId: 'r-merge-rebase',
+      objective: 'successor',
+      taskContract: {
+        acceptance: [{ acceptance: 'new', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'], obligationId: 'new-check' } }],
+        requiredObligations: ['new-check'],
+        steps: [{ objective: 'successor', allowedPaths: ['app.mjs'], acceptanceIds: ['AC-1'], obligationIds: ['new-check'] }],
+      },
+    });
+
+    const run = await cp.getRun('r-merge-rebase');
+    assert.equal(run.contractRevision, 2);
+    assert.deepEqual(run.taskContract.acceptance.map((item) => item.id), ['AC-1', 'AC-2']);
+    assert.deepEqual(cp.getCurrentStep('r-merge-rebase').acceptanceIds, ['AC-2']);
+    assert.deepEqual(cp.stateStore.getRunObligation('r-merge-rebase', 'new-check').acceptanceIds, ['AC-2']);
+    assert.deepEqual(cp.stateStore.getVerifications('r-merge-rebase')[0].acceptanceCoverage, ['AC-1']);
+  } finally {
+    await cp.close();
+    await cleanup(fixture);
+  }
+});
+
+test('contract revision rolls back when persisted coverage cannot be rebound', async () => {
+  const fixture = await setup();
+  const cp = await createKernelControlPlane(fixture);
+  try {
+    await cp.startRun({
+      runId: 'r-merge-rollback',
+      objective: 'predecessor',
+      taskContract: {
+        acceptance: [{ acceptance: 'old', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'], obligationId: 'old-check' } }],
+        requiredObligations: ['old-check'],
+        steps: [{ objective: 'predecessor', acceptanceIds: ['AC-1'], obligationIds: ['old-check'] }],
+      },
+    });
+    cp.stateStore.addWaiver('r-merge-rollback', {
+      obligationId: 'old-check',
+      approvedBy: 'fixture',
+      reason: 'fixture coverage rollback',
+      approvalReceipt: 'approval://fixture',
+      acceptanceCoverage: ['AC-999'],
+    });
+
+    await assert.rejects(
+      cp.ensureRun({
+        runId: 'r-merge-rollback',
+        objective: 'successor',
+        taskContract: {
+          acceptance: [{ acceptance: 'new', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'], obligationId: 'new-check' } }],
+          requiredObligations: ['new-check'],
+          steps: [{ objective: 'successor', acceptanceIds: ['AC-1'], obligationIds: ['new-check'] }],
+        },
+      }),
+      (error) => error.code === 'CONTRACT_COVERAGE_REBASE_FAILED',
+    );
+    const unchanged = await cp.getRun('r-merge-rollback');
+    assert.equal(unchanged.contractRevision, 1);
+    assert.deepEqual(unchanged.taskContract.acceptance.map((item) => item.statement), ['old']);
   } finally {
     await cp.close();
     await cleanup(fixture);

@@ -25,7 +25,15 @@ import { executeTrustedProof, executeApprovedProof, executeWithFlakyRerun, Untru
 import { NetworkPolicyUnenforceableError } from './proof/network-policy.mjs';
 import { buildNextPayload, normalizeReport, planStatePath, planRouteSteps } from './run/run-loop.mjs';
 import { detectProjectMode } from './task/project-mode.mjs';
-import { normalizeTaskContract, applyEvidencePlans, mergeContractRevision, contractBriefing, riskSummaryFromContract } from './task/task-contract.mjs';
+import {
+  normalizeTaskContract,
+  applyEvidencePlans,
+  assertEvidencePlanSubmission,
+  normalizeAcceptanceCoverage,
+  mergeContractRevisionWithBindings,
+  contractBriefing,
+  riskSummaryFromContract,
+} from './task/task-contract.mjs';
 import { compileRunObligations, assertCommandBinding, ObligationBindingError } from './run/obligation-compiler.mjs';
 import { discoverProjectCommands } from './proof/command-catalog.mjs';
 import { needsShape } from './route.mjs';
@@ -171,7 +179,9 @@ const stepScopeChanged = (step, declared) => {
   if (!step || !declared) return false;
   const normalized = (value) => [...new Set((Array.isArray(value) ? value : []).map(String))].sort();
   return JSON.stringify(normalized(step.allowedPaths)) !== JSON.stringify(normalized(declared.allowedPaths))
-    || JSON.stringify(normalized(step.forbiddenPaths)) !== JSON.stringify(normalized(declared.forbiddenPaths));
+    || JSON.stringify(normalized(step.forbiddenPaths)) !== JSON.stringify(normalized(declared.forbiddenPaths))
+    || JSON.stringify(normalized(step.acceptanceIds)) !== JSON.stringify(normalized(declared.acceptanceIds))
+    || JSON.stringify(normalized(step.obligationIds)) !== JSON.stringify(normalized(declared.obligationIds));
 };
 
 const planDiffersFromContract = (steps = [], declared = []) => {
@@ -184,7 +194,21 @@ const planDiffersFromContract = (steps = [], declared = []) => {
 
 export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRuntimeHome(), relayHome, projectRoot = process.cwd(), holder: holderOption, env = process.env, requireHostBinding = false } = {}) => {
   const store = await openKernelStateStore({ runtimeHome, relayHome });
-  const currentProject = resolveKernelProjectIdentity({ cwd: projectRoot });
+  let currentProject = resolveKernelProjectIdentity({
+    cwd: projectRoot,
+    env: { ...env, MOON_RELAY_KERNEL_HOME: runtimeHome },
+  });
+  // State-store identity roots are persisted in canonical, case-normalized
+  // form. Keep a native spelling for mutation fencing without changing the
+  // source-root spelling used by source identity and repository evidence.
+  const fencingWorkspaceRoot = path.resolve(currentProject.canonicalRoot);
+  const persistedIdentity = store.registerProjectIdentity(currentProject);
+  currentProject = {
+    ...currentProject,
+    ...persistedIdentity,
+    projectRoot,
+    aliases: persistedIdentity.aliases,
+  };
   const rawHostSessionId = env.MOON_RELAY_KERNEL_SESSION_ID || null;
   const hostProvider = env.MOON_RELAY_KERNEL_PROVIDER || 'unknown-host';
   const hostSessionId = rawHostSessionId
@@ -210,6 +234,14 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     throw Object.assign(new Error('run_workspace_mismatch'), { code: 'run_workspace_mismatch' });
   }
   const effectiveWorkspaceId = registeredWorkspace.workspaceId;
+  // Reconcile terminal bindings and stale mutation locks at the public Kernel
+  // lifecycle boundary. Preserve only a completed binding owned by this host
+  // so a successor contract can perform its atomic handoff; blocked bindings
+  // and terminal bindings from other sessions cannot remain executable.
+  store.reconcileTerminalLifecycle({
+    projectId: currentProject.projectId,
+    preserveSessionId: hostSessionId,
+  });
   const getHostBinding = ({ runId = null } = {}) => {
     const canonical = runId
       ? store.getActiveRunBinding({ projectId: currentProject.projectId, sessionId: hostSessionId, runId })
@@ -300,7 +332,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       const contract = normalizeTaskContract(taskContract, { objective: objective || taskContract.objective });
       if (hostCapabilities) assertRequiredHostCapabilities(contract, hostCapabilities);
 
-      const identity = resolveKernelProjectIdentity({ cwd: projectRoot });
+      const identity = currentProject;
       const projectId = identity.projectId;
       await ensureKnowledgeStoreDirectories(projectId, { env: { MOON_RELAY_KERNEL_HOME: runtimeHome } });
       const knowledgeRevisionStart = String(store.getProjectKnowledgeRevision(projectId));
@@ -564,7 +596,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       }
       if (explicitRunId) return String(explicitRunId);
       if (envRunId) return String(envRunId);
-      const identity = resolveKernelProjectIdentity({ cwd: projectRoot });
+      const identity = currentProject;
       const active = store.listActiveRuns({ projectId: identity.projectId });
       if (active.length === 1) return active[0].runId;
       if (active.length > 1) throw new Error(`ambiguous_active_run: ${active.map((run) => run.runId).join(', ')}`);
@@ -597,6 +629,19 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         return { status: 'created', run, next: await this.next(runId) };
       }
       if (requireHostBinding && !getHostBinding({ runId })) {
+        if (metadata.status === 'blocked' && metadata.ownerBindingId) {
+          store.reactivateBlockedRunBinding(normalizeSessionBinding({
+            bindingId: metadata.ownerBindingId,
+            sessionId: hostSessionId,
+            runId,
+            projectId: currentProject.projectId,
+            workspaceId: effectiveWorkspaceId,
+            workspaceRoot: path.resolve(projectRoot),
+            provider: env.MOON_RELAY_KERNEL_PROVIDER || 'unknown',
+            surface: env.MOON_RELAY_KERNEL_SURFACE || null,
+            accessMode: 'owner',
+          }));
+        }
         // Additive legacy adoption is deliberately one-shot. Only an
         // unowned run in this exact project/workspace can acquire its first
         // owner binding; once owner_binding_id is populated, another session
@@ -625,14 +670,15 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       if (objective || (taskContract && Object.keys(taskContract).length > 0)) {
         // A revision may only refine the contract; scope it already carries is
         // never dropped, so a later turn cannot shrink the completion gate.
-        const merged = mergeContractRevision(
+        const mergedRevision = mergeContractRevisionWithBindings(
           existing.taskContract,
           normalizeTaskContract(taskContract, { objective: objective || existing.objective }),
         );
+        const merged = mergedRevision.contract;
         if (existing.taskContract) {
           const contractChanged = merged.digest !== existing.taskContract.digest;
           if (contractChanged) {
-            await this.reviseContract(runId, merged);
+            await this.reviseContract(runId, merged, { acceptanceIdMap: mergedRevision.acceptanceIdMap });
           }
           const activeContract = contractChanged ? merged : existing.taskContract;
           const currentRun = store.getRun(runId);
@@ -664,17 +710,24 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
 
     // Persists a refined Task Contract and recompiles obligations against it,
     // so a plan supplied after FRAME is a binding change, not a note (P0-5).
-    async reviseContract(runId, contract) {
+    async reviseContract(runId, contract, { acceptanceIdMap = null } = {}) {
       const run = store.getRun(runId);
       if (!run) throw new Error(`Run ${runId} not found`);
-      const updated = store.updateTaskContract(runId, contract);
+      const nextContractRevision = Number(run.contractRevision || 1) + 1;
       const obligations = compileRunObligations({
         projectRoot,
-        requiredChecks: KERNEL_POLICY.requiredChecks[updated.proofTier] || ['default'],
+        requiredChecks: KERNEL_POLICY.requiredChecks[run.proofTier] || ['default'],
         contract,
-        contractRevision: updated.contractRevision,
+        contractRevision: nextContractRevision,
       });
-      store.declareRunObligations(runId, obligations);
+      // The contract already contains canonicalized successor references. Keep
+      // the mapping visible to this boundary for lineage, but never rewrite
+      // predecessor proof from an old AC namespace using successor-local IDs.
+      void acceptanceIdMap;
+      const updated = typeof store.reviseTaskContractAtomic === 'function'
+        ? store.reviseTaskContractAtomic(runId, contract, { obligations })
+        : store.updateTaskContract(runId, contract);
+      if (typeof store.reviseTaskContractAtomic !== 'function') store.declareRunObligations(runId, obligations);
       const merged = [...new Set([...updated.requiredObligations, ...obligations.map((obligation) => obligation.obligationId)])];
       const escalated = store.escalateRun(runId, { addObligations: merged });
       await projectRunState(escalated, { runtimeHome });
@@ -691,7 +744,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       if (!run) throw new Error(`Run ${runId} not found`);
 
       const normalizedChangeSet = normalizeChangedContract(taskContract);
-      const projectId = run.projectId || resolveKernelProjectIdentity({ cwd: projectRoot }).projectId;
+      const projectId = run.projectId || currentProject.projectId;
       const knowledgeCtx = await buildProjectKnowledgeContext({
         projectId,
         stage,
@@ -795,7 +848,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       return planBoundedWaves(slices, { riskTier: run.proofTier, includeIndependentReview, integrationVerification });
     },
 
-    async recordProof(runId, { obligationId = 'default', status, sourceIdentity, evidenceRef, command, exitCode = 0, evidenceDigest, acceptanceCoverage = [], evidenceClass = null } = {}) {
+    async recordProof(runId, { obligationId = 'default', status, sourceIdentity, evidenceRef, command, commandRef = null, exitCode = 0, evidenceDigest, acceptanceCoverage = [], evidenceClass = null } = {}) {
       const run = store.getRun(runId);
       const effectiveSourceIdentity = sourceIdentity || run?.sourceIdentity;
       const updated = store.recordVerification(runId, {
@@ -803,6 +856,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         status,
         evidenceRef,
         sourceIdentity: effectiveSourceIdentity,
+        commandRef,
         command,
         exitCode,
         evidenceDigest,
@@ -1016,7 +1070,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     assertMutationAllowed(request = {}) {
       return assertMutationAllowed({
         stateStore: store,
-        workspaceRoot: projectRoot,
+        workspaceRoot: fencingWorkspaceRoot,
         ...request,
       });
     },
@@ -1232,6 +1286,14 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     async executeProof(runId, { obligationId = 'default', commandRef, timeoutMs, acceptanceCoverage = [], flakyRerun = false, discovered = null, networkPolicy = 'inherited', evidenceIdentity: requestedEvidenceIdentity = null, freshnessInputs = null, allowEvidenceReuse = true } = {}) {
       const run = store.getRun(runId);
       if (!run) throw new Error(`Run ${runId} not found`);
+
+      // Direct Host callers use this method without reportUnderLease's
+      // preflight. Reject an unbound command before observing/executing it so
+      // the direct API cannot create side effects and only fail at persistence.
+      const declaredObligation = store.getRunObligation(runId, obligationId);
+      if (declaredObligation && declaredObligation.sourceType !== 'ad-hoc') {
+        assertCommandBinding(declaredObligation, discovered ? null : commandRef);
+      }
 
       const observation = observeWorkspaceIdentity({ projectRoot });
       store.observeWorkspaceIdentity(runId, observation.identity);
@@ -1629,6 +1691,25 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
 
     async reportUnderLease(runId, payload, { fencingToken }) {
       const run = store.getRun(runId);
+      const evidenceRejected = (failures) => {
+        const currentRun = store.getRun(runId);
+        return {
+          schemaVersion: 1,
+          runId,
+          status: 'evidence-rejected',
+          executed: [],
+          failures,
+          finalization: null,
+          next: buildNextPayload({
+            run: currentRun,
+            verifications: store.getVerifications(runId),
+            requiredObligations: currentRun.requiredObligations,
+            obligations: store.getRunObligations(runId),
+            contract: currentRun.taskContract ? contractBriefing(currentRun.taskContract) : null,
+            failures,
+          }),
+        };
+      };
       // A run that already reached accepted completion but whose finalization
       // is partial re-enters finalization instead of restarting the loop.
       if (run.status === 'completed' && run.finalizationStatus !== 'completed') {
@@ -1650,13 +1731,6 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       }
 
       const report = normalizeReport(payload);
-
-      // A refined contract (new constraints, or the evidence plan the model
-      // produced in FRAME) is persisted before any execution (P0-5).
-      if (run.taskContract && report.evidencePlans.length > 0) {
-        const revised = applyEvidencePlans(run.taskContract, report.evidencePlans);
-        if (revised) await this.reviseContract(runId, revised);
-      }
 
       // Project-owned required_verification records are compiled when the
       // actual changed scope becomes known. This keeps a report's binding
@@ -1723,6 +1797,63 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
           }),
         };
       }
+
+      // A refined contract (new constraints, or the evidence plan the model
+      // produced in FRAME) is persisted before any execution (P0-5). A plain
+      // acceptance string is allowed at bootstrap, but proof cannot begin
+      // until every unplanned criterion is bound to an AC-specific plan. Scope
+      // and capsule admission are checked first so an invalid work-unit
+      // report remains a scope/step rejection even though it also lacks proof
+      // plans; neither path executes a command.
+      const hasProofSubmission = report.verifications.length > 0 || report.judgments.length > 0;
+      const currentRunForEvidence = store.getRun(runId);
+      const missingEvidencePlanIds = (currentRunForEvidence.taskContract?.acceptance || [])
+        .filter((item) => !item.evidencePlan)
+        .map((item) => item.id);
+      try {
+        if (report.evidencePlans.length > 0) {
+          assertEvidencePlanSubmission(currentRunForEvidence.taskContract || {}, report.evidencePlans);
+          const revised = applyEvidencePlans(currentRunForEvidence.taskContract, report.evidencePlans);
+          if (revised) await this.reviseContract(runId, revised);
+        } else if (hasProofSubmission && missingEvidencePlanIds.length > 0) {
+          throw new Error(`MISSING_EVIDENCE_PLAN: proof requires plans for ${missingEvidencePlanIds.join(', ')}`);
+        }
+      } catch (error) {
+        return evidenceRejected([{
+          obligationId: 'evidence-plan',
+          command: 'evidence-plan',
+          errorSummary: error.message,
+          errorCode: error.code || 'MISSING_EVIDENCE_PLAN',
+          ...(error.detail ? { detail: error.detail } : {}),
+        }]);
+      }
+
+      // Canonicalize legacy statement coverage and reject coverage that is
+      // unknown or belongs to a different acceptance-bound obligation before
+      // any command can execute.
+      const currentContractRun = store.getRun(runId);
+      const coverageFailures = [];
+      for (const request of report.verifications) {
+        const obligationId = request.obligationId || request.commandRef;
+        const declared = store.getRunObligation(runId, obligationId);
+        try {
+          request.acceptanceCoverage = normalizeAcceptanceCoverage({
+            contract: currentContractRun.taskContract || {},
+            acceptanceCriteria: currentContractRun.acceptanceCriteria || [],
+            obligation: declared,
+            coverage: request.acceptanceCoverage || [],
+          });
+        } catch (error) {
+          coverageFailures.push({
+            obligationId,
+            commandRef: request.commandRef,
+            errorSummary: error.message,
+            errorCode: error.code || 'ACCEPTANCE_COVERAGE_INVALID',
+            ...(error.detail ? { detail: error.detail } : {}),
+          });
+        }
+      }
+      if (coverageFailures.length > 0) return evidenceRejected(coverageFailures);
 
       // Each report is a durable attempt; the number is derived from persisted
       // rows so retry counting survives restarts.

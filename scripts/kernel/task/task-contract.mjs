@@ -20,12 +20,39 @@ export class MissingEvidencePlanError extends Error {
   }
 }
 
+export class EvidencePlanBindingError extends Error {
+  constructor(code, message, detail = {}) {
+    super(message);
+    this.name = 'EvidencePlanBindingError';
+    this.code = code;
+    this.detail = detail;
+  }
+}
+
+export class AcceptanceCoverageBindingError extends Error {
+  constructor(code, message, detail = {}) {
+    super(message);
+    this.name = 'AcceptanceCoverageBindingError';
+    this.code = code;
+    this.detail = detail;
+  }
+}
+
+export class ContractBindingError extends Error {
+  constructor(code, message, detail = {}) {
+    super(message);
+    this.name = 'ContractBindingError';
+    this.code = code;
+    this.detail = detail;
+  }
+}
+
 const asStringList = (value) => (Array.isArray(value) ? value : value ? [value] : [])
   .map((item) => (typeof item === 'string' ? item : String(item?.statement || item?.text || '')))
   .map((item) => item.trim())
   .filter(Boolean);
 
-const normalizeEvidencePlan = (plan) => {
+export const normalizeEvidencePlan = (plan) => {
   if (!plan || typeof plan !== 'object') return null;
   const commandRefs = [
     ...(Array.isArray(plan.commandRefs) ? plan.commandRefs : []),
@@ -71,6 +98,115 @@ export const assertEvidencePlans = (acceptance = []) => {
 };
 
 export const acceptanceStatements = (acceptance = []) => normalizeAcceptance(acceptance).map((item) => item.statement).filter(Boolean);
+
+const acceptanceIndex = ({ contract = {}, acceptanceCriteria = [] } = {}) => {
+  const rawAcceptance = Array.isArray(contract?.acceptance) && contract.acceptance.length > 0
+    ? contract.acceptance
+    : acceptanceCriteria;
+  const items = normalizeAcceptance(rawAcceptance);
+  const byToken = new Map();
+  const ambiguous = new Set();
+  const idCounts = new Map();
+  for (const item of items) idCounts.set(item.id, (idCounts.get(item.id) || 0) + 1);
+  for (const item of items) {
+    if (idCounts.get(item.id) > 1) ambiguous.add(item.id);
+    else if (byToken.has(item.id) && byToken.get(item.id) !== item.id) ambiguous.add(item.id);
+    else if (!ambiguous.has(item.id)) byToken.set(item.id, item.id);
+    if (!item.statement) continue;
+    if (byToken.has(item.statement) && byToken.get(item.statement) !== item.id) {
+      ambiguous.add(item.statement);
+    } else if (!ambiguous.has(item.statement) && !byToken.has(item.statement)) {
+      byToken.set(item.statement, item.id);
+    }
+  }
+  return { items, byToken, ambiguous };
+};
+
+// A report may use either an AC id or its legacy statement spelling, but the
+// Kernel canonicalizes both to the immutable AC id before persistence. The
+// coverage must also belong to the obligation that produced the evidence; a
+// passing command for AC-1 cannot be re-labeled as proof for AC-2 (or AC-999).
+export const normalizeAcceptanceCoverage = ({ contract = {}, acceptanceCriteria = [], obligation = null, coverage = [] } = {}) => {
+  const values = (Array.isArray(coverage) ? coverage : coverage ? [coverage] : [])
+    .map((value) => String(value).trim())
+    .filter(Boolean);
+  if (values.length === 0) return [];
+
+  const { byToken, ambiguous } = acceptanceIndex({ contract, acceptanceCriteria });
+  const unknown = values.filter((value) => !byToken.has(value) || ambiguous.has(value));
+  if (unknown.length > 0) {
+    throw new AcceptanceCoverageBindingError(
+      'ACCEPTANCE_COVERAGE_UNKNOWN',
+      `Acceptance coverage names an unknown or ambiguous criterion: ${unknown.join(', ')}`,
+      { unknown },
+    );
+  }
+
+  const canonical = [...new Set(values.map((value) => byToken.get(value)))];
+  const boundAcceptanceIds = new Set(Array.isArray(obligation?.acceptanceIds) ? obligation.acceptanceIds.map(String) : []);
+  const unrelated = canonical.filter((id) => !boundAcceptanceIds.has(id));
+  if (unrelated.length > 0) {
+    throw new AcceptanceCoverageBindingError(
+      'ACCEPTANCE_COVERAGE_NOT_BOUND',
+      `Acceptance coverage is not bound to obligation "${obligation?.obligationId || 'unknown'}": ${unrelated.join(', ')}`,
+      { obligationId: obligation?.obligationId || null, unrelated, boundAcceptanceIds: [...boundAcceptanceIds] },
+    );
+  }
+  return canonical;
+};
+
+// Evidence plans arrive after FRAME for contracts that started with compact
+// plain-string acceptance. Do not silently drop an unknown AC or a malformed
+// plan: that leaves the run on the old, statement-only completion path.
+export const assertEvidencePlanSubmission = (contract = {}, evidencePlans = []) => {
+  if (!Array.isArray(evidencePlans)) {
+    throw new EvidencePlanBindingError('EVIDENCE_PLANS_INVALID', 'evidencePlans must be an array');
+  }
+  const { items } = acceptanceIndex({ contract });
+  const knownIds = new Set(items.map((item) => item.id));
+  const seen = new Set();
+  const updates = new Map();
+  const unknown = [];
+  for (const raw of evidencePlans) {
+    if (!raw || typeof raw !== 'object') {
+      throw new EvidencePlanBindingError('EVIDENCE_PLAN_INVALID', 'Each evidence plan must be an object');
+    }
+    const acceptanceId = raw.acceptanceId || raw.id;
+    if (!acceptanceId) {
+      throw new EvidencePlanBindingError('EVIDENCE_PLAN_ACCEPTANCE_ID_REQUIRED', 'Each evidence plan requires acceptanceId');
+    }
+    const id = String(acceptanceId);
+    if (!knownIds.has(id)) {
+      unknown.push(id);
+      continue;
+    }
+    if (seen.has(id)) {
+      throw new EvidencePlanBindingError('EVIDENCE_PLAN_DUPLICATE', `Multiple evidence plans were supplied for ${id}`, { acceptanceId: id });
+    }
+    seen.add(id);
+    const plan = normalizeEvidencePlan(raw.evidencePlan || raw);
+    if (!plan || !plan.class) {
+      throw new MissingEvidencePlanError(`Evidence plan for ${id} must declare class`, [id]);
+    }
+    updates.set(id, { ...raw, acceptanceId: id, evidencePlan: plan });
+  }
+  if (unknown.length > 0) {
+    throw new EvidencePlanBindingError(
+      'EVIDENCE_PLAN_UNKNOWN_ACCEPTANCE',
+      `Evidence plans reference acceptance criteria that do not exist: ${unknown.join(', ')}`,
+      { unknown },
+    );
+  }
+
+  const missing = items.filter((item) => !item.evidencePlan && !updates.has(item.id));
+  if (missing.length > 0) {
+    throw new MissingEvidencePlanError(
+      `Evidence plans are required for every acceptance criterion before proof: ${missing.map((item) => item.id).join(', ')}`,
+      missing.map((item) => item.statement),
+    );
+  }
+  return [...updates.values()];
+};
 
 const RISK_FLAGS = [
   'behaviorChanging', 'publicContract', 'securityBoundary', 'authBoundary', 'dataMigration',
@@ -211,7 +347,12 @@ export const riskSummaryFromContract = (contract) => ({
 // SQLite; the model sees what changes its decisions.
 export const contractBriefing = (contract) => ({
   objective: contract.objective,
-  acceptance: contract.acceptance.map((item) => ({ id: item.id, statement: item.statement, evidence: item.evidencePlan?.class || null })),
+  acceptance: contract.acceptance.map((item) => ({
+    id: item.id,
+    statement: item.statement,
+    evidence: item.evidencePlan?.class || null,
+    evidencePlan: item.evidencePlan || null,
+  })),
   constraints: contract.constraints,
   nonGoals: contract.nonGoals,
   risks: contract.risks,
@@ -237,41 +378,175 @@ const nextAcceptanceId = (items) => {
 const mergeAcceptance = (previous = [], next = []) => {
   const merged = previous.map((item) => ({ ...item }));
   const indexByStatement = new Map(merged.map((item, index) => [item.statement, index]));
+  const idMap = new Map();
+  const previousIds = new Set();
+  for (const item of previous) {
+    if (previousIds.has(item.id)) {
+      throw new ContractBindingError(
+        'CONTRACT_ACCEPTANCE_ID_DUPLICATE',
+        `Previous contract contains duplicate acceptance id ${item.id}`,
+        { acceptanceId: item.id },
+      );
+    }
+    previousIds.add(item.id);
+  }
+  const nextIds = new Set();
   for (const item of next) {
+    if (nextIds.has(item.id)) {
+      throw new ContractBindingError(
+        'CONTRACT_ACCEPTANCE_ID_DUPLICATE',
+        `Successor contract contains duplicate acceptance id ${item.id}`,
+        { acceptanceId: item.id },
+      );
+    }
+    nextIds.add(item.id);
     const existingIndex = indexByStatement.get(item.statement);
     if (existingIndex !== undefined) {
       const existing = merged[existingIndex];
       merged[existingIndex] = { ...existing, evidencePlan: item.evidencePlan || existing.evidencePlan };
+      idMap.set(item.id, existing.id);
       continue;
     }
     const appended = { ...item, id: nextAcceptanceId(merged) };
     indexByStatement.set(appended.statement, merged.length);
     merged.push(appended);
+    idMap.set(item.id, appended.id);
   }
-  return merged;
+  return { acceptance: merged, idMap };
 };
 
-// Within a run a contract may only be REFINED, never weakened — the same rule
-// route and tier already follow. Acceptance, constraints, non-goals, risks and
-// risk flags are unioned, so a later turn cannot quietly drop a criterion the
-// completion gate is meant to enforce. Dropping scope requires a new run.
-export const mergeContractRevision = (previous, next) => {
-  if (!previous) return next;
+const acceptanceIdSet = (acceptance = []) => new Set(acceptance.map((item) => String(item.id)));
+
+const contractObligationIds = (contract = {}) => new Set([
+  ...(Array.isArray(contract.requiredObligations) ? contract.requiredObligations : []),
+  ...(Array.isArray(contract.acceptance) ? contract.acceptance : [])
+    .map((item) => item.evidencePlan?.obligationId)
+    .filter(Boolean),
+  // These are compiled from proof policy rather than declared in the compact
+  // contract. A step may still name them explicitly without making the
+  // contract invent a second obligation authority.
+  'default',
+  'static-analysis',
+  'unit-test',
+  'security-review',
+].map(String));
+
+const rebaseAcceptanceList = (values, idMap, canonicalIds, field, stepIndex) => {
+  if (!Array.isArray(values)) return values;
+  return [...new Set(values.map((value) => {
+    const token = String(value);
+    if (idMap.has(token)) return idMap.get(token);
+    if (canonicalIds.has(token)) return token;
+    throw new ContractBindingError(
+      'CONTRACT_STEP_ACCEPTANCE_UNKNOWN',
+      `Step ${stepIndex + 1} references unknown acceptance id ${token}`,
+      { field, stepIndex, acceptanceId: token, knownAcceptanceIds: [...canonicalIds] },
+    );
+  }))];
+};
+
+const rebaseStepAcceptanceReferences = (steps = [], { idMap, canonicalIds, knownObligations }) => steps.map((step, stepIndex) => {
+  const nextStep = { ...step };
+  if (Array.isArray(step.acceptanceIds)) {
+    nextStep.acceptanceIds = rebaseAcceptanceList(step.acceptanceIds, idMap, canonicalIds, 'acceptanceIds', stepIndex);
+  }
+  for (const field of ['acceptanceCoverage', 'coverage']) {
+    if (Array.isArray(step[field])) {
+      nextStep[field] = rebaseAcceptanceList(step[field], idMap, canonicalIds, field, stepIndex);
+    }
+  }
+  if (Array.isArray(step.acceptanceMapping)) {
+    nextStep.acceptanceMapping = step.acceptanceMapping.map((mapping) => {
+      if (!mapping || typeof mapping !== 'object') return mapping;
+      const acceptance = mapping.acceptanceId || mapping.acceptance;
+      if (!acceptance) return mapping;
+      const [canonical] = rebaseAcceptanceList([acceptance], idMap, canonicalIds, 'acceptanceMapping', stepIndex);
+      return {
+        ...mapping,
+        ...(mapping.acceptanceId ? { acceptanceId: canonical } : {}),
+        ...(mapping.acceptance ? { acceptance: canonical } : {}),
+      };
+    });
+  }
+  if (Array.isArray(step.obligationIds)) {
+    const unknown = step.obligationIds.map(String).filter((id) => !knownObligations.has(id));
+    if (unknown.length > 0) {
+      throw new ContractBindingError(
+        'CONTRACT_STEP_OBLIGATION_UNKNOWN',
+        `Step ${stepIndex + 1} references unknown obligation(s): ${unknown.join(', ')}`,
+        { stepIndex, obligationIds: unknown, knownObligationIds: [...knownObligations] },
+      );
+    }
+    nextStep.obligationIds = [...new Set(step.obligationIds.map(String))];
+  }
+  return nextStep;
+});
+
+const assertIntroducedBindingsAreClaimed = ({ previous, next, merged, idMap, steps }) => {
+  if (!Array.isArray(steps) || steps.length === 0) return;
+  const claimedAcceptanceIds = new Set(steps.flatMap((step) => step.acceptanceIds || []));
+  const previousIds = acceptanceIdSet(previous?.acceptance || []);
+  const introducedAcceptanceIds = next.acceptance
+    .map((item) => idMap.get(item.id))
+    .filter((id) => id && !previousIds.has(id));
+  const missingAcceptanceIds = [...new Set(introducedAcceptanceIds)].filter((id) => !claimedAcceptanceIds.has(id));
+  if (missingAcceptanceIds.length > 0) {
+    throw new ContractBindingError(
+      'CONTRACT_STEP_ACCEPTANCE_OMITTED',
+      `Successor step plan omits newly merged acceptance id(s): ${missingAcceptanceIds.join(', ')}`,
+      { missingAcceptanceIds, claimedAcceptanceIds: [...claimedAcceptanceIds] },
+    );
+  }
+
+  const previousObligations = contractObligationIds(previous || {});
+  const introducedObligations = [
+    ...(next.requiredObligations || []),
+    ...(next.acceptance || []).map((item) => item.evidencePlan?.obligationId).filter(Boolean),
+  ].map(String).filter((id) => !previousObligations.has(id));
+  const claimedObligationIds = new Set(steps.flatMap((step) => step.obligationIds || []).map(String));
+  const missingObligationIds = [...new Set(introducedObligations)].filter((id) => !claimedObligationIds.has(id));
+  if (missingObligationIds.length > 0) {
+    throw new ContractBindingError(
+      'CONTRACT_STEP_OBLIGATION_OMITTED',
+      `Successor step plan omits newly merged obligation id(s): ${missingObligationIds.join(', ')}`,
+      { missingObligationIds, claimedObligationIds: [...claimedObligationIds] },
+    );
+  }
+  const mergedIds = acceptanceIdSet(merged.acceptance);
+  const unclaimedCanonicalIds = [...mergedIds].filter((id) => !previousIds.has(id) && !claimedAcceptanceIds.has(id));
+  if (unclaimedCanonicalIds.length > 0) {
+    throw new ContractBindingError(
+      'CONTRACT_STEP_ACCEPTANCE_OMITTED',
+      `Successor step plan omits canonical acceptance id(s): ${unclaimedCanonicalIds.join(', ')}`,
+      { missingAcceptanceIds: unclaimedCanonicalIds, claimedAcceptanceIds: [...claimedAcceptanceIds] },
+    );
+  }
+};
+
+export const mergeContractRevisionWithBindings = (previous, next) => {
+  if (!previous) {
+    const canonicalIds = acceptanceIdSet(next?.acceptance || []);
+    const knownObligations = contractObligationIds(next || {});
+    const steps = rebaseStepAcceptanceReferences(next?.steps || [], {
+      idMap: new Map((next?.acceptance || []).map((item) => [item.id, item.id])),
+      canonicalIds,
+      knownObligations,
+    });
+    const contract = { ...next, steps, digest: contractDigest({ ...next, steps }) };
+    assertIntroducedBindingsAreClaimed({ previous: null, next, merged: contract, idMap: new Map((next?.acceptance || []).map((item) => [item.id, item.id])), steps });
+    return { contract, acceptanceIdMap: Object.fromEntries((next?.acceptance || []).map((item) => [item.id, item.id])) };
+  }
   const union = (left = [], right = []) => [...new Set([...left, ...right])];
+  const mergedAcceptance = mergeAcceptance(previous.acceptance, next.acceptance);
   const merged = {
     ...next,
-    acceptance: mergeAcceptance(previous.acceptance, next.acceptance),
+    acceptance: mergedAcceptance.acceptance,
     constraints: union(previous.constraints, next.constraints),
     nonGoals: union(previous.nonGoals, next.nonGoals),
     risks: union(previous.risks, next.risks),
     surfaces: union(previous.surfaces, next.surfaces),
     requiredObligations: union(previous.requiredObligations, next.requiredObligations),
     steps: next.steps?.length ? next.steps : (previous.steps || []),
-    // An approval is NOT inherited: a revision that does not restate it revokes
-    // it. Carrying the previous object forward would let a replanned contract
-    // keep dispatching parallel workers under an approval granted for the plan
-    // it replaced. The request and the named integration command survive so the
-    // operator can re-approve without restating everything.
     safeWave: next.safeWave?.approved ? next.safeWave : {
       requested: Boolean(previous.safeWave?.requested || next.safeWave?.requested),
       approved: false,
@@ -284,20 +559,54 @@ export const mergeContractRevision = (previous, next) => {
     filesChanged: Math.max(Number(previous.filesChanged) || 0, Number(next.filesChanged) || 0),
     requestedTier: next.requestedTier || previous.requestedTier,
   };
-  return { ...merged, digest: contractDigest(merged) };
+  const canonicalIds = acceptanceIdSet(merged.acceptance);
+  const knownObligations = contractObligationIds(merged);
+  const stepsComeFromSuccessor = Boolean(next.steps?.length);
+  const steps = rebaseStepAcceptanceReferences(merged.steps, {
+    // A supplied successor step list uses the successor contract's local AC
+    // namespace and must be rebased. When the successor omits steps, the
+    // retained previous plan already contains canonical IDs; remapping those
+    // rows would turn an old AC-1 into a newly appended AC by accident.
+    idMap: stepsComeFromSuccessor ? mergedAcceptance.idMap : new Map(),
+    canonicalIds,
+    knownObligations,
+  });
+  assertIntroducedBindingsAreClaimed({ previous, next, merged, idMap: mergedAcceptance.idMap, steps });
+  const contract = { ...merged, steps, digest: contractDigest({ ...merged, steps }) };
+  return {
+    contract,
+    acceptanceIdMap: Object.fromEntries(mergedAcceptance.idMap.entries()),
+  };
+};
+
+// Within a run a contract may only be REFINED, never weakened — the same rule
+// route and tier already follow. Acceptance, constraints, non-goals, risks and
+// risk flags are unioned, so a later turn cannot quietly drop a criterion the
+// completion gate is meant to enforce. Dropping scope requires a new run.
+export const mergeContractRevision = (previous, next) => {
+  return mergeContractRevisionWithBindings(previous, next).contract;
 };
 
 // Merge model-supplied evidence plans (submitted from FRAME) into the stored
 // contract. Returns null when nothing changed so callers can skip a revision.
+const evidencePlanKey = (plan) => {
+  const normalized = normalizeEvidencePlan(plan);
+  return normalized
+    ? JSON.stringify({ ...normalized, commandRefs: [...normalized.commandRefs].sort() })
+    : 'null';
+};
+
 export const applyEvidencePlans = (contract, evidencePlans = []) => {
   if (!Array.isArray(evidencePlans) || evidencePlans.length === 0) return null;
-  const byId = new Map(evidencePlans.filter((plan) => plan && (plan.acceptanceId || plan.id)).map((plan) => [String(plan.acceptanceId || plan.id), plan]));
+  const submitted = assertEvidencePlanSubmission(contract, evidencePlans);
+  const byId = new Map(submitted.map((plan) => [plan.acceptanceId, plan]));
   let changed = false;
   const acceptance = contract.acceptance.map((item) => {
     const update = byId.get(item.id);
     if (!update) return item;
     const plan = normalizeEvidencePlan(update.evidencePlan || update);
     if (!plan || !plan.class) return item;
+    if (evidencePlanKey(item.evidencePlan) === evidencePlanKey(plan)) return item;
     changed = true;
     return { ...item, evidencePlan: plan };
   });

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildEvidenceIdentity, buildEvidenceReuseReceipt, exactEvidenceIdentityMatch } from '../scripts/kernel/proof/evidence-reuse.mjs';
-import { deriveKnowledgeStatus, emptyKnowledgeDoctorFinding, extractStructuredKnowledgeCandidates } from '../scripts/kernel/knowledge/capture.mjs';
+import { deriveKnowledgeStatus, emptyKnowledgeDoctorFinding, extractStructuredKnowledgeCandidates, failureFingerprint, normalizeFailureSignalText } from '../scripts/kernel/knowledge/capture.mjs';
 import { classifyContractChange } from '../scripts/kernel/change-contract.mjs';
 import { compileRunObligations } from '../scripts/kernel/run/obligation-compiler.mjs';
 
@@ -22,6 +22,29 @@ test('knowledge capture status distinguishes submitted, committed, and empty cap
   assert.equal(deriveKnowledgeStatus({ committedStatus: 'committed', committedCount: 1 }), 'knowledge_committed');
   assert.equal(emptyKnowledgeDoctorFinding({ completedRuns: 2, mutationRuns: 1 }), null);
   assert.equal(emptyKnowledgeDoctorFinding({ completedRuns: 3, mutationRuns: 1, knowledgeRevision: 1, candidateCount: 0, committedCount: 0 }).code, 'knowledge_capture_missing');
+});
+
+test('failure fingerprints ignore run-specific metrics so repeated failures become candidates', () => {
+  assert.equal(normalizeFailureSignalText('packaged performance 29.7 FPS at pid=1234'), 'packaged performance <metric> at pid <number>');
+  assert.equal(
+    normalizeFailureSignalText('packaged performance FPS=29.7 p95=141ms (node:24492)'),
+    'packaged performance <metric> <metric> (node:<pid>)',
+  );
+  assert.equal(
+    failureFingerprint({ obligationId: 'unit-test', commandRef: 'test:package', errorSummary: 'packaged performance 29.7 FPS at pid=1234' }),
+    failureFingerprint({ obligationId: 'unit-test', commandRef: 'test:package', errorSummary: 'packaged performance 31.2 FPS at pid=9876' }),
+  );
+  assert.equal(
+    failureFingerprint({ obligationId: 'unit-test', commandRef: 'test:package', errorSummary: 'packaged performance FPS=29.7 p95=141ms (node:24492)' }),
+    failureFingerprint({ obligationId: 'unit-test', commandRef: 'test:package', errorSummary: 'packaged performance FPS=31.2 p95=188ms (node:8134)' }),
+  );
+  const candidates = extractStructuredKnowledgeCandidates({
+    run: { runId: 'run-b', projectId: 'project-a' },
+    priorRunSignals: [{ failures: [{ fingerprint: failureFingerprint({ obligationId: 'unit-test', commandRef: 'test:package', errorSummary: 'packaged performance 29.7 FPS at pid=1234' }), statement: 'packaged performance is below the gate', evidenceRefs: ['failure://run-a/1'], scope: ['package'] }] }],
+    signals: { failures: [{ fingerprint: failureFingerprint({ obligationId: 'unit-test', commandRef: 'test:package', errorSummary: 'packaged performance 31.2 FPS at pid=9876' }), statement: 'packaged performance is below the gate', evidenceRefs: ['failure://run-b/1'], scope: ['package'] }] },
+  });
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0].proposedType, 'known_failure_pattern');
 });
 
 test('evidence reuse requires exact declared identity and creates a current revision receipt', () => {

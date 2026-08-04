@@ -169,7 +169,11 @@ test('K1-5: a change outside the capsule work unit is refused at report time', a
     await cp.startRun({
       runId: 'r-scope',
       objective: 'x',
-      taskContract: { acceptance: ['works'], allowedPaths: ['src/auth/**'], forbiddenPaths: ['src/billing/**'] },
+      taskContract: {
+        acceptance: [{ acceptance: 'works', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'], obligationId: 'default' } }],
+        allowedPaths: ['src/auth/**'],
+        forbiddenPaths: ['src/billing/**'],
+      },
     });
     await cp.buildCapsule('r-scope');
     await writeFile(path.join(fixture.projectRoot, 'src/auth/service.mjs'), 'export class AuthService { verify() { return true; } }\n');

@@ -37,7 +37,10 @@ const cleanup = async ({ runtimeHome, projectRoot }) => {
 export const COMPLEX_CONTRACT = {
   complex: true,
   riskTier: 'T2',
-  acceptance: ['auth rejects expired tokens', 'the suite stays clean'],
+  acceptance: [
+    { acceptance: 'auth rejects expired tokens', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'], obligationId: 'unit-test' } },
+    { acceptance: 'the suite stays clean', evidencePlan: { class: 'hard', method: 'static-analysis', commandRefs: ['lint'], obligationId: 'static-analysis' } },
+  ],
   steps: [
     { objective: 'Implement token expiry', allowedPaths: ['src/auth/**'], acceptanceIds: ['AC-1'], obligationIds: ['unit-test'] },
     { objective: 'Cover it with a regression test', allowedPaths: ['tests/**'], acceptanceIds: ['AC-2'], obligationIds: ['static-analysis'] },
@@ -50,7 +53,11 @@ test('K2-1: a simple run gets one synthetic step and the loop is unchanged', asy
   const fixture = await setup();
   const cp = await createKernelControlPlane(fixture);
   try {
-    await cp.startRun({ runId: 'r-simple', objective: 'Fix it', taskContract: { acceptance: ['works'] } });
+    await cp.startRun({
+      runId: 'r-simple',
+      objective: 'Fix it',
+      taskContract: { acceptance: [{ acceptance: 'works', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'], obligationId: 'default' } }] },
+    });
     const steps = cp.getRunSteps('r-simple');
     assert.equal(steps.length, 1);
     assert.equal(steps[0].synthetic, true);

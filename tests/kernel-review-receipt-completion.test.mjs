@@ -37,7 +37,14 @@ const cleanup = async ({ runtimeHome, projectRoot }) => {
 const mutate = (projectRoot, value) => writeFile(path.join(projectRoot, 'app.mjs'), `export const v = ${value};\n`);
 
 const provenT3Run = async (fixture, cp, runId) => {
-  await cp.startRun({ runId, objective: 'auth boundary', taskContract: { surfaces: ['security_boundary'], acceptance: ['works'] } });
+  await cp.startRun({
+    runId,
+    objective: 'auth boundary',
+    taskContract: {
+      surfaces: ['security_boundary'],
+      acceptance: [{ acceptance: 'works', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'], obligationId: 'unit-test' } }],
+    },
+  });
   await mutate(fixture.projectRoot, 1);
   await cp.report(runId, {
     summary: 'implemented',

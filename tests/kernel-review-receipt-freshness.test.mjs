@@ -50,7 +50,14 @@ const routeAndRun = async (cp, runId, actionKind, actorSessionId) => {
 };
 
 const reviewedT3Run = async (fixture, cp, runId) => {
-  await cp.startRun({ runId, objective: 'auth boundary', taskContract: { surfaces: ['security_boundary'], acceptance: ['works'] } });
+  await cp.startRun({
+    runId,
+    objective: 'auth boundary',
+    taskContract: {
+      surfaces: ['security_boundary'],
+      acceptance: [{ acceptance: 'works', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'], obligationId: 'unit-test' } }],
+    },
+  });
   await mutate(fixture.projectRoot, 1);
   await routeAndRun(cp, runId, 'implement', IMPLEMENTER);
   await cp.report(runId, {
@@ -163,7 +170,14 @@ test('K0: evidence that changed after the review makes the receipt stale, even w
   try {
     // Prove the executable obligations, but let static-analysis FAIL first, so
     // the reviewer forms a verdict against a failing evidence set.
-    await cp.startRun({ runId: 'r-evidence', objective: 'auth boundary', taskContract: { surfaces: ['security_boundary'], acceptance: ['works'] } });
+    await cp.startRun({
+      runId: 'r-evidence',
+      objective: 'auth boundary',
+      taskContract: {
+        surfaces: ['security_boundary'],
+        acceptance: [{ acceptance: 'works', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'], obligationId: 'unit-test' } }],
+      },
+    });
     await mutate(fixture.projectRoot, 1);
     await routeAndRun(cp, 'r-evidence', 'implement', IMPLEMENTER);
     await cp.report('r-evidence', {

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -8,6 +9,12 @@ import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
 import { openKernelStateStore } from '../scripts/kernel/state-store.mjs';
 
 const kernelCli = path.join(process.cwd(), 'bin', 'moon-relay-kernel.mjs');
+
+const runGit = (cwd, args) => {
+  const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  return result.stdout.trim();
+};
 
 const makeWorkspace = async ({ prefix, projectId }) => {
   const root = await mkdtemp(path.join(os.tmpdir(), `${prefix}-`));
@@ -26,11 +33,19 @@ const successorAcrossWorktreesSpec = async () => {
   const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-successor-worktree-state-'));
   const projectId = 'kernel-successor-worktree-project';
   const firstRoot = await makeWorkspace({ prefix: 'kernel-successor-first', projectId });
-  const secondRoot = await makeWorkspace({ prefix: 'kernel-successor-second', projectId });
+  const secondParent = await mkdtemp(path.join(os.tmpdir(), 'kernel-successor-second-parent-'));
+  const secondRoot = path.join(secondParent, 'second');
   const sessionId = 'codex:worktree-session';
   const predecessorRunId = 'codex-worktree-session';
   const contractPath = path.join(secondRoot, 'contract-b.json');
   try {
+    runGit(firstRoot, ['init']);
+    runGit(firstRoot, ['config', 'user.email', 'kernel-test@example.invalid']);
+    runGit(firstRoot, ['config', 'user.name', 'Kernel Test']);
+    runGit(firstRoot, ['add', '.']);
+    runGit(firstRoot, ['commit', '-m', 'worktree fixture']);
+    runGit(firstRoot, ['worktree', 'add', secondRoot, 'HEAD']);
+
     const first = await createKernelControlPlane({
       runtimeHome,
       projectRoot: firstRoot,
@@ -111,7 +126,9 @@ const successorAcrossWorktreesSpec = async () => {
       after.close();
     }
   } finally {
+    if (existsSync(secondRoot)) runGit(firstRoot, ['worktree', 'remove', '--force', secondRoot]);
     await rm(firstRoot, { recursive: true, force: true });
+    await rm(secondParent, { recursive: true, force: true });
     await rm(secondRoot, { recursive: true, force: true });
     await rm(runtimeHome, { recursive: true, force: true });
   }

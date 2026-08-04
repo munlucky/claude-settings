@@ -56,7 +56,14 @@ const routeAndRun = async (cp, runId, actionKind, actorSessionId, extra = {}) =>
 // A T3 run that has already produced real hard evidence for its executable
 // obligations; only the protected security-review judgment is outstanding.
 const provenT3Run = async (fixture, cp, runId = 'r-rr') => {
-  await cp.startRun({ runId, objective: 'auth boundary', taskContract: { surfaces: ['security_boundary'], acceptance: ['works'] } });
+  await cp.startRun({
+    runId,
+    objective: 'auth boundary',
+    taskContract: {
+      surfaces: ['security_boundary'],
+      acceptance: [{ acceptance: 'works', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'], obligationId: 'unit-test' } }],
+    },
+  });
   assert.equal((await cp.getRun(runId)).proofTier, 'T3');
   await mutate(fixture.projectRoot, 1);
   await routeAndRun(cp, runId, 'implement', IMPLEMENTER);

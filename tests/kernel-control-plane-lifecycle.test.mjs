@@ -2,8 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import os from 'node:os';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
+import { normalizeSessionBinding } from '../scripts/kernel/run/session-binding.mjs';
+import { resolveKernelProjectIdentity } from '../scripts/kernel/project-identity.mjs';
 
 test('KernelControlPlane wires full knowledge lifecycle end-to-end', async () => {
   const tmpRuntimeHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-cp-test-'));
@@ -59,4 +61,57 @@ test('KernelControlPlane wires full knowledge lifecycle end-to-end', async () =>
   assert.ok(['committed', 'no_change'].includes(finalizationReceipt.knowledgeCommitReceipt.status));
 
   await cp.close();
+});
+
+test('public Kernel control-plane bootstrap reconciles terminal bindings from prior sessions', async () => {
+  const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-cp-binding-cleanup-'));
+  const first = await createKernelControlPlane({
+    runtimeHome,
+    projectRoot: process.cwd(),
+  });
+  const projectId = resolveKernelProjectIdentity({ cwd: process.cwd() }).projectId;
+  try {
+    first.stateStore.createRun({
+      runId: 'cp-terminal-binding',
+      objective: 'terminal binding cleanup',
+      sourceIdentity: `sha256:${'e'.repeat(64)}`,
+      projectId,
+    });
+    first.stateStore.createSessionBinding(normalizeSessionBinding({
+      bindingId: 'cp-terminal-binding-owner',
+      provider: 'codex',
+      sessionId: 'codex:old-cp-session',
+      runId: 'cp-terminal-binding',
+      projectId,
+      accessMode: 'owner',
+    }));
+    first.stateStore.persistCompletionDecision('cp-terminal-binding', {
+      decision: 'accepted',
+      digest: `sha256:${'f'.repeat(64)}`,
+      run: first.stateStore.getRun('cp-terminal-binding'),
+      decisionPayload: { decision: 'accepted' },
+    });
+    assert.equal(
+      first.stateStore.getActiveOwnerBinding({ projectId, sessionId: 'codex:old-cp-session' }).bindingId,
+      'cp-terminal-binding-owner',
+    );
+    await first.close();
+
+    const second = await createKernelControlPlane({
+      runtimeHome,
+      projectRoot: process.cwd(),
+    });
+    try {
+      assert.equal(
+        second.stateStore.getActiveOwnerBinding({ projectId, sessionId: 'codex:old-cp-session' }),
+        null,
+      );
+      assert.equal(second.stateStore.diagnoseLifecycleState({ projectId }).counts.terminal_run_active_binding || 0, 0);
+    } finally {
+      await second.close();
+    }
+  } finally {
+    try { await first.close(); } catch {}
+    await rm(runtimeHome, { recursive: true, force: true });
+  }
 });

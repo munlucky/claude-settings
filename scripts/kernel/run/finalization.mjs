@@ -10,10 +10,11 @@ import { createHash } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
 import { reviewKnowledgeCandidates } from '../knowledge/candidate-review.mjs';
 import { commitProjectKnowledge } from '../knowledge/commit.mjs';
-import { executeKernelGitCloseout } from '../git/closeout.mjs';
+import { executeKernelGitCloseout, isAuthorizedKernelGitCloseoutWorkspace } from '../git/closeout.mjs';
 import { normalizeChangedContract } from '../change-contract.mjs';
 import { resolveRecordType } from '../knowledge/records.mjs';
 import { projectRunState } from '../state-projector.mjs';
+import { observeWorkspaceIdentity } from './workspace-identity.mjs';
 import { resolveRunArtifactPaths } from '../artifact-paths.mjs';
 import { deduplicateKnowledgeCandidates, deriveKnowledgeStatus, extractStructuredKnowledgeCandidates } from '../knowledge/capture.mjs';
 import { mkdir, writeFile, rename } from 'node:fs/promises';
@@ -128,6 +129,30 @@ const blockedReceipt = (store, runId, receipt) => {
   return receipt;
 };
 
+const refreshFinalizationWorkspaceIdentity = ({ store, runId, projectRoot, priorGitReceipt }) => {
+  if (!projectRoot || typeof store.getRun !== 'function' || typeof store.observeWorkspaceIdentity !== 'function') {
+    return store.getRun(runId);
+  }
+
+  const run = store.getRun(runId);
+  const observation = observeWorkspaceIdentity({ projectRoot });
+  const authorizedCloseoutRetry = ['commit_created', 'push_failed', 'parity_failed'].includes(priorGitReceipt?.status)
+    && isAuthorizedKernelGitCloseoutWorkspace({ repoRoot: projectRoot, commitSha: priorGitReceipt?.commitSha || null });
+
+  // The HEAD change made by a Kernel commit whose push/parity stage failed is
+  // an expected retry boundary.  Preserve the evidence identity for that
+  // exact clean HEAD; every other direct Git/index/workspace mutation advances
+  // the mutation revision and makes the old proof fail closed.
+  if (run?.currentWorkspaceIdentity
+    && observation.identity !== run.currentWorkspaceIdentity
+    && !authorizedCloseoutRetry) {
+    store.observeWorkspaceIdentity(runId, observation.identity);
+  } else if (!run?.currentWorkspaceIdentity) {
+    store.observeWorkspaceIdentity(runId, observation.identity);
+  }
+  return store.getRun(runId);
+};
+
 export const finalizeRun = async ({
   store,
   runtimeHome,
@@ -140,7 +165,7 @@ export const finalizeRun = async ({
   structuredSignals = {},
   approvals = [],
 }) => {
-  const run = store.getRun(runId);
+  let run = store.getRun(runId);
   if (!run) throw new Error(`Run ${runId} not found`);
 
   // A Git closeout that was requested once stays requested across finalization
@@ -153,6 +178,7 @@ export const finalizeRun = async ({
   // Both are recovered here so a retry resumes where the failure happened.
   const priorReceipt = store.getFinalizationReceipt(runId)?.receiptJson;
   const priorGitReceipt = store.getGitCloseoutReceipt(runId);
+  run = refreshFinalizationWorkspaceIdentity({ store, runId, projectRoot, priorGitReceipt });
   const normalizedChangeSet = normalizeChangedContract({
     changedPaths: changedPaths.length > 0 ? changedPaths : (priorReceipt?.changedPaths || []),
     changedFileCount,
@@ -198,6 +224,7 @@ export const finalizeRun = async ({
   ]);
   const dbCandidates = store.getKnowledgeCandidates(runId).map((candidate) => candidate.candidateJson);
   const candidatesForReview = submittedCandidates.length > 0 ? submittedCandidates : dbCandidates;
+  const candidateCount = candidatesForReview.length;
   if (candidatesForReview.length > 0) {
     for (const candidate of submittedCandidates) {
       store.recordKnowledgeCandidate(candidate.candidateId, runId, {
@@ -249,27 +276,29 @@ export const finalizeRun = async ({
     });
   }
 
-  // Step 2: pre-flight completion gates BEFORE closing. CLOSE is terminal, so
-  // closing a run whose gates are unmet would strand it unrecoverably. When
-  // gates are unmet, stay in the current (recoverable) state and say which.
+  // Step 2: pre-flight completion gates BEFORE closing and on every retry.
+  // CLOSE is terminal, so both a legacy proof row and a payload with
+  // `verifications: []` must be rechecked here instead of inheriting an old
+  // accepted decision around missing evidence plans.
+  run = refreshFinalizationWorkspaceIdentity({ store, runId, projectRoot, priorGitReceipt });
+  const preflight = store.evaluateCompletion(runId);
+  if (!preflight.readyExceptClose) {
+    return blockedReceipt(store, runId, {
+      schemaVersion: 1,
+      runId,
+      projectId: run.projectId,
+      completionStatus: 'blocked',
+      knowledgeStatus: 'skipped',
+      projectionStatus: 'none',
+      gitCloseoutStatus: 'skipped',
+      finalizationStatus: 'incomplete_gates',
+      completionResult: preflight,
+      reviewResult,
+      reason: 'completion_gates_unmet',
+      unmetGates: Object.entries(preflight.gates).filter(([key, value]) => key !== 'isClosed' && !value).map(([key]) => key),
+    });
+  }
   if (run.state !== 'CLOSE' && run.status !== 'completed') {
-    const preflight = store.evaluateCompletion(runId);
-    if (!preflight.readyExceptClose) {
-      return blockedReceipt(store, runId, {
-        schemaVersion: 1,
-        runId,
-        projectId: run.projectId,
-        completionStatus: 'blocked',
-        knowledgeStatus: 'skipped',
-        projectionStatus: 'none',
-        gitCloseoutStatus: 'skipped',
-        finalizationStatus: 'incomplete_gates',
-        completionResult: preflight,
-        reviewResult,
-        reason: 'completion_gates_unmet',
-        unmetGates: Object.entries(preflight.gates).filter(([key, value]) => key !== 'isClosed' && !value).map(([key]) => key),
-      });
-    }
     store.transition(runId, 'CLOSE');
   }
 
@@ -334,6 +363,32 @@ export const finalizeRun = async ({
     }
   }
 
+  // A closeout retry is allowed to proceed only if the workspace is still the
+  // exact Kernel-created commit state.  A direct Git/index/workspace mutation
+  // after the completion decision changes the mutation revision, so the
+  // second completion check below blocks before Git can be trusted.
+  run = refreshFinalizationWorkspaceIdentity({ store, runId, projectRoot, priorGitReceipt });
+  const closeoutPreflight = store.evaluateCompletion(runId);
+  if (!closeoutPreflight.readyExceptClose) {
+    return blockedReceipt(store, runId, {
+      schemaVersion: 1,
+      runId,
+      projectId: run.projectId,
+      completionStatus: 'blocked',
+      knowledgeStatus,
+      projectionStatus: commitReceipt?.projectionStatus || 'none',
+      gitCloseoutStatus: 'skipped',
+      finalizationStatus: 'incomplete_gates',
+      completionResult: closeoutPreflight,
+      reviewResult,
+      knowledgeCommitReceipt: commitReceipt,
+      reason: 'workspace_identity_changed_before_git_closeout',
+      unmetGates: Object.entries(closeoutPreflight.gates)
+        .filter(([key, value]) => key !== 'isClosed' && !value)
+        .map(([key]) => key),
+    });
+  }
+
   // Step 5: Git closeout.
   let gitCloseoutStatus = 'skipped';
   let gitReceipt = null;
@@ -372,6 +427,14 @@ export const finalizeRun = async ({
     ? 'partial'
     : 'completed';
 
+  const knowledgeWarning = run.mutationRevision > 0 && candidateCount === 0
+    ? {
+      code: 'MUTATION_WITHOUT_KNOWLEDGE_CANDIDATE',
+      reason: 'mutation_completed_without_explicit_or_structured_knowledge_candidate',
+      mutationRevision: run.mutationRevision,
+      candidateCount,
+    }
+    : null;
   const finalizationReceipt = {
     schemaVersion: 1,
     runId,
@@ -379,6 +442,16 @@ export const finalizeRun = async ({
     completionStatus: completionEval.decision,
     knowledgeStatus,
     knowledgeCaptureStatus,
+    knowledgeWarning: Boolean(knowledgeWarning),
+    knowledgeWarningReason: knowledgeWarning?.reason || null,
+    knowledgeWarningDetail: knowledgeWarning,
+    knowledgeCapture: {
+      candidateCount,
+      explicitCount: explicitCandidates.length,
+      autoCount: autoCandidates.length,
+      status: knowledgeCaptureStatus,
+      warning: knowledgeWarning,
+    },
     projectionStatus: commitReceipt?.projectionStatus || 'completed',
     gitCloseoutStatus,
     finalizationStatus,

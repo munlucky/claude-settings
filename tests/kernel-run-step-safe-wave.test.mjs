@@ -102,7 +102,10 @@ const DISJOINT_STEPS = [
 const contractWith = (safeWave, steps = DISJOINT_STEPS) => ({
   complex: true,
   riskTier: 'T2',
-  acceptance: ['auth holds', 'billing holds'],
+  acceptance: [
+    { acceptance: 'auth holds', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok', 'test:fail'], obligationId: 'unit-test' } },
+    { acceptance: 'billing holds', evidencePlan: { class: 'hard', method: 'static-analysis', commandRefs: ['lint'], obligationId: 'static-analysis' } },
+  ],
   steps: steps.map((step) => ({ ...step, dependsOn: [] })),
   safeWave,
 });
@@ -250,7 +253,10 @@ test('K2: a declared step id is what the next step depends on', async () => {
       taskContract: {
         complex: true,
         riskTier: 'T2',
-        acceptance: ['auth holds', 'billing holds'],
+        acceptance: [
+          { acceptance: 'auth holds', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'], obligationId: 'unit-test' } },
+          { acceptance: 'billing holds', evidencePlan: { class: 'hard', method: 'static-analysis', commandRefs: ['lint'], obligationId: 'static-analysis' } },
+        ],
         steps: [
           { stepId: 'auth-slice', objective: 'Auth', allowedPaths: ['src/auth/**'], acceptanceIds: ['AC-1'], obligationIds: ['unit-test'] },
           { objective: 'Billing', allowedPaths: ['src/billing/**'], acceptanceIds: ['AC-2'], obligationIds: ['static-analysis'] },

@@ -15,7 +15,10 @@ import { openKernelStateStore } from '../scripts/kernel/state-store.mjs';
 const CONTRACT = {
   complex: true,
   riskTier: 'T2',
-  acceptance: ['auth rejects expired tokens', 'the suite stays clean'],
+  acceptance: [
+    { acceptance: 'auth rejects expired tokens', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok', 'test:fail'], obligationId: 'unit-test' } },
+    { acceptance: 'the suite stays clean', evidencePlan: { class: 'hard', method: 'static-analysis', commandRefs: ['lint'], obligationId: 'static-analysis' } },
+  ],
   steps: [
     { objective: 'Implement token expiry', allowedPaths: ['src/auth/**'], acceptanceIds: ['AC-1'], obligationIds: ['unit-test'] },
     { objective: 'Cover it', allowedPaths: ['tests/**'], acceptanceIds: ['AC-2'], obligationIds: ['static-analysis'] },
@@ -239,7 +242,10 @@ test('K2: a replacement plan that reuses a declared step id does not swallow the
       taskContract: {
         complex: true,
         riskTier: 'T2',
-        acceptance: ['auth holds', 'suite holds'],
+        acceptance: [
+          { acceptance: 'auth holds', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'], obligationId: 'unit-test' } },
+          { acceptance: 'suite holds', evidencePlan: { class: 'hard', method: 'static-analysis', commandRefs: ['lint'], obligationId: 'static-analysis' } },
+        ],
         steps: [
           { stepId: 'auth-slice', objective: 'Auth', allowedPaths: ['src/auth/**'], acceptanceIds: ['AC-1'], obligationIds: ['unit-test'] },
           { stepId: 'test-slice', objective: 'Tests', allowedPaths: ['tests/**'], acceptanceIds: ['AC-2'], obligationIds: ['static-analysis'] },

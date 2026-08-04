@@ -39,7 +39,13 @@ const withProject = async (scripts, fn) => {
 test('a full routed turn implements on value coding and finishes on kernel evidence', async () => {
   await withProject({ 'test:ok': 'node -e "process.exit(0)"' }, async (cp, projectRoot) => {
     const sessions = [];
-    await cp.startRun({ runId: 'r-e2e', objective: 'routed loop', taskContract: { acceptance: ['works'] } });
+    await cp.startRun({
+      runId: 'r-e2e',
+      objective: 'routed loop',
+      taskContract: {
+        acceptance: [{ acceptance: 'works', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'], obligationId: 'default' } }],
+      },
+    });
 
     const turn = await dispatchKernelTurn({
       controlPlane: cp,

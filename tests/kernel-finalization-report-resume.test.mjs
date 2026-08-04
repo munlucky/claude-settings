@@ -14,7 +14,16 @@ test('a passed step accepts an unchanged PROVE report when completion coverage r
   await writeFile(path.join(root, 'app.mjs'), 'export default 1');
   const cp = await createKernelControlPlane({ runtimeHome, projectRoot: root });
   try {
-    await cp.startRun({ runId: 'final-report', objective: 'finish', taskContract: { acceptance: ['A', 'B'] } });
+    await cp.startRun({
+      runId: 'final-report',
+      objective: 'finish',
+      taskContract: {
+        acceptance: [
+          { acceptance: 'A', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'], obligationId: 'default' } },
+          { acceptance: 'B', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'], obligationId: 'default' } },
+        ],
+      },
+    });
     const first = await cp.report('final-report', {
       stepId: 'step-1-1',
       summary: 'implemented',

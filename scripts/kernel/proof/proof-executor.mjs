@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { resolveNetworkExecution } from './network-policy.mjs';
 import { discoverProjectCommands, findProjectCommand } from './command-catalog.mjs';
 import { sanitizePersistentText } from '../persistent-sanitizer.mjs';
+import { cleanupWindowsTimeoutProcessTree } from './process-tree.mjs';
 
 const COMMAND_REF_REGEX = /^[A-Za-z0-9:._/-]+$/;
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
@@ -133,6 +134,7 @@ const runResolvedCommand = ({ projectRoot, command, args, label, trust, timeoutM
     maxBuffer: MAX_OUTPUT_BUFFER,
     env: buildChildEnv(),
   };
+  let expectedCommand = wrapped.command;
   // On Windows the executable is resolved to a concrete file. Real executables
   // run shell-less; only `.cmd`/`.bat` shims go through the command processor,
   // and then every token is metacharacter-free (assertSafeCommandTokens) and
@@ -143,6 +145,7 @@ const runResolvedCommand = ({ projectRoot, command, args, label, trust, timeoutM
     if (!resolved) {
       throw new UntrustedCommandError(`Executable not found on PATH: ${wrapped.command}`);
     }
+    expectedCommand = resolved.file;
     assertSafeCommandTokens([resolved.file, ...wrapped.args], { commandProcessor: resolved.needsCommandProcessor });
     result = resolved.needsCommandProcessor
       ? spawnSync(
@@ -161,6 +164,14 @@ const runResolvedCommand = ({ projectRoot, command, args, label, trust, timeoutM
   const timedOut = Boolean(result.error && result.error.code === 'ETIMEDOUT');
   const spawnFailed = Boolean(result.error && !timedOut);
   const exitCode = typeof result.status === 'number' ? result.status : 1;
+  const timeoutCleanup = timedOut
+    ? cleanupWindowsTimeoutProcessTree({
+      launcherPid: result.pid,
+      expectedCommand,
+      expectedArgs: wrapped.args,
+      startedAt,
+    })
+    : null;
 
   let evidenceRef = null;
   if (evidenceDir) {
@@ -173,7 +184,7 @@ const runResolvedCommand = ({ projectRoot, command, args, label, trust, timeoutM
 
   const failed = timedOut || spawnFailed || exitCode !== 0;
   const errorSummary = failed
-    ? redactSecretLikeOutput(`${result.error ? `${result.error.message}\n` : ''}${stderr.slice(-ERROR_SUMMARY_LIMIT)}${stderr ? '' : stdout.slice(-ERROR_SUMMARY_LIMIT)}`).trim()
+    ? redactSecretLikeOutput(`${result.error ? `${result.error.message}\n` : ''}${stderr.slice(-ERROR_SUMMARY_LIMIT)}${stderr ? '' : stdout.slice(-ERROR_SUMMARY_LIMIT)}${timeoutCleanup?.status && timeoutCleanup.status !== 'completed' && timeoutCleanup.status !== 'not-applicable' ? `\nTimeout cleanup: ${timeoutCleanup.reason || timeoutCleanup.status}` : ''}`).trim()
     : null;
 
   return {
@@ -199,6 +210,7 @@ const runResolvedCommand = ({ projectRoot, command, args, label, trust, timeoutM
     networkMechanism: network.mechanism || null,
     evidenceRef,
     errorSummary,
+    timeoutCleanup,
   };
 };
 
