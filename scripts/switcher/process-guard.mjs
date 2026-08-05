@@ -37,9 +37,10 @@ export async function listProviderProcesses({ surface, processProvider, platform
         const match = line.match(/^\s*(\d+)\s+(\S+)\s+(.*)$/);
         return match ? normalize({ pid: match[1], name: match[2], executable: match[3] }) : null;
       }).filter(Boolean);
-      const isBundle = (row, names) => names.some((name) => row.name.toLowerCase().includes(`.app/contents/macos/${name}`));
+      const isBundle = (row, names) => names.some((name) => `${row.name} ${row.executable || ''}`.toLowerCase().includes(`.app/contents/macos/${name}`));
       if (surface === 'claude_cli') return rows.filter((row) => isBundle(row, ['claude']));
       if (surface === 'codex_desktop') return rows.filter((row) => isBundle(row, ['codex', 'chatgpt']));
+      if (surface === 'antigravity_desktop') return rows.filter((row) => isBundle(row, ['antigravity', 'gemini']));
       return [];
     } catch (error) { throw probeFailed(error); }
   }
