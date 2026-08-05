@@ -38,6 +38,7 @@ const inventory = async (root) => {
   if (info.isFile()) { const bytes = await readFile(root); return [{ path: '.', type: 'file', size: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') }]; }
   const rows = []; const visit = async (current, relative = '') => {
     for (const entry of await readdir(current, { withFileTypes: true })) {
+      if (entry.name.startsWith('.')) continue;
       const rel = path.join(relative, entry.name).replaceAll('\\', '/'); const full = path.join(current, entry.name);
       if (entry.isSymbolicLink()) throw fail('unsafe_target', `unsafe_target: symlink ${rel}`);
       if (entry.isDirectory()) { rows.push({ path: `${rel}/`, type: 'directory' }); await visit(full, rel); }
@@ -118,19 +119,95 @@ function deepMergeJson(target, source) {
   return result;
 }
 
+const TOML_HEADER = /^\[\[?[^\]]+\]\]?\s*$/;
+const TOML_KEY = /^\s*((?:[A-Za-z0-9_-]+|"[^"]*"|'[^']*')(?:\s*\.\s*(?:[A-Za-z0-9_-]+|"[^"]*"|'[^']*'))*)\s*=/;
+const countOf = (line, token) => line.split(token).length - 1;
+
+// Split TOML into the root block (keys before any table header) and the table
+// sections that follow. Multi-line basic/literal strings are kept intact so a
+// body line can never be mistaken for a header or a key assignment.
+function splitTomlSections(text) {
+  const root = [];
+  const sections = [];
+  let current = null;
+  let closing = null;
+  for (const line of text.split(/\r?\n/)) {
+    const bucket = current ? current.lines : root;
+    if (closing) {
+      bucket.push(line);
+      if (countOf(line, closing) % 2 === 1) closing = null;
+      continue;
+    }
+    const trimmed = line.trim();
+    if (TOML_HEADER.test(trimmed)) {
+      current = { header: trimmed, lines: [] };
+      sections.push(current);
+      continue;
+    }
+    bucket.push(line);
+    const opener = trimmed.match(/"""|'''/);
+    if (opener && countOf(trimmed, opener[0]) % 2 === 1) closing = opener[0];
+  }
+  return { root, sections };
+}
+
+// Group a block into entries so a key and its multi-line value move together.
+function tomlEntries(lines) {
+  const entries = [];
+  let pending = null;
+  let closing = null;
+  for (const line of lines) {
+    if (pending) {
+      pending.lines.push(line);
+      if (countOf(line, closing) % 2 === 1) { entries.push(pending); pending = null; closing = null; }
+      continue;
+    }
+    const trimmed = line.trim();
+    const key = trimmed.match(TOML_KEY);
+    if (!key) { entries.push({ key: null, lines: [line] }); continue; }
+    const opener = trimmed.match(/"""|'''/);
+    if (opener && countOf(trimmed, opener[0]) % 2 === 1) { pending = { key: key[1], lines: [line] }; closing = opener[0]; continue; }
+    entries.push({ key: key[1], lines: [line] });
+  }
+  if (pending) entries.push(pending);
+  return entries;
+}
+
+const keySet = (lines) => new Set(tomlEntries(lines).map((entry) => entry.key).filter(Boolean));
+const newEntryLines = (sourceLines, existingKeys) => tomlEntries(sourceLines)
+  .filter((entry) => entry.key && !existingKeys.has(entry.key))
+  .flatMap((entry) => entry.lines);
+
 function mergeTomlText(target, source) {
   if (!target || !target.trim()) return source || '';
   if (!source || !source.trim()) return target;
-  if (target.includes(source.trim())) return target;
-  const targetLines = target.split(/\r?\n/);
-  const sourceLines = source.split(/\r?\n/);
-  const newLines = sourceLines.filter((line) => {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) return false;
-    return !targetLines.some((tLine) => tLine.trim() === trimmed);
-  });
-  if (newLines.length === 0) return target;
-  return `${target.trimEnd()}\n\n# Kernel Overlay Settings\n${newLines.join('\n')}\n`;
+  const targetParts = splitTomlSections(target);
+  const sourceParts = splitTomlSections(source);
+
+  const rootAdditions = newEntryLines(sourceParts.root, keySet(targetParts.root));
+  const appended = [];
+  let mutated = rootAdditions.length > 0;
+  for (const section of sourceParts.sections) {
+    const existing = targetParts.sections.find((item) => item.header === section.header);
+    const additions = newEntryLines(section.lines, existing ? keySet(existing.lines) : new Set());
+    if (!additions.length) continue;
+    mutated = true;
+    if (existing) existing.lines.push(...additions);
+    else appended.push({ header: section.header, lines: additions });
+  }
+  if (!mutated) return target;
+
+  // Root-level keys must stay above the first table header, otherwise TOML
+  // reparents them into the trailing table and the whole file fails to load.
+  const blocks = [];
+  const rootBlock = [...targetParts.root];
+  if (rootAdditions.length) {
+    while (rootBlock.length && !rootBlock[rootBlock.length - 1].trim()) rootBlock.pop();
+    rootBlock.push('', '# Kernel Overlay Settings', ...rootAdditions);
+  }
+  blocks.push(rootBlock.join('\n'));
+  for (const section of [...targetParts.sections, ...appended]) blocks.push([section.header, ...section.lines].join('\n'));
+  return `${blocks.join('\n').trimEnd()}\n`;
 }
 
 async function verifyApplied(paths, manifest) {

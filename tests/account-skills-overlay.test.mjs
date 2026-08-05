@@ -33,6 +33,33 @@ test('Windows and macOS desktop activation atomically swaps, verifies, and resto
   }
 });
 
+test('config.toml merge keeps overlay root keys above the first table header', async () => {
+  const value = await fixture();
+  const configPath = path.join(value.home, '.codex', 'config.toml');
+  await writeFile(configPath, [
+    'model = "gpt-5.6-sol"',
+    '',
+    '[windows]',
+    'sandbox = "elevated"',
+    '',
+    '[tui.model_availability_nux]',
+    '"gpt-5.6-sol" = 4',
+    '',
+  ].join('\n'));
+  await writeFile(path.join(value.providerHome, '.codex', 'config.toml'), 'developer_instructions = """\nkernel track only\n"""\n');
+  try {
+    assert.equal((await applyAccountSkillsOverlay(overlayArgs(value))).status, 'applied');
+    const merged = await readFile(configPath, 'utf8');
+    const lines = merged.split('\n');
+    assert.ok(lines.indexOf('developer_instructions = """') < lines.indexOf('[windows]'), `root key reparented into a table:\n${merged}`);
+    assert.ok(merged.includes('kernel track only'));
+    assert.ok(merged.includes('[windows]\nsandbox = "elevated"'));
+    assert.ok(merged.includes('[tui.model_availability_nux]\n"gpt-5.6-sol" = 4'));
+    assert.equal((await restoreAccountSkillsOverlay(overlayArgs(value))).status, 'restored');
+    assert.ok(!(await readFile(configPath, 'utf8')).includes('kernel track only'));
+  } finally { await rm(value.home, { recursive: true, force: true }); }
+});
+
 test('interrupted apply and restore states recover the original account profile', async () => {
   const value = await fixture();
   try {

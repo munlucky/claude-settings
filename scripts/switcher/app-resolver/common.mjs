@@ -9,16 +9,19 @@ export async function hashExecutable(file) { try { return createHash('sha256').u
 export async function resolveExecutable(candidates = []) { for (const candidate of candidates) if (candidate && await exists(candidate)) return path.resolve(candidate); return null; }
 export async function resolveLatestWindowsAppsExecutable({ root, packagePrefix, executableRelativePath, platform = process.platform }) {
   if (platform !== 'win32' || !root || !packagePrefix || !executableRelativePath) return null;
-  try {
-    const entries = await readdir(root, { withFileTypes: true });
-    const candidates = entries
-      .filter((entry) => entry.isDirectory() && entry.name.toLowerCase().startsWith(packagePrefix.toLowerCase()))
-      .map((entry) => ({ name: entry.name, executable: path.join(root, entry.name, executableRelativePath) }))
-      .filter(({ name, executable }) => /_[0-9]+(?:\.[0-9]+)+_[^_]+__[^_]+$/i.test(name) && executable)
-      .sort((left, right) => comparePackageVersions(right.name, left.name));
-    const found = await resolveExecutable(candidates.map(({ executable }) => executable));
-    if (found) return found;
-  } catch {}
+  const isSystemWindowsApps = path.resolve(root) === path.resolve(process.env.ProgramFiles || 'C:\\Program Files', 'WindowsApps');
+  if (!isSystemWindowsApps) {
+    try {
+      const entries = await readdir(root, { withFileTypes: true });
+      const candidates = entries
+        .filter((entry) => entry.isDirectory() && entry.name.toLowerCase().startsWith(packagePrefix.toLowerCase()))
+        .map((entry) => ({ name: entry.name, executable: path.join(root, entry.name, executableRelativePath) }))
+        .filter(({ name, executable }) => /_[0-9]+(?:\.[0-9]+)+_[^_]+__[^_]+$/i.test(name) && executable)
+        .sort((left, right) => comparePackageVersions(right.name, left.name));
+      const found = await resolveExecutable(candidates.map(({ executable }) => executable));
+      if (found) return found;
+    } catch {}
+  }
   try {
     const prefix = packagePrefix.replace(/_$/, '');
     const script = `(Get-AppxPackage | Where-Object { $_.Name -like '${prefix}*' }).InstallLocation`;

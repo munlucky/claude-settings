@@ -134,41 +134,42 @@ export function spawnTrack(spec, { spawnImpl = spawn } = {}) {
     ...(isCmdOrBat ? { shell: true } : {}),
   };
 
+  const isWindowsApps = process.platform === 'win32' && (/[\\/]WindowsApps[\\/]/i.test(spec.command) || Boolean(spec.aumid));
+  if (isWindowsApps) {
+    const env = {
+      ...spec.env,
+      MOON_SWITCHER_TARGET: spec.command,
+      MOON_SWITCHER_ARGS_JSON: JSON.stringify(spec.args),
+    };
+    const aumid = spec.aumid || null;
+    env.MOON_SWITCHER_AUMID = aumid || '';
+    env.MOON_SWITCHER_WINDOW_TITLE = spec.surface === 'antigravity_desktop' ? 'Antigravity' : 'ChatGPT';
+    const shellTarget = `shell:AppsFolder\\${aumid}`;
+    let child;
+    if (aumid) {
+      const cmdExecutable = process.env.ComSpec || (process.platform === 'win32' ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'cmd.exe') : 'cmd.exe');
+      child = spawnImpl(cmdExecutable, ['/c', 'start', shellTarget, ...spec.args], { ...options, env });
+      child.on?.('error', () => {});
+      const focusScript = "$ErrorActionPreference='SilentlyContinue'; try { $shell=New-Object -ComObject WScript.Shell; for ($i=0; $i -lt 20; $i++) { Start-Sleep -Milliseconds 500; if ($shell.AppActivate($env:MOON_SWITCHER_WINDOW_TITLE)) { break } } } catch {}";
+      const psExec = process.platform === 'win32' ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe') : 'powershell';
+      const focusChild = spawnImpl(psExec, ['-NoProfile', '-Command', focusScript], { ...options, env });
+      focusChild.on?.('error', () => {});
+    } else {
+      const psScript = "$ErrorActionPreference='SilentlyContinue'; $envHash = @{}; Get-ChildItem env: | ForEach-Object { $envHash[$_.Name] = $_.Value }; try { Start-Process -FilePath $env:MOON_SWITCHER_TARGET -ArgumentList (@($env:MOON_SWITCHER_ARGS_JSON | ConvertFrom-Json)) -Environment $envHash -WindowStyle Normal } catch { Start-Process -FilePath $env:MOON_SWITCHER_TARGET -ArgumentList (@($env:MOON_SWITCHER_ARGS_JSON | ConvertFrom-Json)) -WindowStyle Normal }";
+      const psExec = process.platform === 'win32' ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe') : 'powershell';
+      child = spawnImpl(psExec, ['-NoProfile', '-Command', psScript], { ...options, env });
+      child.on?.('error', () => {});
+      child.unref?.();
+    }
+    return { pid: null, status: 'launch_requested', child, launcher: aumid ? 'cmd_shell_activation' : 'powershell_start_process' };
+  }
+
   try {
     const child = spawnImpl(spec.command, spec.args, options);
     child.on?.('error', () => {});
     child.unref?.();
     return { pid: child.pid || null, status: 'launch_requested', child, launcher: 'direct' };
   } catch (error) {
-    const useWindowsAppsFallback = process.platform === 'win32' && /[\\/]WindowsApps[\\/]/i.test(spec.command);
-    if (useWindowsAppsFallback) {
-      const env = {
-        ...spec.env,
-        MOON_SWITCHER_TARGET: spec.command,
-        MOON_SWITCHER_ARGS_JSON: JSON.stringify(spec.args),
-      };
-      const aumid = spec.aumid || null;
-      env.MOON_SWITCHER_AUMID = aumid || '';
-      env.MOON_SWITCHER_WINDOW_TITLE = spec.surface === 'antigravity_desktop' ? 'Antigravity' : 'ChatGPT';
-      const shellTarget = `shell:AppsFolder\\${aumid}`;
-      let child;
-      if (aumid) {
-        const cmdExecutable = process.env.ComSpec || (process.platform === 'win32' ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'cmd.exe') : 'cmd.exe');
-        child = spawnImpl(cmdExecutable, ['/c', 'start', shellTarget, ...spec.args], { ...options, env });
-        child.on?.('error', () => {});
-        const focusScript = "$ErrorActionPreference='SilentlyContinue'; try { $shell=New-Object -ComObject WScript.Shell; for ($i=0; $i -lt 20; $i++) { Start-Sleep -Milliseconds 500; if ($shell.AppActivate($env:MOON_SWITCHER_WINDOW_TITLE)) { break } } } catch {}";
-        const psExec = process.platform === 'win32' ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe') : 'powershell';
-        const focusChild = spawnImpl(psExec, ['-NoProfile', '-Command', focusScript], { ...options, env });
-        focusChild.on?.('error', () => {});
-      } else {
-        const psScript = "$ErrorActionPreference='SilentlyContinue'; $envHash = @{}; Get-ChildItem env: | ForEach-Object { $envHash[$_.Name] = $_.Value }; try { Start-Process -FilePath $env:MOON_SWITCHER_TARGET -ArgumentList (@($env:MOON_SWITCHER_ARGS_JSON | ConvertFrom-Json)) -Environment $envHash -WindowStyle Normal } catch { Start-Process -FilePath $env:MOON_SWITCHER_TARGET -ArgumentList (@($env:MOON_SWITCHER_ARGS_JSON | ConvertFrom-Json)) -WindowStyle Normal }";
-        const psExec = process.platform === 'win32' ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe') : 'powershell';
-        child = spawnImpl(psExec, ['-NoProfile', '-Command', psScript], { ...options, env });
-        child.on?.('error', () => {});
-        child.unref?.();
-      }
-      return { pid: null, status: 'launch_requested', child, launcher: aumid ? 'cmd_shell_activation' : 'powershell_start_process' };
-    }
     throw error;
   }
 }
