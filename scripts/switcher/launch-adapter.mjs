@@ -136,6 +136,7 @@ export function spawnTrack(spec, { spawnImpl = spawn } = {}) {
 
   try {
     const child = spawnImpl(spec.command, spec.args, options);
+    child.on?.('error', () => {});
     child.unref?.();
     return { pid: child.pid || null, status: 'launch_requested', child, launcher: 'direct' };
   } catch (error) {

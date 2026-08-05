@@ -114,7 +114,7 @@ export async function cleanupLegacyProject({ projectRoot, providerHome } = {}) {
   return cleanupLegacyKernelHydration({ projectRoot, profileReady: profile.status === 'ready' });
 }
 
-export async function launchSwitch({ surface, track, sourceRoot = process.cwd(), projectRoot = null, workspaceRoot = null, taskBinding = null, processProvider, closeApproval = false, closeHandler = null, launchSpec = null, spawnImpl = null, dryRun = true, platform = process.platform, accountHome = null, applicationResolver = resolveApplication } = {}) {
+export async function launchSwitch({ surface, track, sourceRoot = process.cwd(), projectRoot = null, workspaceRoot = null, taskBinding = null, processProvider, closeApproval = false, closeHandler = null, launchSpec = null, spawnImpl = null, dryRun = true, platform = process.platform, accountHome = null, applicationResolver = resolveApplication, force = false } = {}) {
   validate(surface, track);
   const targetProjectRoot = projectRoot || workspaceRoot || (track === 'kernel' ? sourceRoot : null);
   const defaultRoots = resolveTrackRoots({ track, surface, sourceRoot });
@@ -170,7 +170,7 @@ export async function launchSwitch({ surface, track, sourceRoot = process.cwd(),
     try {
       accountSkillsOverlay = track === 'kernel'
         ? await applyAccountSkillsOverlay({ surface, providerHome: roots.providerHome, platform, accountHome })
-        : await restoreAccountSkillsOverlay({ surface, platform, accountHome });
+        : await restoreAccountSkillsOverlay({ surface, platform, accountHome, force });
     } catch (error) {
       await clearJournal();
       return createReceipt({ operation: 'launch', status: 'error', surface, track, errorCode: error.code || 'account_skills_overlay_failed', effective: { accountSkillsOverlay: { status: 'refused', reason: error.message } } });

@@ -50,6 +50,7 @@ try {
         projectRoot: get('--project-root') || process.cwd(),
         taskBinding,
         dryRun: !args.includes('--execute'),
+        force: args.includes('--force') || args.includes('-f'),
       });
       results.push(res);
     }

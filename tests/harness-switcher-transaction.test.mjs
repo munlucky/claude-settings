@@ -7,7 +7,7 @@ import { prepareTransaction, advanceTransaction, recoverTransaction } from '../s
 import { readJournal } from '../scripts/switcher/state-store.mjs';
 import { switchDoctor, launchSwitch, recoverSwitch } from '../scripts/switcher/operations.mjs';
 import { installKernelProfile } from '../scripts/kernel/profile-install.mjs';
-import { buildLaunchSpec } from '../scripts/switcher/launch-adapter.mjs';
+import { buildLaunchSpec, spawnTrack } from '../scripts/switcher/launch-adapter.mjs';
 
 test('Kernel task binding is process-scoped in provider launch specs', () => {
   const spec = buildLaunchSpec({
@@ -104,6 +104,7 @@ test('a Kernel-launched surface can launch another Kernel surface', async () => 
       surface: 'claude_cli',
       track: 'kernel',
       sourceRoot: process.cwd(),
+      processProvider: async () => [],
       dryRun: true,
       launchSpec: {
         command: 'claude',
@@ -127,3 +128,16 @@ test('a Kernel-launched surface can launch another Kernel surface', async () => 
     await rm(home, { recursive: true, force: true });
   }
 });
+
+test('spawnTrack handles non-existent executable without unhandled error event crash', () => {
+  const spec = buildLaunchSpec({
+    surface: 'qwen_cli',
+    track: 'relay',
+    sourceRoot: process.cwd(),
+    command: 'nonexistent-qwen-test-binary',
+  });
+  const res = spawnTrack(spec);
+  assert.equal(res.status, 'launch_requested');
+  assert.equal(res.launcher, 'direct');
+});
+

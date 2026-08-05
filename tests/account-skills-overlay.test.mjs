@@ -59,6 +59,16 @@ test('overlay drift fails closed while retaining both changed live data and the 
   } finally { await rm(value.home, { recursive: true, force: true }); }
 });
 
+test('overlay drift can be force restored when force option is passed', async () => {
+  const value = await fixture();
+  try {
+    await applyAccountSkillsOverlay(overlayArgs(value)); await writeFile(path.join(value.accountSkills, 'moon-relay-kernel', 'SKILL.md'), '# changed\n');
+    const restored = await restoreAccountSkillsOverlay({ ...overlayArgs(value), force: true });
+    assert.equal(restored.status, 'restored');
+    assert.deepEqual(await readdir(value.accountSkills), ['relay-skill']);
+  } finally { await rm(value.home, { recursive: true, force: true }); }
+});
+
 test('tampered manifest targets are rejected before filesystem recovery', async () => {
   const value = await fixture();
   try {

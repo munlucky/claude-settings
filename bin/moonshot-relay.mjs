@@ -93,12 +93,21 @@ if (!existsSync(selectedInstaller)) {
 }
 
 if (command === 'install' && !args.includes('--dry-run')) {
-  const { inspectAccountSkillsOverlay } = await import('../scripts/switcher/account-skills-overlay.mjs');
+  const force = args.includes('--force') || args.includes('-f') || args.includes('--clean-overlay');
+  const { inspectAccountSkillsOverlay, restoreAccountSkillsOverlay } = await import('../scripts/switcher/account-skills-overlay.mjs');
   for (const surface of ['codex_desktop', 'claude_cli']) {
-    const overlay = await inspectAccountSkillsOverlay({ surface });
+    let overlay = await inspectAccountSkillsOverlay({ surface });
     if (!['inactive', 'not_required'].includes(overlay.status)) {
-      console.error(`Setup refused: ${surface} has a ${overlay.status} Kernel skills overlay. Close the app and run the matching r:codex or r:claude command before setup.`);
-      process.exit(1);
+      if (force) {
+        try {
+          await restoreAccountSkillsOverlay({ surface, force: true });
+          overlay = await inspectAccountSkillsOverlay({ surface });
+        } catch {}
+      }
+      if (!['inactive', 'not_required'].includes(overlay.status)) {
+        console.error(`Setup refused: ${surface} has a ${overlay.status} Kernel skills overlay. Close the app and run the matching r:codex or r:claude command before setup (or use --force).`);
+        process.exit(1);
+      }
     }
   }
 }
@@ -112,7 +121,7 @@ const installerArgs = command === 'bridge'
       '--source-root',
       repoRoot,
       '--remove-legacy-harness-core',
-      ...args,
+      ...args.filter((a) => a !== '--force' && a !== '-f' && a !== '--clean-overlay'),
     ];
 
 const result = spawnSync(process.execPath, installerArgs, {

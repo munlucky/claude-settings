@@ -2,6 +2,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { createHash } from 'node:crypto';
 import { cp, lstat, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
 
 const MANIFEST = '.moon-harness-profile-overlay.json', BACKUP = '.moon-harness-profile-backup';
 const STAGING = '.moon-harness-profile-staging', RETIRED = '.moon-harness-profile-retired';
@@ -51,7 +52,8 @@ const inspect = async (target) => {
   return { exists: true, digest: createHash('sha256').update(JSON.stringify(await inventory(target))).digest('hex') };
 };
 const pathsFor = ({ surface, accountHome = null }) => {
-  const root = accountRootFor(surface, path.resolve(accountHome || process.env.USERPROFILE || process.env.HOME || os.homedir())); return { surface, root, manifest: path.join(root, MANIFEST), backup: path.join(root, BACKUP), staging: path.join(root, STAGING), retired: path.join(root, RETIRED) };
+  const resolvedHome = accountHome ? (realpathSync(accountHome)) : (process.env.USERPROFILE || process.env.HOME || os.homedir());
+  const root = accountRootFor(surface, path.resolve(resolvedHome)); return { surface, root, manifest: path.join(root, MANIFEST), backup: path.join(root, BACKUP), staging: path.join(root, STAGING), retired: path.join(root, RETIRED) };
 };
 const writeManifest = async (file, value, exclusive = false) => {
   const temp = `${file}.tmp`; await rm(temp, { force: true });
@@ -73,24 +75,26 @@ const liveState = async (paths, target) => ({
   retired: await inspect(path.join(paths.retired, target.live)),
 });
 
-async function rollbackToOriginal(paths, manifest) {
+async function rollbackToOriginal(paths, manifest, { force = false } = {}) {
   await assertSafeOverlayPaths(paths);
   for (const target of manifest.targets) {
     const livePath = path.join(paths.root, target.live), backupPath = path.join(paths.backup, target.live), retiredPath = path.join(paths.retired, target.live);
     const state = await liveState(paths, target);
     if (target.originalExists) {
-      if (state.backup.digest === target.originalDigest) {
+      if (state.backup.digest === target.originalDigest || force) {
         if (state.live.exists) {
-          if (state.live.digest !== target.overlayDigest) throw fail('overlay_recovery_required', `changed live target: ${target.live}`);
-          await mkdir(path.dirname(retiredPath), { recursive: true }); await rename(livePath, retiredPath);
-        } else if (state.retired.exists && state.retired.digest !== target.overlayDigest) throw fail('overlay_recovery_required');
-        await mkdir(path.dirname(livePath), { recursive: true }); await rename(backupPath, livePath);
+          if (state.live.digest !== target.overlayDigest && !force) throw fail('overlay_recovery_required', `changed live target: ${target.live}`);
+          await mkdir(path.dirname(retiredPath), { recursive: true }); await rm(retiredPath, { recursive: true, force: true }); await rename(livePath, retiredPath);
+        } else if (state.retired.exists && state.retired.digest !== target.overlayDigest && !force) throw fail('overlay_recovery_required');
+        if (state.backup.exists) {
+          await rm(livePath, { recursive: true, force: true }); await mkdir(path.dirname(livePath), { recursive: true }); await rename(backupPath, livePath);
+        }
       } else if (state.live.digest !== target.originalDigest) {
         throw fail('overlay_backup_drift', `original unavailable: ${target.live}`);
       }
     } else if (state.live.exists) {
-      if (state.live.digest !== target.overlayDigest) throw fail('overlay_recovery_required', `unexpected live target: ${target.live}`);
-      await mkdir(path.dirname(retiredPath), { recursive: true }); await rename(livePath, retiredPath);
+      if (state.live.digest !== target.overlayDigest && !force) throw fail('overlay_recovery_required', `unexpected live target: ${target.live}`);
+      await mkdir(path.dirname(retiredPath), { recursive: true }); await rm(retiredPath, { recursive: true, force: true }); await rename(livePath, retiredPath);
     }
   }
   await rm(paths.retired, { recursive: true, force: true }); await rm(paths.staging, { recursive: true, force: true });
@@ -161,14 +165,22 @@ export async function applyAccountSkillsOverlay({ surface, providerHome, platfor
   return { status: 'applied', accountRoot: paths.root, discoveredSkills };
 }
 
-export async function restoreAccountSkillsOverlay({ surface, platform = process.platform, accountHome } = {}) {
+export async function restoreAccountSkillsOverlay({ surface, platform = process.platform, accountHome, force = false } = {}) {
   if (!requiresAccountSkillsOverlay(surface, platform)) return { status: 'not_required' };
   const paths = pathsFor({ surface, accountHome }); await assertSafeOverlayPaths(paths); const manifest = await readManifest(paths.manifest, paths.surface);
   if (!manifest) {
-    if (await exists(paths.backup) || await exists(paths.staging) || await exists(paths.retired)) throw fail('target_collision', 'orphaned overlay artifacts exist');
+    if (await exists(paths.backup) || await exists(paths.staging) || await exists(paths.retired)) {
+      if (force) {
+        await rm(paths.backup, { recursive: true, force: true });
+        await rm(paths.staging, { recursive: true, force: true });
+        await rm(paths.retired, { recursive: true, force: true });
+        return { status: 'cleaned', accountRoot: paths.root };
+      }
+      throw fail('target_collision', 'orphaned overlay artifacts exist');
+    }
     return { status: 'noop' };
   }
-  if (manifest.state === 'applied' && !(await verifyApplied(paths, manifest))) throw fail('overlay_drift', 'refusing to overwrite changed account profile');
-  await writeManifest(paths.manifest, { ...manifest, state: 'restoring' }); await rollbackToOriginal(paths, { ...manifest, state: 'restoring' });
+  if (manifest.state === 'applied' && !(await verifyApplied(paths, manifest)) && !force) throw fail('overlay_drift', 'refusing to overwrite changed account profile');
+  await writeManifest(paths.manifest, { ...manifest, state: 'restoring' }); await rollbackToOriginal(paths, { ...manifest, state: 'restoring' }, { force });
   return { status: 'restored', accountRoot: paths.root };
 }
