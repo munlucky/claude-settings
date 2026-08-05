@@ -39,6 +39,7 @@ const protectedRoots = ({ kernelRuntimeHome = null } = {}) => {
 const exists = async (file) => { try { await stat(file); return true; } catch { return false; } };
 
 export const KERNEL_ENTRYPOINT_SKILL = 'moon-relay-kernel';
+export const KERNEL_STANDALONE_SKILLS = new Set(['project-memory', 'kernel-commit', 'codebase-understanding']);
 
 export async function discoverProviderSkills(providerHome) {
   if (!providerHome) return [];
@@ -80,15 +81,19 @@ export async function inspectKernelLaunchReadiness({ runtimeHome, providerHome, 
   }
 
   const discoveredSkills = await discoverProviderSkills(providerHome);
-  if (!discoveredSkills.includes(KERNEL_ENTRYPOINT_SKILL)) {
-    return { status: 'kernel_profile_not_ready', reason: 'skill_discovery_missing', discoveredSkills };
+  // Standalone utilities are installed in the isolated provider home but are
+  // not part of the Kernel workflow's public skill surface. Keep them out of
+  // the shared-mutable-surface check while still serving their files locally.
+  const workflowSkills = discoveredSkills.filter((name) => !KERNEL_STANDALONE_SKILLS.has(name));
+  if (!workflowSkills.includes(KERNEL_ENTRYPOINT_SKILL)) {
+    return { status: 'kernel_profile_not_ready', reason: 'skill_discovery_missing', discoveredSkills: workflowSkills };
   }
-  const foreignSkills = discoveredSkills.filter((name) => name !== KERNEL_ENTRYPOINT_SKILL);
+  const foreignSkills = workflowSkills.filter((name) => name !== KERNEL_ENTRYPOINT_SKILL);
   if (foreignSkills.length) {
-    return { status: 'shared_mutable_surface', reason: 'shared_mutable_surface', discoveredSkills, foreignSkills };
+    return { status: 'shared_mutable_surface', reason: 'shared_mutable_surface', discoveredSkills: workflowSkills, foreignSkills };
   }
 
-  return { status: 'launch_candidate', ready: true, discoveredSkills };
+  return { status: 'launch_candidate', ready: true, discoveredSkills: workflowSkills };
 }
 
 export async function switchStatus({ surface = null } = {}) {
@@ -184,7 +189,7 @@ export async function launchSwitch({ surface, track, sourceRoot = process.cwd(),
   if (!dryRun && requiresAccountSkillsOverlay(surface, platform)) {
     try {
       accountSkillsOverlay = track === 'kernel'
-        ? await applyAccountSkillsOverlay({ surface, providerHome: roots.providerHome, platform, accountHome })
+        ? await applyAccountSkillsOverlay({ surface, providerHome: roots.providerHome, platform, accountHome, force })
         : await restoreAccountSkillsOverlay({ surface, platform, accountHome, force });
     } catch (error) {
       await clearJournal();

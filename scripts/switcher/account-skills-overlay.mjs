@@ -160,15 +160,22 @@ export async function inspectAccountSkillsOverlay({ surface, platform = process.
   return { status: await verifyApplied(paths, manifest) ? 'active' : 'drifted', state: manifest.state, accountRoot: paths.root };
 }
 
-export async function applyAccountSkillsOverlay({ surface, providerHome, platform = process.platform, accountHome } = {}) {
+export async function applyAccountSkillsOverlay({ surface, providerHome, platform = process.platform, accountHome, force = false } = {}) {
   if (!requiresAccountSkillsOverlay(surface, platform)) return { status: 'not_required' };
   const paths = pathsFor({ surface, accountHome }); await mkdir(paths.root, { recursive: true }); await assertPlain(paths.root); await assertSafeOverlayPaths(paths);
   let manifest = await readManifest(paths.manifest, paths.surface);
   if (manifest && manifest.state !== 'applied') { await rollbackToOriginal(paths, manifest); manifest = null; }
   if (manifest) {
-    if (!(await verifyApplied(paths, manifest))) throw fail('overlay_drift', 'account profile changed while Kernel overlay was active');
-    if (path.resolve(manifest.providerHome) !== path.resolve(providerHome)) throw fail('target_collision', 'overlay belongs to another provider home');
-    return { status: 'already_applied', accountRoot: paths.root, discoveredSkills: manifest.discoveredSkills };
+    if (await verifyApplied(paths, manifest)) {
+      if (path.resolve(manifest.providerHome) !== path.resolve(providerHome)) throw fail('target_collision', 'overlay belongs to another provider home');
+      return { status: 'already_applied', accountRoot: paths.root, discoveredSkills: manifest.discoveredSkills };
+    }
+    if (force) {
+      await rollbackToOriginal(paths, manifest, { force: true });
+      manifest = null;
+    } else {
+      throw fail('overlay_drift', 'account profile changed while Kernel overlay was active');
+    }
   }
   if (await exists(paths.backup) || await exists(paths.staging) || await exists(paths.retired)) throw fail('target_collision', 'orphaned overlay artifacts exist');
   const targets = [];
