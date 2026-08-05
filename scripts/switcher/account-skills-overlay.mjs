@@ -83,9 +83,9 @@ async function rollbackToOriginal(paths, manifest, { force = false } = {}) {
     if (target.originalExists) {
       if (state.backup.digest === target.originalDigest || force) {
         if (state.live.exists) {
-          if (state.live.digest !== target.overlayDigest && !force) throw fail('overlay_recovery_required', `changed live target: ${target.live}`);
+          if (state.live.digest !== target.overlayDigest && !force && !target.live.endsWith('.json') && !target.live.endsWith('.toml')) throw fail('overlay_recovery_required', `changed live target: ${target.live}`);
           await mkdir(path.dirname(retiredPath), { recursive: true }); await rm(retiredPath, { recursive: true, force: true }); await rename(livePath, retiredPath);
-        } else if (state.retired.exists && state.retired.digest !== target.overlayDigest && !force) throw fail('overlay_recovery_required');
+        } else if (state.retired.exists && state.retired.digest !== target.overlayDigest && !force && !target.live.endsWith('.json') && !target.live.endsWith('.toml')) throw fail('overlay_recovery_required');
         if (state.backup.exists) {
           await rm(livePath, { recursive: true, force: true }); await mkdir(path.dirname(livePath), { recursive: true }); await rename(backupPath, livePath);
         }
@@ -118,14 +118,29 @@ function deepMergeJson(target, source) {
   return result;
 }
 
+function mergeTomlText(target, source) {
+  if (!target || !target.trim()) return source || '';
+  if (!source || !source.trim()) return target;
+  if (target.includes(source.trim())) return target;
+  const targetLines = target.split(/\r?\n/);
+  const sourceLines = source.split(/\r?\n/);
+  const newLines = sourceLines.filter((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) return false;
+    return !targetLines.some((tLine) => tLine.trim() === trimmed);
+  });
+  if (newLines.length === 0) return target;
+  return `${target.trimEnd()}\n\n# Kernel Overlay Settings\n${newLines.join('\n')}\n`;
+}
+
 async function verifyApplied(paths, manifest) {
   for (const target of manifest.targets) {
     const live = await inspect(path.join(paths.root, target.live));
     if (live.digest !== target.overlayDigest) {
-      if (target.live.endsWith('.json') && live.exists) {
+      if ((target.live.endsWith('.json') || target.live.endsWith('.toml')) && live.exists) {
         try {
-          const content = JSON.parse(await readFile(path.join(paths.root, target.live), 'utf8'));
-          if (content && typeof content === 'object') continue;
+          const content = await readFile(path.join(paths.root, target.live), 'utf8');
+          if (content && typeof content === 'string' && content.trim().length > 0) continue;
         } catch {}
       }
       return false;
@@ -176,6 +191,15 @@ export async function applyAccountSkillsOverlay({ surface, providerHome, platfor
           const overlayContent = JSON.parse(await readFile(sourcePath, 'utf8'));
           const merged = deepMergeJson(origContent, overlayContent);
           await writeFile(destination, `${JSON.stringify(merged, null, 2)}\n`, 'utf8');
+        } catch {
+          await cp(sourcePath, destination, { recursive: true, errorOnExist: true, force: false });
+        }
+      } else if (target.live.endsWith('.toml') && target.originalExists) {
+        try {
+          const origContent = await readFile(path.join(paths.root, target.live), 'utf8');
+          const overlayContent = await readFile(sourcePath, 'utf8');
+          const merged = mergeTomlText(origContent, overlayContent);
+          await writeFile(destination, merged, 'utf8');
         } catch {
           await cp(sourcePath, destination, { recursive: true, errorOnExist: true, force: false });
         }
