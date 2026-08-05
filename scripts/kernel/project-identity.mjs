@@ -86,7 +86,10 @@ export function parseProjectIdentityYaml(text) {
   return result;
 }
 
-const normalizedRoot = (projectRoot) => path.resolve(projectRoot).replaceAll('\\', '/').replace(/\/+$/, '').toLowerCase();
+const normalizedRoot = (projectRoot) => {
+  const resolved = path.resolve(projectRoot).replaceAll('\\', '/').replace(/\/+$/, '');
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+};
 
 // The account registry predates the canonical forward-slash form and can be
 // written by a different platform than the one reading it. Compare registry

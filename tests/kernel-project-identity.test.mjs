@@ -172,3 +172,22 @@ test('runtime identity registration is immutable, aliases are idempotent, and le
     await rm(runtimeHome, { recursive: true, force: true });
   }
 });
+
+test('canonicalIdentityRoot preserves POSIX path casing on case-sensitive platforms', async () => {
+  const tmp = await mkdtemp(path.join(os.tmpdir(), 'kernel-identity-case-AB12-'));
+  try {
+    const gitDir = path.join(tmp, '.git');
+    await mkdir(gitDir, { recursive: true });
+    await writeFile(path.join(gitDir, 'config'), '[core]\n\trepositoryformatversion = 0\n');
+    const env = { MOON_RELAY_KERNEL_HOME: path.join(tmp, '.moon-relay-kernel') };
+    const result = resolveKernelProjectIdentity({ cwd: tmp, env });
+    if (process.platform !== 'win32') {
+      assert.equal(result.canonicalRoot, path.resolve(tmp).replaceAll('\\', '/'));
+    } else {
+      assert.equal(result.canonicalRoot, path.resolve(tmp).replaceAll('\\', '/').toLowerCase());
+    }
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+

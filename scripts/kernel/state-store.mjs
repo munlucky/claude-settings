@@ -700,7 +700,10 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
   // with no remaining legacy rows means the transaction committed; otherwise
   // the filesystem journal is restored without deleting the legacy source.
    try {
-    const normalizeRecoveryRoot = (value) => path.resolve(String(value || '')).replaceAll('\\', '/').toLowerCase();
+    const normalizeRecoveryRoot = (value) => {
+      const resolved = path.resolve(String(value || '')).replaceAll('\\', '/');
+      return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+    };
     const quoteRecoveryIdentifier = (value) => `"${String(value).replaceAll('"', '""')}"`;
     const recoveryProjectScopedTables = db.prepare(`
       SELECT name FROM sqlite_master
@@ -713,6 +716,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
     const hasRecoveryProjectState = (projectId) => recoveryProjectScopedTables.some((table) => (
       Number(db.prepare(`SELECT COUNT(*) AS count FROM ${quoteRecoveryIdentifier(table)} WHERE project_id=?`).get(projectId)?.count || 0) > 0
     ));
+
     recoverProjectKnowledgeNamespaceMigrations({
       runtimeHome,
       isCommitted: (journal) => {
@@ -746,9 +750,11 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
   const canonicalIdentityRoot = (value) => {
     const resolved = path.resolve(String(value || ''));
     try {
-      return fs.realpathSync(resolved).replaceAll('\\', '/').toLowerCase();
+      const real = fs.realpathSync(resolved).replaceAll('\\', '/');
+      return process.platform === 'win32' ? real.toLowerCase() : real;
     } catch {
-      return resolved.replaceAll('\\', '/').toLowerCase();
+      const posix = resolved.replaceAll('\\', '/');
+      return process.platform === 'win32' ? posix.toLowerCase() : posix;
     }
   };
   const deriveGitCommonDir = (root) => {
