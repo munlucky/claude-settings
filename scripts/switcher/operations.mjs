@@ -179,7 +179,7 @@ export async function launchSwitch({ surface, track, sourceRoot = process.cwd(),
   if (!spec && GUI_SURFACES.has(surface) && surface !== 'claude_cli') {
     const application = await applicationResolver(surface);
     if (!application.executable) return createReceipt({ operation: 'launch', status: 'error', surface, track, errorCode: 'application_not_resolved', effective: { warnings: application.warnings || [] } });
-    const args = roots.appDataRoot ? [`--user-data-dir=${roots.appDataRoot}`] : [];
+    const args = (roots.appDataRoot && surface !== 'codex_desktop') ? [`--user-data-dir=${roots.appDataRoot}`] : [];
     spec = { ...buildLaunchSpec({ surface, track, sourceRoot, workspaceRoot: targetProjectRoot, roots, command: application.executable, args, ...taskBinding }), aumid: application.aumid || null };
   }
   spec ||= buildLaunchSpec({ surface, track, sourceRoot, workspaceRoot: targetProjectRoot, roots, ...taskBinding });

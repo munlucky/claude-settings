@@ -166,8 +166,8 @@ export async function applyAccountSkillsOverlay({ surface, providerHome, platfor
   let manifest = await readManifest(paths.manifest, paths.surface);
   if (manifest && manifest.state !== 'applied') { await rollbackToOriginal(paths, manifest); manifest = null; }
   if (manifest) {
+    if (path.resolve(manifest.providerHome) !== path.resolve(providerHome)) throw fail('target_collision', 'overlay belongs to another provider home');
     if (await verifyApplied(paths, manifest)) {
-      if (path.resolve(manifest.providerHome) !== path.resolve(providerHome)) throw fail('target_collision', 'overlay belongs to another provider home');
       return { status: 'already_applied', accountRoot: paths.root, discoveredSkills: manifest.discoveredSkills };
     }
     if (force) {
