@@ -18,7 +18,7 @@ if (!args.length) {
 
 if (process.platform === 'win32' && !isWindowsAdmin()) {
   const argList = args.map((a) => `'${a}'`).join(', ');
-  const psCommand = `Start-Process node -ArgumentList ${argList} -Verb RunAs -Wait`;
+  const psCommand = `$p = Start-Process node -ArgumentList ${argList} -Verb RunAs -Wait -PassThru; if ($p -and $p.ExitCode -ne 0) { Write-Host ''; Write-Host 'Process exited with error code:' $p.ExitCode -ForegroundColor Red; Read-Host 'Press Enter to exit...' }`;
   const result = spawnSync('powershell.exe', ['-NoProfile', '-Command', psCommand], {
     stdio: 'inherit',
   });
