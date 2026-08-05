@@ -9,9 +9,15 @@ const get = (flag) => { const index = args.indexOf(flag); return index >= 0 ? ar
 const json = args.includes('--json');
 const output = (value) => console.log(json ? JSON.stringify(value) : Object.entries(value || {}).map(([key, item]) => `${key}: ${typeof item === 'object' ? JSON.stringify(item) : item}`).join('\n'));
 
-const normalizeSurface = (s) => {
+import { resolveCodexDesktop } from '../scripts/switcher/app-resolver/codex.mjs';
+
+const normalizeSurface = async (s) => {
   if (!s || s === 'all') return 'all';
-  if (s === 'codex' || s === 'codex_desktop') return 'codex_desktop';
+  if (s === 'codex') {
+    const desktop = await resolveCodexDesktop();
+    return desktop.executable ? 'codex_desktop' : 'codex_cli';
+  }
+  if (s === 'codex_desktop') return 'codex_desktop';
   if (s === 'claude' || s === 'claude_cli') return 'claude_cli';
   if (s === 'qwen' || s === 'qwen_cli') return 'qwen_cli';
   if (s === 'antigravity' || s === 'antigravity_desktop' || s === 'agy') return 'antigravity_desktop';
@@ -20,7 +26,7 @@ const normalizeSurface = (s) => {
 
 try {
   const rawSurface = get('--surface');
-  const surface = normalizeSurface(rawSurface);
+  const surface = await normalizeSurface(rawSurface);
   const track = get('--track');
   let result;
   if (command === 'status') result = await switchStatus({ surface: surface === 'all' ? null : surface });

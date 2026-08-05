@@ -16,7 +16,7 @@ const normalize = (row) => {
 };
 const isCodexDesktopProcess = (row) => {
   const name = row.name.replaceAll('\\', '/').split('/').pop().toLowerCase();
-  if (name === 'chatgpt' || name === 'codex') return row.mainWindowHandle === undefined || Number(row.mainWindowHandle) > 0;
+  if (name.includes('chatgpt') || name.includes('codex')) return row.mainWindowHandle === undefined || Number(row.mainWindowHandle) >= 0;
   return false;
 };
 const isClaudeDesktopProcess = (row) => {

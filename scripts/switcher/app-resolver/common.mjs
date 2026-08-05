@@ -16,7 +16,16 @@ export async function resolveLatestWindowsAppsExecutable({ root, packagePrefix, 
       .map((entry) => ({ name: entry.name, executable: path.join(root, entry.name, executableRelativePath) }))
       .filter(({ name, executable }) => /_[0-9]+(?:\.[0-9]+)+_[^_]+__[^_]+$/i.test(name) && executable)
       .sort((left, right) => comparePackageVersions(right.name, left.name));
-    return await resolveExecutable(candidates.map(({ executable }) => executable));
+    const found = await resolveExecutable(candidates.map(({ executable }) => executable));
+    if (found) return found;
+  } catch {}
+  try {
+    const prefix = packagePrefix.replace(/_$/, '');
+    const script = `(Get-AppxPackage | Where-Object { $_.Name -like '${prefix}*' }).InstallLocation`;
+    const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-Command', script], { windowsHide: true, timeout: 5000 });
+    const locations = String(stdout || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    const candidates = locations.map((loc) => path.join(loc, executableRelativePath));
+    return await resolveExecutable(candidates);
   } catch {
     return null;
   }

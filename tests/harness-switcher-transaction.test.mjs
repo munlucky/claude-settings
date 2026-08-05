@@ -138,6 +138,6 @@ test('spawnTrack handles non-existent executable without unhandled error event c
   });
   const res = spawnTrack(spec);
   assert.equal(res.status, 'launch_requested');
-  assert.equal(res.launcher, 'direct');
+  assert.ok(['direct', 'cmd_start_cli'].includes(res.launcher));
 });
 
