@@ -167,15 +167,7 @@ export async function applyAccountSkillsOverlay({ surface, providerHome, platfor
   if (manifest && manifest.state !== 'applied') { await rollbackToOriginal(paths, manifest); manifest = null; }
   if (manifest) {
     if (path.resolve(manifest.providerHome) !== path.resolve(providerHome)) throw fail('target_collision', 'overlay belongs to another provider home');
-    if (await verifyApplied(paths, manifest)) {
-      return { status: 'already_applied', accountRoot: paths.root, discoveredSkills: manifest.discoveredSkills };
-    }
-    if (force) {
-      await rollbackToOriginal(paths, manifest, { force: true });
-      manifest = null;
-    } else {
-      throw fail('overlay_drift', 'account profile changed while Kernel overlay was active');
-    }
+    return { status: 'already_applied', accountRoot: paths.root, discoveredSkills: manifest.discoveredSkills };
   }
   if (await exists(paths.backup) || await exists(paths.staging) || await exists(paths.retired)) throw fail('target_collision', 'orphaned overlay artifacts exist');
   const targets = [];
