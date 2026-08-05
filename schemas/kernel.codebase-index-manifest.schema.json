@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moon-relay-kernel.local/schemas/kernel.codebase-index-manifest.schema.json",
+  "type": "object",
+  "required": ["schemaVersion", "projectId", "sourceCommit", "sourceTreeDigest", "graphDigest", "skillVersion", "generatedAt", "status"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "projectId": { "type": "string" },
+    "sourceCommit": { "type": "string" },
+    "sourceTreeDigest": { "type": "string" },
+    "graphDigest": { "type": "string" },
+    "skillVersion": { "type": "string" },
+    "generatedAt": { "type": "string" },
+    "status": { "enum": ["fresh", "stale", "degraded", "cache_hit"] }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moon-relay-kernel.local/schemas/kernel.session-source.schema.json",
+  "type": "object",
+  "required": ["schemaVersion", "provider", "nativeSessionId", "sourceDigest"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "provider": { "enum": ["codex", "claude"] },
+    "nativeSessionId": { "type": "string" },
+    "locator": { "type": ["string", "null"] },
+    "workingDirectory": { "type": ["string", "null"] },
+    "remote": { "type": ["string", "null"] },
+    "sourceDigest": { "type": "string" }
+  },
+  "additionalProperties": true
+}

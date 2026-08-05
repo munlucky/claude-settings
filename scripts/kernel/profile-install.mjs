@@ -8,7 +8,9 @@ export const PROFILE_MANIFEST_NAME = '.moon-relay-kernel-profile-manifest.json';
 export const PROFILE_MARKER_NAME = '.moon-relay-kernel-profile.json';
 export const KERNEL_ENTRYPOINT_SKILL = 'moon-relay-kernel';
 export const KERNEL_SKILL_INSTALL_REL = `skills/${KERNEL_ENTRYPOINT_SKILL}`;
+export const STANDALONE_SKILLS = ['project-memory', 'kernel-commit', 'codebase-understanding'];
 export const canonicalKernelSkillDir = (sourceRoot) => path.resolve(sourceRoot, 'skills', KERNEL_ENTRYPOINT_SKILL);
+export const canonicalStandaloneSkillDirs = (sourceRoot) => STANDALONE_SKILLS.map((name) => ({ name, dir: path.resolve(sourceRoot, 'skills', name) }));
 
 const exists = async (file) => { try { await stat(file); return true; } catch { return false; } };
 const sha256 = async (file) => createHash('sha256').update(await readFile(file)).digest('hex');
@@ -147,6 +149,19 @@ export async function installKernelProfile({ sourceRoot = process.cwd(), runtime
       await mkdir(path.dirname(target), { recursive: true });
       await cp(path.join(canonicalSkill, rel), target, { force: true });
     }
+    // Standalone project utilities are public optional surfaces. They are
+    // installed from the canonical source tree into every provider profile,
+    // while their runtime state remains account-root and project-scoped.
+    for (const { name, dir } of canonicalStandaloneSkillDirs(sourceRoot)) {
+      if (!(await exists(dir))) continue;
+      const installRel = `skills/${name}`;
+      await copyTree(dir, safeJoin(root, installRel));
+      for (const rel of await files(dir)) {
+        const target = safeJoin(root, path.join(installRel, rel));
+        await mkdir(path.dirname(target), { recursive: true });
+        await cp(path.join(dir, rel), target, { force: true });
+      }
+    }
     const marker = { schemaVersion: 1, productId: PROFILE_PRODUCT_ID, track: 'kernel', runtime, ownership: 'manifest-owned-static-only' };
     await atomicWrite(markerPath, JSON.stringify(marker, null, 2));
     if (skillsRoot && runtime === 'antigravity') {
@@ -154,6 +169,10 @@ export async function installKernelProfile({ sourceRoot = process.cwd(), runtime
     }
     for (const rel of await files(source)) await stage(rel);
     for (const rel of await files(canonicalSkill)) await stage(`${KERNEL_SKILL_INSTALL_REL}/${rel}`);
+    for (const { name, dir } of canonicalStandaloneSkillDirs(sourceRoot)) {
+      if (!(await exists(dir))) continue;
+      for (const rel of await files(dir)) await stage(`skills/${name}/${rel}`);
+    }
     await stage(PROFILE_MARKER_NAME);
     const manifest = { schemaVersion: 1, productId: PROFILE_PRODUCT_ID, track: 'kernel', runtime, targetRoot: root, installedAt: new Date().toISOString(), backupPath, files: staged };
     await atomicWrite(manifestPath, JSON.stringify(manifest, null, 2));

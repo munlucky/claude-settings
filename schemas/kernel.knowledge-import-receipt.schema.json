@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moon-relay-kernel.local/schemas/kernel.knowledge-import-receipt.schema.json",
+  "type": "object",
+  "required": ["schemaVersion", "importId", "projectId", "authorityType", "sourceDigest", "candidateCount", "acceptedCount", "rejectedCount", "knowledgeRevisionBefore", "knowledgeRevisionAfter", "approvalRef", "status"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "importId": { "type": "string" },
+    "projectId": { "type": "string" },
+    "authorityType": { "const": "user_approved_import" },
+    "sourceType": { "type": "string" },
+    "sourceIdentityDigest": { "type": "string" },
+    "sourceDigest": { "type": "string" },
+    "candidateCount": { "type": "integer", "minimum": 0 },
+    "acceptedCount": { "type": "integer", "minimum": 0 },
+    "rejectedCount": { "type": "integer", "minimum": 0 },
+    "supersededCount": { "type": "integer", "minimum": 0 },
+    "knowledgeRevisionBefore": { "type": "integer", "minimum": 0 },
+    "knowledgeRevisionAfter": { "type": "integer", "minimum": 0 },
+    "approvalRef": { "type": "string", "minLength": 1 },
+    "status": { "type": "string", "enum": ["committed", "partial", "no_op"] }
+  },
+  "additionalProperties": true
+}

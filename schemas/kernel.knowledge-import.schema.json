@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moon-relay-kernel.local/schemas/kernel.knowledge-import.schema.json",
+  "type": "object",
+  "required": ["importId", "projectId", "sourceType", "sourceIdentity", "sourceDigest", "status", "candidateCount", "acceptedCount", "rejectedCount", "createdAt"],
+  "properties": {
+    "importId": { "type": "string", "minLength": 1 },
+    "projectId": { "type": "string", "minLength": 1 },
+    "sourceType": { "type": "string", "enum": ["kernel_run", "codex_session", "claude_session", "provider_session", "codebase_index", "git_commit", "pull_request", "manual_statement"] },
+    "sourceIdentity": { "type": "string", "minLength": 1 },
+    "sourceDigest": { "type": "string", "minLength": 1 },
+    "sourceSnapshotRef": { "type": ["string", "null"] },
+    "status": { "type": "string", "enum": ["discovered", "analyzed", "awaiting_review", "approved", "committed", "partial", "rejected", "failed", "no_op"] },
+    "candidateCount": { "type": "integer", "minimum": 0 },
+    "acceptedCount": { "type": "integer", "minimum": 0 },
+    "rejectedCount": { "type": "integer", "minimum": 0 },
+    "approvalRef": { "type": ["string", "null"] },
+    "revisionBefore": { "type": ["integer", "null"] },
+    "revisionAfter": { "type": ["integer", "null"] },
+    "createdAt": { "type": "string" },
+    "completedAt": { "type": ["string", "null"] }
+  },
+  "additionalProperties": true
+}

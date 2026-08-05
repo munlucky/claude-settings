@@ -7,7 +7,10 @@ const normalizePath = (value = '') => String(value).replaceAll('\\', '/');
 
 const readSkillBody = async (repoRoot, skillPath) => readFile(path.join(repoRoot, skillPath, 'SKILL.md'), 'utf8');
 
-const isKernelSkill = (name) => name.startsWith('kernel-') || name === 'moon-relay-kernel';
+// `kernel-commit` is a standalone project utility. Its name intentionally
+// starts with kernel- for discoverability, but it must not enter the internal
+// Kernel workflow lock or capability catalog.
+const isKernelSkill = (name) => (name.startsWith('kernel-') && name !== 'kernel-commit') || name === 'moon-relay-kernel';
 const commitShaRegex = /^[a-f0-9]{40}$/i;
 
 export const discoverSourceSkills = async ({ repoRoot = process.cwd(), skillsRoot = 'skills' } = {}) => {

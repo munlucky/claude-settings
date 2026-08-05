@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "scope": "kernel-standalone",
+  "generatedAt": "2026-08-05T00:00:00.000Z",
+  "skills": [
+    { "name": "project-memory", "path": "skills/project-memory", "contentHash": "f25968769811004b0354a4fd8f83b85f36f665163815ade329f4074a5b3835e4", "license": "MIT", "permissions": ["filesystem-read", "filesystem-write", "subprocess-exec"] },
+    { "name": "kernel-commit", "path": "skills/kernel-commit", "contentHash": "c68c6fc3f9e76fa97932a5b8437aaea214957d809c5c03dbfa958d433244cbdf", "license": "MIT", "permissions": ["filesystem-read", "filesystem-write", "subprocess-exec", "git-commit", "git-push"] },
+    { "name": "codebase-understanding", "path": "skills/codebase-understanding", "contentHash": "e20fbd73cf9f364fda33bb875669f81b198458a278dda361dde216556c6511bf", "license": "MIT", "permissions": ["filesystem-read", "filesystem-write"] }
+  ]
+}

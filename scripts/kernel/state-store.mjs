@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { resolveKernelRuntimeHome, assertIsolatedRuntimeHomes } from './runtime-home.mjs';
@@ -321,6 +321,25 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY(run_id) REFERENCES runs(run_id)
+    );
+    CREATE TABLE IF NOT EXISTS knowledge_imports (
+      import_id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      source_type TEXT NOT NULL,
+      source_identity TEXT NOT NULL,
+      source_digest TEXT NOT NULL,
+      source_snapshot_ref TEXT,
+      status TEXT NOT NULL,
+      candidate_count INTEGER NOT NULL DEFAULT 0,
+      accepted_count INTEGER NOT NULL DEFAULT 0,
+      rejected_count INTEGER NOT NULL DEFAULT 0,
+      approval_ref TEXT,
+      revision_before INTEGER,
+      revision_after INTEGER,
+      receipt_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      completed_at TEXT,
+      UNIQUE(project_id, source_type, source_identity, source_digest)
     );
     CREATE TABLE IF NOT EXISTS candidate_evidence_bindings (
       candidate_id TEXT NOT NULL,
@@ -2831,6 +2850,215 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
 
     getKnowledgeCandidates(runId) {
       return db.prepare(`SELECT candidate_id as candidateId, run_id as runId, project_id as projectId, proposed_type as proposedType, status, candidate_json as candidateJson, created_at as createdAt FROM knowledge_candidates WHERE run_id=?`).all(runId).map((row) => ({ ...row, candidateJson: safeJsonParse(row.candidateJson, {}) }));
+    },
+
+    // Standalone project-memory imports deliberately have no Kernel Run or
+    // completion-decision foreign key. Their authority is the explicit
+    // userApprovalRef carried by the import transaction itself.
+    createKnowledgeImport({
+      importId = `import-${randomUUID()}`,
+      projectId,
+      sourceType,
+      sourceIdentity,
+      sourceDigest,
+      sourceSnapshotRef = null,
+      status = 'discovered',
+      candidateCount = 0,
+      approvalRef = null,
+    } = {}) {
+      if (!projectId || !sourceType || !sourceIdentity || !sourceDigest) {
+        throw new Error('createKnowledgeImport requires projectId, sourceType, sourceIdentity, and sourceDigest');
+      }
+      const existing = this.findKnowledgeImportByDigest({ projectId, sourceType, sourceIdentity, sourceDigest });
+      if (existing) return existing;
+      db.prepare(`
+        INSERT INTO knowledge_imports(import_id, project_id, source_type, source_identity, source_digest, source_snapshot_ref, status, candidate_count, approval_ref, created_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(importId, projectId, sourceType, sourceIdentity, sourceDigest, sourceSnapshotRef, status, Number(candidateCount || 0), approvalRef, now());
+      return this.getKnowledgeImport(importId);
+    },
+
+    updateKnowledgeImport(importId, fields = {}) {
+      const current = this.getKnowledgeImport(importId);
+      if (!current) throw new Error(`KNOWLEDGE_IMPORT_NOT_FOUND: ${importId}`);
+      const allowed = {
+        status: fields.status,
+        candidateCount: fields.candidateCount,
+        acceptedCount: fields.acceptedCount,
+        rejectedCount: fields.rejectedCount,
+        approvalRef: fields.approvalRef,
+        revisionBefore: fields.revisionBefore,
+        revisionAfter: fields.revisionAfter,
+        receiptJson: fields.receiptJson,
+        completedAt: fields.completedAt,
+        sourceSnapshotRef: fields.sourceSnapshotRef,
+      };
+      const assignments = [];
+      const values = [];
+      const columnMap = {
+        candidateCount: 'candidate_count',
+        acceptedCount: 'accepted_count',
+        rejectedCount: 'rejected_count',
+        approvalRef: 'approval_ref',
+        revisionBefore: 'revision_before',
+        revisionAfter: 'revision_after',
+        receiptJson: 'receipt_json',
+        completedAt: 'completed_at',
+        sourceSnapshotRef: 'source_snapshot_ref',
+      };
+      if (allowed.status !== undefined) { assignments.push('status=?'); values.push(String(allowed.status)); }
+      for (const [key, column] of Object.entries(columnMap)) {
+        if (allowed[key] === undefined) continue;
+        assignments.push(`${column}=?`);
+        values.push(key === 'receiptJson' && typeof allowed[key] !== 'string' ? persistentJson(allowed[key]) : allowed[key]);
+      }
+      if (assignments.length === 0) return current;
+      values.push(importId);
+      db.prepare(`UPDATE knowledge_imports SET ${assignments.join(', ')} WHERE import_id=?`).run(...values);
+      return this.getKnowledgeImport(importId);
+    },
+
+    getKnowledgeImport(importId) {
+      const row = db.prepare(`
+        SELECT import_id as importId, project_id as projectId, source_type as sourceType,
+          source_identity as sourceIdentity, source_digest as sourceDigest,
+          source_snapshot_ref as sourceSnapshotRef, status,
+          candidate_count as candidateCount, accepted_count as acceptedCount,
+          rejected_count as rejectedCount, approval_ref as approvalRef,
+          revision_before as revisionBefore, revision_after as revisionAfter,
+          receipt_json as receiptJson, created_at as createdAt, completed_at as completedAt
+        FROM knowledge_imports WHERE import_id=?
+      `).get(importId);
+      if (!row) return null;
+      return { ...row, receiptJson: safeJsonParse(row.receiptJson, {}) };
+    },
+
+    listKnowledgeImports({ projectId, statuses = null } = {}) {
+      const where = ['project_id=?'];
+      const values = [projectId];
+      if (Array.isArray(statuses) && statuses.length > 0) {
+        where.push(`status IN (${statuses.map(() => '?').join(',')})`);
+        values.push(...statuses);
+      }
+      return db.prepare(`SELECT import_id as importId, project_id as projectId, source_type as sourceType, source_identity as sourceIdentity, source_digest as sourceDigest, source_snapshot_ref as sourceSnapshotRef, status, candidate_count as candidateCount, accepted_count as acceptedCount, rejected_count as rejectedCount, approval_ref as approvalRef, revision_before as revisionBefore, revision_after as revisionAfter, receipt_json as receiptJson, created_at as createdAt, completed_at as completedAt FROM knowledge_imports WHERE ${where.join(' AND ')} ORDER BY created_at DESC`).all(...values).map((row) => ({ ...row, receiptJson: safeJsonParse(row.receiptJson, {}) }));
+    },
+
+    findKnowledgeImportByDigest({ projectId, sourceType, sourceIdentity, sourceDigest } = {}) {
+      const row = db.prepare(`SELECT import_id as importId FROM knowledge_imports WHERE project_id=? AND source_type=? AND source_identity=? AND source_digest=?`).get(projectId, sourceType, sourceIdentity, sourceDigest);
+      return row ? this.getKnowledgeImport(row.importId) : null;
+    },
+
+    appendKnowledgeEvidence({ projectId, recordId, evidenceRefs = [], expectedKnowledgeRevision = null } = {}) {
+      const refs = [...new Set((Array.isArray(evidenceRefs) ? evidenceRefs : [evidenceRefs]).filter(Boolean).map(String))];
+      if (!projectId || !recordId || refs.length === 0) return { status: 'no_op', revisionBefore: this.getProjectKnowledgeRevision(projectId), revisionAfter: this.getProjectKnowledgeRevision(projectId) };
+      db.exec('BEGIN IMMEDIATE TRANSACTION');
+      try {
+        const currentRevision = this.getProjectKnowledgeRevision(projectId);
+        if (expectedKnowledgeRevision !== null && Number(expectedKnowledgeRevision) !== Number(currentRevision)) throw new Error(`STALE_KNOWLEDGE_REVISION: Expected revision ${expectedKnowledgeRevision} but found ${currentRevision}`);
+        const row = db.prepare(`SELECT record_json as recordJson FROM knowledge_records WHERE project_id=? AND record_id=?`).get(projectId, recordId);
+        if (!row) throw new Error(`KNOWLEDGE_RECORD_NOT_FOUND: ${recordId}`);
+        const record = safeJsonParse(row.recordJson, {});
+        const oldRefs = Array.isArray(record.evidence?.refs) ? record.evidence.refs : Array.isArray(record.evidence) ? record.evidence : [];
+        const merged = [...new Set([...oldRefs, ...refs])];
+        if (merged.length === oldRefs.length) { db.exec('COMMIT'); return { status: 'no_op', revisionBefore: currentRevision, revisionAfter: currentRevision }; }
+        const nextRevision = currentRevision + 1;
+        const updated = { ...record, evidence: { ...(record.evidence && !Array.isArray(record.evidence) ? record.evidence : {}), refs: merged }, revision: nextRevision, updatedAt: now() };
+        db.prepare(`UPDATE knowledge_records SET record_json=?, revision=?, updated_at=? WHERE project_id=? AND record_id=?`).run(persistentJson(updated), nextRevision, now(), projectId, recordId);
+        if (!this.updateProjectKnowledgeRevision(projectId, currentRevision, nextRevision)) throw new Error(`STALE_KNOWLEDGE_REVISION: Revision CAS increment failed for ${projectId}`);
+        db.exec('COMMIT');
+        return { status: 'committed', revisionBefore: currentRevision, revisionAfter: nextRevision, recordId };
+      } catch (error) { try { db.exec('ROLLBACK'); } catch {} throw error; }
+    },
+
+    commitImportedKnowledgeTransaction({
+      importId = `import-${randomUUID()}`,
+      projectId,
+      expectedKnowledgeRevision = null,
+      candidates = [],
+      supersessionProposals = [],
+      sourceReceipt = {},
+      userApprovalRef = null,
+    } = {}) {
+      if (!projectId) throw new Error('PROJECT_ID_REQUIRED');
+      if (!userApprovalRef || typeof userApprovalRef !== 'string') throw new Error('USER_APPROVAL_REQUIRED');
+      const sourceType = String(sourceReceipt.sourceType || 'manual_statement');
+      const sourceIdentity = String(sourceReceipt.sourceIdentity || sourceReceipt.sourceIdentityDigest || '');
+      const sourceDigest = String(sourceReceipt.sourceDigest || '');
+      if (!sourceIdentity || !sourceDigest) throw new Error('SOURCE_RECEIPT_REQUIRED');
+      const prior = this.findKnowledgeImportByDigest({ projectId, sourceType, sourceIdentity, sourceDigest });
+      if (prior && ['committed', 'no_op'].includes(prior.status)) return { status: 'no_op', import: prior, receipt: prior.receiptJson };
+
+      const importRow = prior || this.createKnowledgeImport({ importId, projectId, sourceType, sourceIdentity, sourceDigest, sourceSnapshotRef: sourceReceipt.sourceSnapshotRef || null, status: 'approved', candidateCount: candidates.length, approvalRef: userApprovalRef });
+      db.exec('BEGIN IMMEDIATE TRANSACTION');
+      try {
+        const currentRevision = this.getProjectKnowledgeRevision(projectId);
+        if (expectedKnowledgeRevision !== null && Number(expectedKnowledgeRevision) !== Number(currentRevision)) throw new Error(`STALE_KNOWLEDGE_REVISION: Expected revision ${expectedKnowledgeRevision} but found ${currentRevision}`);
+        const existing = this.listKnowledgeRecords({ projectId, statuses: ['committed', 'verified'] });
+        const byKey = new Map(existing.map((record) => [`${record.type || record.recordType}|${String(record.statement || '').trim().toLowerCase()}|${JSON.stringify([...(record.scope || [])].sort())}`, record]));
+        const records = [];
+        const evidenceUpdates = [];
+        const conflicts = [];
+        let rejectedCount = 0;
+        for (const candidate of Array.isArray(candidates) ? candidates : []) {
+          if (!candidate || candidate.status === 'rejected' || candidate.selected === false) { rejectedCount++; continue; }
+          const statement = String(candidate.statement || '').trim();
+          if (!statement || /(?:api[_ -]?key|secret|credential|system prompt|developer prompt|raw transcript)/i.test(statement)) { rejectedCount++; continue; }
+          const type = String(candidate.type || candidate.proposedType || 'semantic_fact');
+          const scope = Array.isArray(candidate.scope) ? candidate.scope.map(String) : [];
+          const key = `${type}|${statement.toLowerCase()}|${JSON.stringify([...scope].sort())}`;
+          const priorRecord = byKey.get(key);
+          const refs = [...new Set([sourceDigest, ...(candidate.evidenceRefs || []), ...(candidate.sourceRefs || [])].filter(Boolean).map(String))];
+          if (priorRecord) {
+            evidenceUpdates.push({ record: priorRecord, refs });
+            continue;
+          }
+          const conflicting = existing.find((record) => String(record.type || record.recordType) === type && JSON.stringify([...(record.scope || [])].sort()) === JSON.stringify([...scope].sort()) && String(record.statement || '').trim().toLowerCase() !== statement.toLowerCase());
+          if (conflicting) { conflicts.push({ candidateId: candidate.candidateId || candidate.id || null, recordId: conflicting.id, statement }); rejectedCount++; continue; }
+          const recordId = String(candidate.recordId || candidate.candidateId || `rec-import-${createHash('sha256').update(`${projectId}:${sourceIdentity}:${type}:${statement}:${JSON.stringify(scope)}`).digest('hex').slice(0, 24)}`);
+          records.push({
+            id: recordId,
+            candidateId: candidate.candidateId || candidate.id || recordId,
+            projectId,
+            type,
+            statement,
+            scope,
+            status: 'committed',
+            trustTier: ['authoritative', 'verified'].includes(candidate.trustTier) ? candidate.trustTier : 'verified',
+            evidence: { refs },
+            provenance: { sourceType, sourceIdentity, sourceDigest, importId },
+            createdAt: now(),
+            updatedAt: now(),
+          });
+        }
+        const validSupersessions = [];
+        for (const proposal of Array.isArray(supersessionProposals) ? supersessionProposals : []) {
+          const targetId = String(proposal?.targetId || proposal?.id || proposal || '');
+          const target = existing.find((record) => record.id === targetId);
+          if (target && target.projectId === projectId) validSupersessions.push(targetId);
+          else rejectedCount++;
+        }
+        const nextRevision = records.length > 0 || evidenceUpdates.some(({ record, refs }) => refs.some((ref) => !(record.evidence?.refs || []).includes(ref))) || validSupersessions.length > 0 ? currentRevision + 1 : currentRevision;
+        for (const record of records) {
+          const payload = { ...record, revision: nextRevision };
+          db.prepare(`INSERT INTO knowledge_records(project_id, record_id, record_type, status, trust_tier, record_json, revision, created_at, updated_at) VALUES(?, ?, ?, 'committed', ?, ?, ?, ?, ?) ON CONFLICT(project_id, record_id) DO UPDATE SET record_type=excluded.record_type, status='committed', trust_tier=excluded.trust_tier, record_json=excluded.record_json, revision=excluded.revision, updated_at=excluded.updated_at`).run(projectId, record.id, record.type, record.trustTier, persistentJson(payload), nextRevision, now(), now());
+        }
+        for (const { record, refs } of evidenceUpdates) {
+          const oldRefs = Array.isArray(record.evidence?.refs) ? record.evidence.refs : [];
+          const merged = [...new Set([...oldRefs, ...refs])];
+          if (merged.length !== oldRefs.length) {
+            const updated = { ...record, evidence: { ...(record.evidence || {}), refs: merged }, revision: nextRevision, updatedAt: now() };
+            db.prepare(`UPDATE knowledge_records SET record_json=?, revision=?, updated_at=? WHERE project_id=? AND record_id=?`).run(persistentJson(updated), nextRevision, now(), projectId, record.id);
+          }
+        }
+        for (const targetId of validSupersessions) db.prepare(`UPDATE knowledge_records SET status='superseded', updated_at=? WHERE project_id=? AND record_id=?`).run(now(), projectId, targetId);
+        if (nextRevision !== currentRevision && !this.updateProjectKnowledgeRevision(projectId, currentRevision, nextRevision)) throw new Error(`STALE_KNOWLEDGE_REVISION: Revision CAS increment failed for ${projectId}`);
+        const acceptedCount = records.length + evidenceUpdates.filter(({ record, refs }) => refs.some((ref) => !(record.evidence?.refs || []).includes(ref))).length;
+        const status = acceptedCount > 0 || validSupersessions.length > 0 ? (conflicts.length > 0 ? 'partial' : 'committed') : 'no_op';
+        const receipt = { schemaVersion: 1, importId: importRow.importId, projectId, authorityType: 'user_approved_import', sourceType, sourceIdentityDigest: sourceIdentity, sourceDigest, candidateCount: candidates.length, acceptedCount, rejectedCount: rejectedCount + conflicts.length, supersededCount: validSupersessions.length, conflictCount: conflicts.length, knowledgeRevisionBefore: currentRevision, knowledgeRevisionAfter: nextRevision, approvalRef: userApprovalRef, status, createdAt: now(), conflicts };
+        this.updateKnowledgeImport(importRow.importId, { status, candidateCount: candidates.length, acceptedCount, rejectedCount: rejectedCount + conflicts.length, approvalRef: userApprovalRef, revisionBefore: currentRevision, revisionAfter: nextRevision, receiptJson: receipt, completedAt: now() });
+        db.exec('COMMIT');
+        return { status, import: this.getKnowledgeImport(importRow.importId), receipt };
+      } catch (error) { try { db.exec('ROLLBACK'); } catch {} throw error; }
     },
 
     recordKnowledgeReviewReceipt(runId, { projectId, status, candidateCount = 0, verifiedCount = 0, rejectedCount = 0, waitingApprovalCount = 0, waitingVerificationCount = 0, reviewDigest, receiptJson }) {

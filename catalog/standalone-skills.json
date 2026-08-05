@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "catalogId": "moon-relay-kernel-standalone-skills.v1",
+  "skills": [
+    {
+      "name": "project-memory",
+      "kind": "project-utility",
+      "defaultEnabled": true,
+      "requiresKernelRun": false,
+      "mayMutateKnowledge": true,
+      "requiresExplicitApprovalForKnowledgeWrite": true,
+      "entrypoint": "scripts/kernel/standalone/project-memory.mjs"
+    },
+    {
+      "name": "kernel-commit",
+      "kind": "project-utility",
+      "defaultEnabled": true,
+      "requiresKernelRun": false,
+      "mayMutateGit": true,
+      "mayMutateKnowledge": true,
+      "requiresExplicitApprovalForKnowledgeWrite": true,
+      "entrypoint": "scripts/kernel/standalone/kernel-commit.mjs"
+    },
+    {
+      "name": "codebase-understanding",
+      "kind": "analysis-utility",
+      "defaultEnabled": true,
+      "requiresKernelRun": false,
+      "mayMutateKnowledge": false,
+      "entrypoint": "scripts/kernel/standalone/codebase-understanding.mjs"
+    }
+  ]
+}
