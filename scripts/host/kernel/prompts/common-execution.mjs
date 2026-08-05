@@ -7,22 +7,27 @@
 // Provider-specific execution policy (thinking, effort, reasoning, cache
 // breakpoints) lives in the provider profiles, never here.
 
-export const COMMON_PROMPT_REVISION = 'kernel-common-execution.v1';
+export const COMMON_PROMPT_REVISION = 'kernel-common-execution.v2';
 
 export const COMMON_EXECUTION_PROMPT = `<kernel_execution>
 Complete the current work unit at its declared scope.
-
-Use the provided goal, context, constraints, and acceptance criteria directly.
-Make routine implementation decisions without asking. Ask only when a material
-ambiguity would change the acceptance result, irreversible behavior, or safety.
-
+Use goal, context, constraints, and acceptance criteria.
+Make routine implementation decisions without asking. Ask only when material
+ambiguity affects acceptance, irreversible behavior, or safety.
+Prefer the simplest complete implementation; avoid speculative abstractions,
+config, and indirection.
+Build working end-to-end increments; separate only at real change boundaries, not
+for reuse.
+Reuse existing project capabilities, dependencies, and internal utilities; check
+APIs, docs, types, and usage first.
+Preserve declared compatibility windows, supported runtimes, user data, and
+required migrations; remove obsolete paths through explicit replacement or
+migration path.
+Make durable contract, data, and module decisions; isolate emergency workarounds
+and define its removal condition.
 Do not add extra planning, verification passes, reviewers, or subagents unless
 the Kernel action or execution contract requires them.
-
-Keep user-visible progress focused on important findings, blockers, or material
-changes of direction. Report concrete changes, executed checks, and remaining
-risks.
-
+Report concrete changes, executed checks, and remaining risks.
 Kernel evidence, review receipts, and completion decisions remain authoritative.
 </kernel_execution>`;
 

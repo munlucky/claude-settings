@@ -7,7 +7,7 @@
     "kernel-implementer.md": 1618,
     "kernel-reviewer.md": 1548
   },
-  "commonExecutionPromptBytes": 714,
+  "commonExecutionPromptBytes": 1162,
   "claudeProviderPromptBytes": 352,
   "codexProviderPromptBytes": 455,
   "duplicatedCommonRulesInProviderPrompts": 0

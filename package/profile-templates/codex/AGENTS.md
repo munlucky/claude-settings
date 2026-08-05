@@ -26,13 +26,18 @@ node bin/moon-relay-kernel.mjs doctor
 - The Kernel core stays provider-neutral: no provider model id, SDK, endpoint,
   or credential below `scripts/kernel/`.
 - Unmeasured telemetry is `null`, never `0`.
-- Schema and database migrations are additive.
+- Preserve declared compatibility windows, supported runtimes, user data, and
+  additive schema and database migrations. Remove obsolete paths only through
+  an explicit, versioned replacement or migration path.
 - Changes stay inside the current work unit's declared paths.
 
 ## Do Not
 
 - Do not edit the user's global Codex configuration; Kernel profiles are
   materialized under the Kernel runtime home.
+- Do not remove a supported fallback, compatibility wrapper, or migration path
+  merely to simplify the implementation. Remove it only when its support window has ended
+  and its replacement and rollback path are verified.
 - Do not weaken Route Admission, Review Receipt independence, or the Kernel's
   completion authority to make a check pass.
 - Do not run verification commands as a substitute for Kernel evidence.

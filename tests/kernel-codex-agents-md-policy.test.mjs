@@ -46,3 +46,18 @@ test('the nearest AGENTS.md wins for a given path', () => {
   ]);
   assert.deepEqual(resolveAgentsPrecedence(files, 'bin/cli.mjs'), ['AGENTS.md']);
 });
+
+test('the Codex contract preserves supported compatibility safely', async () => {
+  const text = await readFile('package/profile-templates/codex/AGENTS.md', 'utf8');
+
+  assert.match(text, /declared compatibility windows/i);
+  assert.match(text, /supported runtimes/i);
+  assert.match(text, /user data/i);
+  assert.match(text, /additive schema and database migrations/i);
+  assert.match(text, /explicit, versioned replacement or migration path/i);
+  assert.match(text, /support window has ended/i);
+  assert.match(text, /rollback path are verified/i);
+
+  assert.doesNotMatch(text, /do not preserve backward compatibility/i);
+  assert.doesNotMatch(text, /instead of adding compatibility layers, fallbacks, or migrations/i);
+});

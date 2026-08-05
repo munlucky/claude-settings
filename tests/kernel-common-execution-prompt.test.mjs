@@ -33,6 +33,16 @@ test('the contract states scope, autonomy, restraint, reporting, and authority',
   assert.match(COMMON_EXECUTION_PROMPT, /completion decisions remain authoritative/);
 });
 
+test('the common contract enforces minimal sustainable implementation', () => {
+  assert.equal(COMMON_PROMPT_REVISION, 'kernel-common-execution.v2');
+  assert.match(COMMON_EXECUTION_PROMPT, /simplest complete implementation/i);
+  assert.match(COMMON_EXECUTION_PROMPT, /working end-to-end increments/i);
+  assert.match(COMMON_EXECUTION_PROMPT, /real change boundaries/i);
+  assert.match(COMMON_EXECUTION_PROMPT, /existing project capabilities, dependencies, and internal utilities/i);
+  assert.match(COMMON_EXECUTION_PROMPT, /declared compatibility windows, supported runtimes, user data/i);
+  assert.match(COMMON_EXECUTION_PROMPT, /define its removal condition/i);
+});
+
 test('the four required request fields are declared', () => {
   assert.deepEqual([...REQUIRED_PROMPT_FIELDS], ['goal', 'context', 'constraints', 'doneWhen']);
   assert.ok(OPTIONAL_PROMPT_FIELDS.includes('nonGoals'));
