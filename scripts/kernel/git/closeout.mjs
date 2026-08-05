@@ -5,6 +5,7 @@ import { rm } from 'node:fs/promises';
 import { runGit, gitCurrentBranch } from '../../lib/git-safe.mjs';
 import { filterStagingSelection, validateGitCloseoutPath } from './staging-policy.mjs';
 import { verifyRemoteParity } from './remote-parity.mjs';
+import { observeWorkspaceIdentity } from '../run/workspace-identity.mjs';
 
 export class KernelGitCloseoutError extends Error {
   constructor(code, message, details = {}) {
@@ -14,6 +15,79 @@ export class KernelGitCloseoutError extends Error {
     this.details = details;
   }
 }
+
+// A failed push leaves a Kernel-created commit in HEAD while the persisted
+// workspace identity still describes the pre-closeout dirty tree.  That exact
+// state is safe to retry; any other HEAD/status change is an external Git or
+// workspace mutation and must invalidate the evidence before closeout.
+export const isAuthorizedKernelGitCloseoutWorkspace = ({ repoRoot = process.cwd(), commitSha = null } = {}) => {
+  if (!commitSha) return false;
+  const head = runGit(repoRoot, ['rev-parse', 'HEAD']);
+  const status = runGit(repoRoot, ['status', '--porcelain']);
+  return head?.status === 0
+    && status?.status === 0
+    && String(head.stdout || '').trim() === String(commitSha)
+    && String(status.stdout || '').trim() === '';
+};
+
+const reconcileWorkspaceBeforeCloseout = ({
+  runId,
+  projectId,
+  stateStore,
+  repoRoot,
+  gitCloseoutRequest,
+}) => {
+  if (!stateStore || typeof stateStore.getRun !== 'function' || typeof stateStore.observeWorkspaceIdentity !== 'function') {
+    return null;
+  }
+
+  const run = stateStore.getRun(runId);
+  if (!run) throw new KernelGitCloseoutError('RUN_NOT_FOUND', `Run ${runId} not found`);
+  const observation = observeWorkspaceIdentity({ projectRoot: repoRoot });
+  const authorizedRetry = isAuthorizedKernelGitCloseoutWorkspace({
+    repoRoot,
+    commitSha: gitCloseoutRequest?.existingCommitSha || null,
+  });
+
+  if (run.currentWorkspaceIdentity
+    && observation.identity !== run.currentWorkspaceIdentity
+    && !authorizedRetry) {
+    stateStore.observeWorkspaceIdentity(runId, observation.identity);
+    const branch = gitCurrentBranch(repoRoot);
+    const receiptJson = {
+      schemaVersion: 1,
+      runId,
+      projectId,
+      branch,
+      status: 'stale_workspace',
+      errorCode: 'WORKSPACE_IDENTITY_MISMATCH',
+      expectedWorkspaceIdentity: run.currentWorkspaceIdentity,
+      observedWorkspaceIdentity: observation.identity,
+    };
+    if (typeof stateStore.recordGitCloseoutReceipt === 'function') {
+      stateStore.recordGitCloseoutReceipt(runId, {
+        projectId,
+        mode: gitCloseoutRequest?.mode || 'commit',
+        commitSha: gitCloseoutRequest?.existingCommitSha || null,
+        branch,
+        pushStatus: 'not_started',
+        parity: 'not_requested',
+        status: 'stale_workspace',
+        errorCode: 'WORKSPACE_IDENTITY_MISMATCH',
+        errorMessage: 'Workspace identity changed outside the authorized Kernel Git closeout retry state',
+        receiptJson,
+      });
+    }
+    throw new KernelGitCloseoutError(
+      'WORKSPACE_IDENTITY_MISMATCH',
+      'Workspace identity changed outside the authorized Kernel Git closeout retry state',
+      { expectedWorkspaceIdentity: run.currentWorkspaceIdentity, observedWorkspaceIdentity: observation.identity },
+    );
+  }
+
+  if (!run.currentWorkspaceIdentity) stateStore.observeWorkspaceIdentity(runId, observation.identity);
+  return observation;
+};
 
 export async function executeKernelGitCloseout({
   runId,
@@ -54,6 +128,14 @@ export async function executeKernelGitCloseout({
   if (!knowledgeCommitReceipt) {
     throw new KernelGitCloseoutError('KNOWLEDGE_RECEIPT_REQUIRED', 'Git closeout follows knowledge closeout receipt');
   }
+
+  reconcileWorkspaceBeforeCloseout({
+    runId,
+    projectId,
+    stateStore,
+    repoRoot,
+    gitCloseoutRequest,
+  });
 
   const requestedMode = gitCloseoutRequest.mode || 'commit';
   const ALLOWED_MODES = new Set(['commit', 'commit_and_push', 'push', 'soft', 'none']);
@@ -300,6 +382,17 @@ export async function retryGitCloseout(runId, { stateStore, repoRoot = process.c
     return receipt.receiptJson || receipt;
   }
 
+  // A retry is authorized only for the exact Kernel-created commit in a clean
+  // workspace. Reconcile before the push so a user edit/commit after the
+  // original push failure cannot be smuggled through the stale receipt.
+  reconcileWorkspaceBeforeCloseout({
+    runId,
+    projectId: receipt.projectId,
+    stateStore,
+    repoRoot,
+    gitCloseoutRequest: { requested: true, mode: reqMode, existingCommitSha: commitSha },
+  });
+
   const pushRes = runGit(repoRoot, ['push', 'origin', `${commitSha}:refs/heads/${branch}`]);
   if (pushRes.status !== 0) {
     stateStore.recordGitCloseoutReceipt(runId, {
@@ -356,4 +449,3 @@ export async function retryGitCloseout(runId, { stateStore, repoRoot = process.c
 
   return updatedReceipt;
 }
-

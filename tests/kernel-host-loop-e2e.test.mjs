@@ -104,7 +104,12 @@ test('host loop E2E: fail -> fix -> hard evidence -> accepted completion', async
     const run = await cp.startRun({
       runId: 'host-loop-1',
       objective: 'Fix invalid password status code',
-      taskContract: { acceptance: ['invalid password returns 401'] },
+      taskContract: {
+        acceptance: [{
+          acceptance: 'invalid password returns 401',
+          evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:focus'], obligationId: 'default' },
+        }],
+      },
     });
     assert.match(run.runStartWorkspaceIdentity, /^sha256:[a-f0-9]{64}$/);
     assert.equal(run.currentWorkspaceIdentity, run.runStartWorkspaceIdentity);

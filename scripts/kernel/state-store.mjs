@@ -1,5 +1,7 @@
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import fs from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { resolveKernelRuntimeHome, assertIsolatedRuntimeHomes } from './runtime-home.mjs';
 import { canTransition } from './transition.mjs';
@@ -14,9 +16,16 @@ import { buildSuccessorKey } from './run/successor-key.mjs';
 import { emptyKnowledgeDoctorFinding } from './knowledge/capture.mjs';
 import { exactEvidenceIdentityMatch } from './proof/evidence-reuse.mjs';
 import { assertWaveTransition } from './run/active-wave.mjs';
+import { normalizeAcceptanceCoverage } from './task/task-contract.mjs';
+import {
+  prepareProjectKnowledgeNamespaceMigration,
+  projectKnowledgeNamespaceHasData,
+  recoverProjectKnowledgeNamespaceMigrations,
+} from './knowledge/store.mjs';
 
 const TIER_RANK = { T0: 0, T1: 1, T2: 2, T3: 3 };
 const EVIDENCE_RANK = { E0: 0, E1: 1, E2: 2 };
+const PROJECT_ID_PATTERN = /^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$)[a-z0-9][a-z0-9._-]{1,126}[a-z0-9]$/;
 
 export const kernelDbPath = (runtimeHome = resolveKernelRuntimeHome()) => path.join(runtimeHome, 'state', 'runtime-state.sqlite');
 
@@ -74,6 +83,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       verified_runtime_revision INTEGER,
       verified_mutation_revision INTEGER,
       source_identity TEXT,
+      command_ref TEXT,
       command TEXT,
       exit_code INTEGER,
       evidence_digest TEXT,
@@ -117,6 +127,24 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
     );
     CREATE INDEX IF NOT EXISTS idx_session_bindings_lookup ON session_bindings(session_id, run_id, status);
     CREATE INDEX IF NOT EXISTS idx_session_bindings_project ON session_bindings(project_id, workspace_id, status);
+    CREATE TABLE IF NOT EXISTS project_identities (
+      project_id TEXT PRIMARY KEY,
+      canonical_root TEXT NOT NULL UNIQUE,
+      identity_source TEXT NOT NULL,
+      identity_digest TEXT NOT NULL,
+      aliases_json TEXT NOT NULL DEFAULT '[]',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS project_identity_aliases (
+      alias TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      alias_type TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(project_id, alias)
+    );
+    CREATE INDEX IF NOT EXISTS idx_project_identity_aliases_project ON project_identity_aliases(project_id);
     CREATE TABLE IF NOT EXISTS project_workspaces (
       workspace_id TEXT PRIMARY KEY,
       project_id TEXT NOT NULL,
@@ -639,6 +667,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
   try { db.exec(`ALTER TABLE verifications ADD COLUMN verified_source_identity TEXT;`); } catch {}
   try { db.exec(`ALTER TABLE verifications ADD COLUMN executor TEXT DEFAULT 'caller-attested';`); } catch {}
   try { db.exec(`ALTER TABLE verifications ADD COLUMN network_isolation TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE verifications ADD COLUMN command_ref TEXT;`); } catch {}
   try { db.exec(`ALTER TABLE waivers ADD COLUMN approval_receipt TEXT;`); } catch {}
   try { db.exec(`ALTER TABLE waivers ADD COLUMN acceptance_coverage TEXT DEFAULT '[]';`); } catch {}
   try { db.exec(`ALTER TABLE evidence_packs ADD COLUMN mutation_revision INTEGER DEFAULT 0;`); } catch {}
@@ -666,6 +695,46 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
     throw error;
   }
 
+  // Finish or roll back any copy-first knowledge migration left by a process
+  // crash. The SQLite identity rows are the commit witness: a canonical row
+  // with no remaining legacy rows means the transaction committed; otherwise
+  // the filesystem journal is restored without deleting the legacy source.
+   try {
+    const normalizeRecoveryRoot = (value) => {
+      const resolved = path.resolve(String(value || '')).replaceAll('\\', '/');
+      return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+    };
+    const quoteRecoveryIdentifier = (value) => `"${String(value).replaceAll('"', '""')}"`;
+    const recoveryProjectScopedTables = db.prepare(`
+      SELECT name FROM sqlite_master
+      WHERE type='table' AND name NOT LIKE 'sqlite_%'
+    `).all()
+      .map(({ name }) => name)
+      .filter((name) => name !== 'project_identities')
+      .filter((name) => db.prepare(`PRAGMA table_info(${quoteRecoveryIdentifier(name)})`).all()
+        .some((column) => column.name === 'project_id'));
+    const hasRecoveryProjectState = (projectId) => recoveryProjectScopedTables.some((table) => (
+      Number(db.prepare(`SELECT COUNT(*) AS count FROM ${quoteRecoveryIdentifier(table)} WHERE project_id=?`).get(projectId)?.count || 0) > 0
+    ));
+
+    recoverProjectKnowledgeNamespaceMigrations({
+      runtimeHome,
+      isCommitted: (journal) => {
+        const canonical = db.prepare('SELECT canonical_root, identity_digest FROM project_identities WHERE project_id=? LIMIT 1').get(journal.projectId);
+        if (!canonical || !journal.canonicalRoot || !journal.identityDigest) return false;
+        if (normalizeRecoveryRoot(canonical.canonical_root) !== normalizeRecoveryRoot(journal.canonicalRoot)) return false;
+        if (String(canonical.identity_digest || '') !== String(journal.identityDigest)) return false;
+        return journal.sourceIds.every((legacyId) => (
+          !db.prepare('SELECT 1 FROM project_identities WHERE project_id=? LIMIT 1').get(legacyId)
+          && !hasRecoveryProjectState(legacyId)
+        ));
+      },
+    });
+  } catch (error) {
+    db.close();
+    throw error;
+  }
+
   const now = () => new Date().toISOString();
 
   const safeJsonParse = (str, fallback = []) => {
@@ -678,6 +747,232 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
   const persistentJson = (value) => typeof value === 'string'
     ? sanitizePersistentText(value)
     : JSON.stringify(sanitizePersistentPayload(value));
+  const canonicalIdentityRoot = (value) => {
+    const resolved = path.resolve(String(value || ''));
+    try {
+      const real = fs.realpathSync(resolved).replaceAll('\\', '/');
+      return process.platform === 'win32' ? real.toLowerCase() : real;
+    } catch {
+      const posix = resolved.replaceAll('\\', '/');
+      return process.platform === 'win32' ? posix.toLowerCase() : posix;
+    }
+  };
+  const deriveGitCommonDir = (root) => {
+    try {
+      const result = spawnSync('git', ['rev-parse', '--git-common-dir'], { cwd: root, encoding: 'utf8' });
+      if (result.status !== 0 || !result.stdout?.trim()) return null;
+      return canonicalIdentityRoot(path.resolve(root, result.stdout.trim()));
+    } catch {
+      return null;
+    }
+  };
+  const mapProjectIdentity = (row, aliases = null) => row ? ({
+    projectId: row.project_id || row.projectId,
+    canonicalRoot: row.canonical_root || row.canonicalRoot,
+    identitySource: row.identity_source || row.identitySource,
+    identityDigest: row.identity_digest || row.identityDigest,
+    aliases: aliases || safeJsonParse(row.aliases_json || row.aliasesJson, []),
+    createdAt: row.created_at || row.createdAt,
+    updatedAt: row.updated_at || row.updatedAt,
+  }) : null;
+  const findProjectIdentityByRoot = (root) => {
+    const exact = db.prepare(`SELECT * FROM project_identities WHERE canonical_root=?`).get(root);
+    if (exact) return exact;
+    return db.prepare(`SELECT * FROM project_identities`).all()
+      .find((candidate) => canonicalIdentityRoot(candidate.canonical_root) === root) || null;
+  };
+  const projectIdentityAlias = (value, type = null) => {
+    const alias = String(value || '').trim();
+    if (!alias) return null;
+    return {
+      alias,
+      aliasType: type || (alias.startsWith('http') ? 'remote' : alias.startsWith('workspace:') ? 'workspace-root' : 'legacy-project-id'),
+    };
+  };
+  const projectScopedTables = () => db.prepare(`
+    SELECT name FROM sqlite_master
+    WHERE type='table' AND name NOT LIKE 'sqlite_%'
+  `).all()
+    .map((row) => row.name)
+    .filter((name) => name !== 'project_identities')
+    .filter((name) => db.prepare(`PRAGMA table_info("${String(name).replaceAll('"', '""')}")`).all().some((column) => column.name === 'project_id'));
+  const hasProjectData = (projectId) => Boolean(
+    db.prepare('SELECT 1 FROM project_identities WHERE project_id=? LIMIT 1').get(projectId)
+      || projectScopedTables().some((table) => (
+        Number(db.prepare(`SELECT COUNT(*) as count FROM "${String(table).replaceAll('"', '""')}" WHERE project_id=?`).get(projectId)?.count || 0) > 0
+      ))
+      || projectKnowledgeNamespaceHasData(projectId, { runtimeHome }),
+  );
+  const quoteIdentifier = (value) => `"${String(value).replaceAll('"', '""')}"`;
+  const tableColumns = (table) => db.prepare(`PRAGMA table_info(${quoteIdentifier(table)})`).all();
+  const jsonReferenceColumns = (table) => tableColumns(table)
+    .map((column) => column.name)
+    .filter((name) => /(?:_json|_coverage)$/.test(name));
+  const projectIdKeys = new Set([
+    'projectId',
+    'project_id',
+    'canonicalProjectId',
+    'canonical_project_id',
+    'legacyProjectId',
+    'legacy_project_id',
+  ]);
+  const projectIdListKeys = new Set([
+    'projectIds',
+    'project_ids',
+    'legacyProjectIds',
+    'legacy_project_ids',
+  ]);
+  // Rewrite only fields whose schema says they carry project identity. A
+  // project_id-bearing JSON column can contain free-form statements, prompts,
+  // or evidence text; replacing every matching string would corrupt those
+  // payloads and make a multi-legacy migration non-deterministic.
+  const rewriteProjectIdJson = (value, legacyIds, canonicalId, key = null) => {
+    if (typeof value === 'string') return key && projectIdKeys.has(key) && legacyIds.has(value) ? canonicalId : value;
+    if (Array.isArray(value)) {
+      return value.map((item) => {
+        if (typeof item === 'string' && key && projectIdListKeys.has(key) && legacyIds.has(item)) return canonicalId;
+        return rewriteProjectIdJson(item, legacyIds, canonicalId, key);
+      });
+    }
+    if (!value || typeof value !== 'object') return value;
+    return Object.fromEntries(Object.entries(value).map(([childKey, item]) => {
+      if (typeof item === 'string' && projectIdKeys.has(childKey) && legacyIds.has(item)) return [childKey, canonicalId];
+      if (Array.isArray(item) && projectIdListKeys.has(childKey)) {
+        return [childKey, item.map((entry) => typeof entry === 'string' && legacyIds.has(entry) ? canonicalId : rewriteProjectIdJson(entry, legacyIds, canonicalId, childKey))];
+      }
+      return [childKey, rewriteProjectIdJson(item, legacyIds, canonicalId, childKey)];
+    }));
+  };
+  const rewriteJsonColumnsForRows = (table, where, params, legacyIds, canonicalId) => {
+    const columns = jsonReferenceColumns(table);
+    if (columns.length === 0) return;
+    const quotedTable = quoteIdentifier(table);
+    const selectColumns = ['rowid AS __kernel_rowid', ...columns.map(quoteIdentifier)].join(', ');
+    const rows = db.prepare(`SELECT ${selectColumns} FROM ${quotedTable} WHERE ${where}`).all(...params);
+    for (const row of rows) {
+      for (const column of columns) {
+        if (row[column] === null || row[column] === undefined) continue;
+        let parsed;
+        try {
+          parsed = JSON.parse(row[column]);
+        } catch (error) {
+          throw Object.assign(new Error(`project_identity_json_rewrite_invalid: ${table}.${column}: ${error.message}`), {
+            code: 'project_identity_json_rewrite_invalid',
+            table,
+            column,
+          });
+        }
+        const rewritten = rewriteProjectIdJson(parsed, legacyIds, canonicalId);
+        if (JSON.stringify(rewritten) !== row[column]) {
+          db.prepare(`UPDATE ${quotedTable} SET ${quoteIdentifier(column)}=? WHERE rowid=?`).run(JSON.stringify(rewritten), row.__kernel_rowid);
+        }
+      }
+    }
+  };
+  const tablesWithColumn = (columnName, { excludeProjectScoped = false } = {}) => db.prepare(`
+    SELECT name FROM sqlite_master
+    WHERE type='table' AND name NOT LIKE 'sqlite_%'
+  `).all()
+    .map((row) => row.name)
+    .filter((name) => !excludeProjectScoped || !tableColumns(name).some((column) => column.name === 'project_id'))
+    .filter((name) => tableColumns(name).some((column) => column.name === columnName));
+  const rewriteProjectScopedJson = (fromProjectId, toProjectId) => {
+    const legacyIds = new Set([String(fromProjectId)]);
+    for (const table of projectScopedTables()) rewriteJsonColumnsForRows(table, `${quoteIdentifier('project_id')}=?`, [fromProjectId], legacyIds, toProjectId);
+    const runIds = db.prepare('SELECT run_id FROM runs WHERE project_id=?').all(fromProjectId).map((row) => row.run_id);
+    for (const table of tablesWithColumn('run_id', { excludeProjectScoped: true })) {
+      for (const runId of runIds) rewriteJsonColumnsForRows(table, `${quoteIdentifier('run_id')}=?`, [runId], legacyIds, toProjectId);
+    }
+  };
+  const workspaceReferenceColumns = ['workspace_id', 'execution_workspace_id', 'integration_workspace_id'];
+  const sourceWorkspaceIdsForProject = (projectId) => db.prepare('SELECT workspace_id FROM project_workspaces WHERE project_id=?').all(projectId).map((row) => row.workspace_id);
+  const rewriteWorkspaceScopedJson = (workspaceIds, legacyProjectId, canonicalProjectId) => {
+    if (workspaceIds.length === 0) return;
+    const legacyIds = new Set([String(legacyProjectId)]);
+    const workspaceTables = [...new Set(workspaceReferenceColumns.flatMap((column) => tablesWithColumn(column)))];
+    for (const table of workspaceTables) {
+      const columns = tableColumns(table).map((column) => column.name).filter((name) => workspaceReferenceColumns.includes(name));
+      for (const column of columns) {
+        for (const workspaceId of workspaceIds) rewriteJsonColumnsForRows(table, `${quoteIdentifier(column)}=?`, [workspaceId], legacyIds, canonicalProjectId);
+      }
+    }
+  };
+  const migrateProjectId = (fromProjectId, toProjectId) => {
+    if (!fromProjectId || !toProjectId || fromProjectId === toProjectId) return false;
+    const sourceWorkspaceIds = sourceWorkspaceIdsForProject(fromProjectId);
+    rewriteProjectScopedJson(fromProjectId, toProjectId);
+    rewriteWorkspaceScopedJson(sourceWorkspaceIds, fromProjectId, toProjectId);
+    migrateProjectWorkspaces(fromProjectId, toProjectId);
+    for (const table of projectScopedTables()) {
+      const quotedTable = `"${String(table).replaceAll('"', '""')}"`;
+      if (table === 'project_workspaces') {
+        continue;
+      }
+      if (table === 'knowledge_revisions') {
+        const source = db.prepare(`SELECT revision, updated_at FROM ${quotedTable} WHERE project_id=?`).get(fromProjectId);
+        if (!source) continue;
+        const destination = db.prepare(`SELECT revision, updated_at FROM ${quotedTable} WHERE project_id=?`).get(toProjectId);
+        if (destination) {
+          const revision = Math.max(Number(source.revision || 1), Number(destination.revision || 1));
+          const updatedAt = String(source.updated_at || '') >= String(destination.updated_at || '') ? source.updated_at : destination.updated_at;
+          db.prepare(`UPDATE ${quotedTable} SET revision=?, updated_at=? WHERE project_id=?`).run(revision, updatedAt, toProjectId);
+          db.prepare(`DELETE FROM ${quotedTable} WHERE project_id=?`).run(fromProjectId);
+        } else {
+          db.prepare(`UPDATE ${quotedTable} SET project_id=? WHERE project_id=?`).run(toProjectId, fromProjectId);
+        }
+        continue;
+      }
+      db.prepare(`UPDATE ${quotedTable} SET project_id=? WHERE project_id=?`).run(toProjectId, fromProjectId);
+    }
+    return true;
+  };
+  const legacyIdentityCandidates = (identity = {}) => {
+    const raw = Array.isArray(identity.legacyAliases) && identity.legacyAliases.length > 0
+      ? identity.legacyAliases
+      : (Array.isArray(identity.legacyProjectIds) ? identity.legacyProjectIds.map((projectId) => ({ projectId, source: 'unknown' })) : []);
+    const priority = { persisted: 0, 'path-hash': 1, origin: 2, package: 3, basename: 4, unknown: 5 };
+    return [...new Map(raw.map((candidate) => {
+      const normalized = typeof candidate === 'string' ? { projectId: candidate, source: 'unknown' } : candidate;
+      const projectId = String(normalized?.projectId || '').trim();
+      return [projectId, {
+        projectId,
+        source: String(normalized?.source || 'unknown'),
+        aliasType: String(normalized?.aliasType || 'legacy-project-id'),
+        canonicalRoot: normalized?.canonicalRoot ? canonicalIdentityRoot(normalized.canonicalRoot) : null,
+      }];
+    }).filter(([projectId]) => projectId)).values()]
+      .sort((left, right) => (priority[left.source] ?? 9) - (priority[right.source] ?? 9));
+  };
+  const workspaceScopedTables = () => db.prepare(`
+    SELECT name FROM sqlite_master
+    WHERE type='table' AND name NOT LIKE 'sqlite_%'
+  `).all()
+    .map((row) => row.name)
+    .filter((name) => name !== 'project_workspaces')
+    .filter((name) => tableColumns(name).some((column) => workspaceReferenceColumns.includes(column.name)));
+  const migrateProjectWorkspaces = (fromProjectId, toProjectId) => {
+    const sourceRows = db.prepare('SELECT * FROM project_workspaces WHERE project_id=?').all(fromProjectId);
+    for (const source of sourceRows) {
+      const target = db.prepare(`
+        SELECT workspace_id FROM project_workspaces
+        WHERE project_id=? AND canonical_root=?
+      `).get(toProjectId, source.canonical_root);
+      const sourceIdentity = safeJsonParse(source.identity_json, {});
+      sourceIdentity.projectId = toProjectId;
+      if (target && target.workspace_id !== source.workspace_id) {
+        for (const table of workspaceScopedTables()) {
+          const quotedTable = quoteIdentifier(table);
+          for (const column of tableColumns(table).map((entry) => entry.name).filter((name) => workspaceReferenceColumns.includes(name))) {
+            db.prepare(`UPDATE ${quotedTable} SET ${quoteIdentifier(column)}=? WHERE ${quoteIdentifier(column)}=?`).run(target.workspace_id, source.workspace_id);
+          }
+        }
+        db.prepare('DELETE FROM project_workspaces WHERE workspace_id=?').run(source.workspace_id);
+      } else {
+        db.prepare(`UPDATE project_workspaces SET project_id=?, identity_json=?, last_seen_at=? WHERE workspace_id=?`)
+          .run(toProjectId, persistentJson(sourceIdentity), now(), source.workspace_id);
+      }
+    }
+  };
   const mapSessionBinding = (row) => row ? {
     bindingId: row.binding_id,
     sessionId: row.session_id,
@@ -696,6 +991,154 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
     successorRunId: row.successor_run_id,
     updatedAt: row.updated_at,
   } : null;
+  const terminalRunStatuses = new Set(['completed', 'blocked']);
+  const reconcileTerminalLifecycleInTransaction = ({
+    projectId = null,
+    runId = null,
+    preserveSessionId = null,
+    observedAt = now(),
+  } = {}) => {
+    const projectClause = projectId ? ' AND r.project_id=?' : '';
+    const runClause = runId ? ' AND r.run_id=?' : '';
+    const scopeArgs = [
+      ...(projectId ? [projectId] : []),
+      ...(runId ? [runId] : []),
+    ];
+    const activeOwnerForSession = (candidateRunId, candidateProjectId) => preserveSessionId
+      ? db.prepare(`
+          SELECT binding_id AS bindingId
+          FROM session_bindings
+          WHERE run_id=? AND project_id=? AND session_id=?
+            AND status='active' AND access_mode='owner'
+          LIMIT 1
+        `).get(candidateRunId, candidateProjectId, preserveSessionId)
+      : null;
+    const deactivatedBindings = [];
+    const terminalBindings = db.prepare(`
+      SELECT b.binding_id AS bindingId, b.run_id AS runId, b.project_id AS projectId,
+             b.session_id AS sessionId, r.status AS runStatus
+      FROM session_bindings b
+      JOIN runs r ON r.run_id=b.run_id
+      WHERE b.status='active' AND b.access_mode='owner'
+        AND r.status IN ('completed', 'blocked')
+        ${projectClause}${runClause}
+    `).all(...scopeArgs);
+    for (const binding of terminalBindings) {
+      if (preserveSessionId && binding.sessionId === preserveSessionId && binding.runStatus === 'completed') continue;
+      const closedAt = now();
+      const updated = db.prepare(`
+        UPDATE session_bindings
+        SET status='inactive', closed_at=?, close_reason=?, successor_run_id=NULL, updated_at=?
+        WHERE binding_id=? AND project_id=? AND run_id=? AND status='active' AND access_mode='owner'
+      `).run(
+        closedAt,
+        `terminal_${binding.runStatus}_cleanup`,
+        closedAt,
+        binding.bindingId,
+        binding.projectId,
+        binding.runId,
+      );
+      if (updated.changes === 1) deactivatedBindings.push({
+        bindingId: binding.bindingId,
+        runId: binding.runId,
+        projectId: binding.projectId,
+        sessionId: binding.sessionId,
+        runStatus: binding.runStatus,
+      });
+    }
+
+    const observedMs = Date.parse(observedAt);
+    const releasedLocks = [];
+    const v2Locks = db.prepare(`
+      SELECT workspace_id AS workspaceId, project_id AS projectId,
+             holder_run_id AS holderRunId, session_token AS sessionToken,
+             fencing_token AS fencingToken, expires_at AS expiresAt
+      FROM workspace_mutation_locks_v2 l
+      WHERE 1=1${projectId ? ' AND l.project_id=?' : ''}
+    `).all(...(projectId ? [projectId] : []));
+    for (const lock of v2Locks) {
+      const run = db.prepare(`
+        SELECT run_id AS runId, project_id AS projectId, workspace_id AS workspaceId, status
+        FROM runs WHERE run_id=?
+      `).get(lock.holderRunId);
+      const activeOwner = run ? activeOwnerForSession(run.runId, run.projectId) : null;
+      const expired = Number.isFinite(Date.parse(lock.expiresAt))
+        ? Date.parse(lock.expiresAt) <= observedMs
+        : true;
+      const invalidOwner = !run
+        || run.projectId !== lock.projectId
+        || run.workspaceId !== lock.workspaceId;
+      const terminal = run && terminalRunStatuses.has(run.status);
+      const preserveCompletedHostLock = Boolean(
+        activeOwner
+        && run.status === 'completed'
+        && !expired
+        && !invalidOwner
+        && (!runClause || run.runId === runId),
+      );
+      const shouldRelease = expired || invalidOwner || (terminal && !preserveCompletedHostLock);
+      if (!shouldRelease) continue;
+      const released = db.prepare(`
+        DELETE FROM workspace_mutation_locks_v2
+        WHERE workspace_id=? AND project_id=? AND holder_run_id=?
+          AND session_token=? AND fencing_token=?
+      `).run(
+        lock.workspaceId,
+        lock.projectId,
+        lock.holderRunId,
+        lock.sessionToken,
+        Number(lock.fencingToken),
+      );
+      if (released.changes === 1) releasedLocks.push({
+        version: 2,
+        workspaceId: lock.workspaceId,
+        projectId: lock.projectId,
+        holderRunId: lock.holderRunId,
+        reason: expired ? 'expired' : (invalidOwner ? 'invalid_owner' : `terminal_${run.status}`),
+      });
+    }
+
+    const legacyLocks = db.prepare(`
+      SELECT project_id AS projectId, holder_run_id AS holderRunId,
+             session_token AS sessionToken, fencing_token AS fencingToken,
+             expires_at AS expiresAt
+      FROM workspace_mutation_locks l
+      WHERE 1=1${projectId ? ' AND l.project_id=?' : ''}
+    `).all(...(projectId ? [projectId] : []));
+    for (const lock of legacyLocks) {
+      const run = db.prepare(`
+        SELECT run_id AS runId, project_id AS projectId, status
+        FROM runs WHERE run_id=?
+      `).get(lock.holderRunId);
+      const activeOwner = run ? activeOwnerForSession(run.runId, run.projectId) : null;
+      const expired = Number.isFinite(Date.parse(lock.expiresAt))
+        ? Date.parse(lock.expiresAt) <= observedMs
+        : true;
+      const invalidOwner = !run || run.projectId !== lock.projectId;
+      const terminal = run && terminalRunStatuses.has(run.status);
+      const preserveCompletedHostLock = Boolean(activeOwner && run.status === 'completed' && !expired && !invalidOwner);
+      const shouldRelease = expired || invalidOwner || (terminal && !preserveCompletedHostLock);
+      if (!shouldRelease) continue;
+      const released = db.prepare(`
+        DELETE FROM workspace_mutation_locks
+        WHERE project_id=? AND holder_run_id=? AND session_token=? AND fencing_token=?
+      `).run(lock.projectId, lock.holderRunId, lock.sessionToken, Number(lock.fencingToken));
+      if (released.changes === 1) releasedLocks.push({
+        version: 1,
+        projectId: lock.projectId,
+        holderRunId: lock.holderRunId,
+        reason: expired ? 'expired' : (invalidOwner ? 'invalid_owner' : `terminal_${run.status}`),
+      });
+    }
+
+    return {
+      deactivatedBindings,
+      releasedLocks,
+      preservedTerminalHostBindings: terminalBindings
+        .filter((binding) => preserveSessionId && binding.sessionId === preserveSessionId && binding.runStatus === 'completed')
+        .map((binding) => binding.bindingId),
+    };
+  };
   const bindingConflict = (error) => {
     if (String(error?.message || '').includes('UNIQUE constraint failed')) {
       throw Object.assign(new Error('successor_binding_conflict'), {
@@ -773,6 +1216,102 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       const nextRevision = bumpRevision ? Number(run.contractRevision || 1) + 1 : Number(run.contractRevision || 1);
       db.prepare(`UPDATE runs SET task_contract_json=?, contract_revision=?, acceptance_criteria=?, revision=revision+1, updated_at=? WHERE run_id=?`)
         .run(persistentJson(taskContract), nextRevision, persistentJson((taskContract.acceptance || []).map((item) => item.statement).filter(Boolean)), now(), runId);
+      return this.getRun(runId);
+    },
+
+    // Contract revisions change the binding authority for both plans and
+    // persisted proof. Keep the contract, compiled obligations, and legacy
+    // statement coverage in one SQLite transaction so a rebase cannot leave a
+    // half-updated contract whose evidence points at a different AC namespace.
+    reviseTaskContractAtomic(runId, taskContract, { obligations = [], bumpRevision = true } = {}) {
+      const run = this.getRun(runId);
+      if (!run) throw new Error(`Run ${runId} not found`);
+      const nextRevision = bumpRevision
+        ? Number(run.contractRevision || 1) + 1
+        : Number(run.contractRevision || 1);
+      const revise = db.transaction(() => {
+        db.prepare(`UPDATE runs
+          SET task_contract_json=?, contract_revision=?, acceptance_criteria=?, revision=revision+1, updated_at=?
+          WHERE run_id=?`)
+          .run(
+            persistentJson(taskContract),
+            nextRevision,
+            persistentJson((taskContract.acceptance || []).map((item) => item.statement).filter(Boolean)),
+            now(),
+            runId,
+          );
+
+        const upsertObligation = db.prepare(`
+          INSERT INTO run_obligations(run_id, obligation_id, source_type, source_ref, status, evidence_class, verification_method, allowed_command_refs, rejected_command_refs, acceptance_ids, protected, contract_revision, metadata_json, created_at, updated_at)
+          VALUES(?, ?, ?, ?, 'required', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(run_id, obligation_id) DO UPDATE SET
+            evidence_class=excluded.evidence_class,
+            verification_method=excluded.verification_method,
+            allowed_command_refs=excluded.allowed_command_refs,
+            rejected_command_refs=excluded.rejected_command_refs,
+            acceptance_ids=excluded.acceptance_ids,
+            protected=excluded.protected,
+            contract_revision=excluded.contract_revision,
+            metadata_json=excluded.metadata_json,
+            updated_at=excluded.updated_at
+        `);
+        for (const obligation of obligations) {
+          upsertObligation.run(
+            runId,
+            obligation.obligationId,
+            obligation.sourceType || 'proof-policy',
+            obligation.sourceRef || null,
+            obligation.evidenceClass || 'hard',
+            obligation.verificationMethod || null,
+            JSON.stringify(obligation.allowedCommandRefs || []),
+            JSON.stringify(obligation.rejectedCommandRefs || []),
+            JSON.stringify(obligation.acceptanceIds || []),
+            obligation.protected ? 1 : 0,
+            nextRevision,
+            JSON.stringify(obligation.metadata || {}),
+            now(),
+            now(),
+          );
+        }
+
+        const obligationRows = new Map(this.getRunObligations(runId).map((obligation) => [obligation.obligationId, obligation]));
+        for (const obligation of obligations) obligationRows.set(obligation.obligationId, obligation);
+        const canonicalCoverage = (rawCoverage, obligationId) => {
+          const coverage = safeJsonParse(rawCoverage, []);
+          try {
+            return normalizeAcceptanceCoverage({
+              contract: taskContract,
+              acceptanceCriteria: (taskContract.acceptance || []).map((item) => item.statement).filter(Boolean),
+              obligation: obligationRows.get(obligationId) || null,
+              coverage,
+            });
+          } catch (error) {
+            throw Object.assign(new Error(`CONTRACT_COVERAGE_REBASE_FAILED: ${error.message}`), {
+              code: 'CONTRACT_COVERAGE_REBASE_FAILED',
+              detail: { obligationId, coverage, cause: error.code || 'ACCEPTANCE_COVERAGE_INVALID' },
+            });
+          }
+        };
+
+        for (const row of db.prepare(`SELECT id, obligation_id, acceptance_coverage FROM verifications WHERE run_id=?`).all(runId)) {
+          const canonical = canonicalCoverage(row.acceptance_coverage, row.obligation_id);
+          db.prepare('UPDATE verifications SET acceptance_coverage=? WHERE id=?').run(JSON.stringify(canonical), row.id);
+        }
+        for (const row of db.prepare(`SELECT id, obligation_id, acceptance_coverage FROM waivers WHERE run_id=?`).all(runId)) {
+          const canonical = canonicalCoverage(row.acceptance_coverage, row.obligation_id);
+          db.prepare('UPDATE waivers SET acceptance_coverage=? WHERE id=?').run(JSON.stringify(canonical), row.id);
+        }
+        for (const row of db.prepare(`SELECT receipt_id, obligation_id, acceptance_coverage_json, receipt_json FROM review_receipts WHERE run_id=?`).all(runId)) {
+          const canonical = canonicalCoverage(row.acceptance_coverage_json, row.obligation_id);
+          const receipt = safeJsonParse(row.receipt_json, null);
+          if (receipt && typeof receipt === 'object') {
+            receipt.acceptanceCoverage = canonical;
+          }
+          db.prepare('UPDATE review_receipts SET acceptance_coverage_json=?, receipt_json=? WHERE receipt_id=?')
+            .run(JSON.stringify(canonical), receipt ? persistentJson(receipt) : row.receipt_json, row.receipt_id);
+        }
+      });
+      revise();
       return this.getRun(runId);
     },
 
@@ -885,7 +1424,11 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       const run = this.getRun(runId);
       if (!run) throw new Error(`Run ${runId} not found`);
       if (run.status === 'completed') throw new Error(`Cannot block completed run ${runId}`);
-      db.prepare(`UPDATE runs SET status='blocked', blocked_reason=?, revision=revision+1, updated_at=? WHERE run_id=?`).run(String(reason || 'question'), now(), runId);
+      db.transaction(() => {
+        db.prepare(`UPDATE runs SET status='blocked', blocked_reason=?, revision=revision+1, updated_at=? WHERE run_id=?`)
+          .run(String(reason || 'question'), now(), runId);
+        reconcileTerminalLifecycleInTransaction({ projectId: run.projectId, runId });
+      })();
       return this.getRun(runId);
     },
 
@@ -897,6 +1440,70 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       if (run.status !== 'blocked') return run;
       db.prepare(`UPDATE runs SET status='active', blocked_reason=NULL, intervention_count=intervention_count+1, revision=revision+1, updated_at=? WHERE run_id=?`).run(now(), runId);
       return this.getRun(runId);
+    },
+
+    // A blocked run's owner is intentionally inactive. Resumption is the
+    // explicit lifecycle transition that may reactivate that same binding;
+    // another host/session cannot claim it as an unowned run.
+    reactivateBlockedRunBinding(binding = {}) {
+      if (!binding.bindingId || !binding.sessionId || !binding.runId || !binding.projectId) {
+        throw Object.assign(new Error('host_binding_missing'), { code: 'host_binding_missing' });
+      }
+      const reactivate = db.transaction(() => {
+        const run = db.prepare(`
+          SELECT run_id AS runId, project_id AS projectId, workspace_id AS workspaceId,
+                 owner_binding_id AS ownerBindingId, status
+          FROM runs WHERE run_id=?
+        `).get(binding.runId);
+        if (!run || run.projectId !== binding.projectId || run.status !== 'blocked') return null;
+        if (run.ownerBindingId !== binding.bindingId) return null;
+        if (run.workspaceId && run.workspaceId !== (binding.workspaceId || null)) return null;
+        const current = db.prepare(`SELECT * FROM session_bindings WHERE binding_id=?`).get(binding.bindingId);
+        if (!current || current.status !== 'inactive' || current.project_id !== binding.projectId || current.run_id !== binding.runId) return null;
+        if (current.session_id !== binding.sessionId || current.access_mode !== 'owner') return null;
+        const conflict = db.prepare(`
+          SELECT binding_id AS bindingId
+          FROM session_bindings
+          WHERE project_id=? AND session_id=? AND status='active' AND access_mode='owner'
+            AND binding_id<>?
+          LIMIT 1
+        `).get(binding.projectId, binding.sessionId, binding.bindingId);
+        if (conflict) {
+          throw Object.assign(new Error('successor_binding_conflict'), {
+            code: 'successor_binding_conflict',
+            errorCode: 'successor_binding_conflict',
+            nextAction: 'inspect-active-owner-binding',
+          });
+        }
+        const updatedAt = now();
+        const updated = db.prepare(`
+          UPDATE session_bindings
+          SET provider=?, surface=?, workspace_id=?, workspace_root=?, status='active',
+              closed_at=NULL, close_reason=NULL, successor_run_id=NULL,
+              expires_at=?, updated_at=?
+          WHERE binding_id=? AND status='inactive' AND session_id=? AND project_id=? AND run_id=?
+        `).run(
+          binding.provider || current.provider,
+          binding.surface ?? current.surface,
+          binding.workspaceId || null,
+          binding.workspaceRoot || null,
+          binding.expiresAt || null,
+          updatedAt,
+          binding.bindingId,
+          binding.sessionId,
+          binding.projectId,
+          binding.runId,
+        );
+        if (updated.changes !== 1) return null;
+        db.prepare(`
+          UPDATE runs
+          SET status='active', blocked_reason=NULL, intervention_count=intervention_count+1,
+              revision=revision+1, updated_at=?
+          WHERE run_id=? AND status='blocked' AND owner_binding_id=?
+        `).run(updatedAt, binding.runId, binding.bindingId);
+        return mapSessionBinding(db.prepare('SELECT * FROM session_bindings WHERE binding_id=?').get(binding.bindingId));
+      });
+      return reactivate();
     },
 
     recordRunSignals(runId, signals = {}) {
@@ -1691,6 +2298,21 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       };
     },
 
+    // Lifecycle cleanup is Kernel-owned: terminal owner bindings are made
+    // inactive and stale mutation locks are released in one transaction. A
+    // completed binding for the current host is deliberately retained until a
+    // successor handoff can atomically replace it; every other terminal owner
+    // is safe to close here. This keeps cleanup project/session scoped without
+    // selecting or terminating a host process.
+    reconcileTerminalLifecycle({ projectId = null, runId = null, preserveSessionId = null, observedAt = now() } = {}) {
+      return db.transaction(() => reconcileTerminalLifecycleInTransaction({
+        projectId,
+        runId,
+        preserveSessionId,
+        observedAt,
+      }))();
+    },
+
     deactivateSessionBinding({
       projectId,
       sessionId,
@@ -1745,11 +2367,282 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       return mapSessionBinding(row);
     },
 
+    registerProjectIdentity(identity = {}) {
+      const projectId = String(identity.projectId || '').trim();
+      const canonicalRoot = canonicalIdentityRoot(identity.canonicalRoot || identity.projectRoot);
+      const identitySource = String(identity.identitySource || 'workspace_root');
+      const identityDigest = String(identity.identityDigest || '').trim();
+      const derivedGitCommonDir = deriveGitCommonDir(canonicalRoot);
+      const suppliedGitCommonDir = identity.gitCommonDir ? canonicalIdentityRoot(identity.gitCommonDir) : null;
+      if (suppliedGitCommonDir && suppliedGitCommonDir !== derivedGitCommonDir) {
+        throw Object.assign(new Error('project_identity_git_common_dir_unverified'), { code: 'project_identity_git_common_dir_unverified' });
+      }
+      if (!PROJECT_ID_PATTERN.test(projectId) || !canonicalRoot || !identityDigest) {
+        throw Object.assign(new Error('project_identity_invalid'), { code: 'project_identity_invalid' });
+      }
+
+      const incomingAliases = [
+        ...(Array.isArray(identity.aliases) ? identity.aliases : []),
+        `workspace:${canonicalRoot}`,
+      ].map((value) => projectIdentityAlias(value)).filter(Boolean);
+      const incomingGitCommonDir = derivedGitCommonDir;
+
+      const candidates = legacyIdentityCandidates(identity)
+        .filter((candidate) => candidate.projectId && candidate.projectId !== projectId);
+      let migration = null;
+      const register = db.transaction(() => {
+        let row = findProjectIdentityByRoot(canonicalRoot);
+        if (!row) {
+          const aliasMatches = incomingAliases
+            .map(({ alias }) => db.prepare(`SELECT p.* FROM project_identity_aliases a JOIN project_identities p ON p.project_id=a.project_id WHERE a.alias=?`).get(alias))
+            .filter(Boolean);
+          const projectMatches = [...new Map(aliasMatches.map((match) => [match.project_id, match])).values()];
+          const compatibleProjectMatches = projectMatches.filter((match) => {
+            if (canonicalIdentityRoot(match.canonical_root) === canonicalRoot) return true;
+            if (!incomingGitCommonDir) return false;
+            return Boolean(db.prepare(`
+              SELECT 1 FROM project_workspaces
+              WHERE project_id=? AND git_common_dir=? LIMIT 1
+            `).get(match.project_id, incomingGitCommonDir));
+          });
+          if (compatibleProjectMatches.length !== projectMatches.length) {
+            throw Object.assign(new Error('project_identity_alias_ownership_unproven'), {
+              code: 'project_identity_alias_ownership_unproven',
+              aliases: incomingAliases.map(({ alias }) => alias),
+              projectIds: projectMatches.map((match) => match.project_id),
+              canonicalRoot,
+              gitCommonDir: incomingGitCommonDir,
+            });
+          }
+          if (compatibleProjectMatches.length > 1) {
+            throw Object.assign(new Error('project_identity_alias_conflict'), {
+              code: 'project_identity_alias_conflict',
+              aliases: incomingAliases.map(({ alias }) => alias),
+              projectIds: compatibleProjectMatches.map((match) => match.project_id),
+            });
+          }
+          row = compatibleProjectMatches[0] || null;
+        }
+
+        // An explicit local identity is a logical project namespace that may
+        // be checked out in more than one worktree. Reuse that immutable
+        // project row instead of attempting a second row with the same
+        // project_id; project_workspaces remains the per-root registry.
+        if (!row && identitySource !== 'workspace_root') {
+          const projectIdRow = db.prepare(`SELECT * FROM project_identities WHERE project_id=?`).get(projectId) || null;
+          if (projectIdRow) {
+            const sameRoot = canonicalIdentityRoot(projectIdRow.canonical_root) === canonicalRoot;
+            const commonDirProof = incomingGitCommonDir && Boolean(db.prepare(`
+              SELECT 1 FROM project_workspaces
+              WHERE project_id=? AND git_common_dir=? LIMIT 1
+            `).get(projectIdRow.project_id, incomingGitCommonDir));
+            if (!sameRoot && !commonDirProof) {
+              throw Object.assign(new Error('project_identity_alias_ownership_unproven'), {
+                code: 'project_identity_alias_ownership_unproven',
+                projectId,
+                canonicalRoot,
+                gitCommonDir: incomingGitCommonDir,
+              });
+            }
+          }
+          row = projectIdRow;
+        }
+
+        let canonicalProjectId = row?.project_id || projectId;
+        if (!row && canonicalProjectId !== projectId) {
+          throw Object.assign(new Error('project_identity_conflict'), { code: 'project_identity_conflict' });
+        }
+
+        // A state created before immutable identity persistence may already use
+        // a derived id. Only a candidate with proven ownership may be moved;
+        // package and basename ids are common across repositories and therefore
+        // cannot become global aliases merely because rows happen to exist.
+        if (!row && canonicalProjectId === projectId) {
+          const provenLegacyIds = [];
+          for (const candidate of candidates) {
+            const legacyId = candidate.projectId;
+            const legacyIdentity = db.prepare('SELECT * FROM project_identities WHERE project_id=?').get(legacyId);
+            const existingAlias = db.prepare('SELECT project_id FROM project_identity_aliases WHERE alias=?').get(`project-id:${legacyId}`);
+            if (existingAlias && existingAlias.project_id !== projectId) {
+              throw Object.assign(new Error('project_identity_alias_conflict'), {
+                code: 'project_identity_alias_conflict',
+                alias: `project-id:${legacyId}`,
+                projectIds: [existingAlias.project_id, projectId],
+              });
+            }
+
+            const hasData = hasProjectData(legacyId);
+            if (!hasData) continue;
+
+            const sameRootIdentity = legacyIdentity && canonicalIdentityRoot(legacyIdentity.canonical_root) === canonicalRoot;
+            const sameRootWorkspace = Boolean(db.prepare(`
+              SELECT 1 FROM project_workspaces WHERE project_id=? AND canonical_root=? LIMIT 1
+            `).get(legacyId, canonicalRoot));
+            const sameRootRun = Boolean(db.prepare(`
+              SELECT 1
+              FROM runs r JOIN project_workspaces w ON w.workspace_id=r.workspace_id
+              WHERE r.project_id=? AND w.canonical_root=? LIMIT 1
+            `).get(legacyId, canonicalRoot));
+            // A remote/package/basename string is only a discovery hint. It is
+            // not ownership evidence: two unrelated repositories can share
+            // the same package or basename, and an origin URL can be copied
+            // into a second checkout. Require a persisted identity/workspace or
+            // a run tied to this root; caller-provided candidate paths are not
+            // ownership evidence because they can be forged at registration.
+            const proven = sameRootIdentity || sameRootWorkspace || sameRootRun;
+            if (!proven) {
+              throw Object.assign(new Error('project_identity_legacy_ownership_unproven'), {
+                code: 'project_identity_legacy_ownership_unproven',
+                legacyProjectId: legacyId,
+                source: candidate.source,
+                canonicalRoot,
+              });
+            }
+            if (legacyIdentity && !sameRootIdentity) {
+              throw Object.assign(new Error('project_identity_migration_conflict'), {
+                code: 'project_identity_migration_conflict',
+                legacyProjectId: legacyId,
+                legacyCanonicalRoot: legacyIdentity.canonical_root,
+                canonicalRoot,
+              });
+            }
+            provenLegacyIds.push(legacyId);
+          }
+
+          migration = prepareProjectKnowledgeNamespaceMigration({
+            runtimeHome,
+            legacyProjectIds: provenLegacyIds,
+            projectId,
+            canonicalRoot,
+            identityDigest,
+          });
+
+          for (const legacyId of provenLegacyIds) {
+            const legacyIdentity = db.prepare('SELECT aliases_json FROM project_identities WHERE project_id=?').get(legacyId);
+            for (const alias of safeJsonParse(legacyIdentity?.aliases_json, [])) {
+              incomingAliases.push(projectIdentityAlias(alias));
+            }
+            migrateProjectId(legacyId, projectId);
+            // project_identities is the one project_id table intentionally not
+            // handled by the generic UPDATE because its primary key and unique
+            // root constraints need the identity row to be rebuilt below.
+            db.prepare('DELETE FROM project_identities WHERE project_id=?').run(legacyId);
+            incomingAliases.push(projectIdentityAlias(`project-id:${legacyId}`));
+          }
+        }
+
+        const previousAliases = row ? safeJsonParse(row.aliases_json, []) : [];
+        const aliases = [...new Set([
+          ...previousAliases,
+          ...incomingAliases.map(({ alias }) => alias).filter((alias) => !alias.startsWith('workspace:') && !alias.startsWith('project-id:')),
+        ])];
+        const timestamp = now();
+        if (!row) {
+          db.prepare(`INSERT INTO project_identities(project_id, canonical_root, identity_source, identity_digest, aliases_json, created_at, updated_at)
+            VALUES(?, ?, ?, ?, ?, ?, ?)`)
+            .run(canonicalProjectId, canonicalRoot, identitySource, identityDigest, persistentJson(aliases), timestamp, timestamp);
+          row = db.prepare(`SELECT * FROM project_identities WHERE project_id=?`).get(canonicalProjectId);
+        } else {
+          // project_id, canonical_root, and identity_digest are immutable. Only
+          // newly observed aliases and last_seen metadata may advance.
+          db.prepare(`UPDATE project_identities SET aliases_json=?, updated_at=? WHERE project_id=?`)
+            .run(persistentJson(aliases), timestamp, row.project_id);
+          row = db.prepare(`SELECT * FROM project_identities WHERE project_id=?`).get(row.project_id);
+          canonicalProjectId = row.project_id;
+        }
+
+        for (const { alias, aliasType } of incomingAliases) {
+          const existing = db.prepare(`SELECT project_id FROM project_identity_aliases WHERE alias=?`).get(alias);
+          if (existing && existing.project_id !== canonicalProjectId) {
+            throw Object.assign(new Error('project_identity_alias_conflict'), {
+              code: 'project_identity_alias_conflict',
+              alias,
+              projectIds: [existing.project_id, canonicalProjectId],
+            });
+          }
+          db.prepare(`INSERT INTO project_identity_aliases(alias, project_id, alias_type, created_at, updated_at)
+            VALUES(?, ?, ?, ?, ?)
+            ON CONFLICT(alias) DO UPDATE SET updated_at=excluded.updated_at`)
+            .run(alias, canonicalProjectId, aliasType, timestamp, timestamp);
+        }
+        const persistedAliases = db.prepare(`SELECT alias FROM project_identity_aliases WHERE project_id=? AND alias_type='remote' ORDER BY alias`).all(canonicalProjectId).map(({ alias }) => alias);
+        return mapProjectIdentity(row, persistedAliases);
+      });
+      try {
+        const result = register();
+        if (migration) {
+          try { migration.finalize(); } catch { /* journal cleanup is recoverable; committed state remains authoritative */ }
+        }
+        return result;
+      } catch (error) {
+        if (migration) {
+          try { migration.rollback(); } catch (rollbackError) {
+            throw Object.assign(new Error(`${error.message}; identity filesystem rollback failed: ${rollbackError.message}`), {
+              code: 'project_identity_migration_rollback_failed',
+              cause: error,
+              rollbackError,
+            });
+          }
+        }
+        throw error;
+      }
+    },
+
+    getProjectIdentity({ projectId = null, canonicalRoot = null, alias = null } = {}) {
+      let row = null;
+      if (projectId) row = db.prepare(`SELECT * FROM project_identities WHERE project_id=?`).get(String(projectId));
+      else if (canonicalRoot) row = findProjectIdentityByRoot(canonicalIdentityRoot(canonicalRoot));
+      else if (alias) row = db.prepare(`SELECT p.* FROM project_identity_aliases a JOIN project_identities p ON p.project_id=a.project_id WHERE a.alias=?`).get(String(alias));
+      if (!row) return null;
+      const aliases = db.prepare(`SELECT alias FROM project_identity_aliases WHERE project_id=? AND alias_type='remote' ORDER BY alias`).all(row.project_id).map(({ alias: value }) => value);
+      return mapProjectIdentity(row, aliases);
+    },
+
     registerProjectWorkspace(workspace) {
+      const canonicalRoot = canonicalIdentityRoot(workspace.canonicalRoot || workspace.identity?.canonicalRoot);
+      const derivedGitCommonDir = deriveGitCommonDir(canonicalRoot);
+      const suppliedGitCommonDir = workspace.gitCommonDir ? canonicalIdentityRoot(workspace.gitCommonDir) : null;
+      if (suppliedGitCommonDir && suppliedGitCommonDir !== derivedGitCommonDir) {
+        throw Object.assign(new Error('project_workspace_git_common_dir_unverified'), { code: 'project_workspace_git_common_dir_unverified' });
+      }
+      const gitCommonDir = derivedGitCommonDir;
+      const identity = {
+        ...(workspace.identity || {}),
+        projectId: workspace.identity?.projectId || workspace.projectId,
+        canonicalRoot,
+      };
+      const equivalentRows = db.prepare(`SELECT workspace_id as workspaceId, canonical_root as canonicalRoot FROM project_workspaces WHERE project_id=?`)
+        .all(identity.projectId)
+        .filter((candidate) => canonicalIdentityRoot(candidate.canonicalRoot) === canonicalRoot);
+      const referencedWorkspaceIds = new Set([
+        ...db.prepare(`SELECT workspace_id as workspaceId FROM runs WHERE project_id=? AND workspace_id IS NOT NULL`).all(identity.projectId).map(({ workspaceId }) => workspaceId),
+        ...db.prepare(`SELECT workspace_id as workspaceId FROM session_bindings WHERE project_id=? AND workspace_id IS NOT NULL`).all(identity.projectId).map(({ workspaceId }) => workspaceId),
+        ...db.prepare(`SELECT workspace_id as workspaceId FROM workspace_mutation_locks_v2 WHERE project_id=?`).all(identity.projectId).map(({ workspaceId }) => workspaceId),
+      ]);
+      const existing = equivalentRows.find((candidate) => referencedWorkspaceIds.has(candidate.workspaceId))
+        || equivalentRows.find((candidate) => candidate.canonicalRoot === canonicalRoot)
+        || equivalentRows[0]
+        || null;
+      if (existing) {
+        for (const duplicate of equivalentRows.filter((candidate) => candidate.workspaceId !== existing.workspaceId)) {
+          for (const table of workspaceScopedTables().filter((table) => table !== 'project_workspaces')) {
+            const quotedTable = quoteIdentifier(table);
+            for (const column of tableColumns(table).map((entry) => entry.name).filter((name) => workspaceReferenceColumns.includes(name))) {
+              db.prepare(`UPDATE ${quotedTable} SET ${quoteIdentifier(column)}=? WHERE ${quoteIdentifier(column)}=?`)
+                .run(existing.workspaceId, duplicate.workspaceId);
+            }
+          }
+          db.prepare(`UPDATE session_bindings SET workspace_root=? WHERE workspace_id=?`).run(canonicalRoot, duplicate.workspaceId);
+          db.prepare(`DELETE FROM project_workspaces WHERE workspace_id=?`).run(duplicate.workspaceId);
+        }
+        db.prepare(`UPDATE project_workspaces SET canonical_root=?, git_common_dir=?, git_worktree_dir=?, last_seen_at=?, identity_json=? WHERE workspace_id=?`)
+          .run(canonicalRoot, gitCommonDir, workspace.gitWorktreeDir ? canonicalIdentityRoot(workspace.gitWorktreeDir) : null, now(), persistentJson(identity), existing.workspaceId);
+        return this.getProjectWorkspace(existing.workspaceId);
+      }
       db.prepare(`INSERT INTO project_workspaces(workspace_id, project_id, canonical_root, git_common_dir, git_worktree_dir, identity_json, created_at, last_seen_at)
         VALUES(?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(workspace_id) DO UPDATE SET last_seen_at=excluded.last_seen_at, identity_json=excluded.identity_json`)
-        .run(workspace.workspaceId, workspace.identity.projectId, workspace.canonicalRoot, workspace.gitCommonDir, workspace.gitWorktreeDir, persistentJson(workspace.identity), now(), now());
+        .run(workspace.workspaceId, identity.projectId, canonicalRoot, gitCommonDir, workspace.gitWorktreeDir ? canonicalIdentityRoot(workspace.gitWorktreeDir) : null, persistentJson(identity), now(), now());
       return this.getProjectWorkspace(workspace.workspaceId);
     },
 
@@ -2960,6 +3853,12 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       // command it ran is bound to that obligation. Undeclared obligation names
       // are recorded as ad-hoc evidence that can never satisfy a required one.
       const declared = this.getRunObligation(runId, obligationId);
+      const normalizedAcceptanceCoverage = normalizeAcceptanceCoverage({
+        contract: run.taskContract || {},
+        acceptanceCriteria: run.acceptanceCriteria || [],
+        obligation: declared,
+        coverage: acceptanceCoverage,
+      });
       if (declared && declared.sourceType !== 'ad-hoc' && executor === 'kernel-runtime') {
         assertCommandBinding(declared, commandRef);
       }
@@ -2981,9 +3880,9 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       db.exec('BEGIN IMMEDIATE TRANSACTION');
       try {
         db.prepare(`
-          INSERT INTO verifications(run_id, obligation_id, status, evidence_ref, verified_runtime_revision, verified_mutation_revision, source_identity, verified_source_identity, executor, network_isolation, command, exit_code, evidence_digest, acceptance_coverage, evidence_class, contract_revision, evidence_identity_json, reuse_of_verification_id, reuse_receipt_json, observed_at)
-          VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(runId, obligationId, status, evidenceRef || null, run.revision, run.mutationRevision, sourceIdentity, verifiedSourceIdentity, executor, networkIsolation, command || null, exitCode, evidenceDigest || null, JSON.stringify(acceptanceCoverage), resolvedEvidenceClass, Number(run.contractRevision || 1), persistentJson(evidenceIdentity || {}), reuseOfVerificationId || null, reuseReceipt ? persistentJson(reuseReceipt) : null, now());
+          INSERT INTO verifications(run_id, obligation_id, status, evidence_ref, verified_runtime_revision, verified_mutation_revision, source_identity, verified_source_identity, executor, network_isolation, command_ref, command, exit_code, evidence_digest, acceptance_coverage, evidence_class, contract_revision, evidence_identity_json, reuse_of_verification_id, reuse_receipt_json, observed_at)
+          VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(runId, obligationId, status, evidenceRef || null, run.revision, run.mutationRevision, sourceIdentity, verifiedSourceIdentity, executor, networkIsolation, commandRef || null, command || null, exitCode, evidenceDigest || null, JSON.stringify(normalizedAcceptanceCoverage), resolvedEvidenceClass, Number(run.contractRevision || 1), persistentJson(evidenceIdentity || {}), reuseOfVerificationId || null, reuseReceipt ? persistentJson(reuseReceipt) : null, now());
 
         if (evidenceDigest && sha256Regex.test(evidenceDigest)) {
           db.prepare(`INSERT INTO evidence_lineage(run_id, evidence_digest, created_at) VALUES(?, ?, ?)`).run(runId, evidenceDigest, now());
@@ -3014,7 +3913,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
     },
 
     getVerifications(runId) {
-      return db.prepare(`SELECT id, run_id as runId, obligation_id as obligationId, status, evidence_ref as evidenceRef, verified_runtime_revision as verifiedRuntimeRevision, verified_mutation_revision as verifiedMutationRevision, source_identity as sourceIdentity, verified_source_identity as verifiedSourceIdentity, executor, network_isolation as networkIsolation, command, exit_code as exitCode, evidence_digest as evidenceDigest, acceptance_coverage as acceptanceCoverage, evidence_class as evidenceClass, contract_revision as contractRevision, evidence_identity_json as evidenceIdentityJson, reuse_of_verification_id as reuseOfVerificationId, reuse_receipt_json as reuseReceiptJson, observed_at as observedAt FROM verifications WHERE run_id=? AND id IN (SELECT MAX(v2.id) FROM verifications v2 WHERE v2.run_id=? GROUP BY v2.obligation_id) ORDER BY id ASC`).all(runId, runId).map((v) => ({ ...v, acceptanceCoverage: safeJsonParse(v.acceptanceCoverage), evidenceIdentity: safeJsonParse(v.evidenceIdentityJson, {}), reuseReceipt: v.reuseReceiptJson ? safeJsonParse(v.reuseReceiptJson, null) : null }));
+      return db.prepare(`SELECT id, run_id as runId, obligation_id as obligationId, status, evidence_ref as evidenceRef, verified_runtime_revision as verifiedRuntimeRevision, verified_mutation_revision as verifiedMutationRevision, source_identity as sourceIdentity, verified_source_identity as verifiedSourceIdentity, executor, network_isolation as networkIsolation, command_ref as commandRef, command, exit_code as exitCode, evidence_digest as evidenceDigest, acceptance_coverage as acceptanceCoverage, evidence_class as evidenceClass, contract_revision as contractRevision, evidence_identity_json as evidenceIdentityJson, reuse_of_verification_id as reuseOfVerificationId, reuse_receipt_json as reuseReceiptJson, observed_at as observedAt FROM verifications WHERE run_id=? AND id IN (SELECT MAX(v2.id) FROM verifications v2 WHERE v2.run_id=? GROUP BY v2.obligation_id) ORDER BY id ASC`).all(runId, runId).map((v) => ({ ...v, acceptanceCoverage: safeJsonParse(v.acceptanceCoverage), evidenceIdentity: safeJsonParse(v.evidenceIdentityJson, {}), reuseReceipt: v.reuseReceiptJson ? safeJsonParse(v.reuseReceiptJson, null) : null }));
     },
 
     findExactReusableVerification({ projectId, obligationId, evidenceIdentity, excludeRunId = null } = {}) {
@@ -3152,7 +4051,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
                verified_mutation_revision as verifiedMutationRevision,
                source_identity as sourceIdentity,
                verified_source_identity as verifiedSourceIdentity,
-               executor, network_isolation as networkIsolation, command, exit_code as exitCode,
+               executor, network_isolation as networkIsolation, command_ref as commandRef, command, exit_code as exitCode,
                evidence_digest as evidenceDigest, acceptance_coverage as acceptanceCoverage,
                evidence_class as evidenceClass, contract_revision as contractRevision, observed_at as observedAt
         FROM verifications WHERE run_id=? AND id IN (
@@ -3161,6 +4060,19 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       `).all(runId, runId).map((v) => ({ ...v, acceptanceCoverage: safeJsonParse(v.acceptanceCoverage) }));
 
       const isClosed = Boolean(run.state === 'CLOSE');
+
+      const normalizedCoverageFor = (v) => {
+        try {
+          return normalizeAcceptanceCoverage({
+            contract: run.taskContract || {},
+            acceptanceCriteria: run.acceptanceCriteria || [],
+            obligation: this.getRunObligation(runId, v?.obligationId),
+            coverage: v?.acceptanceCoverage || [],
+          });
+        } catch {
+          return null;
+        }
+      };
 
       const isVerificationValid = (v) => {
         if (!v) return false;
@@ -3179,6 +4091,34 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         // Evidence proven against a different workspace state than the one the
         // run currently observes is stale regardless of its other fields.
         if (v.verifiedSourceIdentity && run.currentWorkspaceIdentity && v.verifiedSourceIdentity !== run.currentWorkspaceIdentity) return false;
+
+        // A contract revision changes the evidence authority. Proof recorded
+        // before a plan/binding revision must be rerun, even when its other
+        // receipt fields still look fresh.
+        if (Number(v.contractRevision || 1) !== Number(run.contractRevision || 1)) return false;
+
+        // Revalidate the persisted command against the CURRENT obligation. A
+        // plan may have narrowed or changed its command after an older proof
+        // was written; that older row cannot be reused at finalization. Legacy
+        // rows without commandRef are accepted only for broad, non-explicit
+        // obligations where the old contract did not specify a command.
+        const declared = this.getRunObligation(runId, v.obligationId);
+        const explicitCommandBinding = declared?.metadata?.evidencePlanCommandBinding === true;
+        if (declared && declared.evidenceClass !== 'judgment') {
+          if (explicitCommandBinding && !v.commandRef) return false;
+          if (v.commandRef) {
+            try {
+              assertCommandBinding(declared, v.commandRef);
+            } catch {
+              return false;
+            }
+          }
+        }
+
+        // Re-derive coverage at completion as well as at write time. This keeps
+        // legacy or directly-mutated rows from turning an unrelated passing
+        // command into proof for a different acceptance criterion.
+        if (normalizedCoverageFor(v) === null) return false;
 
         return true;
       };
@@ -3276,12 +4216,25 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       const dynamicPassed = dynamicObligationRows.every((row) => row.status === 'passed' || row.status === 'waived' || obligationSatisfied(row.obligationId));
 
       const coveredAcceptance = new Set([
-        ...verifications.filter(isVerificationValid).flatMap((v) => v.acceptanceCoverage || []),
+        ...verifications.filter(isVerificationValid).flatMap((v) => normalizedCoverageFor(v) || []),
         ...waivers.flatMap((w) => w.acceptanceCoverage || []),
       ]);
       // Coverage may be declared by acceptance id (AC-1) or by statement.
-      const contractAcceptance = run.taskContract?.acceptance || [];
-      const acceptanceCovered = run.acceptanceCriteria.every((criterion, index) => {
+      const contractAcceptance = Array.isArray(run.taskContract?.acceptance) ? run.taskContract.acceptance : [];
+      // Completion must not trust a legacy verification row merely because it
+      // contains coverage. Every acceptance criterion needs a persisted,
+      // structured evidence plan before any final report can close the run.
+      const persistedAcceptance = Array.isArray(run.acceptanceCriteria) ? run.acceptanceCriteria : [];
+      const evidencePlansComplete = persistedAcceptance.length === 0
+        ? true
+        : Boolean(run.taskContract)
+          && contractAcceptance.length === persistedAcceptance.length
+          && contractAcceptance.every((criterion, index) => (
+            Boolean(criterion?.statement)
+            && criterion.statement === persistedAcceptance[index]
+            && Boolean(criterion?.evidencePlan?.class)
+          ));
+      const acceptanceCovered = evidencePlansComplete && persistedAcceptance.every((criterion, index) => {
         const declared = contractAcceptance[index];
         return coveredAcceptance.has(criterion) || (declared?.id && coveredAcceptance.has(declared.id));
       });
@@ -3299,8 +4252,8 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       // All completion gates except the CLOSE-state requirement. Callers use
       // this to decide whether it is SAFE to transition to CLOSE, so a run is
       // never closed into an unrecoverable blocked state.
-      const readyExceptClose = staticPassed && dynamicPassed && acceptanceCovered && releaseEvidencePresent && hardEvidenceSatisfied;
-      const gates = { isClosed, staticPassed, dynamicPassed, acceptanceCovered, releaseEvidencePresent, hardEvidenceSatisfied };
+      const readyExceptClose = staticPassed && dynamicPassed && evidencePlansComplete && acceptanceCovered && releaseEvidencePresent && hardEvidenceSatisfied;
+      const gates = { isClosed, staticPassed, dynamicPassed, evidencePlansComplete, acceptanceCovered, releaseEvidencePresent, hardEvidenceSatisfied };
       const unsatisfiedObligations = obligationStatuses.filter((entry) => !entry.satisfied);
 
       const accepted = isClosed && readyExceptClose;
@@ -3330,6 +4283,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         verifications,
         waivers,
         releaseEvidence: releaseEvidence || null,
+        evidencePlansComplete,
         acceptanceCovered: [...coveredAcceptance],
         hardEvidence: { required: hardEvidenceRequired, count: hardEvidenceCount },
         obligationStatuses,

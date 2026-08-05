@@ -20,7 +20,13 @@ test('a run with uncovered acceptance is not closed into an unrecoverable state 
   const { runtimeHome, projectRoot } = await setup();
   const cp = await createKernelControlPlane({ runtimeHome, projectRoot });
   try {
-    await cp.startRun({ runId: 'r-gate', objective: 'x', taskContract: { acceptance: ['works'] } });
+    await cp.startRun({
+      runId: 'r-gate',
+      objective: 'x',
+      taskContract: {
+        acceptance: [{ acceptance: 'works', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'], obligationId: 'default' } }],
+      },
+    });
 
     // First report: obligation passes but acceptance is NOT covered.
     const first = await cp.report('r-gate', {
@@ -54,7 +60,13 @@ test('finalizeRun leaves a gate-incomplete run in PROVE, not CLOSE', async () =>
   const { runtimeHome, projectRoot } = await setup();
   const cp = await createKernelControlPlane({ runtimeHome, projectRoot });
   try {
-    await cp.startRun({ runId: 'r-gate2', objective: 'x', taskContract: { acceptance: ['must-cover'] } });
+    await cp.startRun({
+      runId: 'r-gate2',
+      objective: 'x',
+      taskContract: {
+        acceptance: [{ acceptance: 'must-cover', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'], obligationId: 'default' } }],
+      },
+    });
     await cp.transition('r-gate2', 'EXECUTE');
     await cp.transition('r-gate2', 'PROVE');
     await cp.executeProof('r-gate2', { obligationId: 'default', commandRef: 'test:ok', acceptanceCoverage: [] });

@@ -98,6 +98,10 @@ export const compileRunObligations = ({
   const declare = (obligationId, { sourceType, sourceRef = null, acceptanceIds = [], commandRefs = null, evidenceClass = null, method = null, metadata = null }) => {
     const policy = obligationPolicyFor(obligationId);
     const resolvedClass = evidenceClass || policy.evidenceClass;
+    const hasExplicitPlanCommands = sourceType === 'evidence-plan'
+      && resolvedClass !== 'judgment'
+      && Array.isArray(commandRefs)
+      && commandRefs.length > 0;
 
     // Command refs requested by an evidence plan are filtered against the
     // catalog and the classes the plan's own method implies. A ref that the
@@ -127,8 +131,29 @@ export const compileRunObligations = ({
     const existing = compiled.get(obligationId);
     if (existing) {
       existing.acceptanceIds = [...new Set([...existing.acceptanceIds, ...acceptanceIds])];
+      // A plan that explicitly reuses a policy/caller obligation must narrow
+      // that obligation to the commands the plan named. Otherwise the tier's
+      // broad allowlist (for example every unit-test script) lets an
+      // unplanned command satisfy an AC. Multiple explicit plans may share an
+      // obligation, so later plans add only their own validated refs.
+      if (hasExplicitPlanCommands) {
+        const bindingAlreadyNarrowed = existing.metadata?.evidencePlanCommandBinding === true;
+        existing.allowedCommandRefs = bindingAlreadyNarrowed
+          ? [...new Set([...existing.allowedCommandRefs, ...allowed])]
+          : [...new Set(allowed)];
+        const rejected = [...(existing.rejectedCommandRefs || []), ...rejectedCommandRefs];
+        existing.rejectedCommandRefs = rejected.filter((entry, index, all) => all.findIndex((candidate) => candidate.commandRef === entry.commandRef && candidate.reason === entry.reason) === index);
+        existing.metadata = { ...(existing.metadata || {}), evidencePlanCommandBinding: true };
+        existing.sourceType = 'evidence-plan';
+        existing.sourceRef = existing.sourceRef || sourceRef;
+        existing.verificationMethod = method || existing.verificationMethod;
+      }
       return existing;
     }
+    const obligationMetadata = {
+      ...(metadata || {}),
+      ...(hasExplicitPlanCommands ? { evidencePlanCommandBinding: true } : {}),
+    };
     const obligation = {
       obligationId,
       evidenceClass: resolvedClass,
@@ -139,7 +164,7 @@ export const compileRunObligations = ({
       protected: isProtectedObligation(obligationId),
       sourceType,
       sourceRef,
-      ...(metadata ? { metadata } : {}),
+      ...(Object.keys(obligationMetadata).length > 0 ? { metadata: obligationMetadata } : {}),
       contractRevision,
       satisfiable: resolvedClass === 'judgment' || allowed.length > 0,
     };

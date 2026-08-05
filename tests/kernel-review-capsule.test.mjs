@@ -43,7 +43,12 @@ test('K1-8: the reviewer capsule is read-only and carries subject plus evidence 
     await cp.startRun({
       runId: 'r-revcap',
       objective: 'auth boundary',
-      taskContract: { surfaces: ['security_boundary'], acceptance: ['works'], allowedPaths: ['src/auth/**'], constraints: ['keep the response shape'] },
+      taskContract: {
+        surfaces: ['security_boundary'],
+        acceptance: [{ acceptance: 'works', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'], obligationId: 'unit-test' } }],
+        allowedPaths: ['src/auth/**'],
+        constraints: ['keep the response shape'],
+      },
     });
     await writeFile(path.join(fixture.projectRoot, 'src', 'auth', 'service.mjs'), 'export const v = 1;\n');
 

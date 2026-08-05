@@ -63,7 +63,13 @@ test('repeated failure on the same obligation escalates implementation to fronti
 
 test('stagnation replans on frontier, and the new plan revision resumes value coding', async () => {
   await withProject({ 'test:fail': 'node -e "process.exit(1)"' }, async (cp) => {
-    await cp.startRun({ runId: 'r-stag', objective: 'stuck', taskContract: { acceptance: ['works'] } });
+    await cp.startRun({
+      runId: 'r-stag',
+      objective: 'stuck',
+      taskContract: {
+        acceptance: [{ acceptance: 'works', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:fail'], obligationId: 'default' } }],
+      },
+    });
     for (let i = 0; i < 3; i += 1) {
       await cp.report('r-stag', { summary: `try ${i}`, verifications: [{ obligationId: 'default', commandRef: 'test:fail' }] });
     }

@@ -60,7 +60,14 @@ test('K4 scenario A: a simple brownfield change walks contract -> step -> capsul
     await cp.startRun({
       runId: 'r-a',
       objective: 'Reject expired tokens',
-      taskContract: { acceptance: ['expired tokens are rejected'], behaviorChanging: true, allowedPaths: ['src/auth/**'] },
+      taskContract: {
+        acceptance: [{
+          acceptance: 'expired tokens are rejected',
+          evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'], obligationId: 'unit-test' },
+        }],
+        behaviorChanging: true,
+        allowedPaths: ['src/auth/**'],
+      },
     });
 
     // One synthetic step; the model-visible loop is unchanged.
@@ -99,7 +106,10 @@ test('K4 scenario B: a long run survives a process boundary, a failure, and a re
   const contract = {
     complex: true,
     riskTier: 'T2',
-    acceptance: ['auth rejects expired tokens', 'billing stays untouched by auth'],
+    acceptance: [
+      { acceptance: 'auth rejects expired tokens', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'], obligationId: 'unit-test' } },
+      { acceptance: 'billing stays untouched by auth', evidencePlan: { class: 'hard', method: 'static-analysis', commandRefs: ['lint:fail', 'lint'], obligationId: 'static-analysis' } },
+    ],
     steps: [
       { objective: 'Token expiry', allowedPaths: ['src/auth/**'], acceptanceIds: ['AC-1'], obligationIds: ['unit-test'] },
       { objective: 'Static analysis clean', allowedPaths: ['src/billing/**'], acceptanceIds: ['AC-2'], obligationIds: ['static-analysis'] },
@@ -174,7 +184,14 @@ test('K4 scenario C: a T3 security change completes only through a routed indepe
     await cp.startRun({
       runId: 'r-c',
       objective: 'Tighten the auth boundary',
-      taskContract: { surfaces: ['security_boundary'], acceptance: ['expired tokens are rejected'], allowedPaths: ['src/auth/**'] },
+      taskContract: {
+        surfaces: ['security_boundary'],
+        acceptance: [{
+          acceptance: 'expired tokens are rejected',
+          evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'], obligationId: 'unit-test' },
+        }],
+        allowedPaths: ['src/auth/**'],
+      },
     });
     assert.equal((await cp.getRun('r-c')).proofTier, 'T3');
 
@@ -247,7 +264,10 @@ test('K4 scenario D: every link of the chain refuses to be forged', async () => 
       taskContract: {
         complex: true,
         riskTier: 'T2',
-        acceptance: ['auth rejects expired tokens', 'billing untouched'],
+        acceptance: [
+          { acceptance: 'auth rejects expired tokens', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'], obligationId: 'unit-test' } },
+          { acceptance: 'billing untouched', evidencePlan: { class: 'hard', method: 'static-analysis', commandRefs: ['lint'], obligationId: 'static-analysis' } },
+        ],
         steps: [
           { objective: 'Token expiry', allowedPaths: ['src/auth/**'], acceptanceIds: ['AC-1'], obligationIds: ['unit-test'] },
           { objective: 'Lint', allowedPaths: ['src/billing/**'], acceptanceIds: ['AC-2'], obligationIds: ['static-analysis'] },

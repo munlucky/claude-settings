@@ -84,6 +84,15 @@ export const buildNextPayload = ({
   knowledgePromptBlock = null,
   capabilities = [],
 }) => {
+  const acceptancePlans = Array.isArray(contract?.acceptance)
+    ? contract.acceptance.map((item) => ({
+      id: item.id,
+      statement: item.statement,
+      evidencePlan: item.evidencePlan || null,
+    }))
+    : [];
+  const missingEvidencePlans = acceptancePlans.filter((item) => !item.evidencePlan).map((item) => item.id);
+  const mutationRun = Number(run.mutationRevision || 0) > 0;
   const base = {
     schemaVersion: 1,
     runId: run.runId,
@@ -96,6 +105,15 @@ export const buildNextPayload = ({
     risks: contract?.risks || [],
     evidence: summarizeEvidence(verifications),
     knowledge: knowledgePromptBlock,
+    acceptancePlans,
+    knowledgeCapture: {
+      required: mutationRun,
+      status: run.knowledgeStatus || null,
+      warning: mutationRun && ['no_candidates_submitted', 'no_new_knowledge', 'no_change'].includes(run.knowledgeStatus),
+      guidance: mutationRun
+        ? 'Before final report, include reusable knowledgeObservations with evidenceRefs, or record why this mutation established no reusable project knowledge.'
+        : 'Knowledge observations become required when this run mutates the workspace.',
+    },
     capabilities,
   };
 
@@ -137,7 +155,7 @@ export const buildNextPayload = ({
 
   const passed = new Set(verifications.filter((verification) => verification.status === 'passed').map((verification) => verification.obligationId));
   const outstanding = requiredObligations.filter((obligation) => !passed.has(obligation));
-  if (verifications.length === 0 || outstanding.length > 0) {
+  if (missingEvidencePlans.length > 0 || verifications.length === 0 || outstanding.length > 0) {
     const described = describeObligations(obligations, outstanding);
     if (outstanding.length > 0 && described.every((entry) => entry.evidenceClass === 'judgment')) {
       return {
@@ -157,11 +175,14 @@ export const buildNextPayload = ({
       ...base,
       action: {
         type: 'implement',
-        guidance: unsatisfiable.length > 0
+        guidance: missingEvidencePlans.length > 0
+          ? `Before submitting proof, provide one structured evidencePlan per acceptance criterion (${missingEvidencePlans.join(', ')}), each bound to the real obligation and project commandRef.`
+          : unsatisfiable.length > 0
           ? 'Implement the objective. Some required evidence has no runnable project command yet — add one to the project manifest, or report an unsupported-verification blocker.'
           : 'Implement the objective, then submit kernel report with a summary, changed paths, and the verifications to run.',
         outstandingObligations: outstanding,
         obligations: described,
+        evidencePlansRequired: missingEvidencePlans,
         shapeRequired: Boolean(run.route?.shapeRequired),
       },
     };

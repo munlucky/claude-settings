@@ -55,7 +55,13 @@ test('K4: an in-flight legacy run resumes at its current state with a migration-
   const cp = await createKernelControlPlane(fixture);
   let dbPath;
   try {
-    await cp.startRun({ runId: 'r-inflight', objective: 'Fix it', taskContract: { acceptance: ['works'] } });
+    await cp.startRun({
+      runId: 'r-inflight',
+      objective: 'Fix it',
+      taskContract: {
+        acceptance: [{ acceptance: 'works', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'], obligationId: 'default' } }],
+      },
+    });
     dbPath = (await openKernelStateStore({ runtimeHome: fixture.runtimeHome })).dbPath;
   } finally {
     await cp.close();

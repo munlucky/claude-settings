@@ -32,7 +32,14 @@ const cleanup = async ({ runtimeHome, projectRoot }) => {
   await rm(projectRoot, { recursive: true, force: true });
 };
 
-const CONTRACT = { acceptance: ['works'], constraints: ['keep the shape'], allowedPaths: ['src/auth/**'] };
+const CONTRACT = {
+  acceptance: [{
+    acceptance: 'works',
+    evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'], obligationId: 'default' },
+  }],
+  constraints: ['keep the shape'],
+  allowedPaths: ['src/auth/**'],
+};
 
 test('K1-6: a fresh process rebuilds the same capsule from the same SQLite state', async () => {
   const fixture = await setup();

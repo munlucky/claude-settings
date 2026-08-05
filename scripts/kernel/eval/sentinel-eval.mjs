@@ -314,9 +314,21 @@ const TRAPS = {
   // Positive controls ------------------------------------------------------
 
   async clean_hard_evidence(cp, projectRoot) {
-    await cp.startRun({ runId: 'sen', objective: 'x', taskContract: { acceptance: ['works'] } });
+    await cp.startRun({
+      runId: 'sen',
+      objective: 'x',
+      taskContract: {
+        acceptance: [{ acceptance: 'works', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'] } }],
+      },
+    });
     await mutate(projectRoot, 1);
-    return cp.report('sen', { summary: 'fix', verifications: [{ obligationId: 'default', commandRef: 'test:ok', acceptanceCoverage: ['works'] }] });
+    return cp.report('sen', {
+      summary: 'fix',
+      verifications: [
+        { obligationId: 'default', commandRef: 'test:ok', acceptanceCoverage: [] },
+        { obligationId: 'acceptance-ac-1', commandRef: 'test:ok', acceptanceCoverage: ['works'] },
+      ],
+    });
   },
 
   // The contract survives a process boundary: a second control plane over the
@@ -326,7 +338,7 @@ const TRAPS = {
       runId: 'sen',
       objective: 'fix login',
       taskContract: {
-        acceptance: ['works'],
+        acceptance: [{ acceptance: 'works', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'] } }],
         constraints: ['keep public response shape'],
         nonGoals: ['do not redesign auth'],
       },
@@ -339,7 +351,10 @@ const TRAPS = {
         && resumed.nonGoals.includes('do not redesign auth');
       const report = await fresh.report('sen', {
         summary: 'fix',
-        verifications: [{ obligationId: 'default', commandRef: 'test:ok', acceptanceCoverage: ['works'] }],
+        verifications: [
+          { obligationId: 'default', commandRef: 'test:ok', acceptanceCoverage: [] },
+          { obligationId: 'acceptance-ac-1', commandRef: 'test:ok', acceptanceCoverage: ['works'] },
+        ],
       });
       return { ...report, contractPreserved: preserved };
     } finally {
@@ -350,14 +365,23 @@ const TRAPS = {
   // Two sequential CLI-style processes must not deadlock on a stale lease
   // (P0-6): the second control plane represents the next `kernel report`.
   async sequential_process_reports(cp, projectRoot, { runtimeHome }) {
-    await cp.startRun({ runId: 'sen', objective: 'x', taskContract: { acceptance: ['works'] } });
+    await cp.startRun({
+      runId: 'sen',
+      objective: 'x',
+      taskContract: {
+        acceptance: [{ acceptance: 'works', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'] } }],
+      },
+    });
     await mutate(projectRoot, 1);
-    const first = await cp.report('sen', { summary: 'attempt', verifications: [{ obligationId: 'default', commandRef: 'test:fail' }] });
+    const first = await cp.report('sen', { summary: 'attempt', verifications: [{ obligationId: 'acceptance-ac-1', commandRef: 'test:fail' }] });
     const second = await createKernelControlPlane({ runtimeHome, projectRoot });
     try {
       const result = await second.report('sen', {
         summary: 'retry',
-        verifications: [{ obligationId: 'default', commandRef: 'test:ok', acceptanceCoverage: ['works'] }],
+        verifications: [
+          { obligationId: 'default', commandRef: 'test:ok', acceptanceCoverage: [] },
+          { obligationId: 'acceptance-ac-1', commandRef: 'test:ok', acceptanceCoverage: ['works'] },
+        ],
       });
       return { ...result, firstStatus: first.status, leaseBlocked: result.status === 'lease-conflict' };
     } finally {
@@ -371,7 +395,13 @@ const TRAPS = {
   // corpus stays deterministic on hosts without `make`.
   async non_node_proof_path(cp, projectRoot) {
     await writeFile(path.join(projectRoot, 'Makefile'), 'test:\n\t@echo ok\n');
-    await cp.startRun({ runId: 'sen', objective: 'x', taskContract: { acceptance: ['works'] } });
+    await cp.startRun({
+      runId: 'sen',
+      objective: 'x',
+      taskContract: {
+        acceptance: [{ acceptance: 'works', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok', 'make:test'] } }],
+      },
+    });
 
     const discovered = discoverProjectCommands({ projectRoot }).find((command) => command.commandRef === 'make:test');
     const bound = (await cp.next('sen')).action?.obligations?.some((obligation) => obligation.allowedCommandRefs.includes('make:test'));
@@ -381,7 +411,10 @@ const TRAPS = {
     await mutate(projectRoot, 1);
     const report = await cp.report('sen', {
       summary: 'manifest-declared proof',
-      verifications: [{ obligationId: 'default', commandRef: makeAvailable ? 'make:test' : 'test:ok', acceptanceCoverage: ['works'] }],
+      verifications: [
+        { obligationId: 'default', commandRef: 'test:ok', acceptanceCoverage: [] },
+        { obligationId: 'acceptance-ac-1', commandRef: makeAvailable ? 'make:test' : 'test:ok', acceptanceCoverage: ['works'] },
+      ],
     });
     return { ...report, nonNodeCommandBound, executedThroughMake: makeAvailable };
   },
@@ -391,13 +424,27 @@ const TRAPS = {
     const ensured = await cp.ensureRun({
       runId: 'sen',
       objective: 'bootstrap',
-      taskContract: { acceptance: ['works'] },
+      taskContract: {
+        acceptance: [{ acceptance: 'works', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'] } }],
+      },
     });
     if (ensured.status !== 'created') throw new Error(`expected bootstrap to create the run, got ${ensured.status}`);
-    const again = await cp.ensureRun({ runId: 'sen', objective: 'bootstrap', taskContract: { acceptance: ['works'] } });
+    const again = await cp.ensureRun({
+      runId: 'sen',
+      objective: 'bootstrap',
+      taskContract: {
+        acceptance: [{ acceptance: 'works', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'] } }],
+      },
+    });
     if (again.status !== 'resumed') throw new Error('ensureRun must be idempotent');
     await mutate(projectRoot, 1);
-    return cp.report('sen', { summary: 'fix', verifications: [{ obligationId: 'default', commandRef: 'test:ok', acceptanceCoverage: ['works'] }] });
+    return cp.report('sen', {
+      summary: 'fix',
+      verifications: [
+        { obligationId: 'default', commandRef: 'test:ok', acceptanceCoverage: [] },
+        { obligationId: 'acceptance-ac-1', commandRef: 'test:ok', acceptanceCoverage: ['works'] },
+      ],
+    });
   },
 };
 

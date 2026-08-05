@@ -25,6 +25,21 @@ const list = (value) => (Array.isArray(value) ? value : value ? [value] : []).ma
 const stable = (value) => JSON.stringify(value, Object.keys(value || {}).sort());
 const digest = (value) => `sha256:${createHash('sha256').update(typeof value === 'string' ? value : stable(value)).digest('hex')}`;
 
+// Failure signals often contain measurements, PIDs, line numbers, and other
+// run-specific noise. Keep the stable semantic class while removing values
+// that otherwise split one recurring problem into many fingerprints.
+export const normalizeFailureSignalText = (value) => text(value)
+  .toLowerCase()
+  .replace(/\b[0-9a-f]{8}-[0-9a-f-]{27,}\b/g, '<uuid>')
+  .replace(/\b0x[0-9a-f]+\b/g, '<hex>')
+  .replace(/\(\s*node:\d+\s*\)/g, '(node:<pid>)')
+  .replace(/\bnode:\d+\b/g, 'node:<pid>')
+  .replace(/\b(?:fps|p95)\s*[:=]?\s*\d+(?:\.\d+)?(?:\s*(?:ms|milliseconds?|seconds?|secs?))?\b/g, '<metric>')
+  .replace(/\b(line|column|offset|pid|port|attempt|retry|worker|process|exit(?:\s+code)?)\s*[:=#]?\s*\d+\b/g, '$1 <number>')
+  .replace(/\b\d+(?:\.\d+)?\s*(?:fps|frames?\/s|ms|milliseconds?|seconds?|secs?|mb|gb|kb|%|percent)\b/g, '<metric>')
+  .replace(/\s+/g, ' ')
+  .trim();
+
 const candidateKey = (candidate) => digest({
   type: candidate.proposedType || candidate.type || 'semantic_fact',
   statement: text(candidate.statement).toLowerCase(),
@@ -202,12 +217,13 @@ export const deriveKnowledgeStatus = ({
 export const failureFingerprint = (failure = {}) => digest({
   obligationId: text(failure.obligationId),
   commandRef: text(failure.commandRef || failure.command),
-  errorSummary: text(failure.errorSummary).toLowerCase(),
+  errorCode: text(failure.errorCode || failure.code || failure.errorKind),
+  errorSummary: normalizeFailureSignalText(failure.errorSummary || failure.message || failure.reason),
 });
 
 export const blockerFingerprint = (blocker = {}) => digest({
   reason: text(blocker.reason),
-  detail: text(blocker.detail).toLowerCase(),
+  detail: normalizeFailureSignalText(blocker.detail || blocker.message),
 });
 
 export const buildStructuredRunSignals = ({

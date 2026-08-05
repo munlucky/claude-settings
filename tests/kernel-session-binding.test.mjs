@@ -167,6 +167,148 @@ test('binding deactivation records closure and successor lineage without changin
   }
 });
 
+test('terminal lifecycle cleanup deactivates completed or blocked owners, releases stale locks, and preserves the current completed successor handoff', async () => {
+  const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-binding-terminal-cleanup-'));
+  const store = await openKernelStateStore({ runtimeHome });
+  const projectId = 'cleanup-project';
+  try {
+    registerWorkspace(store, { projectId, workspaceId: 'workspace-completed' });
+    registerWorkspace(store, { projectId, workspaceId: 'workspace-blocked' });
+    registerWorkspace(store, { projectId, workspaceId: 'workspace-current' });
+
+    createRun(store, { runId: 'run-completed', projectId, workspaceId: 'workspace-completed' });
+    store.createSessionBinding(owner({
+      bindingId: 'binding-completed',
+      sessionId: 'codex:old-completed',
+      runId: 'run-completed',
+      projectId,
+      workspaceId: 'workspace-completed',
+    }));
+    store.persistCompletionDecision('run-completed', {
+      decision: 'accepted',
+      digest: `sha256:${'b'.repeat(64)}`,
+      run: store.getRun('run-completed'),
+      decisionPayload: { decision: 'accepted' },
+    });
+    const completedLock = store.acquireWorkspaceMutationLockV2({
+      workspaceId: 'workspace-completed',
+      projectId,
+      runId: 'run-completed',
+      sessionToken: 'binding-completed',
+      ttlMs: 60000,
+    });
+    assert.equal(completedLock.acquired, true);
+
+    createRun(store, { runId: 'run-blocked', projectId, workspaceId: 'workspace-blocked' });
+    store.createSessionBinding(owner({
+      bindingId: 'binding-blocked',
+      sessionId: 'codex:old-blocked',
+      runId: 'run-blocked',
+      projectId,
+      workspaceId: 'workspace-blocked',
+    }));
+    const blockedLock = store.acquireWorkspaceMutationLockV2({
+      workspaceId: 'workspace-blocked',
+      projectId,
+      runId: 'run-blocked',
+      sessionToken: 'binding-blocked',
+      ttlMs: 60000,
+    });
+    assert.equal(blockedLock.acquired, true);
+    store.markRunBlocked('run-blocked', 'unsupported-verification');
+    assert.equal(store.getActiveOwnerBinding({ projectId, sessionId: 'codex:old-blocked' }), null);
+    assert.equal(store.getWorkspaceMutationLockV2('workspace-blocked'), null);
+
+    createRun(store, { runId: 'run-current-completed', projectId, workspaceId: 'workspace-current' });
+    store.createSessionBinding(owner({
+      bindingId: 'binding-current-completed',
+      sessionId: 'codex:current-host',
+      runId: 'run-current-completed',
+      projectId,
+      workspaceId: 'workspace-current',
+    }));
+    store.persistCompletionDecision('run-current-completed', {
+      decision: 'accepted',
+      digest: `sha256:${'c'.repeat(64)}`,
+      run: store.getRun('run-current-completed'),
+      decisionPayload: { decision: 'accepted' },
+    });
+    const currentLock = store.acquireWorkspaceMutationLockV2({
+      workspaceId: 'workspace-current',
+      projectId,
+      runId: 'run-current-completed',
+      sessionToken: 'binding-current-completed',
+      ttlMs: 60000,
+    });
+    assert.equal(currentLock.acquired, true);
+
+    const first = store.reconcileTerminalLifecycle({
+      projectId,
+      preserveSessionId: 'codex:current-host',
+    });
+    assert.deepEqual(first.deactivatedBindings.map((binding) => binding.bindingId), ['binding-completed']);
+    assert.equal(store.getActiveOwnerBinding({ projectId, sessionId: 'codex:old-completed' }), null);
+    assert.equal(store.getWorkspaceMutationLockV2('workspace-completed'), null);
+    assert.equal(store.getActiveOwnerBinding({ projectId, sessionId: 'codex:current-host' }).runId, 'run-current-completed');
+    assert.equal(store.getWorkspaceMutationLockV2('workspace-current').holderRunId, 'run-current-completed');
+
+    const second = store.reconcileTerminalLifecycle({
+      projectId,
+      preserveSessionId: 'codex:current-host',
+    });
+    assert.deepEqual(second.deactivatedBindings, []);
+    assert.deepEqual(second.releasedLocks, []);
+  } finally {
+    store.close();
+    await rm(runtimeHome, { recursive: true, force: true });
+  }
+});
+
+test('blocked owner binding resumes only through the same-session lifecycle transition', async () => {
+  const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-binding-blocked-resume-'));
+  const store = await openKernelStateStore({ runtimeHome });
+  const projectId = 'blocked-resume-project';
+  try {
+    createRun(store, { runId: 'run-blocked-resume', projectId, workspaceId: 'workspace-blocked-resume' });
+    store.createSessionBinding(owner({
+      bindingId: 'binding-blocked-resume',
+      sessionId: 'codex:resume-session',
+      runId: 'run-blocked-resume',
+      projectId,
+      workspaceId: 'workspace-blocked-resume',
+    }));
+    store.markRunBlocked('run-blocked-resume', 'unsupported-verification');
+    assert.equal(store.getActiveOwnerBinding({ projectId, sessionId: 'codex:resume-session' }), null);
+
+    const resumed = store.reactivateBlockedRunBinding(owner({
+      bindingId: 'binding-blocked-resume',
+      sessionId: 'codex:resume-session',
+      runId: 'run-blocked-resume',
+      projectId,
+      workspaceId: 'workspace-blocked-resume',
+    }));
+    assert.equal(resumed.status, 'active');
+    assert.equal(store.getRun('run-blocked-resume').status, 'active');
+    assert.equal(store.getRun('run-blocked-resume').interventionCount, 1);
+
+    store.markRunBlocked('run-blocked-resume', 'unsupported-verification');
+    assert.equal(
+      store.reactivateBlockedRunBinding(owner({
+        bindingId: 'binding-blocked-resume',
+        sessionId: 'codex:other-session',
+        runId: 'run-blocked-resume',
+        projectId,
+        workspaceId: 'workspace-blocked-resume',
+      })),
+      null,
+    );
+    assert.equal(store.getActiveOwnerBinding({ projectId, sessionId: 'codex:other-session' }), null);
+  } finally {
+    store.close();
+    await rm(runtimeHome, { recursive: true, force: true });
+  }
+});
+
 const crossProjectBindingRollbackSpec = async () => {
   const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-binding-cross-project-'));
   const store = await openKernelStateStore({ runtimeHome });

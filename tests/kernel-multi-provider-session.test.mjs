@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -17,6 +19,12 @@ const makeWorkspace = async ({ prefix, projectId }) => {
     scripts: { test: 'node -e "process.exit(0)"' },
   }));
   return root;
+};
+
+const runGit = (cwd, args) => {
+  const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  return result.stdout.trim();
 };
 
 const providerScopedIdentitySpec = async () => {
@@ -53,11 +61,19 @@ const multiProviderOwnershipSpec = async () => {
   const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-provider-state-'));
   const projectId = 'kernel-provider-shared-project';
   const codexRoot = await makeWorkspace({ prefix: 'kernel-provider-codex', projectId });
-  const claudeRoot = await makeWorkspace({ prefix: 'kernel-provider-claude', projectId });
+  const claudeParent = await mkdtemp(path.join(os.tmpdir(), 'kernel-provider-claude-parent-'));
+  const claudeRoot = path.join(claudeParent, 'worktree');
   const nativeSessionId = 'session-1';
   const codexRunId = 'run-codex-provider';
   const claudeRunId = 'run-claude-provider';
   try {
+    runGit(codexRoot, ['init']);
+    runGit(codexRoot, ['config', 'user.email', 'kernel-test@example.invalid']);
+    runGit(codexRoot, ['config', 'user.name', 'Kernel Test']);
+    runGit(codexRoot, ['add', '.']);
+    runGit(codexRoot, ['commit', '-m', 'provider worktree fixture']);
+    runGit(codexRoot, ['worktree', 'add', claudeRoot, 'HEAD']);
+
     const codex = await createKernelControlPlane({
       runtimeHome,
       projectRoot: codexRoot,
@@ -100,8 +116,9 @@ const multiProviderOwnershipSpec = async () => {
       await claude.close();
     }
   } finally {
+    if (existsSync(claudeRoot)) runGit(codexRoot, ['worktree', 'remove', '--force', claudeRoot]);
     await rm(codexRoot, { recursive: true, force: true });
-    await rm(claudeRoot, { recursive: true, force: true });
+    await rm(claudeParent, { recursive: true, force: true });
     await rm(runtimeHome, { recursive: true, force: true });
   }
 };

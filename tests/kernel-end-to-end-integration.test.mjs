@@ -13,7 +13,14 @@ const validDigest = 'sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123
 test('End-to-End Kernel Product Execution Flow', async () => {
   const tmpHome = await mkdtemp(path.join(os.tmpdir(), 'krn-e2e-home-'));
   const tmpProject = await mkdtemp(path.join(os.tmpdir(), 'krn-e2e-proj-'));
-  const sourceIdentity = computeKernelSourceIdentity({ projectRoot: tmpProject, objective: 'Complete E2E test', taskContract: { riskTier: 'T3', acceptanceCriteria: ['criteria-1'] } });
+  const taskContract = {
+    riskTier: 'T3',
+    acceptanceCriteria: [{
+      acceptance: 'criteria-1',
+      evidencePlan: { class: 'hard', method: 'static-analysis', obligationId: 'static-analysis' },
+    }],
+  };
+  const sourceIdentity = computeKernelSourceIdentity({ projectRoot: tmpProject, objective: 'Complete E2E test', taskContract });
 
   // 1. Install Kernel track in project
   await installKernel({ targetRoot: tmpProject });
@@ -29,7 +36,7 @@ test('End-to-End Kernel Product Execution Flow', async () => {
     runId: 'e2e-run-1',
     objective: 'Complete E2E test',
     sourceIdentity,
-    taskContract: { riskTier: 'T3', acceptanceCriteria: ['criteria-1'] },
+    taskContract,
   });
 
   assert.equal(run.proofTier, 'T3');
