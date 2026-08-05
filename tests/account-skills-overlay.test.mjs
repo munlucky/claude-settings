@@ -87,7 +87,9 @@ test('Claude desktop overlays and restores account settings with its Kernel prof
     await writeFile(path.join(provider, 'CLAUDE.md'), '# kernel\n');
     await writeFile(path.join(provider, 'skills', 'moon-relay-kernel', 'SKILL.md'), '# kernel\n');
     const args = { surface: 'claude_cli', providerHome: provider, platform: 'darwin', accountHome: home };
-    await applyAccountSkillsOverlay(args); assert.equal(await readFile(path.join(account, 'settings.json'), 'utf8'), '{}');
+    await applyAccountSkillsOverlay(args);
+    const appliedSettings = JSON.parse(await readFile(path.join(account, 'settings.json'), 'utf8'));
+    assert.deepEqual(appliedSettings, { hooks: { Relay: [] } });
     await restoreAccountSkillsOverlay(args);
     assert.equal(await readFile(path.join(account, 'settings.json'), 'utf8'), '{"hooks":{"Relay":[]}}');
   } finally { await rm(home, { recursive: true, force: true }); }

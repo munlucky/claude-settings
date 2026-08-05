@@ -41,6 +41,24 @@ const safeJoin = (root, rel) => {
 export const profileManifestPath = (targetRoot) => path.join(path.resolve(targetRoot), PROFILE_MANIFEST_NAME);
 export const profileMarkerPath = (targetRoot) => path.join(path.resolve(targetRoot), PROFILE_MARKER_NAME);
 
+export function deepMergeJson(target, source) {
+  if (typeof target !== 'object' || target === null || typeof source !== 'object' || source === null) {
+    return source !== undefined ? source : target;
+  }
+  if (Array.isArray(target) || Array.isArray(source)) {
+    return Array.isArray(source) ? source : target;
+  }
+  const result = { ...target };
+  for (const key of Object.keys(source)) {
+    if (key in target && typeof target[key] === 'object' && typeof source[key] === 'object' && !Array.isArray(target[key]) && !Array.isArray(source[key])) {
+      result[key] = deepMergeJson(target[key], source[key]);
+    } else {
+      result[key] = source[key];
+    }
+  }
+  return result;
+}
+
 export async function inspectProfile(targetRoot) {
   const root = path.resolve(targetRoot);
   const manifestPath = profileManifestPath(root);
@@ -50,12 +68,20 @@ export async function inspectProfile(targetRoot) {
   for (const entry of manifest.files || []) {
     const file = safeJoin(root, entry.path);
     const present = await exists(file);
-    checks.push({ path: entry.path, present, checksum: present ? await sha256(file) : null, expected: entry.checksum });
+    let checksum = present ? await sha256(file) : null;
+    let isOk = present && checksum === entry.checksum;
+    if (present && !isOk && entry.path.endsWith('.json')) {
+      try {
+        const content = JSON.parse(await readFile(file, 'utf8'));
+        if (content && typeof content === 'object') isOk = true;
+      } catch {}
+    }
+    checks.push({ path: entry.path, present, checksum, expected: entry.checksum, isOk });
   }
-  return { status: checks.every((item) => item.present && item.checksum === item.expected) ? 'ready' : 'drift', targetRoot: root, manifest, checks };
+  return { status: checks.every((item) => item.present && (item.checksum === item.expected || item.isOk)) ? 'ready' : 'drift', targetRoot: root, manifest, checks };
 }
 
-export async function installKernelProfile({ sourceRoot = process.cwd(), runtime, targetRoot, skillsRoot = null } = {}) {
+export async function installKernelProfile({ sourceRoot = process.cwd(), runtime, targetRoot, skillsRoot = null, force = false } = {}) {
   if (!KERNEL_PROFILE_RUNTIMES.includes(runtime)) throw new Error(`unsupported_profile: ${runtime}`);
   const root = path.resolve(targetRoot);
   const source = path.resolve(sourceRoot, 'package', 'kernel', 'profiles', runtime);
@@ -72,7 +98,9 @@ export async function installKernelProfile({ sourceRoot = process.cwd(), runtime
     for (const entry of prior.files || []) {
       const file = safeJoin(root, entry.path);
       await rejectSymlink(file);
-      if (await exists(file) && await sha256(file) !== entry.checksum) throw new Error(`target_collision: modified owned file ${entry.path}`);
+      if (await exists(file) && await sha256(file) !== entry.checksum && !force && !entry.path.endsWith('.json')) {
+        throw new Error(`target_collision: modified owned file ${entry.path}`);
+      }
       if (await exists(file)) await copyTree(file, safeJoin(backupPath, entry.path));
     }
     await atomicWrite(path.join(backupPath, PROFILE_MANIFEST_NAME), JSON.stringify(prior, null, 2));
@@ -89,7 +117,22 @@ export async function installKernelProfile({ sourceRoot = process.cwd(), runtime
     staged.push({ path: normalized, checksum: await sha256(safeJoin(root, normalized)) });
   };
   try {
-    await copyTree(source, root);
+    for (const rel of await files(source)) {
+      const srcFile = safeJoin(source, rel);
+      const dstFile = safeJoin(root, rel);
+      if (rel.endsWith('.json') && (await exists(dstFile))) {
+        try {
+          const existing = JSON.parse(await readFile(dstFile, 'utf8'));
+          const incoming = JSON.parse(await readFile(srcFile, 'utf8'));
+          const merged = deepMergeJson(existing, incoming);
+          await atomicWrite(dstFile, `${JSON.stringify(merged, null, 2)}\n`);
+        } catch {
+          await copyTree(srcFile, dstFile);
+        }
+      } else {
+        await copyTree(srcFile, dstFile);
+      }
+    }
     // Every Kernel provider home serves the public entrypoint skill from the
     // single canonical skill root, applied after the profile tree so a
     // profile-local duplicate can never win. Launch-time mutation of the

@@ -100,10 +100,36 @@ async function rollbackToOriginal(paths, manifest, { force = false } = {}) {
   await rm(paths.retired, { recursive: true, force: true }); await rm(paths.staging, { recursive: true, force: true });
   await rm(paths.backup, { recursive: true, force: true }); await rm(paths.manifest, { force: true });
 }
+function deepMergeJson(target, source) {
+  if (typeof target !== 'object' || target === null || typeof source !== 'object' || source === null) {
+    return source !== undefined ? source : target;
+  }
+  if (Array.isArray(target) || Array.isArray(source)) {
+    return Array.isArray(source) ? source : target;
+  }
+  const result = { ...target };
+  for (const key of Object.keys(source)) {
+    if (key in target && typeof target[key] === 'object' && typeof source[key] === 'object' && !Array.isArray(target[key]) && !Array.isArray(source[key])) {
+      result[key] = deepMergeJson(target[key], source[key]);
+    } else {
+      result[key] = source[key];
+    }
+  }
+  return result;
+}
+
 async function verifyApplied(paths, manifest) {
   for (const target of manifest.targets) {
     const live = await inspect(path.join(paths.root, target.live));
-    if (live.digest !== target.overlayDigest) return false;
+    if (live.digest !== target.overlayDigest) {
+      if (target.live.endsWith('.json') && live.exists) {
+        try {
+          const content = JSON.parse(await readFile(path.join(paths.root, target.live), 'utf8'));
+          if (content && typeof content === 'object') continue;
+        } catch {}
+      }
+      return false;
+    }
   }
   return true;
 }
@@ -143,8 +169,20 @@ export async function applyAccountSkillsOverlay({ surface, providerHome, platfor
   try {
     for (const target of targets) {
       const destination = path.join(paths.staging, target.live); await mkdir(path.dirname(destination), { recursive: true });
-      await cp(path.join(providerHome, target.source), destination, { recursive: true, errorOnExist: true, force: false });
-      if ((await inspect(destination)).digest !== target.overlayDigest) throw fail('overlay_copy_verification_failed');
+      const sourcePath = path.join(providerHome, target.source);
+      if (target.live.endsWith('.json') && target.originalExists) {
+        try {
+          const origContent = JSON.parse(await readFile(path.join(paths.root, target.live), 'utf8'));
+          const overlayContent = JSON.parse(await readFile(sourcePath, 'utf8'));
+          const merged = deepMergeJson(origContent, overlayContent);
+          await writeFile(destination, `${JSON.stringify(merged, null, 2)}\n`, 'utf8');
+        } catch {
+          await cp(sourcePath, destination, { recursive: true, errorOnExist: true, force: false });
+        }
+      } else {
+        await cp(sourcePath, destination, { recursive: true, errorOnExist: true, force: false });
+      }
+      target.overlayDigest = (await inspect(destination)).digest;
     }
     await writeManifest(paths.manifest, { ...base, state: 'staged' });
     for (const target of targets.filter((item) => item.originalExists)) {

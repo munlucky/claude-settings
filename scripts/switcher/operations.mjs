@@ -9,7 +9,7 @@ import { createReceipt } from './receipt.mjs';
 import { clearJournal, readJournal, readState, updateState } from './state-store.mjs';
 import { uninstallSwitcherPackage } from './installer.mjs';
 import { advanceTransaction, commitTransaction, prepareTransaction, recoverTransaction } from './transaction.mjs';
-import { inspectProfile } from '../kernel/profile-install.mjs';
+import { inspectProfile, installKernelProfile } from '../kernel/profile-install.mjs';
 import { cleanupLegacyKernelHydration } from '../kernel/legacy-hydration-cleanup.mjs';
 import { applyAccountSkillsOverlay, inspectAccountSkillsOverlay, restoreAccountSkillsOverlay, requiresAccountSkillsOverlay } from './account-skills-overlay.mjs';
 
@@ -151,7 +151,22 @@ export async function launchSwitch({ surface, track, sourceRoot = process.cwd(),
       sourceRoot,
     });
     if (readiness.status !== 'launch_candidate') {
-      return createReceipt({ operation: 'launch', status: readiness.status, surface, track, errorCode: readiness.reason || readiness.status, effective: { discoveredSkills: readiness.discoveredSkills || [] } });
+      if (readiness.status === 'kernel_profile_not_ready' && readiness.reason === 'drift' && force) {
+        const runtime = surface === 'claude_cli' ? 'claude' : surface === 'codex_desktop' || surface === 'codex_cli' ? 'codex' : surface === 'qwen_cli' ? 'qwen' : surface === 'antigravity_desktop' ? 'antigravity' : null;
+        if (runtime) {
+          await installKernelProfile({ sourceRoot, runtime, targetRoot: roots.providerHome, force: true });
+          readiness = await inspectKernelLaunchReadiness({
+            runtimeHome: roots.runtimeHome,
+            providerHome: roots.providerHome,
+            projectRoot: targetProjectRoot,
+            appDataRoot: roots.appDataRoot || roots.providerHome,
+            sourceRoot,
+          });
+        }
+      }
+      if (readiness.status !== 'launch_candidate') {
+        return createReceipt({ operation: 'launch', status: readiness.status, surface, track, errorCode: readiness.reason || readiness.status, effective: { discoveredSkills: readiness.discoveredSkills || [] } });
+      }
     }
   }
 
