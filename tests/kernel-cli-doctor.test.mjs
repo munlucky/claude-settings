@@ -1,24 +1,28 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { installKernel } from '../scripts/kernel/installer.mjs';
+import { openKernelStateStore } from '../scripts/kernel/state-store.mjs';
 
 const cliPath = fileURLToPath(new URL('../bin/moon-relay-kernel.mjs', import.meta.url));
+const canonical = (value) => realpathSync(value).replaceAll('\\', '/');
+const cleanTrackEnv = () => ({ ...process.env, MOON_RELAY_TRACK: '' });
 
 test('doctor reports wrong_harness with exit code 0 outside a Kernel project', async () => {
   const d = await mkdtemp(path.join(os.tmpdir(), 'krn-cli-'));
-  const r = spawnSync(process.execPath, [cliPath, 'doctor', '--json'], { cwd: d, encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [cliPath, 'doctor', '--json'], { cwd: d, env: cleanTrackEnv(), encoding: 'utf8' });
   assert.equal(r.status, 0);
   assert.equal(JSON.parse(r.stdout).status, 'wrong_harness');
 });
 
 test('assert-track reports wrong_harness with exit code 1 outside a Kernel project', async () => {
   const d = await mkdtemp(path.join(os.tmpdir(), 'krn-cli-assert-'));
-  const r = spawnSync(process.execPath, [cliPath, 'assert-track', '--json'], { cwd: d, encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [cliPath, 'assert-track', '--json'], { cwd: d, env: cleanTrackEnv(), encoding: 'utf8' });
   assert.equal(r.status, 1);
   assert.equal(JSON.parse(r.stdout).status, 'wrong_harness');
 });
@@ -37,6 +41,120 @@ test('doctor and assert-track are ready in a Kernel project, including nested su
   const rAssert = spawnSync(process.execPath, [cliPath, 'assert-track', '--json'], { cwd: sub, encoding: 'utf8' });
   assert.equal(rAssert.status, 0);
   assert.equal(JSON.parse(rAssert.stdout).status, 'ready');
+});
+
+test('identity status and bootstrap establish a persisted root/workspace receipt', async () => {
+  const d = await mkdtemp(path.join(os.tmpdir(), 'krn-cli-identity-'));
+  const runtimeHome = path.join(d, 'runtime');
+  try {
+    await mkdir(path.join(d, '.moon-relay'), { recursive: true });
+    await writeFile(path.join(d, '.moon-relay', 'track.yaml'), 'track: kernel\nproduct: moon-relay-kernel\n');
+
+    const status = spawnSync(process.execPath, [cliPath, 'identity', 'status', '--project-root', d, '--runtime-home', runtimeHome, '--json'], { cwd: d, encoding: 'utf8' });
+    assert.equal(status.status, 0, status.stderr);
+    assert.equal(JSON.parse(status.stdout).status, 'bootstrap_required');
+
+    const bootstrap = spawnSync(process.execPath, [cliPath, 'identity', 'bootstrap', '--project-root', d, '--runtime-home', runtimeHome, '--policy', 'isolate', '--json'], { cwd: d, encoding: 'utf8' });
+    assert.equal(bootstrap.status, 0, bootstrap.stderr);
+    const bootstrapped = JSON.parse(bootstrap.stdout);
+    assert.equal(bootstrapped.status, 'ready');
+    assert.equal(bootstrapped.legacyState, 'preserved-unimported');
+    assert.ok(bootstrapped.receipt.path);
+
+    const doctor = spawnSync(process.execPath, [cliPath, 'doctor', '--project-root', d, '--runtime-home', runtimeHome, '--json'], { cwd: d, encoding: 'utf8' });
+    assert.equal(doctor.status, 0, doctor.stderr);
+    const diagnosed = JSON.parse(doctor.stdout);
+    assert.equal(diagnosed.projectIdentity.status, 'ready');
+    assert.equal(diagnosed.projectIdentity.canonicalRoot, canonical(d));
+  } finally {
+    await rm(d, { recursive: true, force: true });
+  }
+});
+
+test('doctor exposes unowned legacy identity and actionable remediation', async () => {
+  const d = await mkdtemp(path.join(os.tmpdir(), 'krn-cli-legacy-'));
+  const runtimeHome = path.join(d, 'runtime');
+  const legacyProjectId = 'github-com-example-legacy-cli-project';
+  try {
+    await mkdir(path.join(d, '.moon-relay'), { recursive: true });
+    await writeFile(path.join(d, '.moon-relay', 'track.yaml'), 'track: kernel\nproduct: moon-relay-kernel\n');
+    await mkdir(path.join(d, '.git'), { recursive: true });
+    await writeFile(path.join(d, '.git', 'config'), '[remote "origin"]\n  url = https://github.com/example/legacy-cli-project.git\n');
+    const store = await openKernelStateStore({ runtimeHome });
+    store.createRun({
+      runId: 'legacy-cli-run',
+      objective: 'legacy identity diagnosis',
+      sourceIdentity: `sha256:${'d'.repeat(64)}`,
+      projectId: legacyProjectId,
+    });
+    store.close();
+
+    const doctor = spawnSync(process.execPath, [cliPath, 'doctor', '--project-root', d, '--runtime-home', runtimeHome, '--json'], { cwd: d, encoding: 'utf8' });
+    assert.equal(doctor.status, 0, doctor.stderr);
+    const diagnosed = JSON.parse(doctor.stdout);
+    assert.equal(diagnosed.projectIdentity.status, 'repair_required');
+    assert.equal(diagnosed.projectIdentity.canonicalRoot, canonical(d));
+    assert.equal(diagnosed.projectIdentity.unresolvedLegacyCandidates[0].projectId, legacyProjectId);
+    assert.equal(diagnosed.diagnostics.findings.some((finding) => finding.code === 'project_identity_preflight_required'), true);
+    assert.match(diagnosed.projectIdentity.remediation.adoptCommand, /--legacy-project-id/);
+    assert.match(diagnosed.projectIdentity.remediation.isolateCommand, /identity bootstrap/);
+  } finally {
+    await rm(d, { recursive: true, force: true });
+  }
+});
+
+test('next returns structured identity remediation before creating a Run', async () => {
+  const d = await mkdtemp(path.join(os.tmpdir(), 'krn-cli-next-legacy-'));
+  const runtimeHome = path.join(d, 'runtime');
+  const legacyProjectId = 'github-com-example-next-legacy-project';
+  try {
+    await mkdir(path.join(d, '.moon-relay'), { recursive: true });
+    await writeFile(path.join(d, '.moon-relay', 'track.yaml'), 'track: kernel\nproduct: moon-relay-kernel\n');
+    await mkdir(path.join(d, '.git'), { recursive: true });
+    await writeFile(path.join(d, '.git', 'config'), '[remote "origin"]\n  url = https://github.com/example/next-legacy-project.git\n');
+    const store = await openKernelStateStore({ runtimeHome });
+    store.createRun({
+      runId: 'legacy-next-run',
+      objective: 'legacy identity diagnosis',
+      sourceIdentity: `sha256:${'e'.repeat(64)}`,
+      projectId: legacyProjectId,
+    });
+    store.close();
+
+    const next = spawnSync(process.execPath, [
+      cliPath,
+      'next',
+      '--run-id',
+      'fresh-next-run',
+      '--session-id',
+      'codex:identity-preflight-test',
+      '--provider',
+      'codex',
+      '--project-root',
+      d,
+      '--runtime-home',
+      runtimeHome,
+      '--json',
+    ], { cwd: d, encoding: 'utf8' });
+    assert.equal(next.status, 1);
+    const jsonLine = next.stderr.split(/\r?\n/).map((line) => line.trim()).find((line) => line.startsWith('{') && line.endsWith('}'));
+    assert.ok(jsonLine, next.stderr);
+    const payload = JSON.parse(jsonLine);
+    assert.equal(payload.status, 'error');
+    assert.equal(payload.errorCode, 'project_identity_preflight_required');
+    assert.equal(payload.diagnostics.legacyProjectId, legacyProjectId);
+    assert.match(payload.nextAction, /identity repair/);
+
+    const after = await openKernelStateStore({ runtimeHome });
+    try {
+      assert.equal(after.getRun('fresh-next-run'), null);
+      assert.equal(after.getRun('legacy-next-run').projectId, legacyProjectId);
+    } finally {
+      after.close();
+    }
+  } finally {
+    await rm(d, { recursive: true, force: true });
+  }
 });
 
 test('uninstall validates the target project track when invoked from another directory', async () => {

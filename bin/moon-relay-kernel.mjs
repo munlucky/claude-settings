@@ -112,19 +112,34 @@ try {
     output({ productId: 'moon-relay-kernel', version: '0.1.0' });
   } else if (command === 'doctor') {
     const runtimeHome = runtimeHomeArg || resolveKernelRuntimeHome();
-    const activeTrack = await readProjectTrack(process.cwd());
+    const activeTrack = await readProjectTrack(projectRoot);
     if (activeTrack !== 'kernel') {
       output({ productId: 'moon-relay-kernel', runtimeHome, activeTrack, status: 'wrong_harness' });
     } else {
       let store;
       let diagnostics;
+      let projectIdentity;
       try {
         const { openKernelStateStore } = await import('../scripts/kernel/state-store.mjs');
-        const { resolveKernelProjectIdentity } = await import('../scripts/kernel/project-identity.mjs');
+        const { inspectKernelProjectIdentity } = await import('../scripts/kernel/project-identity-preflight.mjs');
+        projectIdentity = await inspectKernelProjectIdentity({ projectRoot, runtimeHome, env: kernelEnv });
         store = await openKernelStateStore({ runtimeHome });
         diagnostics = store.diagnoseLifecycleState({
-          projectId: resolveKernelProjectIdentity({ cwd: process.cwd() }).projectId,
+          projectId: projectIdentity.projectId,
         });
+        if (projectIdentity.status === 'repair_required') {
+          diagnostics.findings.push({
+            code: 'project_identity_preflight_required',
+            severity: projectIdentity.status === 'repair_required' ? 'error' : 'warning',
+            status: projectIdentity.status,
+            projectId: projectIdentity.projectId,
+            canonicalRoot: projectIdentity.canonicalRoot,
+            unresolvedLegacyCandidates: projectIdentity.unresolvedLegacyCandidates,
+            remediation: projectIdentity.remediation,
+          });
+          diagnostics.counts.project_identity_preflight_required = (diagnostics.counts.project_identity_preflight_required || 0) + 1;
+          if (projectIdentity.status === 'repair_required') diagnostics.status = 'degraded';
+        }
       } catch (error) {
         const ambiguous = String(error?.message || '').includes('UNIQUE constraint failed');
         diagnostics = {
@@ -146,7 +161,37 @@ try {
         activeTrack,
         status: diagnostics.status,
         diagnostics,
+        projectIdentity,
       });
+    }
+  } else if (command === 'identity') {
+    await assertKernelTrack(projectRoot);
+    const runtimeHome = runtimeHomeArg || resolveKernelRuntimeHome();
+    const subcommand = args[1] && !args[1].startsWith('--') ? args[1] : 'status';
+    const identityArgs = { projectRoot, runtimeHome, env: kernelEnv };
+    if (subcommand === 'status') {
+      const { inspectKernelProjectIdentity } = await import('../scripts/kernel/project-identity-preflight.mjs');
+      output(await inspectKernelProjectIdentity(identityArgs));
+    } else if (subcommand === 'bootstrap') {
+      const { bootstrapKernelProjectIdentity } = await import('../scripts/kernel/project-identity-preflight.mjs');
+      output(await bootstrapKernelProjectIdentity({ ...identityArgs, policy: getArgValue('--policy') || 'isolate' }));
+    } else if (subcommand === 'approve') {
+      const { approveKernelProjectIdentityRepair } = await import('../scripts/kernel/project-identity-preflight.mjs');
+      output(await approveKernelProjectIdentityRepair({
+        ...identityArgs,
+        legacyProjectId: getArgValue('--legacy-project-id'),
+        approvalRef: getArgValue('--approval-ref'),
+        approvedBy: getArgValue('--approved-by'),
+      }));
+    } else if (subcommand === 'repair') {
+      const { repairKernelProjectIdentity } = await import('../scripts/kernel/project-identity-preflight.mjs');
+      output(await repairKernelProjectIdentity({
+        ...identityArgs,
+        legacyProjectId: getArgValue('--legacy-project-id'),
+        approvalRef: getArgValue('--approval-ref'),
+      }));
+    } else {
+      throw new Error(`Unknown identity subcommand: ${subcommand}`);
     }
   } else if (command === 'assert-track') {
     const runtimeHome = resolveKernelRuntimeHome();
@@ -361,6 +406,14 @@ try {
     throw new Error(`Unknown command: ${command}`);
   }
 } catch (error) {
+  const diagnosticKeys = [
+    'legacyProjectId', 'source', 'canonicalRoot', 'legacyCanonicalRoot', 'gitCommonDir',
+    'aliases', 'projectIds', 'projectId', 'nextAction', 'remediation',
+  ];
+  const diagnostics = {
+    ...(error.details && typeof error.details === 'object' ? error.details : {}),
+    ...Object.fromEntries(diagnosticKeys.filter((key) => error[key] !== undefined).map((key) => [key, error[key]])),
+  };
   console.error(json ? JSON.stringify({
     schemaVersion: 1,
     status: 'error',
@@ -368,6 +421,7 @@ try {
     message: error.message,
     ...(error.nextAction ? { nextAction: error.nextAction } : {}),
     ...(error.runId ? { runId: error.runId } : {}),
+    ...(Object.keys(diagnostics).length ? { diagnostics } : {}),
   }) : error.message);
   process.exitCode = 1;
 }

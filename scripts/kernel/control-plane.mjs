@@ -202,7 +202,40 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
   // form. Keep a native spelling for mutation fencing without changing the
   // source-root spelling used by source identity and repository evidence.
   const fencingWorkspaceRoot = path.resolve(currentProject.canonicalRoot);
-  const persistedIdentity = store.registerProjectIdentity(currentProject);
+  const identityState = store.inspectProjectIdentity({
+    projectId: currentProject.projectId,
+    canonicalRoot: currentProject.canonicalRoot,
+    legacyCandidates: (currentProject.legacyAliases || []).filter((candidate) => candidate?.projectId),
+  });
+  const legacyData = identityState.legacyCandidates.filter((candidate) => candidate.hasData);
+  if (!identityState.currentIdentity && legacyData.length > 0) {
+    store.close();
+    throw Object.assign(new Error('project_identity_preflight_required'), {
+      code: 'project_identity_preflight_required',
+      errorCode: 'project_identity_preflight_required',
+      legacyProjectId: legacyData[0].projectId,
+      source: legacyData[0].source,
+      nextAction: 'kernel identity bootstrap --policy isolate or kernel identity approve --legacy-project-id <id> --approval-ref <operator-ref> --approved-by <operator> then kernel identity repair --legacy-project-id <id> --approval-ref <operator-ref>',
+      projectIdentity: {
+        status: 'repair_required',
+        projectId: currentProject.projectId,
+        canonicalRoot: currentProject.canonicalRoot,
+        legacyCandidates: legacyData,
+        remediation: {
+          action: 'choose-isolate-or-adopt',
+          isolateCommand: 'kernel identity bootstrap --policy isolate',
+          approvalCommand: 'kernel identity approve --legacy-project-id <id> --approval-ref <operator-ref> --approved-by <operator>',
+          adoptCommand: 'kernel identity repair --legacy-project-id <id> --approval-ref <operator-ref>',
+          reason: 'legacy project data exists without an explicit operator identity-repair decision',
+        },
+      },
+    });
+  }
+  const persistedIdentity = identityState.currentIdentity || store.registerProjectIdentity({
+    ...currentProject,
+    legacyProjectIds: [],
+    legacyAliases: [],
+  });
   currentProject = {
     ...currentProject,
     ...persistedIdentity,

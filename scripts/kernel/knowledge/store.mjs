@@ -1,8 +1,9 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import { readFile, writeFile, mkdir, rename, access } from 'node:fs/promises';
+import { readFile, mkdir, access } from 'node:fs/promises';
 import path from 'node:path';
-import { resolveKernelRuntimeHome, assertIsolatedRuntimeHomes } from '../runtime-home.mjs';
+import { atomicWriteText } from '../durable-write.mjs';
+import { canonicalPath, resolveKernelRuntimeHome, assertIsolatedRuntimeHomes } from '../runtime-home.mjs';
 import { resolveKernelProjectIdentity } from '../project-identity.mjs';
 
 export class KernelKnowledgeStoreError extends Error {
@@ -70,17 +71,59 @@ const projectsRootForPath = (target) => {
   }
 };
 
+// Resolve the host's system aliases (for example macOS /var -> /private/var)
+// without allowing a namespace-owned symlink to redirect a write. The lexical
+// walk deliberately starts at the Runtime Home projects boundary, so a stable
+// OS alias above that boundary is not mistaken for user-controlled namespace
+// indirection.
+function assertLexicalNamespacePathSafe(target, boundaryRoot) {
+  const boundary = path.resolve(boundaryRoot);
+  const absoluteTarget = path.resolve(target);
+  const relative = path.relative(boundary, absoluteTarget);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new KernelKnowledgeStoreError('NAMESPACE_PATH_ESCAPE', `Knowledge namespace path escapes Runtime Home: ${target}`);
+  }
+  const components = relative ? relative.split(path.sep).filter(Boolean) : [];
+  const paths = [boundary];
+  let current = boundary;
+  for (const component of components) {
+    current = path.join(current, component);
+    paths.push(current);
+  }
+  for (const candidate of paths) {
+    const stat = lstatIfExists(candidate);
+    if (!stat) continue;
+    if (stat.isSymbolicLink()) {
+      throw new KernelKnowledgeStoreError('SYMLINK_NAMESPACE_UNSUPPORTED', `Knowledge namespace cannot traverse a symlink or junction: ${candidate}`);
+    }
+    if (!stat.isDirectory() && normalizedFilesystemPath(candidate) !== normalizedFilesystemPath(absoluteTarget)) {
+      throw new KernelKnowledgeStoreError('INVALID_NAMESPACE_ROOT', `Knowledge namespace component is not a directory: ${candidate}`);
+    }
+  }
+  const canonicalBoundary = canonicalPath(boundary);
+  const canonicalTarget = canonicalPath(absoluteTarget);
+  if (canonicalTarget !== canonicalBoundary && !canonicalTarget.startsWith(`${canonicalBoundary}${path.sep}`)) {
+    throw new KernelKnowledgeStoreError('NAMESPACE_PATH_ESCAPE', `Knowledge namespace path resolves outside Runtime Home: ${target}`);
+  }
+  return canonicalTarget;
+}
+
 const namespaceInfoForPath = (target) => {
-  const projectsRoot = projectsRootForPath(target);
-  if (!projectsRoot) return null;
-  const relative = path.relative(projectsRoot, path.resolve(target));
+  const lexicalTarget = path.resolve(target);
+  const lexicalProjectsRoot = projectsRootForPath(lexicalTarget);
+  if (!lexicalProjectsRoot) return null;
+  const canonicalTarget = assertLexicalNamespacePathSafe(lexicalTarget, lexicalProjectsRoot);
+  const projectsRoot = canonicalPath(lexicalProjectsRoot);
+  const relative = path.relative(projectsRoot, canonicalTarget);
   if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) return null;
   const projectId = relative.split(path.sep)[0];
   if (!projectId || projectId.startsWith('.')) return null;
   const safeId = safeNamespaceSegment(projectId);
   return {
     projectsRoot,
+    lexicalProjectsRoot,
     projectId: safeId,
+    filePath: canonicalTarget,
     lockPath: path.join(projectsRoot, `.kernel-namespace-lock-${safeId}`),
   };
 };
@@ -246,6 +289,8 @@ const copyNamespaceTree = (source, destination) => {
   }
   fs.mkdirSync(path.dirname(destination), { recursive: true });
   fs.copyFileSync(source, destination);
+  const handle = fs.openSync(destination, 'r');
+  try { fs.fsyncSync(handle); } finally { fs.closeSync(handle); }
 };
 
 const rewriteProjectIdValue = (value, legacyIds, canonicalId) => {
@@ -383,10 +428,10 @@ const namespaceContentDigest = (root) => {
 
 export function projectKnowledgeNamespaceHasData(projectId, { runtimeHome = null, env = process.env } = {}) {
   const root = runtimeHome
-    ? path.join(path.resolve(runtimeHome), 'state', 'projects', safeNamespaceSegment(projectId))
+    ? path.join(canonicalPath(runtimeHome), 'state', 'projects', safeNamespaceSegment(projectId))
     : projectKnowledgeDirectory(projectId, { env });
   const projectsRoot = runtimeHome
-    ? path.join(path.resolve(runtimeHome), 'state', 'projects')
+    ? path.join(canonicalPath(runtimeHome), 'state', 'projects')
     : path.dirname(root);
   assertNamespacePathSafe(root, projectsRoot);
   return namespaceHasMeaningfulData(root, projectId);
@@ -394,10 +439,39 @@ export function projectKnowledgeNamespaceHasData(projectId, { runtimeHome = null
 
 const migrationJournalPath = (journal) => path.join(journal, 'journal.json');
 
+const syncDirectorySync = (directory) => {
+  let fd = null;
+  try {
+    fd = fs.openSync(directory, 'r');
+    fs.fsyncSync(fd);
+  } catch (error) {
+    if (!['EINVAL', 'ENOTSUP', 'EISDIR', 'EPERM'].includes(error?.code)) throw error;
+  } finally {
+    if (fd !== null) fs.closeSync(fd);
+  }
+};
+
+const writeDurableFileSync = (filePath, content, flags = 'w') => {
+  const fd = fs.openSync(filePath, flags, 0o600);
+  try {
+    fs.writeFileSync(fd, content, 'utf8');
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+  syncDirectorySync(path.dirname(filePath));
+};
+
 const writeMigrationJournal = (journal, state) => {
   const temporary = `${migrationJournalPath(journal)}.${crypto.randomUUID()}.tmp`;
-  fs.writeFileSync(temporary, JSON.stringify({ ...state, updatedAt: new Date().toISOString() }, null, 2), 'utf8');
-  fs.renameSync(temporary, migrationJournalPath(journal));
+  try {
+    writeDurableFileSync(temporary, JSON.stringify({ ...state, updatedAt: new Date().toISOString() }, null, 2));
+    fs.renameSync(temporary, migrationJournalPath(journal));
+    syncDirectorySync(journal);
+  } catch (error) {
+    try { fs.rmSync(temporary, { force: true }); } catch {}
+    throw error;
+  }
 };
 
 const readMigrationJournal = (journal, { runtimeHome } = {}) => {
@@ -407,7 +481,7 @@ const readMigrationJournal = (journal, { runtimeHome } = {}) => {
     if (!state || state.schemaVersion !== 1 || state.kind !== 'identity-knowledge-migration' || !state.projectId || !Array.isArray(state.sourceIds)) {
       throw new Error('invalid migration journal shape');
     }
-    const projectsRoot = path.resolve(path.join(path.resolve(runtimeHome), 'state', 'projects'));
+    const projectsRoot = path.resolve(path.join(canonicalPath(runtimeHome), 'state', 'projects'));
     const journalRoot = path.resolve(journal);
     const canonicalId = safeNamespaceSegment(state.projectId);
     const sourceIds = [...new Set(state.sourceIds.map((value) => safeNamespaceSegment(value)))];
@@ -594,7 +668,10 @@ const restoreMigrationJournal = (state, { heldLocks = null } = {}) => {
     if (backupExists && destinationExists) {
       throw new KernelKnowledgeStoreError('IDENTITY_MIGRATION_ROLLBACK_UNSAFE', `Backup-pending migration has both original and backup destinations: ${state.journal}`);
     }
-    if (backupExists && !destinationExists) fs.renameSync(destinationBackup, destination);
+    if (backupExists && !destinationExists) {
+      fs.renameSync(destinationBackup, destination);
+      syncDirectorySync(projectsRoot);
+    }
     removeIfExists(stagedDestination, { boundaryRoot: projectsRoot });
     removeIfExists(state.destinationInstalledMarker, { boundaryRoot: projectsRoot });
     removeIfExists(state.destinationPresenceMarker, { boundaryRoot: projectsRoot });
@@ -607,6 +684,7 @@ const restoreMigrationJournal = (state, { heldLocks = null } = {}) => {
       if (!backupExists) throw new KernelKnowledgeStoreError('IDENTITY_MIGRATION_ROLLBACK_UNSAFE', `Pending destination install has no verified original backup: ${destination}`);
       if (destinationExists) removeIfExists(destination, { boundaryRoot: projectsRoot });
       fs.renameSync(destinationBackup, destination);
+      syncDirectorySync(projectsRoot);
     } else if (destinationExists && !stagedExists) {
       removeIfExists(destination, { boundaryRoot: projectsRoot });
     }
@@ -619,6 +697,7 @@ const restoreMigrationJournal = (state, { heldLocks = null } = {}) => {
   if (destinationWasInstalled && destinationExists) removeIfExists(destination, { boundaryRoot: projectsRoot });
   if (backupExists && !lstatIfExists(destination)) {
     fs.renameSync(destinationBackup, destination);
+    syncDirectorySync(projectsRoot);
   }
   removeIfExists(stagedDestination, { boundaryRoot: projectsRoot });
   removeIfExists(state.destinationInstalledMarker, { boundaryRoot: projectsRoot });
@@ -649,6 +728,7 @@ const finalizeMigrationJournal = (state, { heldLocks = null } = {}) => {
       if (fs.existsSync(state.stagedDestination)) fs.renameSync(state.stagedDestination, destination);
       else if (fs.existsSync(state.destinationBackup)) fs.renameSync(state.destinationBackup, destination);
       else throw new KernelKnowledgeStoreError('IDENTITY_MIGRATION_DESTINATION_MISSING', `Committed identity migration has no destination namespace: ${destination}`, { destination, journal: state.journal });
+      syncDirectorySync(projectsRoot);
     }
 
     if (state.sourceRemovalBlocked || state.phase === 'sources-preserved') {
@@ -672,6 +752,7 @@ const finalizeMigrationJournal = (state, { heldLocks = null } = {}) => {
       writeMigrationJournal(state.journal, state);
     } else {
       for (const source of sourcePaths) removeIfExists(source, { boundaryRoot: projectsRoot });
+      syncDirectorySync(projectsRoot);
       state.phase = 'sources-removed';
       writeMigrationJournal(state.journal, state);
     }
@@ -688,9 +769,10 @@ const finalizeMigrationJournal = (state, { heldLocks = null } = {}) => {
 // database commit, so an interrupted migration cannot strand the only copy.
 export function recoverProjectKnowledgeNamespaceMigrations({ runtimeHome, isCommitted = () => false } = {}) {
   if (!runtimeHome) return [];
-  const root = path.join(path.resolve(runtimeHome), 'state', 'projects');
+  const canonicalRuntimeHome = canonicalPath(runtimeHome);
+  const root = path.join(canonicalRuntimeHome, 'state', 'projects');
   if (!fs.existsSync(root)) return [];
-  assertNamespacePathSafe(root, path.join(path.resolve(runtimeHome), 'state'));
+  assertNamespacePathSafe(root, path.join(canonicalRuntimeHome, 'state'));
   const recovered = [];
   for (const name of fs.readdirSync(root).filter((entry) => entry.startsWith('.identity-migration-'))) {
     const journal = path.join(root, name);
@@ -725,12 +807,14 @@ export function prepareProjectKnowledgeNamespaceMigration({ runtimeHome, legacyP
   if (!identityRoot || !identityDigestValue) {
     throw new KernelKnowledgeStoreError('IDENTITY_MIGRATION_JOURNAL_INVALID', 'Identity migration requires both canonicalRoot and identityDigest as its commit witness');
   }
-  const root = path.join(path.resolve(runtimeHome), 'state', 'projects');
-  assertNamespacePathSafe(root, path.join(path.resolve(runtimeHome), 'state'));
-  const destination = path.join(root, canonicalId);
   const legacyIds = [...new Set((Array.isArray(legacyProjectIds) ? legacyProjectIds : [])
     .map((value) => safeNamespaceSegment(value))
     .filter((value) => value !== canonicalId))];
+  if (legacyIds.length === 0) return { migratedProjectIds: [], finalize() {}, rollback() {} };
+  const canonicalRuntimeHome = canonicalPath(runtimeHome);
+  const root = path.join(canonicalRuntimeHome, 'state', 'projects');
+  assertNamespacePathSafe(root, path.join(canonicalRuntimeHome, 'state'));
+  const destination = path.join(root, canonicalId);
   const sourceIds = legacyIds.filter((legacyId) => namespaceHasMeaningfulData(path.join(root, legacyId), legacyId));
   if (sourceIds.length === 0) return { migratedProjectIds: [], finalize() {}, rollback() {} };
 
@@ -756,7 +840,7 @@ export function prepareProjectKnowledgeNamespaceMigration({ runtimeHome, legacyP
       namespaceContentDigest(path.join(root, legacyId)),
     ]));
     const destinationExisted = Boolean(lstatIfExists(destination));
-    fs.writeFileSync(destinationPresenceMarker, destinationExisted ? 'present\n' : 'absent\n', { flag: 'wx' });
+    writeDurableFileSync(destinationPresenceMarker, destinationExisted ? 'present\n' : 'absent\n', 'wx');
     state = {
       schemaVersion: 1,
       kind: 'identity-knowledge-migration',
@@ -810,6 +894,7 @@ export function prepareProjectKnowledgeNamespaceMigration({ runtimeHome, legacyP
       assertNamespacePathSafe(destination, root);
       assertNamespacePathSafe(destinationBackup, root);
       fs.renameSync(destination, destinationBackup);
+      syncDirectorySync(root);
       state.destinationBackupCreated = true;
       state.destinationBackupPending = false;
       writeMigrationJournal(journal, state);
@@ -820,7 +905,8 @@ export function prepareProjectKnowledgeNamespaceMigration({ runtimeHome, legacyP
     assertNamespacePathSafe(stagedDestination, root);
     assertNamespacePathSafe(destination, root);
     fs.renameSync(stagedDestination, destination);
-    fs.writeFileSync(destinationInstalledMarker, 'installed\n', { flag: 'wx' });
+    syncDirectorySync(root);
+    writeDurableFileSync(destinationInstalledMarker, 'installed\n', 'wx');
     state.destinationInstalled = true;
     state.destinationInstallPending = false;
     state.phase = 'destination-installed';
@@ -901,11 +987,8 @@ export async function ensureKnowledgeStoreDirectories(projectId, { env = process
 }
 
 const writeAtomicJsonUnlocked = async (filePath, data) => {
-  await mkdir(path.dirname(filePath), { recursive: true });
-  const tempPath = `${filePath}.${crypto.randomUUID()}.tmp`;
   const content = JSON.stringify(data, null, 2);
-  await writeFile(tempPath, content, 'utf8');
-  await rename(tempPath, filePath);
+  await atomicWriteText(filePath, content);
 };
 
 export async function writeAtomicJson(filePath, data) {
@@ -916,7 +999,7 @@ export async function writeAtomicJson(filePath, data) {
   if (info) await mkdir(info.projectsRoot, { recursive: true });
   const lock = info ? acquireNamespaceLock(info.projectsRoot, info.projectId) : null;
   try {
-    return await writeAtomicJsonUnlocked(filePath, data);
+    return await writeAtomicJsonUnlocked(info?.filePath || filePath, data);
   } finally {
     releaseNamespaceLock(lock);
   }
@@ -947,11 +1030,8 @@ export async function readJsonlIfExists(filePath) {
 }
 
 const writeAtomicJsonlUnlocked = async (filePath, records) => {
-  await mkdir(path.dirname(filePath), { recursive: true });
-  const tempPath = `${filePath}.${crypto.randomUUID()}.tmp`;
   const lines = records.map((r) => JSON.stringify(r)).join('\n');
-  await writeFile(tempPath, lines ? `${lines}\n` : '', 'utf8');
-  await rename(tempPath, filePath);
+  await atomicWriteText(filePath, lines ? `${lines}\n` : '');
 };
 
 export async function writeAtomicJsonl(filePath, records) {
@@ -959,7 +1039,7 @@ export async function writeAtomicJsonl(filePath, records) {
   if (info) await mkdir(info.projectsRoot, { recursive: true });
   const lock = info ? acquireNamespaceLock(info.projectsRoot, info.projectId) : null;
   try {
-    return await writeAtomicJsonlUnlocked(filePath, records);
+    return await writeAtomicJsonlUnlocked(info?.filePath || filePath, records);
   } finally {
     releaseNamespaceLock(lock);
   }

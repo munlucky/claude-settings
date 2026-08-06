@@ -12,9 +12,13 @@ import {
 } from '../scripts/kernel/knowledge/store.mjs';
 import { resolveKernelProjectIdentity } from '../scripts/kernel/project-identity.mjs';
 import { openKernelStateStore } from '../scripts/kernel/state-store.mjs';
+import { canonicalPath } from '../scripts/kernel/runtime-home.mjs';
 
 const digest = (letter) => `sha256:${letter.repeat(64)}`;
-const canonicalRoot = (value) => path.resolve(value).replaceAll('\\', '/').toLowerCase();
+const canonicalRoot = (value) => {
+  const root = canonicalPath(value).replaceAll('\\', '/');
+  return process.platform === 'win32' ? root.toLowerCase() : root;
+};
 const prepareMigration = (options) => prepareProjectKnowledgeNamespaceMigration({
   canonicalRoot: path.join(options.runtimeHome, 'identity-repo'),
   identityDigest: `digest-${options.projectId}`,

@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { realpathSync } from 'node:fs';
 import { access, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import {
   ensureKnowledgeStoreDirectories,
@@ -12,9 +11,13 @@ import {
   recoverProjectKnowledgeNamespaceMigrations,
 } from '../scripts/kernel/knowledge/store.mjs';
 import { openKernelStateStore } from '../scripts/kernel/state-store.mjs';
+import { canonicalPath } from '../scripts/kernel/runtime-home.mjs';
 
 const digest = (letter) => `sha256:${letter.repeat(64)}`;
-const canonicalRoot = (value) => path.resolve(value).replaceAll('\\', '/').toLowerCase();
+const canonicalRoot = (value) => {
+  const root = canonicalPath(value).replaceAll('\\', '/');
+  return process.platform === 'win32' ? root.toLowerCase() : root;
+};
 const runtimeEnv = (runtimeHome) => ({ MOON_RELAY_KERNEL_HOME: runtimeHome });
 const prepareMigration = (options) => prepareProjectKnowledgeNamespaceMigration({
   canonicalRoot: path.join(options.runtimeHome, 'identity-repo'),
@@ -302,7 +305,7 @@ test('one immutable project identity can own multiple worktree roots without dig
     runGit(runtimeHome, ['init', rootA]);
     runGit(rootA, ['-c', 'user.name=Kernel Test', '-c', 'user.email=kernel@example.invalid', 'commit', '--allow-empty', '-m', 'initial']);
     runGit(rootA, ['worktree', 'add', '--detach', rootB]);
-    const gitCommonDir = realpathSync(path.join(rootA, '.git')).replaceAll('\\', '/').toLowerCase();
+    const gitCommonDir = canonicalRoot(path.join(rootA, '.git'));
     const first = store.registerProjectIdentity({
       projectId: 'path-multi-worktree',
       canonicalRoot: rootA,

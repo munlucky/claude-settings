@@ -17,7 +17,8 @@ import { projectRunState } from '../state-projector.mjs';
 import { observeWorkspaceIdentity } from './workspace-identity.mjs';
 import { resolveRunArtifactPaths } from '../artifact-paths.mjs';
 import { deduplicateKnowledgeCandidates, deriveKnowledgeStatus, extractStructuredKnowledgeCandidates } from '../knowledge/capture.mjs';
-import { mkdir, writeFile, rename } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
+import { atomicWriteText } from '../durable-write.mjs';
 import path from 'node:path';
 
 const ALLOWED_CANDIDATE_TYPES = new Set([
@@ -472,9 +473,7 @@ export const finalizeRun = async ({
     const dir = resolveRunArtifactPaths({ runtimeHome, projectId: run.projectId, runId }).finalization;
     await mkdir(dir, { recursive: true });
     const target = path.join(dir, 'receipt.json');
-    const temporary = `${target}.${process.pid}.tmp`;
-    await writeFile(temporary, JSON.stringify(finalizationReceipt, null, 2));
-    await rename(temporary, target);
+    await atomicWriteText(target, JSON.stringify(finalizationReceipt, null, 2));
   }
   await projectRunState(store.getRun(runId), { runtimeHome });
 

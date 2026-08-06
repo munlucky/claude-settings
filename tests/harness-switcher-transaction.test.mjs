@@ -7,7 +7,121 @@ import { prepareTransaction, advanceTransaction, recoverTransaction } from '../s
 import { readJournal } from '../scripts/switcher/state-store.mjs';
 import { switchDoctor, launchSwitch, recoverSwitch } from '../scripts/switcher/operations.mjs';
 import { installKernelProfile } from '../scripts/kernel/profile-install.mjs';
-import { buildLaunchSpec, spawnTrack } from '../scripts/switcher/launch-adapter.mjs';
+import { installKernel } from '../scripts/kernel/installer.mjs';
+import { buildLaunchSpec, buildProcessEnvironment, spawnTrack } from '../scripts/switcher/launch-adapter.mjs';
+import { resolveTrackRoots } from '../scripts/switcher/paths.mjs';
+
+test('Relay root resolution ignores ambient Kernel runtime and provider bindings', () => {
+  const original = {
+    track: process.env.MOON_RELAY_TRACK,
+    kernelHome: process.env.MOON_RELAY_KERNEL_HOME,
+    relayHome: process.env.MOONSHOT_RELAY_HOME,
+    codexHome: process.env.CODEX_HOME,
+  };
+  const kernelHome = path.join(os.tmpdir(), 'ambient-kernel-home');
+  try {
+    process.env.MOON_RELAY_TRACK = 'kernel';
+    process.env.MOON_RELAY_KERNEL_HOME = kernelHome;
+    process.env.MOONSHOT_RELAY_HOME = kernelHome;
+    process.env.CODEX_HOME = path.join(kernelHome, 'providers', 'codex');
+    const roots = resolveTrackRoots({ track: 'relay', surface: 'codex_cli', sourceRoot: process.cwd() });
+    assert.equal(roots.runtimeHome, path.resolve(process.env.USERPROFILE || os.homedir(), '.moonshot-relay'));
+    assert.equal(roots.providerHome, path.resolve(process.env.USERPROFILE || os.homedir(), '.codex'));
+    assert.notEqual(roots.runtimeHome, path.resolve(kernelHome));
+    assert.notEqual(roots.providerHome, path.join(path.resolve(kernelHome), 'providers', 'codex'));
+  } finally {
+    for (const [key, value] of Object.entries({
+      MOON_RELAY_TRACK: original.track,
+      MOON_RELAY_KERNEL_HOME: original.kernelHome,
+      MOONSHOT_RELAY_HOME: original.relayHome,
+      CODEX_HOME: original.codexHome,
+    })) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('Relay provider overrides that contain or parent the Kernel home are rejected', () => {
+  const original = { MOON_RELAY_KERNEL_HOME: process.env.MOON_RELAY_KERNEL_HOME, CODEX_HOME: process.env.CODEX_HOME };
+  const kernelHome = path.join(os.tmpdir(), 'provider-parent-kernel');
+  try {
+    process.env.MOON_RELAY_KERNEL_HOME = kernelHome;
+    process.env.CODEX_HOME = path.dirname(kernelHome);
+    const roots = resolveTrackRoots({ track: 'relay', surface: 'codex_cli', sourceRoot: process.cwd() });
+    assert.notEqual(roots.providerHome, path.resolve(process.env.CODEX_HOME));
+    assert.notEqual(roots.providerHome, path.resolve(kernelHome));
+  } finally {
+    for (const [key, value] of Object.entries(original)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('Relay launch environment strips inherited Kernel bindings', () => {
+  const env = buildProcessEnvironment({
+    surface: 'codex_cli',
+    track: 'relay',
+    roots: { runtimeHome: '/relay-home', providerHome: '/relay-home/providers/codex' },
+    workspaceRoot: '/workspace',
+    baseEnv: {
+      PATH: ['/usr/bin', path.join('/old-kernel-home', 'bin'), '/usr/local/bin'].join(path.delimiter),
+      Path: path.join('/old-kernel-home', 'bin'),
+      MOON_RELAY_TRACK: 'kernel',
+      MOON_RELAY_KERNEL_HOME: '/old-kernel-home',
+      MOON_RELAY_KERNEL_RUN_ID: 'old-run',
+      MOON_RELAY_KERNEL_PROJECT_ID: 'old-project',
+      MOON_RELAY_KERNEL_SESSION_ID: 'old-session',
+      MOON_RELAY_KERNEL_LEGACY_SESSION_ID: 'old-legacy-session',
+      MOON_RELAY_KERNEL_PROVIDER: 'codex-cli',
+      MOON_RELAY_KERNEL_WORKSPACE_ID: 'old-workspace',
+      MOON_RELAY_WORKSPACE_ROOT: '/old-workspace-root',
+      CLAUDE_HOME: '/old-kernel-home/claude',
+      CLAUDE_CONFIG_DIR: '/old-kernel-home/claude',
+      CODEX_HOME: '/old-kernel-home/codex',
+      QWEN_HOME: '/old-kernel-home/qwen',
+    },
+  });
+
+  assert.equal(env.MOONSHOT_RELAY_HOME, '/relay-home');
+  assert.equal(env.MOON_RELAY_TRACK, 'relay');
+  assert.equal(env.MOON_RELAY_WORKSPACE_ROOT, '/workspace');
+  assert.equal(env.PATH.includes(path.join('/old-kernel-home', 'bin')), false);
+  assert.match(env.PATH, /\/usr\/bin/);
+  assert.match(env.PATH, /\/usr\/local\/bin/);
+  assert.equal(env.Path, undefined);
+  for (const key of [
+    'MOON_RELAY_KERNEL_HOME',
+    'MOON_RELAY_KERNEL_RUN_ID',
+    'MOON_RELAY_KERNEL_PROJECT_ID',
+    'MOON_RELAY_KERNEL_SESSION_ID',
+    'MOON_RELAY_KERNEL_LEGACY_SESSION_ID',
+    'MOON_RELAY_KERNEL_PROVIDER',
+    'MOON_RELAY_KERNEL_WORKSPACE_ID',
+  ]) assert.equal(env[key], undefined, key);
+  for (const key of ['CLAUDE_HOME', 'CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'QWEN_HOME']) {
+    assert.equal(env[key].startsWith('/old-kernel-home'), false, key);
+  }
+});
+
+test('Relay launch environment scrubs inherited Antigravity Kernel roots', () => {
+  const kernelHome = path.join(os.tmpdir(), 'antigravity-kernel-home');
+  const env = buildProcessEnvironment({
+    surface: 'codex_cli',
+    track: 'relay',
+    roots: { runtimeHome: path.join(os.tmpdir(), 'antigravity-relay-home'), providerHome: path.join(os.tmpdir(), 'antigravity-relay-home', 'providers', 'codex') },
+    baseEnv: {
+      MOON_RELAY_KERNEL_HOME: kernelHome,
+      ANTIGRAVITY_HOME: path.join(kernelHome, 'providers', 'antigravity'),
+      ANTIGRAVITY_SKILLS_HOME: path.join(kernelHome, 'providers', 'antigravity-skills'),
+      GEMINI_HOME: path.join(kernelHome, 'providers', 'antigravity'),
+    },
+  });
+  assert.equal(env.ANTIGRAVITY_HOME.startsWith(kernelHome), false);
+  assert.equal(env.ANTIGRAVITY_SKILLS_HOME.startsWith(kernelHome), false);
+  assert.equal(env.GEMINI_HOME.startsWith(kernelHome), false);
+});
 
 test('Kernel task binding is process-scoped in provider launch specs', () => {
   const spec = buildLaunchSpec({
@@ -50,6 +164,33 @@ test('phase 03 active GUI process refuses mutation without approval', async () =
   const recovery = await recoverSwitch({ surface: 'codex_desktop' });
   assert.equal(recovery.status, 'idle');
   await rm(home, { recursive: true, force: true });
+});
+
+test('Kernel launch preflight returns identity remediation before launch mutation', async () => {
+  const home = path.join(os.tmpdir(), `switcher-identity-preflight-${Date.now()}`);
+  const runtimeHome = path.join(home, 'kernel');
+  const providerHome = path.join(runtimeHome, 'providers', 'codex');
+  const projectRoot = path.join(home, 'project');
+  try {
+    await mkdir(projectRoot, { recursive: true });
+    await installKernel({ targetRoot: runtimeHome, sourceRoot: process.cwd() });
+    await installKernelProfile({ sourceRoot: process.cwd(), runtime: 'codex', targetRoot: providerHome });
+    const receipt = await launchSwitch({
+      surface: 'codex_cli',
+      track: 'kernel',
+      sourceRoot: process.cwd(),
+      projectRoot,
+      processProvider: async () => [],
+      dryRun: false,
+      launchSpec: { command: 'codex', args: [], roots: { runtimeHome, providerHome, appDataRoot: path.join(home, 'app-data') }, env: {} },
+    });
+    assert.equal(receipt.status, 'kernel_project_identity_not_ready');
+    assert.equal(receipt.errorCode, 'project_identity_preflight_required');
+    assert.equal(receipt.effective.projectIdentity.status, 'bootstrap_required');
+    assert.match(receipt.effective.remediation.command, /identity bootstrap/);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
 });
 
 test('phase 03 CLI tracks use process-scoped roots and can coexist', async () => {
@@ -140,4 +281,3 @@ test('spawnTrack handles non-existent executable without unhandled error event c
   assert.equal(res.status, 'launch_requested');
   assert.ok(['direct', 'cmd_start_cli'].includes(res.launcher));
 });
-

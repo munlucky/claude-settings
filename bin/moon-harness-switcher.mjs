@@ -31,8 +31,8 @@ try {
   let result;
   if (command === 'status') result = await switchStatus({ surface: surface === 'all' ? null : surface });
   else if (command === 'doctor') result = await switchDoctor({ surface: surface === 'all' ? null : surface });
-  else if (command === 'preflight') result = await buildLivePreflight({ sourceRoot: get('--source-root') || process.cwd() });
-  else if (command === 'adopt') result = await adoptLive({ sourceRoot: get('--source-root') || process.cwd(), approved: args.includes('--approved'), approvalToken: get('--approval-token') || '' });
+  else if (command === 'preflight') result = await buildLivePreflight({ sourceRoot: get('--source-root') || process.cwd(), kernelHome: get('--kernel-home') || undefined });
+  else if (command === 'adopt') result = await adoptLive({ sourceRoot: get('--source-root') || process.cwd(), kernelHome: get('--kernel-home') || undefined, approved: args.includes('--approved'), approvalToken: get('--approval-token') || '' });
   else if (command === 'cleanup-project') {
     result = await cleanupLegacyProject({
       projectRoot: get('--project-root') || process.cwd(),
@@ -70,7 +70,7 @@ try {
   if (command === 'launch') {
     const launches = result?.results || [result];
     if (launches.some((item) => !['committed', 'already_effective'].includes(item?.status))) process.exitCode = 1;
-  } else if (result?.status === 'error' || result?.errorCode === 'wrong_harness') process.exitCode = 1;
+  } else if (result?.status === 'error' || result?.status === 'unsafe_target' || result?.errorCode === 'wrong_harness' || result?.errorCode === 'unsafe_target') process.exitCode = 1;
 } catch (error) {
   output({ schemaVersion: 1, status: 'error', errorCode: error.code || 'unknown_error', message: error.message, sensitiveContentRead: false });
   process.exitCode = 1;

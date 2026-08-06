@@ -1,7 +1,9 @@
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { cp, lstat, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { cp, lstat, mkdir, readFile, readdir, rm, stat } from 'node:fs/promises';
 import { KERNEL_PROFILE_RUNTIMES } from './profile-build.mjs';
+import { canonicalPath } from './runtime-home.mjs';
+import { atomicWriteText } from './durable-write.mjs';
 
 export const PROFILE_PRODUCT_ID = 'moon-relay-kernel-profile';
 export const PROFILE_MANIFEST_NAME = '.moon-relay-kernel-profile-manifest.json';
@@ -14,12 +16,25 @@ export const canonicalStandaloneSkillDirs = (sourceRoot) => STANDALONE_SKILLS.ma
 
 const exists = async (file) => { try { await stat(file); return true; } catch { return false; } };
 const sha256 = async (file) => createHash('sha256').update(await readFile(file)).digest('hex');
-const atomicWrite = async (file, value) => {
-  await mkdir(path.dirname(file), { recursive: true });
-  const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
-  await writeFile(tmp, value, 'utf8');
-  await rename(tmp, file);
+const COMMON_SYSTEM_SYMLINKS = new Set(['/tmp', '/var', '/etc']);
+const safeProfileRoot = async (target, label = 'profile root') => {
+  const lexical = path.resolve(target);
+  let cursor = lexical;
+  while (true) {
+    try {
+      if ((await lstat(cursor)).isSymbolicLink() && !COMMON_SYSTEM_SYMLINKS.has(cursor.replaceAll('\\', '/'))) {
+        throw new Error(`unsafe_target: symlinked ${label}: ${cursor}`);
+      }
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+    const parent = path.dirname(cursor);
+    if (parent === cursor) break;
+    cursor = parent;
+  }
+  return canonicalPath(lexical);
 };
+const atomicWrite = async (file, value) => atomicWriteText(file, value);
 const copyTree = async (from, to) => { await mkdir(path.dirname(to), { recursive: true }); await cp(from, to, { recursive: true, force: true }); };
 const files = async (root, rel = '') => {
   const target = path.join(root, rel);
@@ -62,7 +77,7 @@ export function deepMergeJson(target, source) {
 }
 
 export async function inspectProfile(targetRoot) {
-  const root = path.resolve(targetRoot);
+  const root = await safeProfileRoot(targetRoot);
   const manifestPath = profileManifestPath(root);
   if (!(await exists(manifestPath))) return { status: 'not_installed', targetRoot: root };
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
@@ -85,7 +100,7 @@ export async function inspectProfile(targetRoot) {
 
 export async function installKernelProfile({ sourceRoot = process.cwd(), runtime, targetRoot, skillsRoot = null, force = false } = {}) {
   if (!KERNEL_PROFILE_RUNTIMES.includes(runtime)) throw new Error(`unsupported_profile: ${runtime}`);
-  const root = path.resolve(targetRoot);
+  const root = await safeProfileRoot(targetRoot);
   const source = path.resolve(sourceRoot, 'package', 'kernel', 'profiles', runtime);
   if (!(await exists(source))) throw new Error(`application_not_resolved: profile source missing for ${runtime}`);
   await mkdir(root, { recursive: true });
@@ -195,7 +210,7 @@ export async function installKernelProfile({ sourceRoot = process.cwd(), runtime
 }
 
 export async function uninstallKernelProfile({ targetRoot } = {}) {
-  const root = path.resolve(targetRoot);
+  const root = await safeProfileRoot(targetRoot);
   const manifestPath = profileManifestPath(root);
   if (!(await exists(manifestPath))) return { status: 'not_installed', targetRoot: root };
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
@@ -212,7 +227,7 @@ export async function uninstallKernelProfile({ targetRoot } = {}) {
 
 export async function rollbackKernelProfile({ targetRoot, backupPath } = {}) {
   if (!backupPath || !(await exists(backupPath))) return { status: 'no_backup_found', targetRoot: path.resolve(targetRoot) };
-  const root = path.resolve(targetRoot);
+  const root = await safeProfileRoot(targetRoot);
   const backup = path.resolve(backupPath);
   if (!backup.startsWith(`${root}${path.sep}`)) throw new Error('unsafe_target: backup outside profile root');
   const priorManifest = JSON.parse(await readFile(path.join(backup, PROFILE_MANIFEST_NAME), 'utf8'));

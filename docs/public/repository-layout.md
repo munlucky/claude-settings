@@ -87,6 +87,7 @@ GitHub branch protection, required status checks, CODEOWNERS review enforcement,
 | `memory-control-plane-rollout.md` | operational-procedure | `package/build-package.mjs`, `scripts/install-account-root-harness.mjs`, package materialization tests, eval and lab gates |
 | `moon-relay-kernel-codex-app.md` | policy-anchor | `scripts/kernel/runtime-home.mjs`, `scripts/skill-router.mjs`, `bin/moon-relay-kernel.mjs`, Kernel profile package |
 | `moon-relay-kernel-installation.md` | operational-procedure | `scripts/kernel/installer.mjs`, `scripts/kernel/package-build.mjs`, Kernel install isolation tests |
+| `moon-relay-kernel-session-run-lifecycle.md` | policy-anchor | `scripts/kernel/control-plane.mjs`, `scripts/kernel/run/execution-capsule.mjs`, `bin/moon-relay-kernel.mjs` |
 | `moon-relay-kernel-track.md` | policy-anchor | `scripts/kernel/runtime-home.mjs`, `package/kernel/manifest.json`, Kernel isolation tests |
 | `memorygraph-workflow.md` / `memorygraph-workflow.ko.md` | policy-anchor | `scripts/memorygraph-*.mjs`, `skills/project-memory-refresh/**` |
 | `minimal-correct-implementation.md` | policy-anchor | `skills/moonshot-orchestrator/**`, `skills/moonshot-phase-runner/**`, `templates/execution/SCORECARD.template.md` |

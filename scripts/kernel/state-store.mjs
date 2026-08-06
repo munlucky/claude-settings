@@ -29,6 +29,23 @@ const PROJECT_ID_PATTERN = /^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$)
 
 export const kernelDbPath = (runtimeHome = resolveKernelRuntimeHome()) => path.join(runtimeHome, 'state', 'runtime-state.sqlite');
 
+const canonicalRuntimeHome = (value) => {
+  const resolved = path.resolve(value);
+  let current = resolved;
+  const suffix = [];
+  while (!fs.existsSync(current)) {
+    const parent = path.dirname(current);
+    if (parent === current) return resolved;
+    suffix.unshift(path.basename(current));
+    current = parent;
+  }
+  try {
+    return path.join(fs.realpathSync.native(current), ...suffix);
+  } catch {
+    return resolved;
+  }
+};
+
 // A lease whose owning process has exited cannot be a live conflict; this is
 // what lets consecutive CLI invocations of one session proceed while genuinely
 // concurrent runners are still detected.
@@ -45,7 +62,8 @@ const isProcessAlive = (pid) => {
 const sourceIdentityRegex = /^(?:[a-f0-9]{40}|sha256:[a-f0-9]{64}|[a-zA-Z0-9_.:/-]{1,128})$/i;
 const sha256Regex = /^sha256:[a-f0-9]{64}$/i;
 
-export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeHome(), relayHome } = {}) => {
+export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = resolveKernelRuntimeHome(), relayHome } = {}) => {
+  const runtimeHome = canonicalRuntimeHome(runtimeHomeInput);
   assertIsolatedRuntimeHomes(runtimeHome, relayHome);
   const dbPath = kernelDbPath(runtimeHome);
   await mkdir(path.dirname(dbPath), { recursive: true });
@@ -822,6 +840,18 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       ))
       || projectKnowledgeNamespaceHasData(projectId, { runtimeHome }),
   );
+  const projectDataSummary = (projectId) => {
+    const tables = projectScopedTables().map((table) => ({
+      table,
+      count: Number(db.prepare(`SELECT COUNT(*) as count FROM "${String(table).replaceAll('"', '""')}" WHERE project_id=?`).get(projectId)?.count || 0),
+    })).filter((entry) => entry.count > 0);
+    const knowledgeNamespace = projectKnowledgeNamespaceHasData(projectId, { runtimeHome });
+    return {
+      hasData: Boolean(tables.length || knowledgeNamespace),
+      tables,
+      knowledgeNamespace,
+    };
+  };
   const quoteIdentifier = (value) => `"${String(value).replaceAll('"', '""')}"`;
   const tableColumns = (table) => db.prepare(`PRAGMA table_info(${quoteIdentifier(table)})`).all();
   const jsonReferenceColumns = (table) => tableColumns(table)
@@ -2427,6 +2457,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
           if (compatibleProjectMatches.length !== projectMatches.length) {
             throw Object.assign(new Error('project_identity_alias_ownership_unproven'), {
               code: 'project_identity_alias_ownership_unproven',
+              nextAction: 'inspect-project-identity-candidates',
               aliases: incomingAliases.map(({ alias }) => alias),
               projectIds: projectMatches.map((match) => match.project_id),
               canonicalRoot,
@@ -2458,6 +2489,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
             if (!sameRoot && !commonDirProof) {
               throw Object.assign(new Error('project_identity_alias_ownership_unproven'), {
                 code: 'project_identity_alias_ownership_unproven',
+                nextAction: 'inspect-project-identity-candidates',
                 projectId,
                 canonicalRoot,
                 gitCommonDir: incomingGitCommonDir,
@@ -2512,6 +2544,8 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
             if (!proven) {
               throw Object.assign(new Error('project_identity_legacy_ownership_unproven'), {
                 code: 'project_identity_legacy_ownership_unproven',
+          nextAction: 'kernel identity approve --legacy-project-id <id> --approval-ref <operator-ref> --approved-by <operator> then kernel identity repair --legacy-project-id <id> --approval-ref <operator-ref>',
+                remediation: 'kernel identity bootstrap --policy isolate preserves legacy state and starts a new namespace',
                 legacyProjectId: legacyId,
                 source: candidate.source,
                 canonicalRoot,
@@ -2615,6 +2649,44 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       if (!row) return null;
       const aliases = db.prepare(`SELECT alias FROM project_identity_aliases WHERE project_id=? AND alias_type='remote' ORDER BY alias`).all(row.project_id).map(({ alias: value }) => value);
       return mapProjectIdentity(row, aliases);
+    },
+
+    inspectProjectIdentity({ projectId = null, canonicalRoot = null, legacyCandidates = [] } = {}) {
+      const currentIdentity = canonicalRoot
+        ? this.getProjectIdentity({ canonicalRoot })
+        : (projectId ? this.getProjectIdentity({ projectId }) : null);
+      const candidates = [...new Map((Array.isArray(legacyCandidates) ? legacyCandidates : [])
+        .filter((candidate) => candidate?.projectId)
+        .map((candidate) => [String(candidate.projectId), candidate])).values()];
+      return {
+        currentIdentity,
+        legacyCandidates: candidates.map((candidate) => {
+          const candidateId = String(candidate.projectId);
+          const identity = this.getProjectIdentity({ projectId: candidateId });
+          const workspaces = db.prepare(`
+            SELECT workspace_id as workspaceId, canonical_root as canonicalRoot, git_common_dir as gitCommonDir
+            FROM project_workspaces WHERE project_id=? ORDER BY canonical_root
+          `).all(candidateId);
+          const data = projectDataSummary(candidateId);
+          const sameRootEvidence = Boolean(
+            (identity && canonicalIdentityRoot(identity.canonicalRoot) === canonicalIdentityRoot(canonicalRoot))
+              || workspaces.some((workspace) => canonicalIdentityRoot(workspace.canonicalRoot) === canonicalIdentityRoot(canonicalRoot)),
+          );
+          return {
+            projectId: candidateId,
+            source: candidate.source || null,
+            aliasType: candidate.aliasType || null,
+            hasData: data.hasData,
+            dataTables: data.tables,
+            knowledgeNamespace: data.knowledgeNamespace,
+            hasPersistedIdentity: Boolean(identity),
+            identity,
+            workspaceRoots: workspaces.map((workspace) => workspace.canonicalRoot),
+            workspaces,
+            sameRootEvidence,
+          };
+        }),
+      };
     },
 
     registerProjectWorkspace(workspace) {

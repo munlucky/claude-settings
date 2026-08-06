@@ -1,7 +1,9 @@
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { chmod, cp, lstat, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, cp, lstat, mkdir, readFile, readdir, rm, stat } from 'node:fs/promises';
 import { buildRuntimeManifest } from './runtime-resolver.mjs';
+import { canonicalPath } from './runtime-home.mjs';
+import { atomicWriteText } from './durable-write.mjs';
 
 const PRODUCT_ID = 'moon-relay-kernel';
 const TRACK_CONTENT = 'schemaVersion: 1\ntrack: kernel\nproduct: moon-relay-kernel\n';
@@ -35,12 +37,26 @@ const rejectSymlink = async (target, label) => {
     if (error.code !== 'ENOENT') throw error;
   }
 };
-const atomicWrite = async (target, content) => {
-  await mkdir(path.dirname(target), { recursive: true });
-  const tmp = `${target}.tmp.${process.pid}.${Date.now()}`;
-  await writeFile(tmp, content);
-  await rename(tmp, target);
+const COMMON_SYSTEM_SYMLINKS = new Set(['/tmp', '/var', '/etc']);
+const safeInstallRoot = async (target, label = 'target directory') => {
+  const lexical = path.resolve(target);
+  let cursor = lexical;
+  while (true) {
+    try {
+      if ((await lstat(cursor)).isSymbolicLink() && !COMMON_SYSTEM_SYMLINKS.has(cursor.replaceAll('\\', '/'))) {
+        throw new Error(`unsafe_target: symlinked ${label}: ${cursor}`);
+      }
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+    const parent = path.dirname(cursor);
+    if (parent === cursor) break;
+    cursor = parent;
+  }
+  return canonicalPath(lexical);
 };
+
+const atomicWrite = async (target, content) => atomicWriteText(target, content);
 const copyTree = async (source, target) => {
   await mkdir(path.dirname(target), { recursive: true });
   await cp(source, target, { recursive: true, force: true });
@@ -64,7 +80,7 @@ const readManifest = async (manifestPath) => JSON.parse(await readFile(manifestP
 
 export const materializeKernelCommandShim = async ({ runtimeHome, entrypoint } = {}) => {
   if (!runtimeHome || !entrypoint) throw new Error('Kernel command shim requires runtimeHome and entrypoint');
-  const root = path.resolve(runtimeHome);
+  const root = await safeInstallRoot(runtimeHome);
   const cli = path.resolve(entrypoint);
   const binDir = path.join(root, 'bin');
   await mkdir(binDir, { recursive: true });
@@ -85,7 +101,7 @@ export const materializeKernelCommandShim = async ({ runtimeHome, entrypoint } =
 };
 
 export const installKernel = async ({ targetRoot = process.cwd(), sourceRoot = process.cwd(), runtimeSource, trackHome } = {}) => {
-  const root = path.resolve(targetRoot);
+  const root = await safeInstallRoot(targetRoot);
   const source = path.resolve(sourceRoot);
   const kernelDir = assertContained(root, path.join(root, '.moon-relay'));
   const trackPath = path.join(kernelDir, 'track.yaml');
@@ -172,7 +188,7 @@ export const installKernel = async ({ targetRoot = process.cwd(), sourceRoot = p
       await atomicWrite(path.join(backupPath, 'backup-manifest.json'), JSON.stringify({ schemaVersion: 1, productId: PRODUCT_ID, manifest: existingManifest, files: existingFiles }, null, 2));
     }
     await atomicWrite(manifestPath, JSON.stringify(manifest, null, 2));
-    const runtimeHome = trackHome ? path.resolve(trackHome) : null;
+    const runtimeHome = trackHome ? await safeInstallRoot(trackHome, 'track home') : null;
     const commandShim = runtimeHome
       ? await materializeKernelCommandShim({
         runtimeHome,
@@ -192,7 +208,7 @@ export const installKernel = async ({ targetRoot = process.cwd(), sourceRoot = p
 };
 
 export const uninstallKernel = async ({ targetRoot = process.cwd() } = {}) => {
-  const root = path.resolve(targetRoot);
+  const root = await safeInstallRoot(targetRoot);
   const kernelDir = assertContained(root, path.join(root, '.moon-relay'));
   const manifestPath = path.join(kernelDir, 'install-manifest.json');
   if (!(await exists(manifestPath))) return { status: 'not_installed', targetRoot: root };
@@ -211,7 +227,7 @@ export const uninstallKernel = async ({ targetRoot = process.cwd() } = {}) => {
 };
 
 export const rollbackKernel = async ({ targetRoot = process.cwd(), backupPath } = {}) => {
-  const root = path.resolve(targetRoot);
+  const root = await safeInstallRoot(targetRoot);
   if (!backupPath || !(await exists(backupPath))) return { status: 'no_backup_found', targetRoot: root };
   const backupRoot = path.resolve(backupPath);
   const snapshotRoot = path.join(backupRoot, 'snapshot');

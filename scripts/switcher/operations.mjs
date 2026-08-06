@@ -11,6 +11,7 @@ import { uninstallSwitcherPackage } from './installer.mjs';
 import { advanceTransaction, commitTransaction, prepareTransaction, recoverTransaction } from './transaction.mjs';
 import { inspectProfile, installKernelProfile } from '../kernel/profile-install.mjs';
 import { cleanupLegacyKernelHydration } from '../kernel/legacy-hydration-cleanup.mjs';
+import { inspectKernelProjectIdentity } from '../kernel/project-identity-preflight.mjs';
 import { applyAccountSkillsOverlay, inspectAccountSkillsOverlay, restoreAccountSkillsOverlay, requiresAccountSkillsOverlay } from './account-skills-overlay.mjs';
 
 const validate = (surface, track) => {
@@ -30,10 +31,11 @@ const protectedRoots = ({ kernelRuntimeHome = null } = {}) => {
   if (process.env.MOON_RELAY_TRACK !== 'kernel' || !kernelRuntimeHome) return roots;
 
   const kernelRoot = path.resolve(kernelRuntimeHome);
-  return roots.filter((root) => {
+  const filtered = roots.filter((root) => {
     const candidate = path.resolve(root);
     return candidate !== kernelRoot && !candidate.startsWith(`${kernelRoot}${path.sep}`);
   });
+  return filtered;
 };
 
 const exists = async (file) => { try { await stat(file); return true; } catch { return false; } };
@@ -52,7 +54,7 @@ export async function discoverProviderSkills(providerHome) {
   }
 }
 
-export async function inspectKernelLaunchReadiness({ runtimeHome, providerHome, projectRoot = null, appDataRoot = null, sourceRoot = process.cwd() } = {}) {
+export async function inspectKernelLaunchReadiness({ runtimeHome, providerHome, projectRoot = null, appDataRoot = null, sourceRoot = process.cwd(), checkProjectIdentity = true } = {}) {
   const runtimeManifestExists = (await exists(path.join(runtimeHome, '.moon-relay', 'install-manifest.json'))) || (await exists(path.join(runtimeHome, 'install-manifest.json')));
   if (!runtimeHome || !runtimeManifestExists) {
     return { status: 'kernel_not_installed', reason: 'runtime_package_missing' };
@@ -68,7 +70,10 @@ export async function inspectKernelLaunchReadiness({ runtimeHome, providerHome, 
     return { status: 'kernel_profile_not_ready', reason: 'provider_home_missing' };
   }
   const userCodexHome = process.env.CODEX_HOME || path.join(process.env.USERPROFILE || process.env.HOME || '', '.codex');
-  if (path.resolve(providerHome) === path.resolve(userCodexHome)) {
+  const expectedKernelCodexHome = path.resolve(path.join(runtimeHome, 'providers', 'codex'));
+  const currentProcessIsKernelScoped = process.env.MOON_RELAY_TRACK === 'kernel'
+    && path.resolve(providerHome) === expectedKernelCodexHome;
+  if (path.resolve(providerHome) === path.resolve(userCodexHome) && !currentProcessIsKernelScoped) {
     return { status: 'unsafe_target', reason: 'provider_home_aliased_to_relay' };
   }
   const profileInspect = await inspectProfile(providerHome);
@@ -93,7 +98,27 @@ export async function inspectKernelLaunchReadiness({ runtimeHome, providerHome, 
     return { status: 'shared_mutable_surface', reason: 'shared_mutable_surface', discoveredSkills: workflowSkills, foreignSkills };
   }
 
-  return { status: 'launch_candidate', ready: true, discoveredSkills: workflowSkills };
+  let projectIdentity = null;
+  if (checkProjectIdentity) {
+    try {
+      projectIdentity = await inspectKernelProjectIdentity({ projectRoot: projectRoot || sourceRoot, runtimeHome });
+    } catch (error) {
+      return {
+        status: 'kernel_project_identity_not_ready',
+        reason: error.code || 'project_identity_preflight_failed',
+        message: error.message,
+      };
+    }
+    if (projectIdentity.status !== 'ready') {
+      return {
+        status: 'kernel_project_identity_not_ready',
+        reason: 'project_identity_preflight_required',
+        projectIdentity,
+      };
+    }
+  }
+
+  return { status: 'launch_candidate', ready: true, discoveredSkills: workflowSkills, projectIdentity };
 }
 
 export async function switchStatus({ surface = null } = {}) {
@@ -154,6 +179,7 @@ export async function launchSwitch({ surface, track, sourceRoot = process.cwd(),
       projectRoot: targetProjectRoot,
       appDataRoot: roots.appDataRoot || roots.providerHome,
       sourceRoot,
+      checkProjectIdentity: !dryRun,
     });
     if (readiness.status !== 'launch_candidate') {
       if (readiness.status === 'kernel_profile_not_ready' && readiness.reason === 'drift' && force) {
@@ -170,7 +196,18 @@ export async function launchSwitch({ surface, track, sourceRoot = process.cwd(),
         }
       }
       if (readiness.status !== 'launch_candidate') {
-        return createReceipt({ operation: 'launch', status: readiness.status, surface, track, errorCode: readiness.reason || readiness.status, effective: { discoveredSkills: readiness.discoveredSkills || [] } });
+        return createReceipt({
+          operation: 'launch',
+          status: readiness.status,
+          surface,
+          track,
+          errorCode: readiness.reason || readiness.status,
+          effective: {
+            discoveredSkills: readiness.discoveredSkills || [],
+            projectIdentity: readiness.projectIdentity || null,
+            remediation: readiness.projectIdentity?.remediation || null,
+          },
+        });
       }
     }
   }
@@ -235,6 +272,7 @@ export async function launchSwitch({ surface, track, sourceRoot = process.cwd(),
     appDataRoot: roots.appDataRoot || null,
     workspaceRoot: spec.workspaceRoot || null,
     discoveredSkills,
+    projectIdentity: readiness?.projectIdentity || null,
     accountSkillsOverlay,
     pid: started.pid || null,
     processScoped: !requiresAccountSkillsOverlay(surface, platform),

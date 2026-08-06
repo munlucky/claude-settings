@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { spawn, execFileSync } from 'node:child_process';
-import { SURFACE_ENV } from './constants.mjs';
-import { resolveTrackRoots } from './paths.mjs';
+import { pathsOverlap, resolveTrackRoots } from './paths.mjs';
+import { canonicalPath } from '../kernel/runtime-home.mjs';
 import { canonicalizeHostSessionId, providerForSurface } from '../kernel/run/host-session.mjs';
 
 function resolveClaudeDesktopAumid() {
@@ -28,7 +28,26 @@ function resolveCommandPath(command) {
 
 export function buildProcessEnvironment({ surface, track, roots, workspaceRoot = null, workspaceId = null, runId = null, projectId = null, sessionId = null, baseEnv = process.env } = {}) {
   const env = { ...baseEnv };
-  if (SURFACE_ENV[surface]) env[SURFACE_ENV[surface]] = roots.providerHome;
+  const userHome = baseEnv.USERPROFILE || baseEnv.HOME || process.env.USERPROFILE || process.env.HOME || '';
+  const kernelHome = canonicalPath(baseEnv.MOON_RELAY_KERNEL_HOME || path.join(userHome, '.moon-relay-kernel'));
+  const activeProvider = {
+    claude: surface === 'claude_cli' ? roots.providerHome : null,
+    codex: ['codex_cli', 'codex_desktop'].includes(surface) ? roots.providerHome : null,
+    qwen: surface === 'qwen_cli' ? roots.providerHome : null,
+    antigravity: surface === 'antigravity_desktop' ? roots.providerHome : null,
+  };
+  const safeRelayPath = (candidate, fallback, label = 'provider') => {
+    const selected = candidate ? canonicalPath(candidate) : fallback;
+    if (pathsOverlap(kernelHome, fallback)) throw new Error(`unsafe_target: Relay ${label} fallback overlaps Kernel home`);
+    return pathsOverlap(kernelHome, selected) ? fallback : selected;
+  };
+  const sanitizeRelayPath = (value) => {
+    if (typeof value !== 'string') return value;
+    return value
+      .split(path.delimiter)
+      .filter((entry) => !entry || !pathsOverlap(kernelHome, entry))
+      .join(path.delimiter);
+  };
   if (track === 'kernel') {
     const provider = providerForSurface(surface);
     env.MOON_RELAY_KERNEL_HOME = roots.runtimeHome;
@@ -44,12 +63,54 @@ export function buildProcessEnvironment({ surface, track, roots, workspaceRoot =
     if (env.MOONSHOT_RELAY_HOME && path.resolve(env.MOONSHOT_RELAY_HOME) === path.resolve(roots.runtimeHome)) {
       delete env.MOONSHOT_RELAY_HOME;
     }
+    env.CLAUDE_HOME = activeProvider.claude || path.join(roots.runtimeHome, 'providers', 'claude');
+    env.CLAUDE_CONFIG_DIR = env.CLAUDE_HOME;
+    env.CODEX_HOME = activeProvider.codex || path.join(roots.runtimeHome, 'providers', 'codex');
+    env.QWEN_HOME = activeProvider.qwen || path.join(roots.runtimeHome, 'providers', 'qwen');
+    env.GEMINI_HOME = activeProvider.antigravity || path.join(roots.runtimeHome, 'providers', 'antigravity');
+    env.ANTIGRAVITY_HOME = env.GEMINI_HOME;
+    env.ANTIGRAVITY_SKILLS_HOME = path.join(env.GEMINI_HOME, 'skills');
   } else {
     env.MOONSHOT_RELAY_HOME = roots.runtimeHome;
+    const inheritedPath = Object.entries(env).find(([key]) => key.toLowerCase() === 'path')?.[1];
+    for (const key of Object.keys(env)) if (key.toLowerCase() === 'path') delete env[key];
+    env.PATH = sanitizeRelayPath(inheritedPath);
+    for (const key of [
+      'MOON_RELAY_KERNEL_HOME',
+      'MOON_RELAY_KERNEL_RUN_ID',
+      'MOON_RELAY_KERNEL_PROJECT_ID',
+      'MOON_RELAY_KERNEL_SESSION_ID',
+      'MOON_RELAY_KERNEL_LEGACY_SESSION_ID',
+      'MOON_RELAY_KERNEL_PROVIDER',
+      'MOON_RELAY_KERNEL_WORKSPACE_ID',
+      'MOON_RELAY_WORKSPACE_ROOT',
+    ]) delete env[key];
+    const relayClaudeHome = safeRelayPath(activeProvider.claude || env.CLAUDE_HOME || path.join(userHome, '.claude'), path.join(userHome, '.claude'), 'Claude');
+    const relayClaudeConfig = safeRelayPath(activeProvider.claude || env.CLAUDE_CONFIG_DIR || path.join(userHome, '.claude'), path.join(userHome, '.claude'), 'Claude config');
+    const relayCodexHome = safeRelayPath(activeProvider.codex || env.CODEX_HOME || path.join(userHome, '.codex'), path.join(userHome, '.codex'), 'Codex');
+    const relayQwenHome = safeRelayPath(activeProvider.qwen || env.QWEN_HOME || path.join(userHome, '.qwen'), path.join(userHome, '.qwen'), 'Qwen');
+    const relayAntigravityFallback = path.join(roots.runtimeHome, 'providers', 'antigravity');
+    const relayAntigravitySkillsFallback = path.join(roots.runtimeHome, 'providers', 'antigravity-skills');
+    const relayAntigravityHome = safeRelayPath(
+      activeProvider.antigravity || env.ANTIGRAVITY_HOME || path.join(userHome, '.gemini', 'antigravity'),
+      relayAntigravityFallback,
+      'Antigravity',
+    );
+    const relayAntigravitySkillsHome = safeRelayPath(
+      env.ANTIGRAVITY_SKILLS_HOME || path.join(userHome, '.gemini', 'config'),
+      relayAntigravitySkillsFallback,
+      'Antigravity skills',
+    );
+    env.CLAUDE_HOME = relayClaudeHome;
+    env.CLAUDE_CONFIG_DIR = relayClaudeConfig;
+    env.CODEX_HOME = relayCodexHome;
+    env.QWEN_HOME = relayQwenHome;
+    env.GEMINI_HOME = relayAntigravityHome;
+    env.ANTIGRAVITY_HOME = relayAntigravityHome;
+    env.ANTIGRAVITY_SKILLS_HOME = relayAntigravitySkillsHome;
   }
   env.MOON_RELAY_TRACK = track;
   if (workspaceRoot) env.MOON_RELAY_WORKSPACE_ROOT = workspaceRoot;
-  if (surface === 'antigravity_desktop') env.GEMINI_HOME = roots.providerHome;
   return env;
 }
 

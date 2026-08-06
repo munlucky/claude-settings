@@ -1,27 +1,29 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
+import { existsSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const wrapper = path.join(repoRoot, 'bin', 'moonshot-relay.mjs');
+const kernelCli = path.join(repoRoot, 'bin', 'moon-relay-kernel.mjs');
 
 // A fully sandboxed home so a REAL (non-dry-run) install never touches the
 // user's actual account roots.
 const sandboxedEnv = (home) => ({
   ...process.env,
-  USERPROFILE: home,
-  HOME: home,
-  MOONSHOT_RELAY_HOME: path.join(home, '.moonshot-relay'),
-  MOON_RELAY_KERNEL_HOME: path.join(home, '.moon-relay-kernel'),
-  MOON_HARNESS_SWITCHER_HOME: path.join(home, '.moon-harness-switcher'),
-  CLAUDE_CONFIG_DIR: path.join(home, '.claude'),
-  CODEX_HOME: path.join(home, '.codex'),
-  QWEN_HOME: path.join(home, '.qwen'),
-  ANTIGRAVITY_HOME: path.join(home, '.gemini', 'antigravity'),
+  USERPROFILE: realpathSync(home),
+  HOME: realpathSync(home),
+  MOONSHOT_RELAY_HOME: path.join(realpathSync(home), '.moonshot-relay'),
+  MOON_RELAY_KERNEL_HOME: path.join(realpathSync(home), '.moon-relay-kernel'),
+  MOON_HARNESS_SWITCHER_HOME: path.join(realpathSync(home), '.moon-harness-switcher'),
+  CLAUDE_CONFIG_DIR: path.join(realpathSync(home), '.claude'),
+  CODEX_HOME: path.join(realpathSync(home), '.codex'),
+  QWEN_HOME: path.join(realpathSync(home), '.qwen'),
+  ANTIGRAVITY_HOME: path.join(realpathSync(home), '.gemini', 'antigravity'),
 });
 
 test('install --json emits a single parseable JSON document on stdout (real install, chaining active)', async () => {
@@ -43,6 +45,26 @@ test('install --json emits a single parseable JSON document on stdout (real inst
     assert.ok(Array.isArray(parsed.manifests) && parsed.manifests.length > 0);
     // The chaining did run (non-dry-run) — its human output belongs on stderr.
     assert.match(result.stderr, /kernel|switcher|adopt|install/i);
+
+    const identity = spawnSync(process.execPath, [
+      kernelCli,
+      'identity',
+      'status',
+      '--project-root',
+      repoRoot,
+      '--runtime-home',
+      path.join(home, '.moon-relay-kernel'),
+      '--json',
+    ], {
+      cwd: repoRoot,
+      env: { ...sandboxedEnv(home), MOON_RELAY_TRACK: 'kernel' },
+      encoding: 'utf8',
+    });
+    assert.equal(identity.status, 0, identity.stderr);
+    assert.equal(JSON.parse(identity.stdout).status, 'ready');
+    const accountHome = realpathSync(home);
+    assert.equal(existsSync(path.join(accountHome, '.codex', '.moonshot-relay-install-manifest.json')), true);
+    assert.equal(existsSync(path.join(accountHome, '.moon-relay-kernel', '.moon-relay', 'install-manifest.json')), true);
   } finally {
     await rm(home, { recursive: true, force: true });
   }
@@ -61,6 +83,25 @@ test('install --dry-run --json is also pure JSON (no chaining)', async () => {
     let parsed;
     assert.doesNotThrow(() => { parsed = JSON.parse(result.stdout); });
     assert.equal(parsed.dryRun, true);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test('setup refuses a symlinked Kernel home before the primary installer or adoption', async () => {
+  const home = await mkdtemp(path.join(os.tmpdir(), 'mr-symlink-kernel-home-'));
+  const realKernel = path.join(home, 'kernel-real');
+  const aliasKernel = path.join(home, 'kernel-alias');
+  await mkdir(realKernel, { recursive: true });
+  try {
+    await symlink(realKernel, aliasKernel, 'dir');
+    const result = spawnSync(process.execPath, [wrapper, 'install', '--dry-run', '--json'], {
+      cwd: repoRoot,
+      env: { ...sandboxedEnv(home), MOON_RELAY_KERNEL_HOME: aliasKernel },
+      encoding: 'utf8',
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /unsafe Kernel home/i);
   } finally {
     await rm(home, { recursive: true, force: true });
   }

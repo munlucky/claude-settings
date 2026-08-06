@@ -41,7 +41,9 @@ export function stableHash(value) {
 }
 
 export function pathHashId(cwd) {
-  return `path-${stableHash(path.resolve(cwd).toLowerCase()).slice(0, 16)}`;
+  let root = path.resolve(cwd);
+  try { root = fs.realpathSync(root); } catch {}
+  return `path-${stableHash(root.toLowerCase()).slice(0, 16)}`;
 }
 
 export function findGitRoot(startDir) {

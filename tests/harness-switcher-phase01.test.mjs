@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
-import { mkdir, writeFile, readFile } from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
+import { mkdir, rm, symlink, writeFile, readFile } from 'node:fs/promises';
 import { physicalTargetIdentity, resolveTrackRoots } from '../scripts/switcher/paths.mjs';
 import { listProviderProcesses, waitForQuiescence } from '../scripts/switcher/process-guard.mjs';
 import { resolveCodexDesktop } from '../scripts/switcher/app-resolver/codex.mjs';
@@ -18,6 +19,22 @@ test('phase 01 roots keep Relay and Kernel physically distinct', async () => {
   const identity = await physicalTargetIdentity(kernelRoots.providerHome, { protectedRoots: [relayRoots.runtimeHome, relayRoots.providerHome] });
   assert.equal(identity.safe, true);
   assert.equal(identity.sensitiveContentRead, undefined);
+});
+
+test('phase 01 physical target identity follows a symlinked parent and refuses it', async () => {
+  const root = await mkdir(path.join(os.tmpdir(), `switcher-p01-symlink-${Date.now()}`), { recursive: true });
+  const real = path.join(root, 'real');
+  const alias = path.join(root, 'alias');
+  await mkdir(real, { recursive: true });
+  await symlink(real, alias, 'dir');
+  try {
+    const identity = await physicalTargetIdentity(path.join(alias, 'provider'), { protectedRoots: [] });
+    assert.equal(identity.safe, false);
+    assert.equal(identity.finalResolvedPath, path.join(realpathSync(real), 'provider'));
+    assert.deepEqual(identity.parentChainReparse, [alias]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('phase 01 process characterization is metadata-only and injectable', async () => {
