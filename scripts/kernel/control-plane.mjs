@@ -1285,6 +1285,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         && usage?.decisionId === routeDecisionId
         && usage.capsuleId === capsuleId
         && usage.actorSessionId === reviewerSessionHash
+        && usage.enforcementStatus === 'enforced'
         && admissionAllowsDispatch(admission)
         && admission.capsuleId === capsuleId
         && admission.decisionId === routeDecisionId

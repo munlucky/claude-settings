@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { cleanupWindowsTimeoutProcessTree } from '../../kernel/proof/process-tree.mjs';
 
 export const CODEX_REVIEW_OUTPUT_SCHEMA = Object.freeze({
   type: 'object',
@@ -38,6 +39,20 @@ const parseJsonLines = (text) => String(text || '')
     try { return [JSON.parse(line)]; } catch { return []; }
   });
 
+export const resolveObservedCodexModel = (events = []) => {
+  for (const event of [...events].reverse()) {
+    if (!['turn.completed', 'response.completed'].includes(event?.type)) continue;
+    const observed = event?.model
+      ?? event?.model_id
+      ?? event?.model_slug
+      ?? event?.response?.model
+      ?? event?.turn?.model
+      ?? event?.metadata?.model;
+    if (typeof observed === 'string' && observed.trim()) return observed.trim();
+  }
+  return null;
+};
+
 const assertReviewOutcome = (value) => {
   if (!value || typeof value !== 'object' || !['pass', 'fail', 'blocked'].includes(value.verdict)) {
     throw new Error('codex_review_output_invalid: verdict must be pass, fail, or blocked');
@@ -70,8 +85,19 @@ const resolveWindowsCodexScript = (command, env) => {
   throw new Error('codex_review_dispatch_failed: codex.ps1 was not found on PATH');
 };
 
-const runProcess = ({ command, args, input, cwd, env, timeoutMs, spawnImpl = spawn }) => new Promise((resolve, reject) => {
-  const windowsScript = process.platform === 'win32' ? resolveWindowsCodexScript(command, env) : null;
+export const runCodexReviewProcess = ({
+  command,
+  args,
+  input,
+  cwd,
+  env,
+  timeoutMs,
+  spawnImpl = spawn,
+  platform = process.platform,
+  resolveWindowsScript = resolveWindowsCodexScript,
+  cleanupWindowsProcessTree = cleanupWindowsTimeoutProcessTree,
+}) => new Promise((resolve, reject) => {
+  const windowsScript = platform === 'win32' ? resolveWindowsScript(command, env) : null;
   const launchCommand = windowsScript ? 'powershell.exe' : command;
   const launchArgs = windowsScript
     ? ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', windowsScript, ...args]
@@ -84,22 +110,41 @@ const runProcess = ({ command, args, input, cwd, env, timeoutMs, spawnImpl = spa
   });
   // Passing the review prompt over stdin avoids Windows PowerShell's script
   // argument re-tokenization and gives codex.ps1 the EOF it requires.
+  child.stdin?.on('error', () => {});
   child.stdin?.end(input);
   let stdout = '';
   let stderr = '';
+  let settled = false;
   const append = (current, chunk) => `${current}${chunk}`.slice(-4_000_000);
   child.stdout?.on('data', (chunk) => { stdout = append(stdout, chunk); });
   child.stderr?.on('data', (chunk) => { stderr = append(stderr, chunk); });
-  const timer = setTimeout(() => {
-    if (process.platform === 'win32' && spawnImpl === spawn && child.pid) {
-      spawn('taskkill.exe', ['/pid', String(child.pid), '/t', '/f'], { windowsHide: true, stdio: 'ignore' });
+  const startedAt = new Date();
+  let timer = null;
+  const settle = (callback, value) => {
+    if (settled) return;
+    settled = true;
+    if (timer) clearTimeout(timer);
+    callback(value);
+  };
+  timer = setTimeout(() => {
+    if (platform === 'win32') {
+      const cleanup = cleanupWindowsProcessTree({
+        launcherPid: child.pid,
+        expectedCommand: launchCommand,
+        expectedArgs: windowsScript ? [windowsScript] : [],
+        startedAt,
+      });
+      if (cleanup.status !== 'completed') {
+        settle(reject, new Error(`codex_review_timeout_cleanup_failed: ${cleanup.reason || cleanup.status}`));
+        return;
+      }
     } else {
       child.kill();
     }
-    reject(new Error(`codex_review_timeout after ${timeoutMs}ms`));
+    settle(reject, new Error(`codex_review_timeout after ${timeoutMs}ms`));
   }, timeoutMs);
-  child.once('error', (error) => { clearTimeout(timer); reject(error); });
-  child.once('close', (code) => { clearTimeout(timer); resolve({ code, stdout, stderr }); });
+  child.once('error', (error) => settle(reject, error));
+  child.once('close', (code) => settle(resolve, { code, stdout, stderr }));
 });
 
 export const createCodexCliReviewLauncher = ({
@@ -131,7 +176,7 @@ export const createCodexCliReviewLauncher = ({
     const input = reviewPrompt({ executionContract, executionCapsule });
 
     const started = Date.now();
-    const processResult = await runProcess({ command: executable, args, input, cwd: projectRoot, env, timeoutMs, spawnImpl });
+    const processResult = await runCodexReviewProcess({ command: executable, args, input, cwd: projectRoot, env, timeoutMs, spawnImpl });
     const events = parseJsonLines(processResult.stdout);
     const threadId = events.find((event) => event.type === 'thread.started')?.thread_id || null;
     const completed = [...events].reverse().find((event) => event.type === 'turn.completed') || null;
@@ -143,7 +188,7 @@ export const createCodexCliReviewLauncher = ({
     return {
       status: 'completed',
       resultStatus: 'completed',
-      resolvedModel: invocation.model,
+      resolvedModel: resolveObservedCodexModel(events),
       resolvedEffort: invocation.effort || null,
       sessionId: threadId,
       wallClockMs: Date.now() - started,

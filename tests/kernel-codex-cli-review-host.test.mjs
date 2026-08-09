@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
-import { createCodexCliReviewLauncher } from '../scripts/host/kernel/codex-cli-launcher.mjs';
+import { createCodexCliReviewLauncher, resolveObservedCodexModel, runCodexReviewProcess } from '../scripts/host/kernel/codex-cli-launcher.mjs';
 import { runCodexIndependentReview } from '../scripts/host/kernel/codex-review-host.mjs';
 
 const withOwnerRun = async (fn, suffix) => {
@@ -53,7 +53,7 @@ test('Codex CLI launcher enforces an explicit model, fresh session, read-only sa
       await writeFile(outputPath, JSON.stringify({ verdict: 'pass', findings: [], risks: [], evidenceRefs: ['src/a.mjs:1'] }));
       child.stdout.end([
         JSON.stringify({ type: 'thread.started', thread_id: 'reviewer-thread' }),
-        JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 10, cached_input_tokens: 2, output_tokens: 3 } }),
+        JSON.stringify({ type: 'turn.completed', model: 'gpt-5.6-sol', usage: { input_tokens: 10, cached_input_tokens: 2, output_tokens: 3 } }),
       ].join('\n'));
       child.stderr.end();
       child.emit('close', 0);
@@ -78,6 +78,59 @@ test('Codex CLI launcher enforces an explicit model, fresh session, read-only sa
   } finally {
     await rm(projectRoot, { recursive: true, force: true });
   }
+});
+
+test('Codex launcher never echoes a requested model when provider events omit model identity', () => {
+  assert.equal(resolveObservedCodexModel([
+    { type: 'thread.started', thread_id: 'reviewer-thread', model: 'requested-model-is-not-proof' },
+    { type: 'turn.completed', usage: { input_tokens: 10 } },
+  ]), null);
+  assert.equal(resolveObservedCodexModel([
+    { type: 'turn.completed', model: 'gpt-5.6-sol' },
+  ]), 'gpt-5.6-sol');
+});
+
+test('Windows review timeout waits for verified process-tree cleanup and fails closed when cleanup cannot be proven', async () => {
+  const child = new EventEmitter();
+  child.pid = 4321;
+  child.stdin = new PassThrough();
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  child.kill = () => {};
+  const observed = [];
+  const base = {
+    command: 'codex.ps1',
+    args: ['exec'],
+    input: 'review',
+    cwd: process.cwd(),
+    env: process.env,
+    timeoutMs: 5,
+    platform: 'win32',
+    spawnImpl: () => child,
+    resolveWindowsScript: () => 'C:\\tools\\codex.ps1',
+  };
+  await assert.rejects(() => runCodexReviewProcess({
+    ...base,
+    cleanupWindowsProcessTree: (request) => {
+      observed.push(request);
+      return { status: 'completed', survivors: [] };
+    },
+  }), /codex_review_timeout after 5ms/);
+  assert.equal(observed.length, 1);
+  assert.equal(observed[0].launcherPid, 4321);
+  assert.deepEqual(observed[0].expectedArgs, ['C:\\tools\\codex.ps1']);
+
+  const blockedChild = new EventEmitter();
+  blockedChild.pid = 4322;
+  blockedChild.stdin = new PassThrough();
+  blockedChild.stdout = new PassThrough();
+  blockedChild.stderr = new PassThrough();
+  blockedChild.kill = () => {};
+  await assert.rejects(() => runCodexReviewProcess({
+    ...base,
+    spawnImpl: () => blockedChild,
+    cleanupWindowsProcessTree: () => ({ status: 'blocked', reason: 'post-cleanup-process-table-unavailable' }),
+  }), /codex_review_timeout_cleanup_failed: post-cleanup-process-table-unavailable/);
 });
 
 test('Codex review Host records a complete routed receipt from a distinct read-only session', async () => {
@@ -128,4 +181,23 @@ test('Codex review Host rejects a reviewer session equal to the owner session', 
     }), /incomplete_review_chain|reviewing session is the implementing session/);
     assert.equal(controlPlane.listReviewReceipts(runId).length, 0);
   }, 'same-session');
+});
+
+test('Codex review Host rejects a protected review without observed model identity', async () => {
+  await withOwnerRun(async ({ controlPlane, runId, projectRoot, runtimeHome, owner, env }) => {
+    await assert.rejects(() => runCodexIndependentReview({
+      controlPlane,
+      runId,
+      projectRoot,
+      runtimeHome,
+      parentSessionId: owner,
+      env,
+      launch: async () => ({
+        status: 'completed',
+        sessionId: 'codex:reviewer-without-model-telemetry',
+        outcome: { verdict: 'pass', findings: [], risks: [], evidenceRefs: ['package.json:1'] },
+      }),
+    }), /incomplete_review_chain/);
+    assert.equal(controlPlane.listReviewReceipts(runId).length, 0);
+  }, 'missing-model-identity');
 });
