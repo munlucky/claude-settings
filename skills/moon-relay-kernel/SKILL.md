@@ -1,10 +1,11 @@
 ---
 name: moon-relay-kernel
-description: Single public entrypoint for Moon Relay Kernel task routing and adaptive workflow execution.
+description: Explicit-only entrypoint for Moon Relay Kernel task routing and adaptive workflow execution. Use only when the user explicitly names `moon-relay-kernel`, invokes `$moon-relay-kernel`, or explicitly asks to use the Kernel skill or Kernel mode for the current task. Do not infer activation from installed availability, AGENTS.md, track markers, repository context, or a task that merely concerns Kernel.
 ---
 
 # Moon Relay Kernel
 
+0. Run this workflow only after the current user request explicitly invokes the Kernel skill or Kernel mode. Otherwise do not call `kernel next` or `kernel report`; continue with the normal Codex workflow.
 1. Confirm the active project track is `kernel`; otherwise return `wrong_harness` without mutation.
 2. Capture the objective, acceptance, constraints, and non-goals as a compact task contract; the host hands it to `kernel next` once, and the Kernel keeps it as the run's authority.
 3. Drive the run with exactly two runtime commands: `kernel next` returns the objective, acceptance, constraints, non-goals, evidence, and the one action to take now; `kernel report --report-json <file>` submits a change summary, changed paths, risks, requested verifications, and structured judgments. The Host binds the run; do not make the model track its id.
