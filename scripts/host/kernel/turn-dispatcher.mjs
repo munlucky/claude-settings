@@ -84,13 +84,21 @@ export const buildExecutionContract = (modelInput = {}, decision = {}) => {
     action: { type: action.type, guidance: action.guidance || '' },
   };
   if (decision.role === 'reviewer') {
+    const acceptanceMatch = String(decision.obligationId || '').match(/^judgment-ac-(\d+)$/i);
+    const scopedAcceptance = acceptanceMatch
+      ? base.acceptance.filter((entry) => String(entry?.id || '').toUpperCase() === `AC-${acceptanceMatch[1]}`)
+      : (decision.obligationId === 'security-review' ? [] : base.acceptance);
     return {
       objective: base.objective,
-      acceptance: base.acceptance,
+      acceptance: scopedAcceptance,
       role: base.role,
       permissions: base.permissions,
       changedPaths: modelInput.changedPaths || [],
-      verificationEvidence: modelInput.evidence || [],
+      // Prior protected judgments are not evidence for a sibling judgment.
+      // Passing them here would bypass the review-capsule isolation and can
+      // create circular failures between otherwise independent obligations.
+      verificationEvidence: (modelInput.evidence || [])
+        .filter((entry) => entry.evidenceClass !== 'judgment'),
       riskTier: decision.riskTier,
     };
   }

@@ -8,7 +8,8 @@ const normalizePath = (value = '') => String(value).replaceAll('\\', '/');
 const readSkillBody = async (repoRoot, skillPath) => readFile(path.join(repoRoot, skillPath, 'SKILL.md'), 'utf8');
 
 const KERNEL_STANDALONE_SKILLS = new Set(['project-memory', 'kernel-commit', 'codebase-understanding']);
-const isKernelSkill = (name) => KERNEL_STANDALONE_SKILLS.has(name) || (name.startsWith('kernel-') && name !== 'kernel-commit') || name === 'moon-relay-kernel';
+const isKernelSkill = (name) => (name.startsWith('kernel-') && name !== 'kernel-commit') || name === 'moon-relay-kernel';
+const isRelaySkill = (name) => !isKernelSkill(name) && !KERNEL_STANDALONE_SKILLS.has(name);
 const commitShaRegex = /^[a-f0-9]{40}$/i;
 
 export const discoverSourceSkills = async ({ repoRoot = process.cwd(), skillsRoot = 'skills' } = {}) => {
@@ -46,7 +47,7 @@ export const buildSkillsLock = async ({
   defaultStages = [],
   defaultPermissions = ['filesystem-read'],
 } = {}) => {
-  const sourceSkills = (await discoverSourceSkills({ repoRoot })).filter((s) => (scope === 'kernel' ? isKernelSkill(s.name) : !isKernelSkill(s.name)));
+  const sourceSkills = (await discoverSourceSkills({ repoRoot })).filter((s) => (scope === 'kernel' ? isKernelSkill(s.name) : isRelaySkill(s.name)));
 
   return {
     schemaVersion: 1,
@@ -101,7 +102,7 @@ export const auditSkillsLock = async ({
 
   const sourceSkills = new Map(
     (await discoverSourceSkills({ repoRoot }))
-      .filter((s) => (scope === 'kernel' ? isKernelSkill(s.name) : !isKernelSkill(s.name)))
+      .filter((s) => (scope === 'kernel' ? isKernelSkill(s.name) : isRelaySkill(s.name)))
       .map((skill) => [skill.name, skill])
   );
   const lockedSkills = new Map((lock.skills || []).map((skill) => [skill.name, skill]));

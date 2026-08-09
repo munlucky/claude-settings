@@ -9,14 +9,17 @@ const PRODUCT_ID = 'moon-relay-kernel';
 const TRACK_CONTENT = 'schemaVersion: 1\ntrack: kernel\nproduct: moon-relay-kernel\n';
 const PAYLOAD_ENTRIES = [
   'bin/moon-relay-kernel.mjs',
+  'bin/moon-relay-kernel-host.mjs',
   'kernel',
   'scripts/kernel',
+  'scripts/host/kernel',
   'scripts/lib/candidate-identity.mjs',
   'scripts/lib/git-safe.mjs',
   'schemas/kernel.track.schema.json',
   'schemas/kernel.runtime-state.schema.json',
   'catalog/kernel-skills.json',
   'package/kernel',
+  'package/profile-templates/codex',
 ];
 
 const exists = async (target) => {
@@ -82,20 +85,28 @@ export const materializeKernelCommandShim = async ({ runtimeHome, entrypoint } =
   if (!runtimeHome || !entrypoint) throw new Error('Kernel command shim requires runtimeHome and entrypoint');
   const root = await safeInstallRoot(runtimeHome);
   const cli = path.resolve(entrypoint);
+  const hostCli = path.join(path.dirname(cli), 'moon-relay-kernel-host.mjs');
   const binDir = path.join(root, 'bin');
   await mkdir(binDir, { recursive: true });
   const written = [];
   if (process.platform === 'win32') {
     const cmd = path.join(binDir, 'kernel.cmd');
     const ps1 = path.join(binDir, 'kernel.ps1');
+    const hostCmd = path.join(binDir, 'kernel-host.cmd');
+    const hostPs1 = path.join(binDir, 'kernel-host.ps1');
     await atomicWrite(cmd, `@echo off\r\nnode "${cli}" %*\r\n`);
     await atomicWrite(ps1, `& node "${cli}" @args\r\n`);
-    written.push(cmd, ps1);
+    await atomicWrite(hostCmd, `@echo off\r\nnode "${hostCli}" %*\r\n`);
+    await atomicWrite(hostPs1, `& node "${hostCli}" @args\r\n`);
+    written.push(cmd, ps1, hostCmd, hostPs1);
   } else {
     const shim = path.join(binDir, 'kernel');
+    const hostShim = path.join(binDir, 'kernel-host');
     await atomicWrite(shim, `#!/bin/sh\nexec node "${cli}" "$@"\n`);
     await chmod(shim, 0o755);
-    written.push(shim);
+    await atomicWrite(hostShim, `#!/bin/sh\nexec node "${hostCli}" "$@"\n`);
+    await chmod(hostShim, 0o755);
+    written.push(shim, hostShim);
   }
   return { status: 'installed', runtimeHome: root, entrypoint: cli, written };
 };

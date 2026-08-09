@@ -111,7 +111,10 @@ test('kernel-owned actions are never dispatched to a provider', async () => {
 test('the worker receives an execution contract, not the conversation', () => {
   const modelInput = {
     objective: 'add a flag', acceptance: ['flag works'], constraints: ['no new deps'], nonGoals: ['redesign'],
-    evidence: [{ obligationId: 'default', status: 'passed' }], knowledge: 'irrelevant prompt block',
+    evidence: [
+      { obligationId: 'default', status: 'passed', evidenceClass: 'hard' },
+      { obligationId: 'security-review', status: 'failed', evidenceClass: 'judgment' },
+    ], knowledge: 'irrelevant prompt block',
     action: { type: 'implement', guidance: 'do it', outstandingObligations: ['default'], obligations: [{ obligationId: 'default' }] },
   };
   const implement = buildExecutionContract(modelInput, { role: 'implementer', permissions: 'workspace_write', riskTier: 'T1' });
@@ -119,8 +122,13 @@ test('the worker receives an execution contract, not the conversation', () => {
   assert.equal(implement.permissions, 'workspace_write');
   assert.equal(JSON.stringify(implement).includes('irrelevant prompt block'), false);
 
-  const review = buildExecutionContract({ ...modelInput, changedPaths: ['src/a.ts'] }, { role: 'reviewer', permissions: 'read_only', riskTier: 'T3' });
+  const review = buildExecutionContract({ ...modelInput, changedPaths: ['src/a.ts'] }, { role: 'reviewer', permissions: 'read_only', riskTier: 'T3', obligationId: 'security-review' });
   assert.deepEqual(Object.keys(review).sort(), ['acceptance', 'changedPaths', 'objective', 'permissions', 'riskTier', 'role', 'verificationEvidence']);
   assert.equal(review.permissions, 'read_only');
   assert.equal(review.constraints, undefined);
+  assert.deepEqual(review.acceptance, []);
+  assert.deepEqual(review.verificationEvidence.map((entry) => entry.obligationId), ['default']);
+
+  const visualReview = buildExecutionContract({ ...modelInput, acceptance: [{ id: 'AC-9' }, { id: 'AC-10' }] }, { role: 'reviewer', permissions: 'read_only', riskTier: 'T3', obligationId: 'judgment-ac-10' });
+  assert.deepEqual(visualReview.acceptance, [{ id: 'AC-10' }]);
 });

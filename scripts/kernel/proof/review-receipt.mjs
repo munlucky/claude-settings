@@ -56,13 +56,16 @@ export const parseReviewEvidenceRef = (evidenceRef) => {
   return { runId: match[1], receiptId: match[2] };
 };
 
-// The evidence state a review was formed against. The obligation the review
-// itself answers is excluded, because recording the judgment adds a
-// verification of its own — including it would make every receipt stale the
-// instant it was written.
+// The executable evidence state a review was formed against. Judgment rows are
+// excluded because recording one independent verdict must not invalidate every
+// other verdict in the same review wave. Including them creates an impossible
+// cycle for runs with multiple judgment obligations: the last receipt always
+// makes the earlier receipts stale. Hard evidence remains in the digest, so a
+// build or test rerun still invalidates every review that did not observe it.
 export const digestOfEvidence = (verifications = [], { excludeObligationId = null } = {}) => `sha256:${createHash('sha256').update(canonicalJson(
   verifications
     .filter((verification) => verification.obligationId !== excludeObligationId)
+    .filter((verification) => verification.evidenceClass !== 'judgment')
     .map((verification) => ({
       obligationId: verification.obligationId,
       status: verification.status,

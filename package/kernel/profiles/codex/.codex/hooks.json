@@ -1,8 +1,16 @@
 {
-  "SessionStart": [
-    {
-      "type": "command",
-      "command": "moon-relay-kernel assert-track --json"
-    }
-  ]
+  "description": "Moon Relay Kernel track guard.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "moon-relay-kernel assert-track --json"
+          }
+        ]
+      }
+    ]
+  }
 }

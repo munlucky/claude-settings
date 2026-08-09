@@ -1279,21 +1279,42 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         ? Number(run.contractRevision || 1) + 1
         : Number(run.contractRevision || 1);
       const revise = db.transaction(() => {
+        const compiledIds = [...new Set(obligations.map((obligation) => obligation.obligationId))];
+        const retiredEvidencePlanIds = db.prepare(`
+          SELECT obligation_id as obligationId FROM run_obligations
+          WHERE run_id=? AND source_type='evidence-plan'
+        `).all(runId)
+          .map((row) => row.obligationId)
+          .filter((obligationId) => !compiledIds.includes(obligationId));
+        const nextRequiredObligations = [...new Set([
+          ...run.requiredObligations.filter((obligationId) => !retiredEvidencePlanIds.includes(obligationId)),
+          ...compiledIds,
+        ])];
         db.prepare(`UPDATE runs
-          SET task_contract_json=?, contract_revision=?, acceptance_criteria=?, revision=revision+1, updated_at=?
+          SET task_contract_json=?, contract_revision=?, acceptance_criteria=?, required_obligations=?, revision=revision+1, updated_at=?
           WHERE run_id=?`)
           .run(
             persistentJson(taskContract),
             nextRevision,
             persistentJson((taskContract.acceptance || []).map((item) => item.statement).filter(Boolean)),
+            persistentJson(nextRequiredObligations),
             now(),
             runId,
           );
+
+        if (retiredEvidencePlanIds.length > 0) {
+          const placeholders = retiredEvidencePlanIds.map(() => '?').join(', ');
+          db.prepare(`UPDATE run_obligations SET status='superseded', updated_at=? WHERE run_id=? AND obligation_id IN (${placeholders})`)
+            .run(now(), runId, ...retiredEvidencePlanIds);
+        }
 
         const upsertObligation = db.prepare(`
           INSERT INTO run_obligations(run_id, obligation_id, source_type, source_ref, status, evidence_class, verification_method, allowed_command_refs, rejected_command_refs, acceptance_ids, protected, contract_revision, metadata_json, created_at, updated_at)
           VALUES(?, ?, ?, ?, 'required', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(run_id, obligation_id) DO UPDATE SET
+            source_type=excluded.source_type,
+            source_ref=excluded.source_ref,
+            status='required',
             evidence_class=excluded.evidence_class,
             verification_method=excluded.verification_method,
             allowed_command_refs=excluded.allowed_command_refs,

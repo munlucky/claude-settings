@@ -73,6 +73,24 @@ test('K1-8: the reviewer capsule is read-only and carries subject plus evidence 
         { obligationId: 'static-analysis', commandRef: 'lint' },
       ],
     });
+    await cp.recordProof('r-revcap', {
+      obligationId: 'security-review',
+      status: 'failed',
+      evidenceRef: 'review://r-revcap/review-receipt-deadbeef',
+      command: 'structured-review',
+      exitCode: 1,
+      evidenceDigest: `sha256:${'d'.repeat(64)}`,
+      evidenceClass: 'judgment',
+    });
+    await cp.recordProof('r-revcap', {
+      obligationId: 'judgment-ac-1',
+      status: 'failed',
+      evidenceRef: 'review://r-revcap/review-receipt-sibling',
+      command: 'structured-review',
+      exitCode: 1,
+      evidenceDigest: `sha256:${'e'.repeat(64)}`,
+      evidenceClass: 'judgment',
+    });
 
     const reviewCapsule = await cp.buildReviewerCapsule('r-revcap', {
       stage: 'engineering',
@@ -97,6 +115,8 @@ test('K1-8: the reviewer capsule is read-only and carries subject plus evidence 
     const evidence = Object.fromEntries(reviewCapsule.verificationEvidence.map((entry) => [entry.obligationId, entry]));
     assert.equal(evidence['unit-test'].status, 'passed');
     assert.equal(evidence['unit-test'].exitCode, 0);
+    assert.equal(evidence['security-review'], undefined, 'a retry does not receive its own previous verdict as evidence');
+    assert.equal(evidence['judgment-ac-1'], undefined, 'independent reviews do not inherit sibling judgment verdicts');
     assert.equal(reviewCapsule.reviewScope.stage, 'engineering');
     assert.equal(reviewCapsule.reviewScope.obligationId, 'security-review');
 

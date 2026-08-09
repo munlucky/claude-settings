@@ -494,6 +494,36 @@ test('P0-5: an evidence plan supplied after FRAME is persisted as a contract rev
   }
 });
 
+test('P0-5: replacing a hard evidence plan with judgment retires its predecessor obligation', async () => {
+  const fixture = await setup();
+  const cp = await createKernelControlPlane(fixture);
+  try {
+    await cp.startRun({
+      runId: 'r-plan-replace',
+      objective: 'x',
+      taskContract: {
+        acceptance: [{ id: 'AC-1', acceptance: 'visual target matches', evidencePlan: { class: 'hard', method: 'browser test', commandRefs: ['test:ok'] } }],
+      },
+    });
+    const before = await cp.getRun('r-plan-replace');
+    assert.ok(before.requiredObligations.includes('acceptance-ac-1'));
+
+    const replacement = normalizeTaskContract({
+      ...before.taskContract,
+      acceptance: [{ id: 'AC-1', acceptance: 'visual target matches', evidencePlan: { class: 'judgment', method: 'independent visual review', commandRefs: [] } }],
+    }, { objective: before.objective });
+    const revised = await cp.reviseContract('r-plan-replace', replacement);
+
+    assert.ok(!revised.requiredObligations.includes('acceptance-ac-1'), 'the superseded hard obligation is no longer required');
+    assert.ok(revised.requiredObligations.includes('judgment-ac-1'));
+    assert.equal(cp.stateStore.getRunObligation('r-plan-replace', 'acceptance-ac-1').status, 'superseded');
+    assert.equal(cp.stateStore.getRunObligation('r-plan-replace', 'judgment-ac-1').status, 'required');
+  } finally {
+    await cp.close();
+    await cleanup(fixture);
+  }
+});
+
 test('P0-2: AC coverage is canonicalized and cannot cross obligation boundaries', async () => {
   const fixture = await setup();
   const cp = await createKernelControlPlane(fixture);

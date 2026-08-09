@@ -5,12 +5,14 @@
   "entrypoint": "bin/moon-relay-kernel.mjs",
   "include": [
     "bin/moon-relay-kernel.mjs",
+    "bin/moon-relay-kernel-host.mjs",
     "bin/project-memory.mjs",
     "bin/kernel-commit.mjs",
     "bin/codebase-understanding.mjs",
     "bin/moon-harness-switcher.mjs",
     "kernel/",
     "scripts/kernel/",
+    "scripts/host/kernel/",
     "scripts/switcher/",
     "scripts/lib/skills-lock.mjs",
     "scripts/lib/candidate-identity.mjs",
@@ -29,6 +31,7 @@
     "package/kernel/skills.lock.json",
     "package/kernel/standalone-skills.lock.json",
     "package/kernel/profiles/"
+    ,"package/profile-templates/codex/"
     ,"scripts/kernel/profile-install.mjs"
     ,"scripts/kernel/profile-doctor.mjs"
     ,"package/switcher/manifest.json"

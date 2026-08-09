@@ -10,7 +10,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
 import { hashSessionId } from '../scripts/kernel/run/model-route-contract.mjs';
-import { digestOfPaths, evaluateReviewReceipt } from '../scripts/kernel/proof/review-receipt.mjs';
+import { digestOfEvidence, digestOfPaths, evaluateReviewReceipt } from '../scripts/kernel/proof/review-receipt.mjs';
 
 const IMPLEMENTER = hashSessionId('freshness-implementer');
 const REVIEWER = hashSessionId('freshness-reviewer');
@@ -131,6 +131,39 @@ test('K0-6: a mutation revision bump alone invalidates the receipt', () => {
   assert.deepEqual(
     evaluateReviewReceipt({ receipt: { ...receipt, verdict: 'changes-requested' }, run, ...options }).reasons,
     ['review-verdict-changes-requested'],
+  );
+});
+
+test('K0-6a: sibling judgments do not stale one another while hard evidence still does', () => {
+  const hard = {
+    obligationId: 'unit-test',
+    status: 'passed',
+    evidenceClass: 'hard',
+    evidenceDigest: `sha256:${'1'.repeat(64)}`,
+  };
+  const firstJudgment = {
+    obligationId: 'judgment-ac-1',
+    status: 'passed',
+    evidenceClass: 'judgment',
+    evidenceDigest: `sha256:${'2'.repeat(64)}`,
+  };
+  const secondJudgment = {
+    obligationId: 'judgment-ac-2',
+    status: 'passed',
+    evidenceClass: 'judgment',
+    evidenceDigest: `sha256:${'3'.repeat(64)}`,
+  };
+
+  const reviewedDigest = digestOfEvidence([hard, firstJudgment], { excludeObligationId: 'judgment-ac-1' });
+  assert.equal(
+    digestOfEvidence([hard, firstJudgment, secondJudgment], { excludeObligationId: 'judgment-ac-1' }),
+    reviewedDigest,
+    'a later independent judgment must not invalidate an earlier receipt',
+  );
+  assert.notEqual(
+    digestOfEvidence([{ ...hard, evidenceDigest: `sha256:${'4'.repeat(64)}` }, firstJudgment, secondJudgment], { excludeObligationId: 'judgment-ac-1' }),
+    reviewedDigest,
+    'changed executable evidence must still invalidate the receipt',
   );
 });
 

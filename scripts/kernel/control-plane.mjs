@@ -48,7 +48,7 @@ import { scanRepositoryEvidence } from './task/evidence-scan.mjs';
 import { allStepsPassed } from './run/run-step-ledger.mjs';
 import { planRunSteps } from './run/step-planner.mjs';
 import { createWorkCursorApi } from './run/work-cursor.mjs';
-import { admitRoute } from './routing/route-admission.mjs';
+import { admitRoute, admissionAllowsDispatch } from './routing/route-admission.mjs';
 import { captureBaselineProof } from './proof/baseline-proof.mjs';
 import { classifyFailures } from './proof/failure-classify.mjs';
 import { computeCompletionView } from './run/completion-view.mjs';
@@ -760,11 +760,15 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       const updated = typeof store.reviseTaskContractAtomic === 'function'
         ? store.reviseTaskContractAtomic(runId, contract, { obligations })
         : store.updateTaskContract(runId, contract);
-      if (typeof store.reviseTaskContractAtomic !== 'function') store.declareRunObligations(runId, obligations);
-      const merged = [...new Set([...updated.requiredObligations, ...obligations.map((obligation) => obligation.obligationId)])];
-      const escalated = store.escalateRun(runId, { addObligations: merged });
-      await projectRunState(escalated, { runtimeHome });
-      return escalated;
+      if (typeof store.reviseTaskContractAtomic !== 'function') {
+        store.declareRunObligations(runId, obligations);
+        const merged = [...new Set([...updated.requiredObligations, ...obligations.map((obligation) => obligation.obligationId)])];
+        const escalated = store.escalateRun(runId, { addObligations: merged });
+        await projectRunState(escalated, { runtimeHome });
+        return escalated;
+      }
+      await projectRunState(updated, { runtimeHome });
+      return updated;
     },
 
     async getRun(runId) {
@@ -1281,7 +1285,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         && usage?.decisionId === routeDecisionId
         && usage.capsuleId === capsuleId
         && usage.actorSessionId === reviewerSessionHash
-        && admission?.decision === 'admitted'
+        && admissionAllowsDispatch(admission)
         && admission.capsuleId === capsuleId
         && admission.decisionId === routeDecisionId
         && implementationSession?.actorSessionId
@@ -1291,6 +1295,9 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         return { status: 'blocked', blockedReason: 'incomplete_review_chain', findings: outcome.findings };
       }
       const obligationId = capsule.reviewScope?.obligationId || decision.obligationId || 'security-review';
+      const acceptanceCoverage = (capsule.acceptance || [])
+        .filter((item) => (item.obligationIds || []).includes(obligationId))
+        .map((item) => item.id);
       return this.recordReview(runId, {
         stage: capsule.reviewScope?.stage || 'engineering',
         verdict: outcome.verdict,
@@ -1300,7 +1307,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         implementerId: implementationSession.actorSessionId,
         reviewReceiptId: usageReceiptId,
         obligationId,
-        acceptanceCoverage: capsule.acceptance?.map((item) => item.id) || [],
+        acceptanceCoverage,
         changedPaths: capsule.subject.changedPaths,
         rationale: `Host-ingested reviewer outcome (${outcome.evidenceRefs.length} evidence refs)`,
       });

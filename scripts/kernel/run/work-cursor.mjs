@@ -472,7 +472,12 @@ export const createWorkCursorApi = ({ store, projectRoot, runtimeHome }) => ({
       // Identifies the exact file states the verdict is formed on, without
       // carrying the diff itself into the capsule.
       diffDigest: digestOfChangedFiles({ projectRoot, changedPaths }),
-      verifications: store.getVerifications(runId),
+      // Independent judgments review the current subject and hard verification
+      // evidence. Feeding prior judgment rows into another judgment creates a
+      // circular dependency: one stale or failed review can poison every
+      // sibling review, including its own retry through the sibling chain.
+      verifications: store.getVerifications(runId)
+        .filter((verification) => verification.evidenceClass !== 'judgment'),
       implementationSession: store.getImplementationPrincipal(runId),
     });
     return store.recordExecutionCapsule(runId, capsule);

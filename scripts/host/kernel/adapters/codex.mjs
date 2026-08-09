@@ -88,6 +88,10 @@ export const createCodexAdapter = ({ launch = null, capabilities = {}, runtimeHo
         resolvedEffort: result.resolvedEffort ?? invocation.effort ?? null,
         actorSessionId: result.sessionId || null,
         wallClockMs: result.wallClockMs ?? null,
+        inputTokens: result.inputTokens ?? null,
+        cachedInputTokens: result.cachedInputTokens ?? null,
+        outputTokens: result.outputTokens ?? null,
+        outcome: result.outcome ?? null,
         // Only forwarded when the Host observed them; the receipt gates these
         // on the declared capability regardless.
         cacheReadInputTokens: result.cacheReadInputTokens ?? null,

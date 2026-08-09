@@ -20,8 +20,8 @@ test('Codex profile materializes Kernel marker without Relay catalog and configu
 
   const hooksText = await readFile(path.join(d, '.codex', 'hooks.json'), 'utf8');
   const hooks = JSON.parse(hooksText);
-  assert.ok(Array.isArray(hooks.SessionStart));
-  const hookCmd = hooks.SessionStart[0].command;
+  assert.ok(Array.isArray(hooks.hooks.SessionStart));
+  const hookCmd = hooks.hooks.SessionStart[0].hooks[0].command;
   assert.match(hookCmd, /^moon-relay-kernel\s+assert-track/);
 
   // Setup temporary launcher bin directory and register on PATH
