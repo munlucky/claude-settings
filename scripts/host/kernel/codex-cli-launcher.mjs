@@ -1,8 +1,9 @@
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { createReadStream, existsSync } from 'node:fs';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import readline from 'node:readline';
 import { cleanupWindowsTimeoutProcessTree } from '../../kernel/proof/process-tree.mjs';
 
 export const CODEX_REVIEW_OUTPUT_SCHEMA = Object.freeze({
@@ -51,6 +52,53 @@ export const resolveObservedCodexModel = (events = []) => {
     if (typeof observed === 'string' && observed.trim()) return observed.trim();
   }
   return null;
+};
+
+const codexSessionDateDirectories = (sessionsRoot, startedAt = new Date()) => {
+  const directories = new Set();
+  for (const offset of [-86_400_000, 0, 86_400_000]) {
+    const date = new Date(startedAt.getTime() + offset);
+    const local = [date.getFullYear(), date.getMonth() + 1, date.getDate()];
+    const utc = [date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate()];
+    for (const [year, month, day] of [local, utc]) {
+      directories.add(path.join(sessionsRoot, String(year), String(month).padStart(2, '0'), String(day).padStart(2, '0')));
+    }
+  }
+  return [...directories];
+};
+
+const findCodexSessionRollout = async ({ threadId, env, startedAt }) => {
+  if (!/^[0-9a-f-]{16,}$/i.test(String(threadId || ''))) return null;
+  const codexHome = env.CODEX_HOME || path.join(os.homedir(), '.codex');
+  const suffix = `${threadId}.jsonl`;
+  for (const directory of codexSessionDateDirectories(path.join(codexHome, 'sessions'), startedAt)) {
+    let entries;
+    try { entries = await readdir(directory, { withFileTypes: true }); } catch { continue; }
+    const match = entries.find((entry) => entry.isFile() && entry.name.endsWith(suffix));
+    if (match) return path.join(directory, match.name);
+  }
+  return null;
+};
+
+export const resolveObservedCodexSessionModel = async ({ threadId, env = process.env, startedAt = new Date() } = {}) => {
+  const rolloutPath = await findCodexSessionRollout({ threadId, env, startedAt });
+  if (!rolloutPath) return null;
+  let identityMatched = false;
+  let observed = null;
+  const lines = readline.createInterface({ input: createReadStream(rolloutPath), crlfDelay: Infinity });
+  for await (const line of lines) {
+    let event;
+    try { event = JSON.parse(line); } catch { continue; }
+    if (event?.type === 'session_meta') {
+      const sessionId = event?.payload?.session_id ?? event?.payload?.id;
+      identityMatched = sessionId === threadId;
+    }
+    if (event?.type === 'turn_context') {
+      const model = event?.payload?.model;
+      if (typeof model === 'string' && model.trim()) observed = model.trim();
+    }
+  }
+  return identityMatched ? observed : null;
 };
 
 const assertReviewOutcome = (value) => {
@@ -185,10 +233,12 @@ export const createCodexCliReviewLauncher = ({
       throw new Error(`codex_review_dispatch_failed: exit=${processResult.code}; ${failed?.message || processResult.stderr || 'missing terminal event'}`);
     }
     const outcome = assertReviewOutcome(JSON.parse(await readFile(outputPath, 'utf8')));
+    const resolvedModel = resolveObservedCodexModel(events)
+      ?? await resolveObservedCodexSessionModel({ threadId, env, startedAt: new Date(started) });
     return {
       status: 'completed',
       resultStatus: 'completed',
-      resolvedModel: resolveObservedCodexModel(events),
+      resolvedModel,
       resolvedEffort: invocation.effort || null,
       sessionId: threadId,
       wallClockMs: Date.now() - started,

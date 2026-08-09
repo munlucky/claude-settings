@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
-import { createCodexCliReviewLauncher, resolveObservedCodexModel, runCodexReviewProcess } from '../scripts/host/kernel/codex-cli-launcher.mjs';
+import { createCodexCliReviewLauncher, resolveObservedCodexModel, resolveObservedCodexSessionModel, runCodexReviewProcess } from '../scripts/host/kernel/codex-cli-launcher.mjs';
 import { runCodexIndependentReview } from '../scripts/host/kernel/codex-review-host.mjs';
 
 const withOwnerRun = async (fn, suffix) => {
@@ -88,6 +88,90 @@ test('Codex launcher never echoes a requested model when provider events omit mo
   assert.equal(resolveObservedCodexModel([
     { type: 'turn.completed', model: 'gpt-5.6-sol' },
   ]), 'gpt-5.6-sol');
+});
+
+test('Codex launcher resolves missing stdout model identity from the matching CLI session rollout', async () => {
+  const codexHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-observed-session-'));
+  const threadId = '019fe611-87bd-7d83-b920-87d03a4e5a78';
+  const startedAt = new Date('2026-08-09T10:28:56.000Z');
+  const dateRoot = path.join(codexHome, 'sessions', '2026', '08', '09');
+  await mkdir(dateRoot, { recursive: true });
+  try {
+    await writeFile(path.join(dateRoot, `rollout-2026-08-09T19-28-56-${threadId}.jsonl`), [
+      JSON.stringify({ type: 'session_meta', payload: { id: threadId, session_id: threadId, source: 'exec' } }),
+      JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-5.6-sol' } }),
+    ].join('\n'));
+    assert.equal(await resolveObservedCodexSessionModel({
+      threadId,
+      env: { CODEX_HOME: codexHome },
+      startedAt,
+    }), 'gpt-5.6-sol');
+  } finally {
+    await rm(codexHome, { recursive: true, force: true });
+  }
+});
+
+test('Codex CLI launcher uses the matching session rollout when terminal events omit model identity', async () => {
+  const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-launcher-session-fallback-'));
+  const codexHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-launcher-session-home-'));
+  const threadId = '019fe611-87bd-7d83-b920-87d03a4e5a78';
+  const spawnImpl = (command, args) => {
+    const child = new EventEmitter();
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    child.kill = () => {};
+    queueMicrotask(async () => {
+      const outputPath = args[args.indexOf('--output-last-message') + 1];
+      const now = new Date();
+      const dateRoot = path.join(codexHome, 'sessions', String(now.getFullYear()), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0'));
+      await mkdir(dateRoot, { recursive: true });
+      await writeFile(path.join(dateRoot, `rollout-live-${threadId}.jsonl`), [
+        JSON.stringify({ type: 'session_meta', payload: { id: threadId } }),
+        JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-5.6-sol' } }),
+      ].join('\n'));
+      await writeFile(outputPath, JSON.stringify({ verdict: 'pass', findings: [], risks: [], evidenceRefs: ['src/a.mjs:1'] }));
+      child.stdout.end([
+        JSON.stringify({ type: 'thread.started', thread_id: threadId }),
+        JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 10 } }),
+      ].join('\n'));
+      child.stderr.end();
+      child.emit('close', 0);
+    });
+    return child;
+  };
+  try {
+    const launch = createCodexCliReviewLauncher({ projectRoot, spawnImpl, env: { ...process.env, CODEX_HOME: codexHome } });
+    const result = await launch({
+      invocation: { model: 'gpt-5.6-sol', effort: 'high', sandbox: 'read-only', freshSessionRequired: true },
+      executionCapsule: { role: 'reviewer' },
+      executionContract: { permissions: 'read_only' },
+    });
+    assert.equal(result.resolvedModel, 'gpt-5.6-sol');
+  } finally {
+    await rm(projectRoot, { recursive: true, force: true });
+    await rm(codexHome, { recursive: true, force: true });
+  }
+});
+
+test('Codex session model resolver rejects a rollout whose internal identity does not match', async () => {
+  const codexHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-mismatched-session-'));
+  const threadId = '019fe611-87bd-7d83-b920-87d03a4e5a78';
+  const startedAt = new Date('2026-08-09T10:28:56.000Z');
+  const dateRoot = path.join(codexHome, 'sessions', '2026', '08', '09');
+  await mkdir(dateRoot, { recursive: true });
+  try {
+    await writeFile(path.join(dateRoot, `rollout-2026-08-09T19-28-56-${threadId}.jsonl`), [
+      JSON.stringify({ type: 'session_meta', payload: { id: 'different-session' } }),
+      JSON.stringify({ type: 'turn_context', payload: { model: 'requested-model-is-not-proof' } }),
+    ].join('\n'));
+    assert.equal(await resolveObservedCodexSessionModel({
+      threadId,
+      env: { CODEX_HOME: codexHome },
+      startedAt,
+    }), null);
+  } finally {
+    await rm(codexHome, { recursive: true, force: true });
+  }
 });
 
 test('Windows review timeout waits for verified process-tree cleanup and fails closed when cleanup cannot be proven', async () => {
