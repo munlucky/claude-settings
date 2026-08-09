@@ -2339,6 +2339,42 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
           });
         }
       }
+
+      const staleBefore = new Date(observedMs - (24 * 60 * 60 * 1000)).toISOString();
+      const staleRuns = db.prepare(`
+        SELECT r.run_id as runId, r.project_id as projectId, r.workspace_id as workspaceId,
+               r.state, r.updated_at as updatedAt,
+               (SELECT COUNT(*) FROM run_step_attempts a WHERE a.run_id=r.run_id) as attemptCount,
+               (SELECT COUNT(*) FROM run_capsules c WHERE c.run_id=r.run_id) as capsuleCount,
+               (SELECT COUNT(*) FROM verifications v WHERE v.run_id=r.run_id) as verificationCount,
+               (SELECT COUNT(*) FROM completion_decisions d WHERE d.run_id=r.run_id) as completionReceiptCount,
+               (SELECT COUNT(*) FROM run_steps s WHERE s.run_id=r.run_id AND s.state='ready') as readyStepCount
+        FROM runs r
+        WHERE r.status='active' AND r.updated_at<=?
+          ${projectId ? 'AND r.project_id=?' : ''}
+      `).all(staleBefore, ...projectArgs);
+      for (const run of staleRuns) {
+        const provenance = {
+          attemptCount: Number(run.attemptCount || 0),
+          capsuleCount: Number(run.capsuleCount || 0),
+          verificationCount: Number(run.verificationCount || 0),
+          completionReceiptCount: Number(run.completionReceiptCount || 0),
+        };
+        if (Number(run.readyStepCount || 0) > 0 && Object.values(provenance).every((count) => count === 0)) {
+          findings.push({
+            code: 'stale_active_run',
+            severity: 'warning',
+            runId: run.runId,
+            projectId: run.projectId,
+            workspaceId: run.workspaceId,
+            state: run.state,
+            updatedAt: run.updatedAt,
+            staleBefore,
+            provenance,
+            recoveryChoices: ['resume', 'replan', 'abort-and-successor'],
+          });
+        }
+      }
       if (projectId) {
         const completedRuns = db.prepare(`SELECT COUNT(*) as count FROM runs WHERE project_id=? AND status='completed'`).get(projectId);
         const mutationRuns = db.prepare(`SELECT COUNT(*) as count FROM runs WHERE project_id=? AND status='completed' AND mutation_revision>0`).get(projectId);
@@ -4570,11 +4606,29 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       const hardEvidenceCount = verifications.filter((v) => isVerificationValid(v) && v.executor === 'kernel-runtime').length;
       const hardEvidenceSatisfied = !hardEvidenceRequired || hardEvidenceCount > 0;
 
+      const requiredLifecycleOutcomes = new Set(run.taskContract?.completionPredicate?.requiredOutcomes || []);
+      const outcomesFor = (obligation) => new Set([
+        ...(Array.isArray(obligation?.metadata?.outcomes) ? obligation.metadata.outcomes : []),
+        ...(obligation?.metadata?.outcome ? [obligation.metadata.outcome] : []),
+      ]);
+      const lifecycleOutcomes = [...requiredLifecycleOutcomes].map((outcome) => {
+        if (outcome === 'implemented') {
+          return { outcome, satisfied: run.mutationRevision > 0, obligationIds: [] };
+        }
+        const matching = dynamicObligationRows.filter((obligation) => outcomesFor(obligation).has(outcome));
+        return {
+          outcome,
+          satisfied: matching.length > 0 && matching.every((obligation) => obligationSatisfied(obligation.obligationId)),
+          obligationIds: matching.map((obligation) => obligation.obligationId),
+        };
+      });
+      const lifecycleOutcomesSatisfied = lifecycleOutcomes.every((outcome) => outcome.satisfied);
+
       // All completion gates except the CLOSE-state requirement. Callers use
       // this to decide whether it is SAFE to transition to CLOSE, so a run is
       // never closed into an unrecoverable blocked state.
-      const readyExceptClose = staticPassed && dynamicPassed && evidencePlansComplete && acceptanceCovered && releaseEvidencePresent && hardEvidenceSatisfied;
-      const gates = { isClosed, staticPassed, dynamicPassed, evidencePlansComplete, acceptanceCovered, releaseEvidencePresent, hardEvidenceSatisfied };
+      const readyExceptClose = staticPassed && dynamicPassed && evidencePlansComplete && acceptanceCovered && releaseEvidencePresent && hardEvidenceSatisfied && lifecycleOutcomesSatisfied;
+      const gates = { isClosed, staticPassed, dynamicPassed, evidencePlansComplete, acceptanceCovered, releaseEvidencePresent, hardEvidenceSatisfied, lifecycleOutcomesSatisfied };
       const unsatisfiedObligations = obligationStatuses.filter((entry) => !entry.satisfied);
 
       const accepted = isClosed && readyExceptClose;
@@ -4591,6 +4645,7 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         currentWorkspaceIdentity: run.currentWorkspaceIdentity,
         mutationRevision: run.mutationRevision,
         hardEvidence: { required: hardEvidenceRequired, count: hardEvidenceCount },
+        lifecycleOutcomes,
         evidenceDigest: releaseEvidence?.digest || verifications[0]?.evidenceDigest || `sha256:${'0'.repeat(64)}`,
         verifications,
       };
@@ -4607,6 +4662,7 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         evidencePlansComplete,
         acceptanceCovered: [...coveredAcceptance],
         hardEvidence: { required: hardEvidenceRequired, count: hardEvidenceCount },
+        lifecycleOutcomes,
         obligationStatuses,
         unsatisfiedObligations,
         gates,

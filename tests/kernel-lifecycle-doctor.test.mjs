@@ -151,3 +151,42 @@ test('doctor includes clean project lifecycle diagnostics without changing its r
     await rm(projectRoot, { recursive: true, force: true });
   }
 });
+
+test('lifecycle diagnostics expose stale untouched active Runs with deterministic recovery choices', async () => {
+  const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-stale-run-doctor-'));
+  const store = await openKernelStateStore({ runtimeHome });
+  const projectId = 'stale-run-project';
+  const workspaceId = 'stale-run-workspace';
+  try {
+    register(store, projectId, workspaceId);
+    createRun(store, { runId: 'run-stale-ready', projectId, workspaceId });
+    const raw = await openSqliteDb(store.dbPath);
+    try {
+      raw.prepare('UPDATE runs SET updated_at=? WHERE run_id=?').run('2026-08-01T00:00:00.000Z', 'run-stale-ready');
+      raw.prepare(`
+        INSERT INTO run_steps(
+          step_id, run_id, sequence, objective, state, plan_revision,
+          created_at, updated_at
+        ) VALUES(?, ?, 0, ?, 'ready', 1, ?, ?)
+      `).run('step-stale', 'run-stale-ready', 'stale', '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z');
+    } finally {
+      raw.close();
+    }
+
+    const diagnostics = store.diagnoseLifecycleState({
+      projectId,
+      observedAt: '2026-08-09T00:00:00.000Z',
+    });
+    const finding = diagnostics.findings.find((item) => item.code === 'stale_active_run');
+    assert.ok(finding);
+    assert.equal(finding.runId, 'run-stale-ready');
+    assert.deepEqual(finding.recoveryChoices, ['resume', 'replan', 'abort-and-successor']);
+    assert.equal(finding.provenance.attemptCount, 0);
+    assert.equal(finding.provenance.capsuleCount, 0);
+    assert.equal(finding.provenance.verificationCount, 0);
+    assert.equal(finding.provenance.completionReceiptCount, 0);
+  } finally {
+    store.close();
+    await rm(runtimeHome, { recursive: true, force: true });
+  }
+});

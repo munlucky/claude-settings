@@ -5,10 +5,41 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
 import { openKernelStateStore } from '../scripts/kernel/state-store.mjs';
 
 const kernelCli = path.join(process.cwd(), 'bin', 'moon-relay-kernel.mjs');
+
+const parseCliJson = (result) => {
+  const line = String(result.stdout || result.stderr || '')
+    .split(/\r?\n/)
+    .find((entry) => entry.trim().startsWith('{'));
+  assert.ok(line, result.stderr || result.stdout);
+  return JSON.parse(line);
+};
+
+const cliEnvironment = () => ({
+  ...process.env,
+  MOON_RELAY_KERNEL_REEXEC: '1',
+  MOON_RELAY_KERNEL_RUN_ID: '',
+  MOON_RELAY_KERNEL_SESSION_ID: '',
+  MOON_RELAY_KERNEL_PROJECT_ID: '',
+  MOON_RELAY_KERNEL_WORKSPACE_ID: '',
+  CODEX_THREAD_ID: '',
+});
+
+const runKernelCli = ({ cwd, runtimeHome, sessionId, args }) => spawnSync(process.execPath, [
+  kernelCli,
+  ...args,
+  '--session-id', sessionId,
+  '--provider', 'codex',
+  '--project-root', cwd,
+  '--runtime-home', runtimeHome,
+  '--json',
+], {
+  cwd,
+  encoding: 'utf8',
+  env: cliEnvironment(),
+});
 
 const runGit = (cwd, args) => {
   const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -37,7 +68,10 @@ const successorAcrossWorktreesSpec = async () => {
   const secondRoot = path.join(secondParent, 'second');
   const sessionId = 'codex:worktree-session';
   const predecessorRunId = 'codex-worktree-session';
+  const predecessorContractPath = path.join(firstRoot, 'contract-a.json');
+  const predecessorReportPath = path.join(firstRoot, 'report-a.json');
   const contractPath = path.join(secondRoot, 'contract-b.json');
+  const successorReportPath = path.join(secondRoot, 'report-b.json');
   try {
     runGit(firstRoot, ['init']);
     runGit(firstRoot, ['config', 'user.email', 'kernel-test@example.invalid']);
@@ -46,81 +80,87 @@ const successorAcrossWorktreesSpec = async () => {
     runGit(firstRoot, ['commit', '-m', 'worktree fixture']);
     runGit(firstRoot, ['worktree', 'add', secondRoot, 'HEAD']);
 
-    const first = await createKernelControlPlane({
+    await writeFile(predecessorContractPath, JSON.stringify({
+      objective: 'contract A in worktree A',
+      requestedTier: 'T0',
+      acceptance: [{
+        acceptance: 'worktree A contract completes',
+        evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test'], obligationId: 'default' },
+      }],
+    }));
+    const predecessorNext = runKernelCli({
+      cwd: firstRoot,
       runtimeHome,
-      projectRoot: firstRoot,
-      requireHostBinding: true,
-      env: {
-        MOON_RELAY_KERNEL_SESSION_ID: sessionId,
-        MOON_RELAY_KERNEL_PROVIDER: 'codex',
-        MOON_RELAY_KERNEL_RUN_ID: predecessorRunId,
-      },
+      sessionId,
+      args: ['next', '--run-id', predecessorRunId, '--contract-json', predecessorContractPath],
     });
-    try {
-      await first.ensureRun({
-        runId: predecessorRunId,
-        objective: 'contract A in worktree A',
-        taskContract: { acceptance: ['worktree A contract completes'] },
-      });
-    } finally {
-      await first.close();
-    }
+    assert.equal(predecessorNext.status, 0, predecessorNext.stderr || predecessorNext.stdout);
+    const predecessorPayload = parseCliJson(predecessorNext);
+    await writeFile(predecessorReportPath, JSON.stringify({
+      stepId: predecessorPayload.action.step.stepId,
+      summary: 'complete the predecessor through the public CLI',
+      verifications: [{ obligationId: 'default', commandRef: 'test', acceptanceCoverage: ['worktree A contract completes'] }],
+    }));
+    const predecessorReport = runKernelCli({
+      cwd: firstRoot,
+      runtimeHome,
+      sessionId,
+      args: ['report', '--run-id', predecessorRunId, '--report-json', predecessorReportPath],
+    });
+    assert.equal(predecessorReport.status, 0, predecessorReport.stderr || predecessorReport.stdout);
+    assert.equal(parseCliJson(predecessorReport).next.action.type, 'done');
 
     const store = await openKernelStateStore({ runtimeHome });
     let predecessorWorkspaceId;
     try {
       const run = store.getRun(predecessorRunId);
       predecessorWorkspaceId = run.workspaceId;
-      store.persistCompletionDecision(predecessorRunId, {
-        decision: 'accepted',
-        digest: `sha256:${'b'.repeat(64)}`,
-        run,
-        decisionPayload: { decision: 'accepted' },
-      });
-      store.setFinalizationStatus(predecessorRunId, 'completed');
+      assert.equal(run.status, 'completed');
+      assert.equal(run.finalizationStatus, 'completed');
     } finally {
       store.close();
     }
 
     await writeFile(contractPath, JSON.stringify({
       objective: 'contract B in worktree B',
-      acceptance: ['worktree B receives an independent successor'],
+      requestedTier: 'T0',
+      acceptance: [{
+        acceptance: 'worktree B receives an independent successor',
+        evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test'], obligationId: 'default' },
+      }],
     }));
-    const result = spawnSync(process.execPath, [
-      kernelCli,
-      'next',
-      '--contract-json',
-      contractPath,
-      '--session-id',
-      sessionId,
-      '--project-root',
-      secondRoot,
-      '--runtime-home',
-      runtimeHome,
-      '--json',
-    ], {
+    const result = runKernelCli({
       cwd: secondRoot,
-      encoding: 'utf8',
-      env: {
-        ...process.env,
-        MOON_RELAY_KERNEL_REEXEC: '1',
-        MOON_RELAY_KERNEL_RUN_ID: '',
-        MOON_RELAY_KERNEL_SESSION_ID: '',
-        MOON_RELAY_KERNEL_PROJECT_ID: '',
-        MOON_RELAY_KERNEL_WORKSPACE_ID: '',
-        CODEX_THREAD_ID: '',
-      },
+      runtimeHome,
+      sessionId,
+      args: ['next', '--contract-json', contractPath],
     });
 
     assert.equal(result.status, 0, result.stderr || result.stdout);
-    const payload = JSON.parse(result.stdout);
+    const payload = parseCliJson(result);
     assert.notEqual(payload.runId, predecessorRunId);
+    await writeFile(successorReportPath, JSON.stringify({
+      stepId: payload.action.step.stepId,
+      summary: 'complete the delegated successor through the public CLI',
+      verifications: [{ obligationId: 'default', commandRef: 'test', acceptanceCoverage: ['worktree B receives an independent successor'] }],
+    }));
+    const successorReport = runKernelCli({
+      cwd: secondRoot,
+      runtimeHome,
+      sessionId,
+      args: ['report', '--run-id', payload.runId, '--report-json', successorReportPath],
+    });
+    assert.equal(successorReport.status, 0, successorReport.stderr || successorReport.stdout);
+    const successorReportPayload = parseCliJson(successorReport);
+    assert.equal(successorReportPayload.status, 'completed');
+    assert.equal(successorReportPayload.next.action.type, 'done');
 
     const after = await openKernelStateStore({ runtimeHome });
     try {
       const successor = after.getRun(payload.runId);
       assert.equal(successor.projectId, projectId);
       assert.notEqual(successor.workspaceId, predecessorWorkspaceId);
+      assert.equal(successor.finalizationStatus, 'completed');
       assert.equal(after.getRun(predecessorRunId).workspaceId, predecessorWorkspaceId);
     } finally {
       after.close();

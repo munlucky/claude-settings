@@ -34,6 +34,24 @@ export const computeCompletionView = ({
     return rev ? rev.verdict !== 'pass' : false;
   }) || [...latestReviews.values()].some((item) => item.verdict === 'fail');
 
+  const requiredOutcomes = new Set(run?.taskContract?.completionPredicate?.requiredOutcomes || []);
+  const outcomesFor = (item) => new Set([
+    ...(Array.isArray(item?.metadata?.outcomes) ? item.metadata.outcomes : []),
+    ...(item?.metadata?.outcome ? [item.metadata.outcome] : []),
+  ]);
+  const stageStatus = (outcome) => {
+    const stageObligations = required.filter((item) => outcomesFor(item).has(outcome));
+    if (!requiredOutcomes.has(outcome) && stageObligations.length === 0) return 'not-required';
+    const statusFor = (item) => item.evidenceClass === 'judgment'
+      ? latestReviews.get(item.obligationId)?.verdict
+      : latestVerifications.get(item.obligationId)?.status;
+    if (stageObligations.some((item) => statusFor(item) === 'failed' || statusFor(item) === 'fail')) return 'failed';
+    if (stageObligations.length === 0) return 'pending';
+    return stageObligations.every((item) => statusFor(item) === 'passed' || statusFor(item) === 'pass')
+      ? 'passed'
+      : 'pending';
+  };
+
   const implementation = step
     ? (step.state === 'passed' ? 'complete' : ['active', 'ready'].includes(step.state) ? 'active' : 'pending')
     : (run?.mutationRevision > 0 ? 'complete' : 'pending');
@@ -51,10 +69,19 @@ export const computeCompletionView = ({
   return {
     implementation,
     verification,
+    deployment: stageStatus('deployed'),
+    observation: stageStatus('observed'),
+    resolution: stageStatus('resolved'),
+    outcomes: {
+      implemented: implementation,
+      verified: stageStatus('verified') === 'not-required' ? verification : stageStatus('verified'),
+      deployed: stageStatus('deployed'),
+      observed: stageStatus('observed'),
+      resolved: stageStatus('resolved'),
+    },
     review,
     kernelAcceptance,
     finalization,
     overall: done ? 'done' : blocked ? 'blocked' : 'active',
   };
 };
-

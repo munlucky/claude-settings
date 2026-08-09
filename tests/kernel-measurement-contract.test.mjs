@@ -52,6 +52,7 @@ test('disposable installed CLI exposes schema-shaped context receipt and measure
     MOON_RELAY_KERNEL_RUN_ID: 'installed-measurement',
     MOON_RELAY_KERNEL_PROJECT_ID: projectId,
     MOON_RELAY_KERNEL_SESSION_ID: 'installed-measurement-session',
+    CODEX_THREAD_ID: '',
   };
   const run = spawnSync(process.execPath, [cli, 'next', '--project-root', targetRoot, '--contract-json', contractPath, '--json'], { env, encoding: 'utf8' });
   assert.equal(run.status, 0, run.stderr);

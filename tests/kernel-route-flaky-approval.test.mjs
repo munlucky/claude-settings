@@ -72,7 +72,7 @@ test('a run that passed on a waiver is completed but marked degraded', async () 
 
 test('discovered command execution requires explicit approval', async () => {
   const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'krn-approve-'));
-  await writeFile(path.join(projectRoot, 'package.json'), JSON.stringify({ name: 'x', scripts: {} }));
+  await writeFile(path.join(projectRoot, 'package.json'), JSON.stringify({ name: 'x', scripts: { test: 'node -e "process.exit(0)"', lint: 'node -e "process.exit(0)"' } }));
   try {
     assert.throws(
       () => executeApprovedProof({ projectRoot, command: 'node', args: ['-e', 'process.exit(0)'] }),
@@ -114,7 +114,7 @@ test('control plane escalateRoute promotes a live run', async () => {
   const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'krn-escalate-cp-'));
   const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'krn-escalate-cp-proj-'));
   spawnSync('git', ['init'], { cwd: projectRoot, encoding: 'utf8' });
-  await writeFile(path.join(projectRoot, 'package.json'), JSON.stringify({ name: 'x', scripts: {} }));
+  await writeFile(path.join(projectRoot, 'package.json'), JSON.stringify({ name: 'x', scripts: { test: 'node -e "process.exit(0)"', lint: 'node -e "process.exit(0)"' } }));
   const cp = await createKernelControlPlane({ runtimeHome, projectRoot });
   try {
     await cp.startRun({ runId: 'r-esc-cp', objective: 'x', taskContract: { behaviorChanging: true } });

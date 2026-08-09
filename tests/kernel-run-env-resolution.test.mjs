@@ -1,15 +1,16 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { spawnSync } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createKernelControlPlane, resolveDeclaredStepForReplan } from '../scripts/kernel/control-plane.mjs';
 import { buildProcessEnvironment } from '../scripts/switcher/launch-adapter.mjs';
+import { recoveryForKernelError } from '../scripts/kernel/run/binding-preflight.mjs';
 import './kernel-isolation-wave0.fixture.mjs';
 import './kernel-stable-workspace-identity.fixture.mjs';
 
-test('run selection follows explicit, environment, unique-active, and ambiguity order', async () => {
+test('run selection rejects conflicting explicit/environment identities before fallback resolution', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'kernel-run-resolution-'));
   const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-run-resolution-state-'));
   await mkdir(path.join(root, '.moon-relay'), { recursive: true });
@@ -20,12 +21,53 @@ test('run selection follows explicit, environment, unique-active, and ambiguity 
     await cp.startRun({ runId: 'run-one', objective: 'one', taskContract: { acceptance: ['one'] } });
     assert.equal(await cp.resolveRunId({}), 'run-one');
     assert.equal(await cp.resolveRunId({ envRunId: 'run-env' }), 'run-env');
-    assert.equal(await cp.resolveRunId({ explicitRunId: 'run-explicit', envRunId: 'run-env' }), 'run-explicit');
+    assert.equal(await cp.resolveRunId({ explicitRunId: 'run-explicit', envRunId: 'run-explicit' }), 'run-explicit');
+    await assert.rejects(
+      () => cp.resolveRunId({ explicitRunId: 'run-explicit', envRunId: 'run-env' }),
+      (error) => error.code === 'run_binding_conflict',
+    );
     await cp.startRun({ runId: 'run-two', objective: 'two', taskContract: { acceptance: ['two'] } });
     await assert.rejects(() => cp.resolveRunId({}), /ambiguous_active_run/);
   } finally {
     await cp.close();
   }
+});
+
+test('CLI rejects conflicting explicit and environment run identities with recovery guidance', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'kernel-run-binding-conflict-project-'));
+  const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-run-binding-conflict-state-'));
+  const contractPath = path.join(root, 'task-contract.json');
+  await mkdir(path.join(root, '.moon-relay'), { recursive: true });
+  await writeFile(path.join(root, '.moon-relay', 'track.yaml'), 'track: kernel\n');
+  await writeFile(path.join(root, 'package.json'), JSON.stringify({ scripts: { test: 'node -e "process.exit(0)"' } }));
+  await writeFile(contractPath, JSON.stringify({ objective: 'reject run conflict', acceptance: ['conflict is rejected'] }));
+
+  const result = spawnSync(process.execPath, [
+    path.join(process.cwd(), 'bin', 'moon-relay-kernel.mjs'),
+    'next',
+    '--run-id', 'run-from-cli',
+    '--contract-json', contractPath,
+    '--project-root', root,
+    '--runtime-home', runtimeHome,
+    '--json',
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      CODEX_THREAD_ID: '',
+      MOON_RELAY_KERNEL_SESSION_ID: 'codex:run-conflict-session',
+      MOON_RELAY_KERNEL_PROVIDER: 'codex',
+      MOON_RELAY_KERNEL_RUN_ID: 'run-from-environment',
+      MOON_RELAY_KERNEL_REEXEC: '1',
+    },
+  });
+
+  assert.notEqual(result.status, 0);
+  const payload = JSON.parse(result.stderr || result.stdout);
+  assert.equal(payload.errorCode, 'run_binding_conflict');
+  assert.equal(payload.nextAction, 'relaunch-through-kernel-host');
+  assert.match(payload.diagnostics.remediation.command, /moon-harness-switcher launch --track kernel/);
 });
 
 test('Kernel host injects run, project, session, and workspace identity process-scoped', () => {
@@ -95,6 +137,65 @@ test('Codex thread identity bootstraps next without explicit Kernel binding vari
   assert.match(payload.runId, /^run-[0-9a-f-]{36}$/i);
   assert.doesNotMatch(payload.runId, new RegExp(threadId));
   assert.ok(payload.action);
+});
+
+test('conflicting Codex and Kernel session bindings fail closed with one recovery command', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-binding-conflict-project-'));
+  const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-binding-conflict-state-'));
+  const contractPath = path.join(root, 'task-contract.json');
+  await mkdir(path.join(root, '.moon-relay'), { recursive: true });
+  await writeFile(path.join(root, '.moon-relay', 'track.yaml'), 'track: kernel\n');
+  await writeFile(path.join(root, 'package.json'), JSON.stringify({ scripts: { test: 'node -e "process.exit(0)"' } }));
+  await writeFile(contractPath, JSON.stringify({ objective: 'reject conflict', acceptance: ['conflict is rejected'] }));
+
+  const result = spawnSync(process.execPath, [
+    path.join(process.cwd(), 'bin', 'moon-relay-kernel.mjs'),
+    'next',
+    '--contract-json',
+    contractPath,
+    '--project-root',
+    root,
+    '--runtime-home',
+    runtimeHome,
+    '--json',
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      CODEX_THREAD_ID: 'thread-from-host',
+      MOON_RELAY_KERNEL_SESSION_ID: 'codex:other-thread',
+      MOON_RELAY_KERNEL_PROVIDER: 'codex',
+      MOON_RELAY_KERNEL_REEXEC: '1',
+    },
+  });
+
+  assert.notEqual(result.status, 0);
+  const payload = JSON.parse(result.stderr || result.stdout);
+  assert.equal(payload.errorCode, 'host_binding_conflict');
+  assert.equal(payload.nextAction, 'relaunch-through-kernel-host');
+  assert.match(payload.diagnostics.remediation.command, /moon-harness-switcher launch --track kernel/);
+});
+
+test('binding recovery command quotes hostile workspace paths without shell expansion', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'kernel-recovery-quote-'));
+  const marker = path.join(root, 'expanded');
+  try {
+    const remediation = recoveryForKernelError({
+      code: 'host_binding_missing',
+      projectRoot: `${root}/$(touch ${marker})/\`touch ${marker}\`/'apostrophe`,
+      provider: 'codex',
+    });
+    const result = spawnSync('/bin/sh', ['-c', remediation.command], {
+      encoding: 'utf8',
+      env: { PATH: '/usr/bin:/bin' },
+    });
+    assert.notEqual(result.status, 0, 'the fixture intentionally omits moon-harness-switcher');
+    await assert.rejects(access(marker));
+    assert.match(remediation.command, /--project-root '/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('strict host binding adopts an unowned legacy run once and rejects a second owner', async () => {

@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { resolveKernelNode, buildRuntimeManifest, sha256File, parseNodeVersion } from '../scripts/kernel/runtime-resolver.mjs';
 import { installKernel, uninstallKernel } from '../scripts/kernel/installer.mjs';
+import { canonicalPath } from '../scripts/kernel/runtime-home.mjs';
 
 test('parseNodeVersion correctly extracts major, minor, and patch', () => {
   assert.deepEqual(parseNodeVersion('v22.13.0'), { major: 22, minor: 13, patch: 0, raw: 'v22.13.0' });
@@ -111,7 +112,7 @@ test('Kernel installer places an external runtime source in the resolver runtime
   await writeFile(nodeSource, 'managed-node-binary');
   try {
     await installKernel({ targetRoot: project, sourceRoot: process.cwd(), runtimeSource });
-    const runtimeHome = path.join(project, '.moon-relay', 'kernel-payload');
+    const runtimeHome = canonicalPath(path.join(project, '.moon-relay', 'kernel-payload'));
     const resolved = await resolveKernelNode({ runtimeHome, fallback: '/host/node', skipExecuteCheck: true });
     assert.equal(resolved.source, 'managed');
     assert.equal(resolved.nodePath, path.join(runtimeHome, 'runtime', 'current', nodeRel));

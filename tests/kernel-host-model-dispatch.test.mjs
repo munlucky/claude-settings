@@ -18,7 +18,7 @@ const withRun = async (fn) => {
   const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'krn-dispatch-home-'));
   const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'krn-dispatch-proj-'));
   spawnSync('git', ['init'], { cwd: projectRoot, encoding: 'utf8' });
-  await writeFile(path.join(projectRoot, 'package.json'), JSON.stringify({ name: 'x', scripts: {} }));
+  await writeFile(path.join(projectRoot, 'package.json'), JSON.stringify({ name: 'x', scripts: { test: 'node -e "process.exit(0)"', lint: 'node -e "process.exit(0)"' } }));
   const cp = await createKernelControlPlane({ runtimeHome, projectRoot });
   try {
     await cp.startRun({ runId: 'r-dispatch', objective: 'dispatch' });

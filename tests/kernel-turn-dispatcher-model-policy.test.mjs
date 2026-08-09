@@ -19,7 +19,13 @@ const withRun = async (fn) => {
   const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'krn-modelpolicy-home-'));
   const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'krn-modelpolicy-proj-'));
   spawnSync('git', ['init'], { cwd: projectRoot, encoding: 'utf8' });
-  await writeFile(path.join(projectRoot, 'package.json'), JSON.stringify({ name: 'x', scripts: {} }));
+  // The routing fixture still represents an executable Kernel run. Declare a
+  // real proof command so proof-policy preflight can succeed before the test
+  // reaches the model-routing boundary it is meant to exercise.
+  await writeFile(path.join(projectRoot, 'package.json'), JSON.stringify({
+    name: 'x',
+    scripts: { test: 'node -e "process.exit(0)"' },
+  }));
   const cp = await createKernelControlPlane({ runtimeHome, projectRoot });
   try {
     await cp.startRun({ runId: 'r-modelpolicy', objective: 'exercise the model-policy mode switch' });

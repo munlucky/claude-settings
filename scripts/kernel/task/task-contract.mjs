@@ -8,6 +8,11 @@
 
 import { createHash } from 'node:crypto';
 import { assertNoRawSecret } from '../persistent-sanitizer.mjs';
+import {
+  normalizeCompletionOutcome,
+  normalizeCompletionPredicate,
+  outcomeForEvidenceMethod,
+} from '../run/completion-outcomes.mjs';
 
 const EVIDENCE_CLASSES = ['hard', 'judgment'];
 
@@ -54,6 +59,13 @@ const asStringList = (value) => (Array.isArray(value) ? value : value ? [value] 
 
 export const normalizeEvidencePlan = (plan) => {
   if (!plan || typeof plan !== 'object') return null;
+  if (plan.outcome !== undefined && plan.outcome !== null && !normalizeCompletionOutcome(plan.outcome)) {
+    throw new EvidencePlanBindingError(
+      'EVIDENCE_PLAN_OUTCOME_INVALID',
+      `Unsupported evidence outcome: ${plan.outcome}`,
+      { outcome: plan.outcome },
+    );
+  }
   const commandRefs = [
     ...(Array.isArray(plan.commandRefs) ? plan.commandRefs : []),
     ...(plan.commandRef ? [plan.commandRef] : []),
@@ -63,6 +75,7 @@ export const normalizeEvidencePlan = (plan) => {
     method: plan.method ? String(plan.method) : null,
     commandRefs: [...new Set(commandRefs)],
     obligationId: plan.obligationId ? String(plan.obligationId) : null,
+    outcome: normalizeCompletionOutcome(plan.outcome) || outcomeForEvidenceMethod(plan.method),
   };
 };
 
@@ -260,6 +273,7 @@ export const normalizeTaskContract = (input = {}, { objective, changedFileCount 
     defectWithinScope: contract.defectWithinScope === true,
     replacement: contract.replacement === true,
     requiredObligations: asStringList(contract.requiredObligations),
+    completionPredicate: normalizeCompletionPredicate(contract.completionPredicate || contract.requiredOutcomes),
     // Work-unit scope (K1). Declared here so an Execution Capsule can bound a
     // worker to the paths the contract actually authorises; an empty list means
     // the whole workspace and can never be violated.
@@ -293,6 +307,7 @@ export const contractDigest = (contract) => `sha256:${createHash('sha256').updat
   defectWithinScope: contract.defectWithinScope,
   replacement: contract.replacement,
   requiredObligations: contract.requiredObligations,
+  completionPredicate: contract.completionPredicate,
   steps: contract.steps,
   safeWave: contract.safeWave,
   allowedPaths: contract.allowedPaths,
@@ -546,6 +561,12 @@ export const mergeContractRevisionWithBindings = (previous, next) => {
     risks: union(previous.risks, next.risks),
     surfaces: union(previous.surfaces, next.surfaces),
     requiredObligations: union(previous.requiredObligations, next.requiredObligations),
+    completionPredicate: {
+      requiredOutcomes: union(
+        previous.completionPredicate?.requiredOutcomes,
+        next.completionPredicate?.requiredOutcomes,
+      ),
+    },
     steps: next.steps?.length ? next.steps : (previous.steps || []),
     safeWave: next.safeWave?.approved ? next.safeWave : {
       requested: Boolean(previous.safeWave?.requested || next.safeWave?.requested),

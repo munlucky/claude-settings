@@ -10,6 +10,11 @@ import { openKernelStateStore } from '../scripts/kernel/state-store.mjs';
 import { normalizeTaskContract } from '../scripts/kernel/task/task-contract.mjs';
 
 const kernelCli = path.join(process.cwd(), 'bin', 'moon-relay-kernel.mjs');
+const parseCliJson = (result) => {
+  const line = `${result.stdout}\n${result.stderr}`.split(/\r?\n/).find((entry) => entry.trim().startsWith('{'));
+  assert.ok(line, result.stderr || result.stdout);
+  return JSON.parse(line);
+};
 
 test('contract-first invocation resolver deterministically selects every lifecycle mode', () => {
   const projectId = 'resolver-project';
@@ -277,7 +282,7 @@ const incompleteFinalizationBlocksSuccessor = async () => {
     const result = invokeNext({ ...fixture, sessionId, contractPath });
 
     assert.notEqual(result.status, 0);
-    const payload = JSON.parse(result.stdout || result.stderr);
+    const payload = parseCliJson(result);
     assert.equal(payload.errorCode, 'finalization_incomplete');
     assert.equal(payload.nextAction, 'retry-finalization');
     assert.equal(payload.runId, predecessorRunId);

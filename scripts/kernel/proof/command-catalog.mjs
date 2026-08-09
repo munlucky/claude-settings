@@ -15,6 +15,10 @@ export const COMMAND_CLASSES = Object.freeze([
   'e2e',
   'static-analysis',
   'build',
+  'runtime-reproduction',
+  'runtime-observation',
+  'deployment',
+  'post-deployment-observation',
   'script',
 ]);
 
@@ -42,6 +46,10 @@ export const classifyCommandName = (name = '', body = '') => {
   const script = `${body}`.toLowerCase();
   const matches = (pattern) => pattern.test(value) || pattern.test(script);
 
+  if (/(^|[:\-_/])(post-deploy|post-deployment)([:\-_/])(observe|observation|check|verify)([:\-_/]|$)/.test(value)) return 'post-deployment-observation';
+  if (/(^|[:\-_/])(runtime)([:\-_/])(reproduce|reproduction)([:\-_/]|$)/.test(value)) return 'runtime-reproduction';
+  if (/(^|[:\-_/])(runtime)([:\-_/])(observe|observation)([:\-_/]|$)/.test(value)) return 'runtime-observation';
+  if (/(^|[:\-_/])(deploy|deployment|release|publish)([:\-_/]|$)/.test(value)) return 'deployment';
   if (/(^|[:\-_/])(e2e|browser|playwright|cypress|selenium|webdriver)([:\-_/]|$)/.test(value)) return 'e2e';
   if (/(^|[:\-_/])(integration|api-test|contract-test|smoke)([:\-_/]|$)/.test(value)) return 'integration-test';
   if (/^(test|tests|spec|jest|vitest|mocha|pytest|unit)([:\-_/]|$)/.test(value)) return 'unit-test';

@@ -50,7 +50,10 @@ test('startRun blocks a structured acceptance that omits its evidence plan', asy
   const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'krn-ep-home-'));
   const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'krn-ep-proj-'));
   spawnSync('git', ['init'], { cwd: projectRoot, encoding: 'utf8' });
-  await writeFile(path.join(projectRoot, 'package.json'), JSON.stringify({ name: 'x', scripts: {} }));
+  await writeFile(path.join(projectRoot, 'package.json'), JSON.stringify({
+    name: 'x',
+    scripts: { 'test:auth': 'node -e "process.exit(0)"' },
+  }));
   const cp = await createKernelControlPlane({ runtimeHome, projectRoot });
   try {
     await assert.rejects(

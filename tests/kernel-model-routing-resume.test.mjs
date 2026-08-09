@@ -14,7 +14,7 @@ test('route decisions and usage receipts survive a fresh process', async () => {
   const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'krn-route-resume-home-'));
   const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'krn-route-resume-proj-'));
   spawnSync('git', ['init'], { cwd: projectRoot, encoding: 'utf8' });
-  await writeFile(path.join(projectRoot, 'package.json'), JSON.stringify({ name: 'x', scripts: {} }));
+  await writeFile(path.join(projectRoot, 'package.json'), JSON.stringify({ name: 'x', scripts: { test: 'node -e "process.exit(0)"', lint: 'node -e "process.exit(0)"' } }));
 
   const cp = await createKernelControlPlane({ runtimeHome, projectRoot });
   let decisionId;

@@ -22,7 +22,7 @@ test('empty project with no manifest, source, or git history is greenfield', asy
 test('project with a build manifest is brownfield', async () => {
   const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'krn-mode-brown-'));
   try {
-    await writeFile(path.join(projectRoot, 'package.json'), JSON.stringify({ name: 'x', scripts: {} }));
+    await writeFile(path.join(projectRoot, 'package.json'), JSON.stringify({ name: 'x', scripts: { test: 'node -e "process.exit(0)"', lint: 'node -e "process.exit(0)"' } }));
     const detected = detectProjectMode({ projectRoot });
     assert.equal(detected.mode, 'brownfield');
     assert.equal(detected.signals.hasManifest, true);
@@ -61,7 +61,7 @@ test('startRun records the detected project mode on the run (internal, not model
   const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'krn-mode-home-'));
   const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'krn-mode-run-'));
   spawnSync('git', ['init'], { cwd: projectRoot, encoding: 'utf8' });
-  await writeFile(path.join(projectRoot, 'package.json'), JSON.stringify({ name: 'run-fixture', scripts: {} }));
+  await writeFile(path.join(projectRoot, 'package.json'), JSON.stringify({ name: 'run-fixture', scripts: { test: 'node -e "process.exit(0)"', lint: 'node -e "process.exit(0)"' } }));
   const cp = await createKernelControlPlane({ runtimeHome, projectRoot });
   try {
     await cp.startRun({ runId: 'r-mode', objective: 'mode' });

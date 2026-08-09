@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import os from 'node:os';
 import { mkdtemp, mkdir } from 'node:fs/promises';
-import { resolveKernelRuntimeHome, assertIsolatedRuntimeHomes } from '../scripts/kernel/runtime-home.mjs';
+import { canonicalPath, resolveKernelRuntimeHome, assertIsolatedRuntimeHomes } from '../scripts/kernel/runtime-home.mjs';
 import { resolveKernelProjectIdentity } from '../scripts/kernel/project-identity.mjs';
 
 test('assertIsolatedRuntimeHomes fails closed when Kernel home equals or overlaps Relay home', () => {
@@ -18,7 +18,8 @@ test('resolveKernelProjectIdentity generates isolated namespaces without reading
   const relayHome = path.join(tmp, '.moonshot-relay');
 
   const result = resolveKernelProjectIdentity({ cwd: tmp, env: { MOON_RELAY_KERNEL_HOME: kernelHome, MOONSHOT_RELAY_HOME: relayHome } });
-  assert.ok(result.namespaces.kernelStateRoot.startsWith(kernelHome));
-  assert.ok(result.namespaces.projectKnowledgeRoot.startsWith(kernelHome));
+  const canonicalKernelHome = canonicalPath(kernelHome);
+  assert.ok(result.namespaces.kernelStateRoot.startsWith(canonicalKernelHome));
+  assert.ok(result.namespaces.projectKnowledgeRoot.startsWith(canonicalKernelHome));
   assert.ok(!result.namespaces.projectKnowledgeRoot.includes('.moonshot-relay'));
 });

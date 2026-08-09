@@ -26,7 +26,18 @@ export class ObligationBindingError extends Error {
 
 const DEFAULT_OBLIGATION_POLICY = Object.freeze({
   evidenceClass: 'hard',
-  commandClasses: ['unit-test', 'integration-test', 'e2e', 'static-analysis', 'build', 'script'],
+  commandClasses: [
+    'unit-test',
+    'integration-test',
+    'e2e',
+    'static-analysis',
+    'build',
+    'runtime-reproduction',
+    'runtime-observation',
+    'deployment',
+    'post-deployment-observation',
+    'script',
+  ],
 });
 
 // An evidence plan names how a criterion will be proven. Its command refs are
@@ -42,7 +53,13 @@ const DEFAULT_OBLIGATION_POLICY = Object.freeze({
 // in for a browser scenario) and, above all, a `script` that proves nothing.
 const TEST_CLASSES = Object.freeze(['unit-test', 'integration-test', 'e2e']);
 const ANALYSIS_CLASSES = Object.freeze(['static-analysis', 'build']);
-const PROOF_COMMAND_CLASSES = Object.freeze([...TEST_CLASSES, ...ANALYSIS_CLASSES]);
+const RUNTIME_CLASSES = Object.freeze([
+  'runtime-reproduction',
+  'runtime-observation',
+  'deployment',
+  'post-deployment-observation',
+]);
+const PROOF_COMMAND_CLASSES = Object.freeze([...TEST_CLASSES, ...ANALYSIS_CLASSES, ...RUNTIME_CLASSES]);
 
 const METHOD_FAMILIES = Object.freeze({
   'unit-test': TEST_CLASSES,
@@ -56,7 +73,59 @@ const METHOD_FAMILIES = Object.freeze({
   lint: ANALYSIS_CLASSES,
   typecheck: ANALYSIS_CLASSES,
   build: ANALYSIS_CLASSES,
+  'runtime-reproduction': ['runtime-reproduction'],
+  'runtime-observation': ['runtime-observation', 'post-deployment-observation'],
+  deployment: ['deployment'],
+  'post-deployment-observation': ['post-deployment-observation'],
 });
+
+export class UnsupportedVerificationError extends Error {
+  constructor(unsupported = []) {
+    super('unsupported-verification');
+    this.name = 'UnsupportedVerificationError';
+    this.code = 'unsupported-verification';
+    this.errorCode = 'unsupported-verification';
+    this.nextAction = 'declare-project-verification-command';
+    this.details = { unsupported };
+  }
+}
+
+export const assertVerificationSupport = (obligations = [], { completionPredicate = null } = {}, { projectMode = null } = {}) => {
+  const unsupported = obligations
+    .filter((item) => (
+      item.evidenceClass === 'hard'
+      && item.satisfiable === false
+      // A genuine greenfield Run must be able to create its walking skeleton
+      // and manifest before proof-policy commands can exist. Only implicit
+      // policy obligations are deferred; caller/AC command bindings still
+      // fail before Run creation when they are missing or incompatible.
+      && !(projectMode === 'greenfield' && item.sourceType === 'proof-policy')
+    ))
+    .map((item) => ({
+      obligationId: item.obligationId,
+      sourceType: item.sourceType,
+      verificationMethod: item.verificationMethod,
+      rejectedCommandRefs: item.rejectedCommandRefs || [],
+    }));
+  const requiredOutcomes = completionPredicate?.requiredOutcomes || [];
+  for (const outcome of requiredOutcomes) {
+    if (outcome === 'implemented') continue;
+    const bound = obligations.some((item) => (
+      item.metadata?.outcome === outcome
+      || item.metadata?.outcomes?.includes(outcome)
+    ));
+    if (!bound) {
+      unsupported.push({
+        outcome,
+        verificationMethod: 'completion-predicate',
+        rejectedCommandRefs: [],
+        reason: 'required-outcome-has-no-bound-evidence-plan',
+      });
+    }
+  }
+  if (unsupported.length > 0) throw new UnsupportedVerificationError(unsupported);
+  return obligations;
+};
 
 // With no declared method, any command that proves something is acceptable —
 // but never a plain `script`, which carries no semantic claim at all.
@@ -131,6 +200,18 @@ export const compileRunObligations = ({
     const existing = compiled.get(obligationId);
     if (existing) {
       existing.acceptanceIds = [...new Set([...existing.acceptanceIds, ...acceptanceIds])];
+      if (metadata?.outcome) {
+        const outcomes = new Set([
+          ...(Array.isArray(existing.metadata?.outcomes) ? existing.metadata.outcomes : []),
+          ...(existing.metadata?.outcome ? [existing.metadata.outcome] : []),
+          metadata.outcome,
+        ]);
+        existing.metadata = {
+          ...(existing.metadata || {}),
+          outcome: outcomes.size === 1 ? [...outcomes][0] : null,
+          outcomes: [...outcomes],
+        };
+      }
       // A plan that explicitly reuses a policy/caller obligation must narrow
       // that obligation to the commands the plan named. Otherwise the tier's
       // broad allowlist (for example every unit-test script) lets an
@@ -152,6 +233,7 @@ export const compileRunObligations = ({
     }
     const obligationMetadata = {
       ...(metadata || {}),
+      ...(metadata?.outcome ? { outcomes: [metadata.outcome] } : {}),
       ...(hasExplicitPlanCommands ? { evidencePlanCommandBinding: true } : {}),
     };
     const obligation = {
@@ -196,6 +278,7 @@ export const compileRunObligations = ({
       commandRefs: item.evidencePlan?.commandRefs?.length ? item.evidencePlan.commandRefs : null,
       evidenceClass: item.evidencePlan?.class || null,
       method: item.evidencePlan?.method || null,
+      metadata: { outcome: item.evidencePlan?.outcome || null },
     });
   }
 

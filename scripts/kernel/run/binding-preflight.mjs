@@ -18,11 +18,52 @@ export class KernelBindingError extends Error {
 
 const fail = (code) => { throw new KernelBindingError(code); };
 
-export const bindingErrorPayload = (error) => ({
-  schemaVersion: 1,
-  status: 'error',
-  errorCode: error?.code || error?.message || 'host_binding_missing',
-});
+// Recovery guidance is intended to be copied into a POSIX shell. Single-quote
+// every byte and splice literal apostrophes without ever reopening an
+// attacker-controlled expansion context. Escaping only double quotes leaves
+// `$()` and backticks executable when a workspace path is copied verbatim.
+const shellQuote = (value) => `'${String(value || '').replaceAll("'", `'"'"'`)}'`;
+
+export const recoveryForKernelError = ({ code, projectRoot, provider = 'codex' } = {}) => {
+  const normalizedProvider = String(provider || '').toLowerCase();
+  const surface = normalizedProvider.startsWith('claude') ? 'claude'
+    : normalizedProvider.startsWith('qwen') ? 'qwen'
+    : normalizedProvider.startsWith('antigravity') ? 'antigravity'
+    : 'codex';
+  if ([
+    'wrong_harness',
+    'host_binding_missing',
+    'host_binding_conflict',
+    'run_binding_conflict',
+    'provider_session_invalid',
+    'run_session_mismatch',
+    'run_project_mismatch',
+    'run_workspace_mismatch',
+  ].includes(code)) {
+    return {
+      action: 'relaunch-through-kernel-host',
+      command: `moon-harness-switcher launch --track kernel --surface ${surface} --project-root ${shellQuote(projectRoot)} --execute`,
+    };
+  }
+  return null;
+};
+
+export const bindingErrorPayload = (error, { projectRoot = process.cwd(), provider = 'codex' } = {}) => {
+  const errorCode = error?.code || error?.message || 'host_binding_missing';
+  // Public lifecycle responses keep their established minimal shape except
+  // for the two operator-recoverable harness bootstrap failures. Cross-scope
+  // mismatches intentionally disclose no extra project/workspace context.
+  const remediation = ['host_binding_missing', 'wrong_harness', 'host_binding_conflict', 'run_binding_conflict'].includes(errorCode)
+    ? recoveryForKernelError({ code: errorCode, projectRoot, provider })
+    : null;
+  return {
+    schemaVersion: 1,
+    status: 'error',
+    errorCode,
+    ...(error?.nextAction ? { nextAction: error.nextAction } : remediation ? { nextAction: remediation.action } : {}),
+    ...(remediation ? { remediation } : {}),
+  };
+};
 
 export const assertBoundRunAccess = ({
   stateStore,

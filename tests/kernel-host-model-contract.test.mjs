@@ -14,7 +14,7 @@ const withRun = async (fn, { runId = 'r-host' } = {}) => {
   const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'krn-host-home-'));
   const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'krn-host-proj-'));
   spawnSync('git', ['init'], { cwd: projectRoot, encoding: 'utf8' });
-  await writeFile(path.join(projectRoot, 'package.json'), JSON.stringify({ name: 'x', scripts: {} }));
+  await writeFile(path.join(projectRoot, 'package.json'), JSON.stringify({ name: 'x', scripts: { test: 'node -e "process.exit(0)"', lint: 'node -e "process.exit(0)"' } }));
   const cp = await createKernelControlPlane({ runtimeHome, projectRoot });
   try {
     await cp.startRun({ runId, objective: 'host model contract' });

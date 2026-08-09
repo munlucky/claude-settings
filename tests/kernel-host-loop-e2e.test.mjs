@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
@@ -12,6 +12,8 @@ import { planStatePath, buildNextPayload } from '../scripts/kernel/run/run-loop.
 const setupProject = async () => {
   const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'krn-host-loop-proj-'));
   spawnSync('git', ['init'], { cwd: projectRoot, encoding: 'utf8' });
+  await mkdir(path.join(projectRoot, '.moon-relay'), { recursive: true });
+  await writeFile(path.join(projectRoot, '.moon-relay', 'track.yaml'), 'schemaVersion: 1\ntrack: kernel\nproduct: moon-relay-kernel\n');
   await writeFile(path.join(projectRoot, 'package.json'), JSON.stringify({
     name: 'host-loop-fixture',
     version: '0.0.1',
@@ -26,6 +28,14 @@ const setupProject = async () => {
   return projectRoot;
 };
 
+const parseCliJson = (result) => {
+  const line = String(result.stdout || result.stderr || '')
+    .split(/\r?\n/)
+    .find((entry) => entry.trim().startsWith('{'));
+  assert.ok(line, result.stderr || result.stdout);
+  return JSON.parse(line);
+};
+
 test('workspace identity observation reflects working tree changes', async () => {
   const projectRoot = await setupProject();
   try {
@@ -37,6 +47,28 @@ test('workspace identity observation reflects working tree changes', async () =>
     await writeFile(path.join(projectRoot, 'app.mjs'), `export const statusForInvalidPassword = () => 401;\n`);
     const third = observeWorkspaceIdentity({ projectRoot });
     assert.notEqual(third.identity, first.identity);
+  } finally {
+    await rm(projectRoot, { recursive: true, force: true });
+  }
+});
+
+test('workspace identity changes when HEAD provenance changes but the tree does not', async () => {
+  const projectRoot = await setupProject();
+  try {
+    for (const args of [
+      ['config', 'user.email', 'kernel@example.invalid'],
+      ['config', 'user.name', 'Kernel Test'],
+      ['add', '.'],
+      ['commit', '-m', 'baseline'],
+    ]) {
+      const result = spawnSync('git', args, { cwd: projectRoot, encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+    }
+    const before = observeWorkspaceIdentity({ projectRoot });
+    const emptyCommit = spawnSync('git', ['commit', '--allow-empty', '-m', 'provenance-only'], { cwd: projectRoot, encoding: 'utf8' });
+    assert.equal(emptyCommit.status, 0, emptyCommit.stderr || emptyCommit.stdout);
+    const after = observeWorkspaceIdentity({ projectRoot });
+    assert.notEqual(after.identity, before.identity);
   } finally {
     await rm(projectRoot, { recursive: true, force: true });
   }
@@ -148,6 +180,91 @@ test('host loop E2E: fail -> fix -> hard evidence -> accepted completion', async
     assert.ok(passedReport.finalization.completionResult.hardEvidence.count >= 1);
   } finally {
     await cp.close();
+    await rm(runtimeHome, { recursive: true, force: true });
+    await rm(projectRoot, { recursive: true, force: true });
+  }
+});
+
+test('CLI subprocess E2E: next -> failed report -> fix -> proof -> accepted completion', async () => {
+  const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'krn-host-loop-cli-home-'));
+  const projectRoot = await setupProject();
+  const contractPath = path.join(projectRoot, 'contract.json');
+  const reportPath = path.join(projectRoot, 'report.json');
+  const cliPath = path.resolve(process.cwd(), 'bin', 'moon-relay-kernel.mjs');
+  const runId = 'host-loop-cli-1';
+  const sessionId = 'codex:host-loop-cli-session';
+  const {
+    CODEX_THREAD_ID: _codexThreadId,
+    MOON_RELAY_KERNEL_SESSION_ID: _kernelSessionId,
+    MOON_RELAY_KERNEL_RUN_ID: _kernelRunId,
+    ...isolatedEnv
+  } = process.env;
+  const env = {
+    ...isolatedEnv,
+    MOON_RELAY_KERNEL_REEXEC: '1',
+    MOON_RELAY_KERNEL_PROVIDER: 'codex',
+  };
+  const commonArgs = [
+    '--run-id', runId,
+    '--session-id', sessionId,
+    '--provider', 'codex',
+    '--project-root', projectRoot,
+    '--runtime-home', runtimeHome,
+    '--json',
+  ];
+  try {
+    await writeFile(contractPath, JSON.stringify({
+      objective: 'Fix invalid password status through the public Kernel CLI',
+      requestedTier: 'T0',
+      acceptance: [{
+        acceptance: 'invalid password returns 401',
+        evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:focus'], obligationId: 'default' },
+      }],
+    }));
+
+    const next = spawnSync(process.execPath, [cliPath, 'next', '--contract-json', contractPath, ...commonArgs], {
+      cwd: projectRoot,
+      env,
+      encoding: 'utf8',
+    });
+    assert.equal(next.status, 0, next.stderr || next.stdout);
+    const nextPayload = parseCliJson(next);
+    assert.equal(nextPayload.action.type, 'implement');
+    assert.ok(nextPayload.action.step?.stepId);
+
+    const report = {
+      stepId: nextPayload.action.step.stepId,
+      summary: 'exercise the public report boundary',
+      changedPaths: ['app.mjs'],
+      verifications: [{
+        obligationId: 'default',
+        commandRef: 'test:focus',
+        acceptanceCoverage: ['invalid password returns 401'],
+      }],
+    };
+    await writeFile(reportPath, JSON.stringify(report));
+    const failed = spawnSync(process.execPath, [cliPath, 'report', '--report-json', reportPath, ...commonArgs], {
+      cwd: projectRoot,
+      env,
+      encoding: 'utf8',
+    });
+    assert.equal(failed.status, 0, failed.stderr || failed.stdout);
+    const failedPayload = parseCliJson(failed);
+    assert.equal(failedPayload.status, 'evidence-failed');
+    assert.equal(failedPayload.next.action.type, 'fix');
+
+    await writeFile(path.join(projectRoot, 'app.mjs'), `export const statusForInvalidPassword = () => 401;\n`);
+    const completed = spawnSync(process.execPath, [cliPath, 'report', '--report-json', reportPath, ...commonArgs], {
+      cwd: projectRoot,
+      env,
+      encoding: 'utf8',
+    });
+    assert.equal(completed.status, 0, completed.stderr || completed.stdout);
+    const completedPayload = parseCliJson(completed);
+    assert.equal(completedPayload.status, 'completed');
+    assert.equal(completedPayload.finalization.completionStatus, 'accepted');
+    assert.equal(completedPayload.next.action.type, 'done');
+  } finally {
     await rm(runtimeHome, { recursive: true, force: true });
     await rm(projectRoot, { recursive: true, force: true });
   }

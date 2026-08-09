@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import os from 'node:os';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
 
 test('Cross-Run Knowledge Reuse E2E: verifies direct SQLite knowledge context retrieval, revision continuity after projection deletion, and project root isolation', async () => {
@@ -90,6 +90,15 @@ test('Cross-Run Knowledge Reuse E2E: verifies direct SQLite knowledge context re
   const projectId = run1.projectId;
   const projectionDir = path.join(kernelHome, 'state', 'projects', projectId, 'knowledge');
   await rm(projectionDir, { recursive: true, force: true });
+
+  // The first greenfield run has now produced a real project seam. A
+  // successor with committed project knowledge is brownfield, so its
+  // proof-policy command must exist before the next Run starts.
+  await mkdir(projectRoot, { recursive: true });
+  await writeFile(path.join(projectRoot, 'package.json'), JSON.stringify({
+    name: 'knowledge-reuse-fixture',
+    scripts: { test: 'node -e "process.exit(0)"' },
+  }));
 
   // --- 3. Run 2: Start new Run, verify SQLite revision authority & re-commit ---
   const run2 = await controlPlane.startRun({

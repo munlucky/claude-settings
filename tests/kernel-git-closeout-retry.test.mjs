@@ -28,6 +28,11 @@ test('public Git retry blocks external mutation after push_failed and records st
   const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-git-retry-public-home-'));
   const runId = 'kernel-public-git-retry-external-mutation';
   const sessionId = 'codex:kernel-public-git-retry-session';
+  const {
+    CODEX_THREAD_ID: _codexThreadId,
+    MOON_RELAY_KERNEL_SESSION_ID: _kernelSessionId,
+    ...isolatedEnv
+  } = process.env;
   let cp = null;
   try {
     runGit(repoRoot, ['init', '-b', 'main']);
@@ -105,10 +110,12 @@ test('public Git retry blocks external mutation after push_failed and records st
     ], {
       cwd: repoRoot,
       encoding: 'utf8',
-      env: { ...process.env, MOON_RELAY_KERNEL_REEXEC: '1', MOON_RELAY_KERNEL_RUN_ID: '' },
+      env: { ...isolatedEnv, MOON_RELAY_KERNEL_REEXEC: '1', MOON_RELAY_KERNEL_RUN_ID: '' },
     });
     assert.notEqual(result.status, 0);
-    const errorPayload = JSON.parse(result.stderr.trim().split(/\r?\n/).at(-1));
+    const errorLine = result.stderr.split(/\r?\n/).find((line) => line.trim().startsWith('{'));
+    assert.ok(errorLine, result.stderr);
+    const errorPayload = JSON.parse(errorLine);
     assert.equal(errorPayload.errorCode, 'WORKSPACE_IDENTITY_MISMATCH');
 
     const retryStore = await openKernelStateStore({ runtimeHome });

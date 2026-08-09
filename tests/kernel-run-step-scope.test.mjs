@@ -99,4 +99,19 @@ test('K2: an undeclared scope is the whole workspace and cannot be violated', ()
   );
   // Windows-style separators normalize to the same scope decision.
   assert.deepEqual(findScopeViolations({ changedPaths: ['src\\auth\\a.mjs'], allowedPaths: ['src/auth/**'] }), []);
+  assert.deepEqual(
+    findScopeViolations({
+      changedPaths: ['tests/kernel-completion-view.test.mjs'],
+      allowedPaths: ['tests/kernel-*.test.mjs'],
+    }),
+    [],
+    'embedded manifest-style globs are executable scope contracts',
+  );
+  assert.deepEqual(
+    findScopeViolations({
+      changedPaths: ['tests/completion-view.test.mjs'],
+      allowedPaths: ['tests/kernel-*.test.mjs'],
+    }),
+    [{ path: 'tests/completion-view.test.mjs', reason: 'outside-allowed-paths' }],
+  );
 });

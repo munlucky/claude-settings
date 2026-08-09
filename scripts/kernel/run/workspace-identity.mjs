@@ -27,6 +27,7 @@ const observeGitWorkspace = (projectRoot) => {
   if (!inRepo || inRepo.trim() !== 'true') return null;
 
   const headTree = (runGit(['rev-parse', 'HEAD^{tree}'], projectRoot) || 'no-head').trim();
+  const headCommit = (runGit(['rev-parse', 'HEAD'], projectRoot) || 'no-head').trim();
   const status = runGit(['status', '--porcelain', '-z', '--untracked-files=all'], projectRoot);
   if (status === null) return null;
 
@@ -45,7 +46,10 @@ const observeGitWorkspace = (projectRoot) => {
   entries.sort();
 
   return {
-    identity: sha256(JSON.stringify({ headTree, entries })),
+    // Include the commit as well as its tree. Two commits may point at the same
+    // tree (for example an allow-empty commit), but they do not carry the same
+    // provenance and must not share completion evidence.
+    identity: sha256(JSON.stringify({ headCommit, headTree, entries })),
     method: 'git',
     dirtyPathCount: entries.length,
   };

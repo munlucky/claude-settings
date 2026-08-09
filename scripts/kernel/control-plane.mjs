@@ -34,7 +34,12 @@ import {
   contractBriefing,
   riskSummaryFromContract,
 } from './task/task-contract.mjs';
-import { compileRunObligations, assertCommandBinding, ObligationBindingError } from './run/obligation-compiler.mjs';
+import {
+  compileRunObligations,
+  assertCommandBinding,
+  assertVerificationSupport,
+  ObligationBindingError,
+} from './run/obligation-compiler.mjs';
 import { discoverProjectCommands } from './proof/command-catalog.mjs';
 import { needsShape } from './route.mjs';
 import { resolveHostSessionHolder, REPORT_LEASE_TTL_MS, SESSION_LEASE_TTL_MS } from './run/session-holder.mjs';
@@ -404,6 +409,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         knowledgeRecords: store.listKnowledgeRecords({ projectId, statuses: ['committed'] }),
         changedPaths: normalizedChangeSet.changedPaths,
       });
+      assertVerificationSupport(obligations, contract, { projectMode: projectMode.mode });
 
       const workspaceObservation = observeWorkspaceIdentity({ projectRoot });
       const run = store.createRun({
@@ -520,6 +526,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         knowledgeRecords: store.listKnowledgeRecords({ projectId, statuses: ['committed'] }),
         changedPaths: normalizedChangeSet.changedPaths,
       });
+      assertVerificationSupport(obligations, contract, { projectMode: projectMode.mode });
       const workspaceObservation = observeWorkspaceIdentity({ projectRoot });
       const successorRun = {
         runId,
@@ -612,6 +619,13 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     },
 
     async resolveRunId({ explicitRunId = null, envRunId = null } = {}) {
+      if (explicitRunId && envRunId && String(explicitRunId) !== String(envRunId)) {
+        throw Object.assign(new Error('run_binding_conflict'), {
+          code: 'run_binding_conflict',
+          errorCode: 'run_binding_conflict',
+          nextAction: 'relaunch-through-kernel-host',
+        });
+      }
       if (requireHostBinding) {
         if (!hostSessionId) throw Object.assign(new Error('host_binding_missing'), { code: 'host_binding_missing' });
         const binding = getHostBinding();
@@ -753,6 +767,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         contract,
         contractRevision: nextContractRevision,
       });
+      assertVerificationSupport(obligations, contract, { projectMode: run.projectMode });
       // The contract already contains canonicalized successor references. Keep
       // the mapping visible to this boundary for lineage, but never rewrite
       // predecessor proof from an old AC namespace using successor-local IDs.
@@ -776,7 +791,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     },
 
     async buildStageContext(runId, { stage = 'EXECUTE', taskContract = {}, principles, principleExtensions = [], stageRecords = [], references = [], evidence = [] } = {}) {
-      try { preflight(runId, 'context'); } catch (error) { return bindingErrorPayload(error); }
+      try { preflight(runId, 'context'); } catch (error) { return bindingErrorPayload(error, { projectRoot, provider: hostProvider }); }
       const run = store.getRun(runId);
       if (!run) throw new Error(`Run ${runId} not found`);
 
@@ -1507,7 +1522,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       try {
         preflight(runId, 'next');
       } catch (error) {
-        return bindingErrorPayload(error);
+        return bindingErrorPayload(error, { projectRoot, provider: hostProvider });
       }
       const run = store.getRun(runId);
       if (!run) return { schemaVersion: 1, runId, status: 'not_found' };
@@ -1671,7 +1686,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       try {
         preflight(runId, 'resume');
       } catch (error) {
-        return bindingErrorPayload(error);
+        return bindingErrorPayload(error, { projectRoot, provider: hostProvider });
       }
       const run = store.getRun(runId);
       if (!run) return { schemaVersion: 1, runId, status: 'not_found' };
@@ -1702,7 +1717,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       try {
         preflight(runId, payload?.blocker ? 'blocker' : 'report');
       } catch (error) {
-        return bindingErrorPayload(error);
+        return bindingErrorPayload(error, { projectRoot, provider: hostProvider });
       }
       const run = store.getRun(runId);
       if (!run) throw new Error(`Run ${runId} not found`);
@@ -2215,7 +2230,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     },
 
     async finalizeRun(runId, options = {}) {
-      try { preflight(runId, 'finalize'); } catch (error) { return bindingErrorPayload(error); }
+      try { preflight(runId, 'finalize'); } catch (error) { return bindingErrorPayload(error, { projectRoot, provider: hostProvider }); }
       return finalizeRun({ store, runtimeHome, projectRoot, runId, ...options });
     },
 
@@ -2228,7 +2243,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     },
 
     async status(runId) {
-      try { preflight(runId, 'status'); } catch (error) { return bindingErrorPayload(error); }
+      try { preflight(runId, 'status'); } catch (error) { return bindingErrorPayload(error, { projectRoot, provider: hostProvider }); }
       const run = store.getRun(runId);
       if (!run) return null;
       const completion = store.evaluateCompletion(runId);

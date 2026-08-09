@@ -11,7 +11,7 @@ test('reviewer outcome cannot pass without the complete host-recorded chain', as
   const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-review-bridge-state-'));
   await mkdir(path.join(root, '.moon-relay'), { recursive: true });
   await writeFile(path.join(root, '.moon-relay', 'track.yaml'), 'track: kernel\n');
-  await writeFile(path.join(root, 'package.json'), JSON.stringify({ scripts: { test: 'node --test' } }));
+  await writeFile(path.join(root, 'package.json'), JSON.stringify({ scripts: { test: 'node --test', lint: 'node -e "process.exit(0)"' } }));
   const cp = await createKernelControlPlane({ runtimeHome, projectRoot: root });
   try {
     await cp.startRun({ runId: 'review-chain', objective: 'secure change', taskContract: { acceptance: ['secure'], securityBoundary: true } });
@@ -35,7 +35,7 @@ test('an owner-bound two-command run supplies truthful implementation provenance
   const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-review-owner-state-'));
   await mkdir(path.join(root, '.moon-relay'), { recursive: true });
   await writeFile(path.join(root, '.moon-relay', 'track.yaml'), 'track: kernel\n');
-  await writeFile(path.join(root, 'package.json'), JSON.stringify({ scripts: { test: 'node --test' } }));
+  await writeFile(path.join(root, 'package.json'), JSON.stringify({ scripts: { test: 'node --test', lint: 'node -e "process.exit(0)"' } }));
   const env = {
     MOON_RELAY_KERNEL_SESSION_ID: 'owner-session',
     MOON_RELAY_KERNEL_RUN_ID: 'owner-review-chain',

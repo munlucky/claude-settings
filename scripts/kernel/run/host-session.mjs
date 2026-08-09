@@ -12,6 +12,17 @@ export class ProviderSessionError extends Error {
   }
 }
 
+export class HostBindingConflictError extends Error {
+  constructor(bindings = []) {
+    super('host_binding_conflict');
+    this.name = 'HostBindingConflictError';
+    this.code = 'host_binding_conflict';
+    this.errorCode = 'host_binding_conflict';
+    this.nextAction = 'relaunch-through-kernel-host';
+    this.details = { bindings };
+  }
+}
+
 const requireProvider = (provider) => {
   const normalized = String(provider || '').trim().toLowerCase();
   if (!PROVIDER_PATTERN.test(normalized)) {
@@ -49,6 +60,29 @@ export function canonicalizeHostSessionId({ provider, sessionId } = {}) {
     });
   }
   return normalizedSessionId;
+}
+
+export function resolveCanonicalHostSession({
+  provider,
+  explicitSessionId = null,
+  envSessionId = null,
+  codexThreadId = null,
+} = {}) {
+  const candidates = [
+    ['cli', explicitSessionId, provider],
+    ['environment', envSessionId, provider],
+    ['codex-thread', codexThreadId, 'codex'],
+  ].filter(([, value]) => String(value || '').trim());
+  if (candidates.length === 0) return { sessionId: null, nativeSessionId: null, source: null };
+  const resolved = candidates.map(([source, value, candidateProvider]) => ({
+    source,
+    nativeSessionId: String(value).trim(),
+    sessionId: canonicalizeHostSessionId({ provider: candidateProvider, sessionId: value }),
+  }));
+  if (new Set(resolved.map((item) => item.sessionId)).size > 1) {
+    throw new HostBindingConflictError(resolved.map(({ source, sessionId }) => ({ source, sessionId })));
+  }
+  return resolved[0];
 }
 
 export function providerForSurface(surface) {

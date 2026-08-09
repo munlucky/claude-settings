@@ -103,6 +103,7 @@ export const buildNextPayload = ({
     constraints: contract?.constraints || [],
     nonGoals: contract?.nonGoals || [],
     risks: contract?.risks || [],
+    completionPredicate: contract?.completionPredicate || { requiredOutcomes: [] },
     evidence: summarizeEvidence(verifications),
     knowledge: knowledgePromptBlock,
     acceptancePlans,

@@ -7,7 +7,8 @@ import { fileURLToPath } from 'node:url';
 import { resolveKernelRuntimeHome, readProjectTrack } from '../scripts/kernel/runtime-home.mjs';
 import { resolveKernelNode } from '../scripts/kernel/runtime-resolver.mjs';
 import { computeKernelSourceIdentity } from '../scripts/kernel/control-plane.mjs';
-import { canonicalizeHostSessionId } from '../scripts/kernel/run/host-session.mjs';
+import { resolveCanonicalHostSession } from '../scripts/kernel/run/host-session.mjs';
+import { recoveryForKernelError } from '../scripts/kernel/run/binding-preflight.mjs';
 
 const args = process.argv.slice(2);
 const command = args[0] || 'doctor';
@@ -56,7 +57,10 @@ const projectRoot = getArgValue('--project-root') || process.cwd();
 const assertKernelTrack = async (root = projectRoot) => {
   const activeTrack = await readProjectTrack(root);
   if (activeTrack !== 'kernel') {
-    throw new Error(`wrong_harness: Kernel command requires project track=kernel (found ${activeTrack || 'none'} at ${root})`);
+    throw Object.assign(
+      new Error(`wrong_harness: Kernel command requires project track=kernel (found ${activeTrack || 'none'} at ${root})`),
+      { code: 'wrong_harness', errorCode: 'wrong_harness', nextAction: 'relaunch-through-kernel-host' },
+    );
   }
   return activeTrack;
 };
@@ -68,19 +72,47 @@ const assertKernelTrack = async (root = projectRoot) => {
 // absent, so direct skill invocations can bootstrap without weakening the
 // cross-session/project preflight.
 const codexThreadId = process.env.CODEX_THREAD_ID || null;
-const nativeSessionId = getArgValue('--session-id') || process.env.MOON_RELAY_KERNEL_SESSION_ID || codexThreadId || null;
-const scopedSessionProvider = nativeSessionId?.match(/^([a-z][a-z0-9-]{0,31}):/)?.[1] || null;
+const explicitSessionId = getArgValue('--session-id') || null;
+const envSessionId = process.env.MOON_RELAY_KERNEL_SESSION_ID || null;
+const preferredSessionId = explicitSessionId || envSessionId || codexThreadId || null;
+const scopedSessionProvider = preferredSessionId?.match(/^([a-z][a-z0-9-]{0,31}):/)?.[1] || null;
 const hostProvider = getArgValue('--provider')
   || process.env.MOON_RELAY_KERNEL_PROVIDER
   || scopedSessionProvider
   || (codexThreadId ? 'codex' : 'unknown-host');
-const sessionId = nativeSessionId
-  ? canonicalizeHostSessionId({ provider: hostProvider, sessionId: nativeSessionId })
-  : null;
+let resolvedHostSession = { sessionId: null, nativeSessionId: null, source: null };
+let hostSessionResolutionError = null;
+try {
+  resolvedHostSession = resolveCanonicalHostSession({
+    provider: hostProvider,
+    explicitSessionId,
+    envSessionId,
+    codexThreadId,
+  });
+} catch (error) {
+  hostSessionResolutionError = error;
+}
+const nativeSessionId = resolvedHostSession.nativeSessionId;
+const sessionId = resolvedHostSession.sessionId;
 const legacySessionId = nativeSessionId && sessionId !== nativeSessionId && !nativeSessionId.includes(':')
   ? nativeSessionId
   : null;
-const inferredRunId = getArgValue('--run-id') || process.env.MOON_RELAY_KERNEL_RUN_ID || null;
+const positionalRunId = ['next', 'report', 'resume'].includes(command)
+  && args[1]
+  && !args[1].startsWith('--')
+  ? args[1]
+  : null;
+const explicitRunId = getArgValue('--run-id') || positionalRunId || null;
+const envRunId = process.env.MOON_RELAY_KERNEL_RUN_ID || null;
+const hostRunResolutionError = explicitRunId && envRunId && String(explicitRunId) !== String(envRunId)
+  ? Object.assign(new Error('run_binding_conflict'), {
+      code: 'run_binding_conflict',
+      errorCode: 'run_binding_conflict',
+      nextAction: 'relaunch-through-kernel-host',
+      details: { bindings: [{ source: 'cli', runId: explicitRunId }, { source: 'environment', runId: envRunId }] },
+    })
+  : null;
+const inferredRunId = explicitRunId || envRunId || null;
 const kernelEnv = sessionId || inferredRunId
   ? {
       ...process.env,
@@ -108,6 +140,8 @@ const output = (value) =>
   );
 
 try {
+  if (hostSessionResolutionError) throw hostSessionResolutionError;
+  if (hostRunResolutionError) throw hostRunResolutionError;
   if (command === '--version' || command === 'version') {
     output({ productId: 'moon-relay-kernel', version: '0.1.0' });
   } else if (command === 'doctor') {
@@ -406,18 +440,25 @@ try {
     throw new Error(`Unknown command: ${command}`);
   }
 } catch (error) {
+  const errorCode = error.errorCode || error.code || error.message;
+  const remediation = error.details?.remediation || recoveryForKernelError({
+    code: errorCode,
+    projectRoot,
+    provider: hostProvider,
+  });
   const diagnosticKeys = [
     'legacyProjectId', 'source', 'canonicalRoot', 'legacyCanonicalRoot', 'gitCommonDir',
     'aliases', 'projectIds', 'projectId', 'nextAction', 'remediation',
   ];
   const diagnostics = {
     ...(error.details && typeof error.details === 'object' ? error.details : {}),
+    ...(remediation ? { remediation } : {}),
     ...Object.fromEntries(diagnosticKeys.filter((key) => error[key] !== undefined).map((key) => [key, error[key]])),
   };
   console.error(json ? JSON.stringify({
     schemaVersion: 1,
     status: 'error',
-    errorCode: error.errorCode || error.code || error.message,
+    errorCode,
     message: error.message,
     ...(error.nextAction ? { nextAction: error.nextAction } : {}),
     ...(error.runId ? { runId: error.runId } : {}),

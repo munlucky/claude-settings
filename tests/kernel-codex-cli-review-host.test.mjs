@@ -14,7 +14,9 @@ const withOwnerRun = async (fn, suffix) => {
   const runtimeHome = await mkdtemp(path.join(os.tmpdir(), `kernel-codex-review-home-${suffix}-`));
   await mkdir(path.join(projectRoot, '.moon-relay'), { recursive: true });
   await writeFile(path.join(projectRoot, '.moon-relay', 'track.yaml'), 'schemaVersion: 1\ntrack: kernel\nproduct: moon-relay-kernel\n');
-  await writeFile(path.join(projectRoot, 'package.json'), JSON.stringify({ scripts: { test: 'node --test' } }));
+  await writeFile(path.join(projectRoot, 'package.json'), JSON.stringify({
+    scripts: { test: 'node --test', lint: 'node -e "process.exit(0)"' },
+  }));
   const runId = `codex-review-${suffix}`;
   const owner = 'codex:owner-session';
   const env = {

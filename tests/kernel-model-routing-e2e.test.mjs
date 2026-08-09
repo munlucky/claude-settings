@@ -24,7 +24,14 @@ const withProject = async (scripts, fn) => {
   const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'krn-route-e2e-home-'));
   const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'krn-route-e2e-proj-'));
   spawnSync('git', ['init'], { cwd: projectRoot, encoding: 'utf8' });
-  await writeFile(path.join(projectRoot, 'package.json'), JSON.stringify({ name: 'x', scripts }));
+  await writeFile(path.join(projectRoot, 'package.json'), JSON.stringify({
+    name: 'x',
+    scripts: {
+      test: 'node -e "process.exit(0)"',
+      lint: 'node -e "process.exit(0)"',
+      ...scripts,
+    },
+  }));
   await writeFile(path.join(projectRoot, 'app.mjs'), 'export const v = 0;\n');
   const cp = await createKernelControlPlane({ runtimeHome, projectRoot });
   try {

@@ -49,10 +49,155 @@ test('P1-4: project commands are discovered per ecosystem and classified semanti
     assert.equal(byRef['make:e2e'].commandClass, 'e2e');
     assert.equal(byRef['go:test'].commandClass, 'unit-test');
     assert.equal(byRef['go:vet'].commandClass, 'static-analysis');
-    assert.equal(classifyCommandName('deploy'), 'script');
+    assert.equal(classifyCommandName('runtime:reproduce'), 'runtime-reproduction');
+    assert.equal(classifyCommandName('runtime:observe'), 'runtime-observation');
+    assert.equal(classifyCommandName('deploy'), 'deployment');
+    assert.equal(classifyCommandName('post-deploy:observe'), 'post-deployment-observation');
   } finally {
     await cleanup(fixture);
   }
+});
+
+test('P0: an explicit evidence plan with no usable project command fails before a Run is created', async () => {
+  const fixture = await setup();
+  const cp = await createKernelControlPlane(fixture);
+  try {
+    await assert.rejects(
+      cp.startRun({
+        runId: 'r-unsupported-preflight',
+        objective: 'observe production behavior',
+        taskContract: {
+          acceptance: [{
+            acceptance: 'the deployed runtime is observed',
+            evidencePlan: {
+              class: 'hard',
+              method: 'post-deployment-observation',
+              commandRefs: ['observe:production'],
+            },
+          }],
+        },
+      }),
+      (error) => {
+        assert.equal(error.code, 'unsupported-verification');
+        assert.equal(error.nextAction, 'declare-project-verification-command');
+        assert.deepEqual(error.details.unsupported[0].rejectedCommandRefs, [{
+          commandRef: 'observe:production',
+          reason: 'not-declared-by-project',
+        }]);
+        return true;
+      },
+    );
+    assert.equal(cp.stateStore.getRun('r-unsupported-preflight'), null);
+  } finally {
+    await cp.close();
+    await cleanup(fixture);
+  }
+});
+
+test('P0: a tier-required hard obligation with no project command fails before a Run is created', async () => {
+  const fixture = await setup({ scripts: { noop: 'node -e "process.exit(0)"' } });
+  const cp = await createKernelControlPlane(fixture);
+  try {
+    await assert.rejects(
+      cp.startRun({
+        runId: 'r-unsupported-proof-policy',
+        objective: 'change behavior without a test command',
+        taskContract: { behaviorChanging: true, acceptance: ['the behavior changes safely'] },
+      }),
+      (error) => error.code === 'unsupported-verification'
+        && error.details.unsupported.some((item) => (
+          item.obligationId === 'unit-test'
+          && item.sourceType === 'proof-policy'
+        )),
+    );
+    assert.equal(cp.stateStore.getRun('r-unsupported-proof-policy'), null);
+  } finally {
+    await cp.close();
+    await cleanup(fixture);
+  }
+});
+
+test('P0: runtime and release evidence methods bind only to matching command classes', async () => {
+  const fixture = await setup({
+    scripts: {
+      ...SCRIPTS,
+      'runtime:reproduce': 'node -e "process.exit(0)"',
+      'runtime:observe': 'node -e "process.exit(0)"',
+      deploy: 'node -e "process.exit(0)"',
+      'post-deploy:observe': 'node -e "process.exit(0)"',
+    },
+  });
+  try {
+    const contract = normalizeTaskContract({
+      acceptance: [
+        { acceptance: 'reproduced', evidencePlan: { class: 'hard', method: 'runtime-reproduction', commandRefs: ['runtime:reproduce'] } },
+        { acceptance: 'observed', evidencePlan: { class: 'hard', method: 'runtime-observation', commandRefs: ['runtime:observe'] } },
+        { acceptance: 'deployed', evidencePlan: { class: 'hard', method: 'deployment', commandRefs: ['deploy'] } },
+        { acceptance: 'resolved', evidencePlan: { class: 'hard', method: 'post-deployment-observation', commandRefs: ['post-deploy:observe'], outcome: 'resolved' } },
+      ],
+      completionPredicate: { requiredOutcomes: ['implemented', 'verified', 'deployed', 'observed', 'resolved'] },
+    }, { objective: 'runtime incident' });
+    const obligations = compileRunObligations({
+      projectRoot: fixture.projectRoot,
+      requiredChecks: [],
+      contract,
+    });
+    assert.deepEqual(obligations.map((item) => item.allowedCommandRefs), [
+      ['runtime:reproduce'],
+      ['runtime:observe'],
+      ['deploy'],
+      ['post-deploy:observe'],
+    ]);
+    assert.deepEqual(obligations.map((item) => item.metadata.outcome), [
+      'verified',
+      'observed',
+      'deployed',
+      'resolved',
+    ]);
+  } finally {
+    await cleanup(fixture);
+  }
+});
+
+test('P0: a required resolved outcome without resolution evidence fails completion preflight', async () => {
+  const fixture = await setup({
+    scripts: { ...SCRIPTS, build: 'node -e "process.exit(0)"' },
+  });
+  const cp = await createKernelControlPlane(fixture);
+  try {
+    await assert.rejects(
+      cp.startRun({
+        runId: 'r-build-is-not-resolution',
+        objective: 'resolve a runtime incident',
+        taskContract: {
+          completionPredicate: { requiredOutcomes: ['implemented', 'verified', 'resolved'] },
+          acceptance: [{
+            acceptance: 'the code builds',
+            evidencePlan: { class: 'hard', method: 'build', commandRefs: ['build'] },
+          }],
+        },
+      }),
+      (error) => error.code === 'unsupported-verification'
+        && error.details.unsupported.some((item) => (
+          item.outcome === 'resolved'
+          && item.reason === 'required-outcome-has-no-bound-evidence-plan'
+        )),
+    );
+    assert.equal(cp.stateStore.getRun('r-build-is-not-resolution'), null);
+  } finally {
+    await cp.close();
+    await cleanup(fixture);
+  }
+});
+
+test('P0: unknown completion outcomes fail closed instead of weakening the predicate', () => {
+  assert.throws(
+    () => normalizeTaskContract({
+      completionPredicate: { requiredOutcomes: ['implemented', 'resovled'] },
+    }, { objective: 'typo must not disappear' }),
+    (error) => error.code === 'completion-predicate-invalid'
+      && error.details.invalidOutcomes.includes('resovled'),
+  );
 });
 
 test('P0-2: an obligation is bound to the commands that can prove it', async () => {
@@ -152,36 +297,33 @@ test('F1: an evidence plan cannot bind a command that proves nothing', async () 
   const fixture = await setup();
   const cp = await createKernelControlPlane(fixture);
   try {
-    await cp.startRun({
-      runId: 'r-f1',
-      objective: 'x',
-      taskContract: {
-        acceptance: [{ acceptance: 'login must be secure', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['noop'] } }],
-      },
-    });
     // `noop` is a declared script, but its name carries no semantic claim, so
-    // it cannot stand as the proof of a criterion planned as a test.
-    const next = await cp.next('r-f1');
-    const planned = next.action.obligations.find((entry) => entry.obligationId.startsWith('acceptance-'));
-    assert.deepEqual(planned.allowedCommandRefs, []);
-
-    await mutate(fixture.projectRoot, 1);
-    const rejected = await cp.report('r-f1', {
-      summary: 'claiming coverage',
-      verifications: [{ obligationId: planned.obligationId, commandRef: 'noop', acceptanceCoverage: ['login must be secure'] }],
-    });
-    assert.equal(rejected.status, 'evidence-rejected');
-    assert.match(rejected.failures[0].errorSummary, /noop \(class-script-does-not-prove-unit-test\)/);
+    // it cannot stand as the proof of a criterion planned as a test. The
+    // support preflight rejects this before implementation begins.
+    await assert.rejects(
+      cp.startRun({
+        runId: 'r-f1',
+        objective: 'x',
+        taskContract: {
+          acceptance: [{ acceptance: 'login must be secure', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['noop'] } }],
+        },
+      }),
+      (error) => error.code === 'unsupported-verification'
+        && error.details.unsupported[0].rejectedCommandRefs[0].reason === 'class-script-does-not-prove-unit-test',
+    );
+    assert.equal(cp.stateStore.getRun('r-f1'), null);
 
     // A ref the project never declared is refused the same way.
-    const unknown = await cp.startRun({
-      runId: 'r-f1b',
-      objective: 'x',
-      taskContract: { acceptance: [{ acceptance: 'y', evidencePlan: { class: 'hard', commandRefs: ['test:does-not-exist'] } }] },
-    });
-    const unknownObligation = unknown.requiredObligations.find((id) => id.startsWith('acceptance-'));
-    assert.deepEqual(await cp.getRun('r-f1b').then((run) => run.taskContract.acceptance[0].evidencePlan.commandRefs), ['test:does-not-exist']);
-    assert.ok(unknownObligation);
+    await assert.rejects(
+      cp.startRun({
+        runId: 'r-f1b',
+        objective: 'x',
+        taskContract: { acceptance: [{ acceptance: 'y', evidencePlan: { class: 'hard', commandRefs: ['test:does-not-exist'] } }] },
+      }),
+      (error) => error.code === 'unsupported-verification'
+        && error.details.unsupported[0].rejectedCommandRefs[0].reason === 'not-declared-by-project',
+    );
+    assert.equal(cp.stateStore.getRun('r-f1b'), null);
   } finally {
     await cp.close();
     await cleanup(fixture);

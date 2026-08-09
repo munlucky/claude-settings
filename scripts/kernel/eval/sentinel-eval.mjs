@@ -172,11 +172,18 @@ const TRAPS = {
   // commands are subject to the same classification check as policy
   // obligations, so a no-op cannot become hard evidence (F1).
   async evidence_plan_names_noop(cp, projectRoot) {
-    await cp.startRun({
-      runId: 'sen',
-      objective: 'x',
-      taskContract: { acceptance: [{ acceptance: 'works', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['noop'] } }] },
-    });
+    try {
+      await cp.startRun({
+        runId: 'sen',
+        objective: 'x',
+        taskContract: { acceptance: [{ acceptance: 'works', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['noop'] } }] },
+      });
+    } catch (error) {
+      if (error.code === 'unsupported-verification') {
+        return { status: 'unsupported-verification', preflightRejected: true };
+      }
+      throw error;
+    }
     await mutate(projectRoot, 1);
     const run = await cp.getRun('sen');
     const planned = run.requiredObligations.find((id) => id.startsWith('acceptance-')) || 'default';

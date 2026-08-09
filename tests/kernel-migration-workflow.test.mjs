@@ -37,7 +37,7 @@ test('analyzeMigration escalates a required migration to T3 with the protected o
   const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'krn-mig-home-'));
   const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'krn-mig-proj-'));
   spawnSync('git', ['init'], { cwd: projectRoot, encoding: 'utf8' });
-  await writeFile(path.join(projectRoot, 'package.json'), JSON.stringify({ name: 'x', scripts: {} }));
+  await writeFile(path.join(projectRoot, 'package.json'), JSON.stringify({ name: 'x', scripts: { test: 'node -e "process.exit(0)"', lint: 'node -e "process.exit(0)"' } }));
   const cp = await createKernelControlPlane({ runtimeHome, projectRoot });
   try {
     await cp.startRun({ runId: 'r-mig', objective: 'migrate users' });
@@ -70,7 +70,7 @@ test('analyzeMigration blocks when a required migration lacks a rollback', async
   const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'krn-mig-block-home-'));
   const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'krn-mig-block-proj-'));
   spawnSync('git', ['init'], { cwd: projectRoot, encoding: 'utf8' });
-  await writeFile(path.join(projectRoot, 'package.json'), JSON.stringify({ name: 'x', scripts: {} }));
+  await writeFile(path.join(projectRoot, 'package.json'), JSON.stringify({ name: 'x', scripts: { test: 'node -e "process.exit(0)"', lint: 'node -e "process.exit(0)"' } }));
   const cp = await createKernelControlPlane({ runtimeHome, projectRoot });
   try {
     await cp.startRun({ runId: 'r-mig-block', objective: 'risky migration' });

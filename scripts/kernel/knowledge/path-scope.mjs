@@ -1,5 +1,25 @@
 import path from 'node:path';
 
+const embeddedGlobRegex = (glob) => {
+  let source = '^';
+  for (let index = 0; index < glob.length; index += 1) {
+    const char = glob[index];
+    if (char === '*') {
+      if (glob[index + 1] === '*') {
+        source += '.*';
+        index += 1;
+      } else {
+        source += '[^/]*';
+      }
+    } else if (char === '?') {
+      source += '[^/]';
+    } else {
+      source += char.replace(/[|\\{}()[\]^$+?.]/g, '\\$&');
+    }
+  }
+  return new RegExp(`${source}$`);
+};
+
 export function matchPathScope(targetPath, scopes = []) {
   if (!scopes || scopes.length === 0) return true;
   const normalizedTarget = targetPath.replace(/\\/g, '/').toLowerCase();
@@ -12,6 +32,8 @@ export function matchPathScope(targetPath, scopes = []) {
     } else if (s.endsWith('/*')) {
       const prefix = s.slice(0, -2);
       if (normalizedTarget.startsWith(`${prefix}/`)) return true;
+    } else if (s.includes('*') || s.includes('?')) {
+      if (embeddedGlobRegex(s).test(normalizedTarget)) return true;
     } else if (normalizedTarget === s || normalizedTarget.startsWith(`${s}/`)) {
       return true;
     }
