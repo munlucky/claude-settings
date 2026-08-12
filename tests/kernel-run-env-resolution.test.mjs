@@ -139,6 +139,52 @@ test('Codex thread identity bootstraps next without explicit Kernel binding vari
   assert.ok(payload.action);
 });
 
+test('bare next in a fresh Codex session directs the Host to supply the task contract', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-contract-required-project-'));
+  const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-contract-required-state-'));
+  await mkdir(path.join(root, '.moon-relay'), { recursive: true });
+  await writeFile(path.join(root, '.moon-relay', 'track.yaml'), 'schemaVersion: 1\ntrack: kernel\nproduct: moon-relay-kernel\n');
+  await writeFile(path.join(root, 'package.json'), JSON.stringify({
+    name: 'kernel-codex-contract-required',
+    version: '0.0.1',
+    scripts: { test: 'node -e "process.exit(0)"' },
+  }));
+
+  const result = spawnSync(process.execPath, [
+    path.join(process.cwd(), 'bin', 'moon-relay-kernel.mjs'),
+    'next',
+    '--project-root',
+    root,
+    '--runtime-home',
+    runtimeHome,
+    '--json',
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      CODEX_THREAD_ID: '019fb139-cadf-73e2-93de-568646c75e93',
+      MOON_RELAY_KERNEL_REEXEC: '1',
+      MOON_RELAY_KERNEL_HOME: runtimeHome,
+      MOON_RELAY_KERNEL_RUN_ID: '',
+      MOON_RELAY_KERNEL_SESSION_ID: '',
+      MOON_RELAY_KERNEL_PROJECT_ID: '',
+      MOON_RELAY_KERNEL_WORKSPACE_ID: '',
+    },
+  });
+
+  assert.notEqual(result.status, 0);
+  const payloadLine = `${result.stderr}\n${result.stdout}`
+    .split(/\r?\n/)
+    .find((line) => line.trim().startsWith('{'));
+  assert.ok(payloadLine, result.stderr || result.stdout);
+  const payload = JSON.parse(payloadLine);
+  assert.equal(payload.errorCode, 'host_binding_missing');
+  assert.equal(payload.nextAction, 'supply-a-task-contract');
+  assert.equal(payload.diagnostics.remediation.action, 'supply-a-task-contract');
+  assert.equal(payload.diagnostics.remediation.command, 'kernel next --contract-json <task-contract.json>');
+});
+
 test('conflicting Codex and Kernel session bindings fail closed with one recovery command', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-binding-conflict-project-'));
   const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-binding-conflict-state-'));

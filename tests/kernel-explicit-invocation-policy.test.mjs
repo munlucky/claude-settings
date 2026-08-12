@@ -12,6 +12,9 @@ test('Kernel entrypoint metadata is explicit-invocation only', async () => {
   assert.match(skill, /Use only when the user explicitly names `moon-relay-kernel`/);
   assert.match(skill, /Do not infer activation from installed availability/);
   assert.match(skill, /Otherwise do not call `kernel next` or `kernel report`/);
+  assert.match(skill, /kernel next --contract-json <file>/);
+  assert.match(skill, /do not bootstrap a fresh session with bare `kernel next`/);
+  assert.match(skill, /bare `kernel next` only after a Host binding exists/);
 });
 
 test('Codex account guidance cannot activate Kernel by itself', async () => {

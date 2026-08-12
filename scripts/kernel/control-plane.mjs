@@ -630,7 +630,19 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         if (!hostSessionId) throw Object.assign(new Error('host_binding_missing'), { code: 'host_binding_missing' });
         const binding = getHostBinding();
         const requested = explicitRunId || envRunId || binding?.runId || null;
-        if (!requested) throw Object.assign(new Error('host_binding_missing'), { code: 'host_binding_missing' });
+        if (!requested) {
+          throw Object.assign(new Error('host_binding_missing'), {
+            code: 'host_binding_missing',
+            errorCode: 'host_binding_missing',
+            nextAction: 'supply-a-task-contract',
+            details: {
+              remediation: {
+                action: 'supply-a-task-contract',
+                command: 'kernel next --contract-json <task-contract.json>',
+              },
+            },
+          });
+        }
         if (binding) {
           if (explicitRunId && String(explicitRunId) !== binding.runId) throw Object.assign(new Error('run_session_mismatch'), { code: 'run_session_mismatch' });
           if (envRunId && String(envRunId) !== binding.runId) throw Object.assign(new Error('run_session_mismatch'), { code: 'run_session_mismatch' });
