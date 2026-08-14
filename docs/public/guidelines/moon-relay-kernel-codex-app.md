@@ -18,7 +18,7 @@ Codex Desktop을 Relay 또는 Kernel로 선택 실행할 때 다음 계약을 �
 1. `catalog/kernel-skills.yaml`은 공개 스킬 `moon-relay-kernel` 하나를 선언하지만 Codex discovery 경로에 materialize하는 구현이 없다.
 2. `package/kernel/profiles/codex/`에는 `AGENTS.override.md`, `.codex/config.toml`, `.codex/hooks.json`만 있고 공개 스킬 payload가 없다.
 3. `scripts/kernel/profile-install.mjs`의 별도 skill projection은 Antigravity에만 존재한다.
-4. 설계가 요구하는 프로젝트 `.agents/skills`와 `.moon-relay/track.yaml` hydration이 switcher launch 경로에 연결되지 않았다.
+4. 설계가 요구하는 account-root project/worktree track registry와 `.agents/skills` hydration이 switcher launch 경로에 연결되지 않았다.
 5. switcher는 요청한 root로 프로세스를 시작한 직후 실제 app-server, workspace, skill discovery를 확인하지 않고 `effectiveTrack`을 commit한다.
 6. Kernel runtime/package가 제거되었거나 부분 설치된 상태도 `kernel_not_installed`로 차단하지 않는다.
 
@@ -33,13 +33,12 @@ Codex Desktop을 Relay 또는 Kernel로 선택 실행할 때 다음 계약을 �
 
 ## 목표 파일 배치
 
-Kernel 프로젝트 또는 전용 worktree에는 다음 manifest-owned static surface가 있어야 한다.
+Kernel 프로젝트 또는 전용 worktree에는 다음 manifest-owned static surface가 있을 수 있다. Track binding 자체는 프로젝트에 쓰지 않고 계정 루트에 둔다.
 
 ```text
 <kernel-project>/
 ├─ .moon-relay/
-│  ├─ track.yaml                         # track: kernel
-│  └─ kernel-profile-manifest.json       # hydration 소유권/checksum
+│  └─ kernel-profile-manifest.json       # legacy hydration 소유권/checksum
 ├─ .agents/
 │  └─ skills/
 │     └─ moon-relay-kernel/
@@ -48,6 +47,9 @@ Kernel 프로젝트 또는 전용 worktree에는 다음 manifest-owned static su
 │  ├─ config.toml
 │  └─ hooks.json
 └─ AGENTS.override.md
+
+<kernel-runtime-home>/state/track-scopes/
+└─ <scope-key>.json                       # canonical root + Git worktree별 track binding
 ```
 
 원본은 canonical source의 다음 경로에서 온다.
@@ -82,12 +84,12 @@ unhydrateKernelProject({ projectRoot })
 
 1. `projectRoot`를 명시적으로 받고 현재 shell CWD를 암묵적 권한으로 사용하지 않는다.
 2. canonical/final path, parent reparse/symlink, owner, write boundary를 검사한다.
-3. 기존 `.moon-relay/track.yaml`이 `relay`이면 중단한다.
+3. account-root registry에서 현재 canonical root + Git common/worktree scope를 조회한다. 기존 repository `.moon-relay/track.yaml`이 `relay`이면 legacy compatibility boundary로 중단한다.
 4. 기존 `.agents/skills/moon-relay-kernel`이 foreign/unmanaged이면 중단한다.
 5. `catalog/kernel-skills.yaml`의 `public` 목록이 정확히 `moon-relay-kernel` 하나인지 검사한다.
-6. 같은 volume의 임시 디렉터리에 marker, profile, public skill을 stage한다.
+6. 같은 volume의 임시 디렉터리에 profile과 public skill을 stage한다. Track registry는 account root에 atomic write한다.
 7. checksum manifest를 먼저 준비하고 manifest-owned static 파일만 atomic replace한다.
-8. hydration 후 파일 존재·checksum·track을 다시 검사한다.
+8. hydration 후 파일 존재·checksum·account-root scope binding을 다시 검사한다.
 
 ### 소유권과 제거
 
@@ -100,6 +102,7 @@ unhydrateKernelProject({ projectRoot })
 
 - `<project>/.agents/skills/moon-relay-kernel/SKILL.md`가 존재한다.
 - `.agents/skills` 아래 공개 Kernel skill 디렉터리 수가 정확히 1이다.
+- `<kernel-runtime-home>/state/track-scopes/<scope-key>.json`이 현재 project/worktree와 일치한다.
 - `inspectKernelProject()`가 `ready`를 반환한다.
 - Relay 프로젝트는 변경되지 않는다.
 
@@ -116,7 +119,7 @@ unhydrateKernelProject({ projectRoot })
   "runtimeHome": "<kernel-runtime-home>",
   "providerHome": "<kernel-codex-home>",
   "appDataRoot": "<kernel-app-data>",
-  "workspaceRoot": "<hydrated-kernel-project>",
+  "workspaceRoot": "<bound-kernel-project-worktree>",
   "expectedPublicSkills": ["moon-relay-kernel"]
 }
 ```
@@ -124,7 +127,7 @@ unhydrateKernelProject({ projectRoot })
 ### 공통 규칙
 
 1. `launch --track kernel`에는 `--project-root <absolute-path>`를 필수로 한다.
-2. launch 전에 `inspectKernelProject(projectRoot)`가 `ready`인지 검사한다.
+2. launch 전에 account-root track scope와 `inspectKernelProject(projectRoot)`를 검사한다.
 3. `buildLaunchSpec()`에 `cwd/workspaceRoot`를 포함한다. `sourceRoot`를 기록만 하고 실제 spawn CWD에서 누락하지 않는다.
 4. 이미 같은 project/track 앱이 열려 있으면 기존 창을 활성화한다.
 5. 다른 project/track 앱이 열려 있으면 승인된 graceful close와 quiescence 확인 후 실행한다.
@@ -145,7 +148,7 @@ unhydrateKernelProject({ projectRoot })
 ### 완료 조건
 
 - macOS와 Windows 모두 app receipt의 `workspaceRoot`가 hydration된 Kernel project와 일치한다.
-- 열린 프로젝트에서 `.moon-relay/track.yaml`이 `kernel`이다.
+- 열린 프로젝트의 account-root track scope가 `kernel`이고 canonical root/worktree proof와 일치한다.
 - 다른 project나 기본 recent workspace가 열리면 Kernel commit을 거부한다.
 
 ## 3. Launch 전 Kernel 설치 완전성 검사
@@ -179,8 +182,8 @@ inspectKernelLaunchReadiness({
 
 #### Project hydration
 
-- track marker가 `kernel`이다.
-- project hydration manifest가 유효하다.
+- account-root track registry entry가 `kernel`이고 canonical root/Git worktree proof와 일치한다.
+- legacy project hydration manifest를 사용하는 경우에만 그 manifest가 유효하다.
 - 공개 skill은 `moon-relay-kernel` 하나다.
 - Relay public skill 이름이 Kernel project `.agents/skills`에 없다.
 
@@ -195,7 +198,7 @@ inspectKernelLaunchReadiness({
 |---|---|---|
 | runtime/entrypoint/public skill 누락 | `kernel_not_installed` | launch 금지 |
 | provider manifest 누락/불일치 | `kernel_profile_not_ready` | launch 금지 |
-| project marker/skill 누락 | `kernel_project_not_hydrated` | launch 금지, hydration 안내 |
+| account-root project/worktree binding 또는 required skill 누락 | `kernel_project_not_bound` | launch 금지, account-root binding/hydration 안내 |
 | Relay/Kernel root alias | `unsafe_target` | launch 금지 |
 | 모든 정적 계약 통과 | `launch_candidate` | 앱 실행은 허용하되 아직 effective 아님 |
 
@@ -229,7 +232,7 @@ prepared
 5. 발견된 공개 skill 이름 목록
 6. `moon-relay-kernel` 존재
 7. Relay 공개 skill 부재
-8. project track marker와 app/server workspace의 일치
+8. account-root project/worktree binding과 app/server workspace의 일치
 
 민감한 auth/session 내용은 증거로 읽거나 기록하지 않는다.
 
@@ -256,7 +259,7 @@ prepared
 
 | 파일/영역 | 변경 책임 |
 |---|---|
-| `scripts/kernel/project-hydrate.mjs` | project marker/profile/public skill hydration과 manifest lifecycle |
+| `scripts/kernel/project-hydrate.mjs` | 명시적으로 호출된 legacy project marker/profile/public skill hydration과 manifest lifecycle |
 | `scripts/kernel/installer.mjs` | public skill/runtime payload 포함 및 project hydration과의 책임 분리 |
 | `scripts/kernel/profile-install.mjs` | provider profile만 소유; project skill을 암묵적으로 처리하지 않음 |
 | `scripts/switcher/operations.mjs` | readiness → launch → live verification → commit 순서 강제 |

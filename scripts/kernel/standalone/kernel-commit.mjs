@@ -9,6 +9,7 @@ import { commitImportedProjectKnowledge } from '../knowledge-ingestion/import.mj
 import { runGit, gitCurrentBranch } from '../../lib/git-safe.mjs';
 import { gitTreeDigest } from '../../lib/candidate-identity.mjs';
 import { parseCliArgs, printResult, readJson, resolveStandaloneProject, sha256, writeJsonAtomic } from './common.mjs';
+import { ensureAccountRootTrack } from '../runtime-home.mjs';
 
 const DENY_PATTERNS = [
   /^\.agents(?:\/|$)/i,
@@ -53,6 +54,7 @@ const runGitChecked = (repoRoot, args) => {
 };
 
 export async function kernelCommit({ cwd = process.cwd(), env = process.env, message = null, push = false, memory = false, memoryReview = false, approvalRef = null, runId = null } = {}) {
+  await ensureAccountRootTrack({ startDir: cwd, track: 'kernel', env, source: 'standalone-kernel-commit' });
   const project = resolveStandaloneProject({ cwd, env });
   const statusResult = runGitChecked(project.projectRoot, ['status', '--porcelain=v1']);
   const { selected, denied } = selectStagingPaths(parseGitStatus(statusResult.stdout));

@@ -2,7 +2,7 @@
 import process from 'node:process';
 import path from 'node:path';
 import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
-import { resolveKernelRuntimeHome, readProjectTrack } from '../scripts/kernel/runtime-home.mjs';
+import { resolveKernelRuntimeHome, resolveProjectTrack, ensureAccountRootTrack } from '../scripts/kernel/runtime-home.mjs';
 import { canonicalizeHostSessionId } from '../scripts/kernel/run/host-session.mjs';
 import { runCodexIndependentReview } from '../scripts/host/kernel/codex-review-host.mjs';
 
@@ -24,7 +24,34 @@ try {
   const nativeSessionId = value('--session-id') || process.env.MOON_RELAY_KERNEL_SESSION_ID || process.env.CODEX_THREAD_ID;
   if (!runId || !nativeSessionId) throw Object.assign(new Error('host_binding_missing'), { code: 'host_binding_missing' });
   const parentSessionId = canonicalizeHostSessionId({ provider: 'codex', sessionId: nativeSessionId });
-  if (await readProjectTrack(projectRoot) !== 'kernel') throw new Error('wrong_harness');
+  const trackEnv = { ...process.env, MOON_RELAY_KERNEL_HOME: runtimeHome };
+  const trackResolution = await resolveProjectTrack(projectRoot, {
+    env: trackEnv,
+    allowAccountRootDefault: true,
+  });
+  if (trackResolution.track !== 'kernel') {
+    throw Object.assign(
+      new Error(`wrong_harness: Kernel host requires account-root track=kernel (found ${trackResolution.track || 'none'} from ${trackResolution.source} for ${projectRoot})`),
+      {
+        code: 'wrong_harness',
+        details: {
+          activeTrack: trackResolution.track || null,
+          source: trackResolution.source,
+          canonicalRoot: trackResolution.scope?.canonicalRoot || null,
+          scopeKey: trackResolution.scope?.scopeKey || null,
+          registryPath: trackResolution.registryPath || null,
+        },
+      },
+    );
+  }
+  await ensureAccountRootTrack({
+    startDir: projectRoot,
+    track: 'kernel',
+    env: trackEnv,
+    projectId: trackEnv.MOON_RELAY_KERNEL_PROJECT_ID || null,
+    workspaceId: trackEnv.MOON_RELAY_KERNEL_WORKSPACE_ID || null,
+    source: 'kernel-host',
+  });
   const env = {
     ...process.env,
     MOON_RELAY_KERNEL_SESSION_ID: parentSessionId,
@@ -52,4 +79,3 @@ try {
   console.error(json ? JSON.stringify({ schemaVersion: 1, status: 'error', errorCode: error.code || error.message, message: error.message }) : error.message);
   process.exitCode = 1;
 }
-

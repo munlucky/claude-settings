@@ -4,7 +4,8 @@
 
 - Relay runtime home: `~/.moonshot-relay`
 - Kernel runtime home: `~/.moon-relay-kernel`
-- Project selection: `.moon-relay/track.yaml`
+- Project/worktree selection: account-root `state/track-scopes/<scope>.json`, keyed by canonical project root plus Git common/worktree identity
+- Repository `.moon-relay/track.yaml`: legacy compatibility marker only; new Kernel binding must not require or create it
 - Runtime DB, profile manifest, skill lock, cache, logs, and completion state must not be shared.
 - Main-to-Kernel sync is limited to reviewed security, installer, managed-runtime, data-integrity, and cross-platform fixes.
 - Kernel workflow and prompt changes never merge automatically into Relay.

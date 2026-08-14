@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
-import { realpathSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -10,8 +10,18 @@ import { installKernel } from '../scripts/kernel/installer.mjs';
 import { openKernelStateStore } from '../scripts/kernel/state-store.mjs';
 
 const cliPath = fileURLToPath(new URL('../bin/moon-relay-kernel.mjs', import.meta.url));
-const canonical = (value) => realpathSync(value).replaceAll('\\', '/');
-const cleanTrackEnv = () => ({ ...process.env, MOON_RELAY_TRACK: '' });
+const canonical = (value) => {
+  const normalized = realpathSync(value).replaceAll('\\', '/');
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+};
+const cleanTrackEnv = () => ({
+  ...process.env,
+  MOON_RELAY_TRACK: '',
+  CODEX_THREAD_ID: '',
+  MOON_RELAY_KERNEL_SESSION_ID: '',
+  MOON_RELAY_KERNEL_RUN_ID: '',
+  MOON_RELAY_KERNEL_HOME: path.join(os.tmpdir(), `krn-cli-no-runtime-${process.pid}`),
+});
 
 test('doctor reports wrong_harness with exit code 0 outside a Kernel project', async () => {
   const d = await mkdtemp(path.join(os.tmpdir(), 'krn-cli-'));
@@ -41,6 +51,38 @@ test('doctor and assert-track are ready in a Kernel project, including nested su
   const rAssert = spawnSync(process.execPath, [cliPath, 'assert-track', '--json'], { cwd: sub, encoding: 'utf8' });
   assert.equal(rAssert.status, 0);
   assert.equal(JSON.parse(rAssert.stdout).status, 'ready');
+});
+
+test('account-root runtime track admits an unmarked project and records only the exact workspace scope', async () => {
+  const project = await mkdtemp(path.join(os.tmpdir(), 'krn-cli-account-project-'));
+  const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'krn-cli-account-runtime-'));
+  try {
+    await mkdir(path.join(runtimeHome, '.moon-relay'), { recursive: true });
+    await writeFile(path.join(runtimeHome, '.moon-relay', 'track.yaml'), 'schemaVersion: 1\ntrack: kernel\nproduct: moon-relay-kernel\n');
+
+    const result = spawnSync(process.execPath, [
+      cliPath,
+      'identity',
+      'status',
+      '--project-root',
+      project,
+      '--runtime-home',
+      runtimeHome,
+      '--json',
+    ], { cwd: project, env: cleanTrackEnv(), encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.status, 'bootstrap_required');
+    assert.equal(path.resolve(payload.runtimeHome), path.resolve(runtimeHome));
+    assert.equal((await import('../scripts/kernel/runtime-home.mjs')).resolveProjectTrackSync(project, {
+      env: { ...cleanTrackEnv(), MOON_RELAY_KERNEL_HOME: runtimeHome },
+    }).source, 'account_root_scope');
+    assert.equal(existsSync(path.join(project, '.moon-relay', 'track.yaml')), false);
+    assert.equal(existsSync(path.join(runtimeHome, 'state', 'track-scopes')), true);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+    await rm(runtimeHome, { recursive: true, force: true });
+  }
 });
 
 test('identity status and bootstrap establish a persisted root/workspace receipt', async () => {
@@ -135,7 +177,11 @@ test('next returns structured identity remediation before creating a Run', async
       '--runtime-home',
       runtimeHome,
       '--json',
-    ], { cwd: d, encoding: 'utf8' });
+    ], {
+      cwd: d,
+      env: { ...cleanTrackEnv(), MOON_RELAY_KERNEL_HOME: runtimeHome },
+      encoding: 'utf8',
+    });
     assert.equal(next.status, 1);
     const jsonLine = next.stderr.split(/\r?\n/).map((line) => line.trim()).find((line) => line.startsWith('{') && line.endsWith('}'));
     assert.ok(jsonLine, next.stderr);
@@ -161,7 +207,11 @@ test('uninstall validates the target project track when invoked from another dir
   const target = await mkdtemp(path.join(os.tmpdir(), 'krn-cli-target-'));
   const caller = await mkdtemp(path.join(os.tmpdir(), 'krn-cli-caller-'));
   await installKernel({ targetRoot: target, sourceRoot: process.cwd() });
-  const result = spawnSync(process.execPath, [cliPath, 'uninstall', '--target-root', target, '--project-root', target, '--json'], { cwd: caller, encoding: 'utf8' });
+  const result = spawnSync(process.execPath, [cliPath, 'uninstall', '--target-root', target, '--project-root', target, '--json'], {
+    cwd: caller,
+    env: { ...cleanTrackEnv(), MOON_RELAY_KERNEL_HOME: path.join(caller, 'runtime') },
+    encoding: 'utf8',
+  });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(JSON.parse(result.stdout).status, 'uninstalled');
   await rm(caller, { recursive: true, force: true });

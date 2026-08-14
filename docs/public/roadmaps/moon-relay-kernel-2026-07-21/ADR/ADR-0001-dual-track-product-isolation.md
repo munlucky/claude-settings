@@ -14,7 +14,7 @@ Moonshot Relay는 안정 트랙으로 계속 사용되어야 하며, Moon Relay 
 - `kernel/moon-relay-kernel`은 Kernel 실험 트랙으로 사용한다.
 - 초기에는 루트 package를 즉시 rename하지 않고 Kernel 전용 product manifest, CLI, package payload, profile generator를 병렬 추가한다.
 - Relay는 `~/.moonshot-relay`, Kernel은 `~/.moon-relay-kernel`을 사용한다.
-- 프로젝트는 `.moon-relay/track.yaml`로 활성 트랙을 선언한다.
+- 프로젝트/worktree별 활성 트랙은 각 runtime home의 account-root registry에 기록한다. Registry key는 canonical root와 Git common/worktree identity로 분리하며, 저장소 `.moon-relay/track.yaml`은 legacy compatibility boundary로만 지원한다.
 - Codex 앱에서는 Relay/Kernel base worktree를 각각 앱 프로젝트로 등록하고 해당 트랙의 `.agents/skills`, `.codex`, `AGENTS.override.md`만 노출한다.
 - 잘못된 트랙에서 Kernel entrypoint를 호출하면 실행을 거부한다.
 

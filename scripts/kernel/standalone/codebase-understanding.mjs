@@ -6,8 +6,10 @@ import { buildCodebaseIndex } from '../codebase/build-index.mjs';
 import { queryCodebaseIndex } from '../codebase/query.mjs';
 import { extractCodebaseCandidates } from '../knowledge-ingestion/candidate-extract.mjs';
 import { parseCliArgs, printResult, resolveStandaloneProject } from './common.mjs';
+import { ensureAccountRootTrack } from '../runtime-home.mjs';
 
 export async function runCodebaseUnderstanding({ cwd = process.cwd(), env = process.env, query = '', force = false } = {}) {
+  await ensureAccountRootTrack({ startDir: cwd, track: 'kernel', env, source: 'standalone-codebase-understanding' });
   const project = resolveStandaloneProject({ cwd, env });
   const index = await buildCodebaseIndex({ projectRoot: project.projectRoot, projectId: project.projectId, codebaseRoot: project.codebaseRoot, runtimeHome: project.runtimeHome, force });
   const candidates = query ? [] : extractCodebaseCandidates(index.manifest ? JSON.parse(await (await import('node:fs/promises')).readFile(`${project.codebaseRoot}/codebase-map.json`, 'utf8')) : {}, { projectId: project.projectId, sourceDigest: index.manifest?.sourceTreeDigest });

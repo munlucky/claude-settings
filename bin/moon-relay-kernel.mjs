@@ -4,7 +4,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { resolveKernelRuntimeHome, readProjectTrack } from '../scripts/kernel/runtime-home.mjs';
+import { resolveKernelRuntimeHome, resolveProjectTrack, ensureAccountRootTrack } from '../scripts/kernel/runtime-home.mjs';
 import { resolveKernelNode } from '../scripts/kernel/runtime-resolver.mjs';
 import { computeKernelSourceIdentity } from '../scripts/kernel/control-plane.mjs';
 import { resolveCanonicalHostSession } from '../scripts/kernel/run/host-session.mjs';
@@ -54,15 +54,36 @@ if (!process.env.MOON_RELAY_KERNEL_REEXEC) {
 
 const runtimeHomeArg = getArgValue('--runtime-home');
 const projectRoot = getArgValue('--project-root') || process.cwd();
+const trackEnv = () => ({
+  ...kernelEnv,
+  ...(runtimeHomeArg ? { MOON_RELAY_KERNEL_HOME: runtimeHomeArg } : {}),
+});
+const wrongHarnessError = (resolution, root) => Object.assign(
+  new Error(`wrong_harness: Kernel command requires account-root track=kernel (found ${resolution.track || 'none'} from ${resolution.source} for ${root})`),
+  {
+    code: 'wrong_harness',
+    errorCode: 'wrong_harness',
+    nextAction: 'relaunch-through-kernel-host',
+    details: {
+      activeTrack: resolution.track || null,
+      source: resolution.source,
+      canonicalRoot: resolution.scope?.canonicalRoot || null,
+      scopeKey: resolution.scope?.scopeKey || null,
+      registryPath: resolution.registryPath || null,
+    },
+  },
+);
 const assertKernelTrack = async (root = projectRoot) => {
-  const activeTrack = await readProjectTrack(root);
-  if (activeTrack !== 'kernel') {
-    throw Object.assign(
-      new Error(`wrong_harness: Kernel command requires project track=kernel (found ${activeTrack || 'none'} at ${root})`),
-      { code: 'wrong_harness', errorCode: 'wrong_harness', nextAction: 'relaunch-through-kernel-host' },
-    );
-  }
-  return activeTrack;
+  const resolution = await resolveProjectTrack(root, { env: trackEnv(), allowAccountRootDefault: true });
+  if (resolution.track !== 'kernel') throw wrongHarnessError(resolution, root);
+  await ensureAccountRootTrack({
+    startDir: root,
+    track: 'kernel',
+    env: trackEnv(),
+    projectId: trackEnv().MOON_RELAY_KERNEL_PROJECT_ID || null,
+    workspaceId: trackEnv().MOON_RELAY_KERNEL_WORKSPACE_ID || null,
+  });
+  return resolution.track;
 };
 
 // The lease holder must be stable across the separate processes of one model
@@ -145,10 +166,11 @@ try {
   if (command === '--version' || command === 'version') {
     output({ productId: 'moon-relay-kernel', version: '0.1.0' });
   } else if (command === 'doctor') {
-    const runtimeHome = runtimeHomeArg || resolveKernelRuntimeHome();
-    const activeTrack = await readProjectTrack(projectRoot);
+    const runtimeHome = runtimeHomeArg || resolveKernelRuntimeHome({ env: trackEnv() });
+    const trackResolution = await resolveProjectTrack(projectRoot, { env: trackEnv(), allowAccountRootDefault: true });
+    const activeTrack = trackResolution.track;
     if (activeTrack !== 'kernel') {
-      output({ productId: 'moon-relay-kernel', runtimeHome, activeTrack, status: 'wrong_harness' });
+      output({ productId: 'moon-relay-kernel', runtimeHome, activeTrack, trackSource: trackResolution.source, scope: trackResolution.scope, status: 'wrong_harness' });
     } else {
       let store;
       let diagnostics;
@@ -193,6 +215,12 @@ try {
         productId: 'moon-relay-kernel',
         runtimeHome,
         activeTrack,
+        trackSource: trackResolution.source,
+        trackScope: trackResolution.scope,
+        accountRootTrack: {
+          status: trackResolution.registered ? 'registered' : 'registration_required',
+          path: trackResolution.registryPath || null,
+        },
         status: diagnostics.status,
         diagnostics,
         projectIdentity,
@@ -228,21 +256,24 @@ try {
       throw new Error(`Unknown identity subcommand: ${subcommand}`);
     }
   } else if (command === 'assert-track') {
-    const runtimeHome = resolveKernelRuntimeHome();
-    const activeTrack = await readProjectTrack(process.cwd());
+    const runtimeHome = resolveKernelRuntimeHome({ env: trackEnv() });
+    const trackResolution = await resolveProjectTrack(projectRoot, { env: trackEnv(), allowAccountRootDefault: true });
+    const activeTrack = trackResolution.track;
     const isReady = activeTrack === 'kernel';
-    output({ productId: 'moon-relay-kernel', runtimeHome, activeTrack, status: isReady ? 'ready' : 'wrong_harness' });
+    output({ productId: 'moon-relay-kernel', runtimeHome, activeTrack, trackSource: trackResolution.source, trackScope: trackResolution.scope, status: isReady ? 'ready' : 'wrong_harness' });
     if (!isReady) {
       process.exitCode = 1;
     }
   } else if (command === 'resolve-runtime') {
     output(await resolveKernelNode({ runtimeHome: managedRuntimeHome }));
   } else if (command === 'package') {
-    const activeTrack = await readProjectTrack(process.cwd());
+    const trackResolution = await resolveProjectTrack(process.cwd(), { env: trackEnv(), allowAccountRootDefault: true });
+    const activeTrack = trackResolution.track;
     if (activeTrack !== 'kernel') {
-      output({ productId: 'moon-relay-kernel', activeTrack, status: 'wrong_harness', message: 'package command requires active track to be kernel' });
+      output({ productId: 'moon-relay-kernel', activeTrack, trackSource: trackResolution.source, status: 'wrong_harness', message: 'package command requires account-root track to be kernel' });
       process.exitCode = 1;
     } else {
+      await ensureAccountRootTrack({ startDir: process.cwd(), track: 'kernel', env: trackEnv() });
       const { materializeKernelPackage } = await import('../scripts/kernel/package-build.mjs');
       const outArg = args.indexOf('--output');
       const outputRoot = outArg >= 0 ? args[outArg + 1] : `${process.cwd()}/dist/moon-relay-kernel`;

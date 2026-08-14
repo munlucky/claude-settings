@@ -180,21 +180,20 @@ tests/kernel-*.test.mjs
 
 ## 6. 프로젝트 트랙 선택
 
-프로젝트 루트에 다음 마커를 사용한다.
+트랙 binding은 저장소가 아니라 계정 루트의 Kernel runtime home에 기록한다.
 
-```yaml
-# .moon-relay/track.yaml
-schemaVersion: 1
-track: kernel
-product: moon-relay-kernel
+```text
+~/.moon-relay-kernel/state/track-scopes/<scope-key>.json
 ```
+
+`scope-key`는 canonical project root와 Git common/worktree directory를 함께 해시한 값이다. 따라서 같은 프로젝트의 서로 다른 worktree와 서로 다른 저장소가 하나의 track entry를 공유하지 않는다. 저장소의 `.moon-relay/track.yaml`은 이전 버전과의 호환을 위한 legacy boundary로만 읽는다.
 
 판정 우선순위:
 
-1. 명시적 CLI 인자
-2. 프로젝트 `.moon-relay/track.yaml`
-3. 전용 profile marker
-4. 기본값 Relay
+1. 저장소의 legacy `.moon-relay/track.yaml`
+2. 현재 project/worktree의 account-root scope binding
+3. 명시적 process track (`MOON_RELAY_TRACK`)
+4. 설치된 Kernel runtime marker를 통한 account-root bootstrap candidate
 
 Kernel 스킬은 활성 트랙이 Kernel이 아니면 실행을 거부한다.
 
@@ -228,7 +227,6 @@ Codex App
 ### Relay worktree
 
 ```text
-.moon-relay/track.yaml       track: relay
 .codex/config.toml           Relay profile config
 .codex/hooks.json            Relay hooks
 .agents/skills/              Relay public skills only
@@ -238,14 +236,13 @@ AGENTS.override.md           Relay activation contract
 ### Kernel worktree
 
 ```text
-.moon-relay/track.yaml       track: kernel
 .codex/config.toml           Kernel profile config
 .codex/hooks.json            Kernel hooks
 .agents/skills/              moon-relay-kernel + allowed utilities
 AGENTS.override.md           Kernel activation contract
 ```
 
-전역 `~/.agents/skills`에 Relay와 Kernel의 전체 스킬을 함께 노출하지 않는다. 원본 스킬은 각 runtime home에 보관하고 프로젝트 `.agents/skills`에는 해당 트랙만 symlink 또는 materialize한다.
+전역 `~/.agents/skills`에 Relay와 Kernel의 전체 스킬을 함께 노출하지 않는다. 원본 스킬은 각 runtime home에 보관하고 프로젝트 `.agents/skills`에는 해당 트랙만 symlink 또는 materialize한다. Track authority 자체는 `state/track-scopes`에 두며 저장소 파일을 만들지 않는다.
 
 Codex 앱이 자체 worktree를 생성하는 기능은 초기 dogfood에서 사용하지 않는다. 먼저 하네스가 준비한 Relay/Kernel base worktree를 앱 프로젝트로 등록한다. 이후 hydration hook의 재현성이 검증되면 앱 생성 worktree 지원을 추가한다.
 

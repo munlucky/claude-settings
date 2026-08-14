@@ -14,6 +14,7 @@ import { commitImportedProjectKnowledge } from '../knowledge-ingestion/import.mj
 import { providerFor } from './session-providers/index.mjs';
 import { buildCodebaseManifest } from '../codebase/manifest.mjs';
 import { parseCliArgs, listArg, printResult, readJson, resolveStandaloneProject, writeJsonAtomic } from './common.mjs';
+import { ensureAccountRootTrack } from '../runtime-home.mjs';
 
 const normalizeRemote = (value) => String(value || '').replace(/^git@([^:]+):/, 'https://$1/').replace(/\.git$/i, '').replace(/\/$/, '').toLowerCase();
 
@@ -108,6 +109,7 @@ export async function projectMemoryStatus({ project, stateStore } = {}) {
 }
 
 export async function runProjectMemory({ command = 'status', args = {}, cwd = process.cwd(), env = process.env } = {}) {
+  await ensureAccountRootTrack({ startDir: cwd, track: 'kernel', env, source: 'standalone-project-memory' });
   const project = resolveStandaloneProject({ cwd, env });
   const stateStore = await openKernelStateStore({ runtimeHome: project.runtimeHome });
   try {
