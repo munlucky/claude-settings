@@ -206,12 +206,14 @@ export const prepareWayfinderWorkerDispatch = async ({
   }
 
   const executionCapsule = hosted.executionCapsule || hostDirective.executionCapsule || null;
+  const attemptId = hostDirective.attemptId || null;
   const policies = currentHostPolicies({ registry: modelRegistry, capabilities: hostCapabilities, toolPolicy, permissionPolicy });
   const admission = await controlPlane.admitRoute(runId, {
     decision,
     resolution,
     capabilities: hostCapabilities,
     capsule: executionCapsule,
+    attemptId,
     step,
     policies,
     economics,
@@ -233,6 +235,7 @@ export const prepareWayfinderWorkerDispatch = async ({
       resolution,
       capabilities: hostCapabilities,
       capsule: executionCapsule,
+      attemptId,
       step,
       policies: currentHostPolicies({ registry: modelRegistry, capabilities: hostCapabilities, toolPolicy, permissionPolicy }),
       economics,
@@ -357,6 +360,8 @@ export const dispatchKernelTurn = async ({
   // K1: the capsule is the authority for what the worker may see and touch.
   // The flat contract is still passed for adapters that have not moved yet.
   const executionCapsule = turn.executionCapsule || hostDirective.executionCapsule || null;
+  const attemptId = hostDirective.attemptId || null;
+  const attempt = hostDirective.attempt || null;
 
   // K3: admission sits between the decision and the dispatch. A blocked or
   // drifted admission stops the turn here — no worker runs, and the refusal is
@@ -367,6 +372,7 @@ export const dispatchKernelTurn = async ({
     resolution,
     capabilities: hostCapabilities,
     capsule: executionCapsule,
+    attemptId,
     policies,
     economics,
   });
@@ -386,6 +392,7 @@ export const dispatchKernelTurn = async ({
       resolution,
       capabilities: adapter.capabilities,
       capsule: executionCapsule,
+      attemptId,
       policies: currentHostPolicies({ registry: modelRegistry, capabilities: adapter.capabilities, toolPolicy, permissionPolicy }),
       economics,
     });
@@ -438,6 +445,8 @@ export const dispatchKernelTurn = async ({
     dispatch,
     capsule: executionCapsule,
     admission,
+    attemptId,
+    bindingId: attempt?.bindingId || null,
     actorSessionId: dispatch.actorSessionId || `${hostCapabilities.surface}:${decision.decisionId}`,
     parentSessionId,
     startedAt,
@@ -460,5 +469,19 @@ export const dispatchKernelTurn = async ({
     },
   });
   await controlPlane.recordModelUsage(runId, receipt);
-  return { schemaVersion: 1, runId, dispatched: true, modelInput, hostDirective, resolution, dispatch, executionCapsule, admission, receipt, envelope };
+  return {
+    schemaVersion: 1,
+    runId,
+    dispatched: true,
+    modelInput,
+    hostDirective,
+    resolution,
+    dispatch,
+    executionCapsule,
+    admission,
+    receipt,
+    envelope,
+    attemptId,
+    report: dispatch.report ? { ...dispatch.report, attemptId, bindingId: attempt?.bindingId || dispatch.report.bindingId } : null,
+  };
 };

@@ -14,6 +14,8 @@
     "receiptId": { "type": "string", "pattern": "^usage-[a-f0-9]{8,64}$" },
     "decisionId": { "type": "string", "pattern": "^route-[a-f0-9]{8,64}$" },
     "runId": { "type": "string", "minLength": 1 },
+    "attemptId": { "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "^attempt-[a-f0-9-]{8,96}$" }] },
+    "bindingId": { "type": ["string", "null"] },
     "hostSurface": { "type": "string", "minLength": 1 },
     "actorSessionId": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
     "parentSessionId": { "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }] },

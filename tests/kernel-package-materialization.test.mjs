@@ -48,7 +48,18 @@ test('Kernel package materialization creates files on disk, validates mandatory 
 
   // Execute doctor command directly inside materialized package output directory to verify ESM dependency closure
   const binPath = path.join(out, 'bin', 'moon-relay-kernel.mjs');
-  const doctorOutput = execSync(`node "${binPath}" doctor --json`, { cwd: out, encoding: 'utf8' });
+  const doctorOutput = execSync(`node "${binPath}" doctor --json`, {
+    cwd: out,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      MOON_RELAY_TRACK: '',
+      MOON_RELAY_KERNEL_HOME: path.join(out, 'non-kernel-runtime'),
+      MOON_RELAY_KERNEL_SESSION_ID: '',
+      MOON_RELAY_KERNEL_RUN_ID: '',
+      CODEX_THREAD_ID: '',
+    },
+  });
   const doctorJson = JSON.parse(doctorOutput);
   assert.equal(doctorJson.productId, 'moon-relay-kernel');
   assert.equal(doctorJson.status, 'wrong_harness');

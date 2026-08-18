@@ -231,6 +231,7 @@ export const normalizeModelUsageReceipt = (receipt = {}) => {
   if (!receipt.hostSurface) fail('kernel_model_usage_invalid', 'model usage receipt requires a hostSurface');
   if (!SESSION_ID.test(String(receipt.actorSessionId || ''))) fail('kernel_model_usage_session_invalid', 'actorSessionId must be a sha256:<hex> digest so raw session identifiers never persist');
   if (receipt.parentSessionId && !SESSION_ID.test(String(receipt.parentSessionId))) fail('kernel_model_usage_session_invalid', 'parentSessionId must be a sha256:<hex> digest when provided');
+  if (receipt.attemptId && !/^attempt-[a-f0-9-]{8,96}$/.test(String(receipt.attemptId))) fail('kernel_model_usage_invalid', 'attemptId must match attempt-<hex-or-uuid>');
   if (!ENFORCEMENT_STATUSES.includes(receipt.enforcementStatus)) fail('kernel_model_usage_invalid', `enforcementStatus must be one of: ${ENFORCEMENT_STATUSES.join(', ')}`);
   if (!RESULT_STATUSES.includes(receipt.resultStatus)) fail('kernel_model_usage_invalid', `resultStatus must be one of: ${RESULT_STATUSES.join(', ')}`);
   const resolvedModel = receipt.resolvedModel ? String(receipt.resolvedModel) : null;
@@ -262,6 +263,8 @@ export const normalizeModelUsageReceipt = (receipt = {}) => {
     // Lineage the later phases attach: which bounded context the turn ran on
     // (K1) and which admission let it dispatch (K3). Absent on a legacy or
     // un-capsuled turn, never invented.
+    attemptId: receipt.attemptId ? String(receipt.attemptId) : null,
+    bindingId: receipt.bindingId ? String(receipt.bindingId) : null,
     capsuleId: receipt.capsuleId ? String(receipt.capsuleId) : null,
     capsuleDigest: receipt.capsuleDigest ? String(receipt.capsuleDigest) : null,
     admissionId: receipt.admissionId ? String(receipt.admissionId) : null,

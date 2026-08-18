@@ -19,6 +19,8 @@ import { gitLsFiles } from '../../lib/git-safe.mjs';
 import { observeWorkspaceIdentity } from './workspace-identity.mjs';
 import { projectRunState } from '../state-projector.mjs';
 import { buildActiveWave, isApprovalSource, waveStatusIsActive } from './active-wave.mjs';
+import { assertAttemptLineage } from './attempt-provenance.mjs';
+import { hashSessionId } from './model-route-contract.mjs';
 
 export const createWorkCursorApi = ({ store, projectRoot, runtimeHome }) => ({
   getActiveWave(runId) {
@@ -72,14 +74,19 @@ export const createWorkCursorApi = ({ store, projectRoot, runtimeHome }) => ({
       state: 'running',
       executionWorkspaceId: binding.workspaceId || null,
       baseWorkspaceIdentity: binding.baseWorkspaceIdentity || wave.baseWorkspaceIdentity,
-      capsuleDigest: binding.capsuleId || binding.capsuleDigest || null,
+      capsuleDigest: binding.capsuleDigest || null,
     });
     return store.recordStepAttempt(runId, {
       stepId,
+      bindingId: binding.bindingId || store.getRunOwnerBinding?.(runId)?.bindingId || null,
       actorSessionId: binding.actorSessionId,
       capsuleId: binding.capsuleId,
       capsuleDigest: binding.capsuleDigest,
+      admissionId: binding.admissionId,
       waveId,
+      provenanceKind: 'routed',
+      planRevision: step.planRevision,
+      mutationRevision: store.getRun(runId)?.mutationRevision || 0,
       workspaceId: binding.workspaceId,
       workspaceRootHash: binding.workspaceRootHash,
       baseWorkspaceIdentity: binding.baseWorkspaceIdentity || wave.baseWorkspaceIdentity,
@@ -93,6 +100,83 @@ export const createWorkCursorApi = ({ store, projectRoot, runtimeHome }) => ({
     return store.updateStepAttempt(attemptId, patch);
   },
 
+  // All execution modes enter through this function. It deliberately creates
+  // the canonical step attempt before a provider dispatch or a direct report;
+  // the legacy run-level attempt is only a compatibility projection.
+  beginAttempt(runId, {
+    stepId = null,
+    attemptId = null,
+    bindingId = null,
+    actorSessionId = null,
+    capsuleId = null,
+    capsuleDigest = null,
+    admissionId = null,
+    routeDecisionId = null,
+    usageReceiptId = null,
+    parentAttemptId = null,
+    provenanceKind = 'owner-session',
+    planRevision = null,
+    mutationRevision = null,
+    retryReason = null,
+    failureCategory = null,
+    workspaceIdentityStart = null,
+    summary = null,
+    changedPaths = [],
+    waveId = null,
+    workspaceId = null,
+    workspaceRootHash = null,
+    baseWorkspaceIdentity = null,
+    verificationRefs = [],
+    knowledgeObservationRefs = [],
+  } = {}) {
+    const run = store.getRun(runId);
+    if (!run) throw new Error(`Run ${runId} not found`);
+    const step = stepId ? store.getRunStep(runId, stepId) : this.getCurrentStep(runId);
+    if (!step) throw new Error(`Run ${runId} has no current step`);
+    if (['ready', 'failed', 'planned'].includes(step.state)) {
+      this.startStep(runId, step.stepId, { workspaceIdentity: workspaceIdentityStart, capsuleDigest });
+    }
+    const ownerBinding = bindingId ? null : store.getRunOwnerBinding?.(runId);
+    return store.recordStepAttempt(runId, {
+      stepId: step.stepId,
+      attemptId,
+      bindingId: bindingId || ownerBinding?.bindingId || null,
+      actorSessionId: actorSessionId || ownerBinding?.sessionId || null,
+      capsuleId,
+      capsuleDigest,
+      admissionId,
+      routeDecisionId,
+      usageReceiptId,
+      parentAttemptId,
+      provenanceKind,
+      planRevision: planRevision || step.planRevision || run.planRevision,
+      mutationRevision: mutationRevision ?? run.mutationRevision,
+      retryReason,
+      failureCategory,
+      workspaceIdentityStart,
+      summary,
+      changedPaths,
+      waveId,
+      workspaceId,
+      workspaceRootHash,
+      baseWorkspaceIdentity,
+      verificationRefs,
+      knowledgeObservationRefs,
+    });
+  },
+
+  getActiveAttempt(runId, options = {}) {
+    return store.getActiveStepAttempt(runId, options);
+  },
+
+  attachAttemptLineage(attemptId, patch = {}) {
+    return store.attachAttemptLineage(attemptId, patch);
+  },
+
+  assertAttemptLineage(attempt, expected = {}) {
+    return assertAttemptLineage(attempt, expected);
+  },
+
   recordStepResult(runId, waveId, stepId, result) {
     return store.recordStepResult(runId, waveId, stepId, result);
   },
@@ -101,7 +185,15 @@ export const createWorkCursorApi = ({ store, projectRoot, runtimeHome }) => ({
     const step = store.getRunStep(runId, stepId);
     if (!step || step.waveId !== waveId) throw Object.assign(new Error('step-wave-mismatch'), { code: 'STEP_WAVE_MISMATCH' });
     const attempt = store.getStepAttempts(runId, { stepId }).filter((entry) => entry.waveId === waveId).at(-1);
-    if (attempt) store.finishStepAttempt(attempt.id, { status: 'failed', failureReasons: [failure?.code || failure?.message || String(failure || 'worker-failed')] });
+    if (attempt) {
+      const reason = failure?.code || failure?.message || String(failure || 'worker-failed');
+      const interrupted = attempt.status === 'interrupted';
+      store.finishStepAttempt(attempt.id, {
+        status: interrupted ? 'interrupted' : 'failed',
+        failureReasons: [reason],
+        failureCategory: interrupted ? (attempt.failureCategory || 'provider/infrastructure') : reason,
+      });
+    }
     return this.failStep(runId, stepId, { reason: failure?.code || failure?.message || 'worker-failed' });
   },
 
@@ -314,6 +406,63 @@ export const createWorkCursorApi = ({ store, projectRoot, runtimeHome }) => ({
     if (steps.length === 0) return { step: null };
     const scoped = steps.filter((step) => step.planRevision === run.planRevision);
     const activeWave = store.getActiveWave ? store.getActiveWave(runId) : null;
+    const rejectStaleAttempt = (attempt, stepId) => {
+      if (!attempt) return null;
+      try {
+        assertAttemptLineage(attempt, {
+          runId,
+          stepId,
+          planRevision: run.planRevision,
+          mutationRevision: run.mutationRevision,
+        });
+        return null;
+      } catch (error) {
+        // A routed Host report from the legacy surface may omit the canonical
+        // credentials. When no capsule or attempt id is claimed, the current
+        // workspace observation can safely re-anchor that routed row; an
+        // explicit stale credential must still fail closed.
+        const hostAttributable = Boolean(attempt.routeDecisionId || attempt.admissionId || attempt.usageReceiptId);
+        if (hostAttributable && !report.attemptId && !report.capsuleId) return null;
+        return {
+          rejection: [{
+            obligationId: 'attempt',
+            command: 'kernel report',
+            errorSummary: `Attempt lineage does not match the current run: ${error.message}`,
+            errorCode: error.code || 'attempt_lineage_incomplete',
+          }],
+        };
+      }
+    };
+    const rejectIncompleteAttemptCredentials = (attempt, report) => {
+      // Legacy rows have no stable identifier and remain readable as
+      // legacy-unattributed. Once a canonical attempt exists, a report must
+      // carry every credential that the attempt has bound before it can be
+      // attributed to that attempt.
+      if (!attempt?.attemptId) return null;
+      const currentOwnerBinding = store.getRunOwnerBinding?.(runId);
+      if (attempt.bindingId && currentOwnerBinding?.bindingId && attempt.bindingId !== currentOwnerBinding.bindingId) {
+        return { rejection: [{ obligationId: 'binding', command: 'kernel report', errorSummary: 'Report attempt binding is no longer the current Run owner binding', errorCode: 'attempt_lineage_incomplete' }] };
+      }
+      const boundCapsuleId = attempt.capsuleId || (attempt.capsuleDigest && !String(attempt.capsuleDigest).startsWith('sha256:') ? attempt.capsuleDigest : null);
+      // Older Host callers did not echo the canonical attempt credentials on
+      // `report`. A routed attempt is still unambiguous when the Kernel has a
+      // persisted route decision, admission, or usage receipt, so retain that
+      // compatibility projection while the durable row remains authoritative.
+      // An owner/direct attempt without such a Host boundary is intentionally
+      // strict: it must carry the canonical attempt id.
+      const hostAttributable = Boolean(attempt.routeDecisionId || attempt.admissionId || attempt.usageReceiptId);
+      const capsuleAttributableWave = Boolean(attempt.waveId && boundCapsuleId && report.capsuleId === boundCapsuleId);
+      if (!report.attemptId && !hostAttributable && !capsuleAttributableWave) {
+        return { rejection: [{ obligationId: 'attempt', command: 'kernel report', errorSummary: 'Report must include the active canonical attemptId' }] };
+      }
+      if (attempt.bindingId && !report.bindingId && !hostAttributable && !capsuleAttributableWave) {
+        return { rejection: [{ obligationId: 'binding', command: 'kernel report', errorSummary: 'Report must include the bindingId of the active attempt' }] };
+      }
+      if (boundCapsuleId && !report.capsuleId && !hostAttributable && !capsuleAttributableWave) {
+        return { rejection: [{ obligationId: 'capsule', command: 'kernel report', errorSummary: 'Report must include the capsuleId of the active attempt' }] };
+      }
+      return null;
+    };
 
     if (activeWave) {
       if (!report.stepId) {
@@ -334,11 +483,21 @@ export const createWorkCursorApi = ({ store, projectRoot, runtimeHome }) => ({
       }
       const attempt = store.getStepAttempts(runId, { stepId: named.stepId }).filter((entry) => entry.waveId === activeWave.waveId).at(-1);
       if (!attempt) return { rejection: [{ obligationId: 'step', command: 'kernel report', errorSummary: `Step "${named.stepId}" has no active Wave attempt binding` }] };
-      if (attempt.capsuleDigest && report.capsuleId !== attempt.capsuleDigest) {
+      const boundCapsuleId = attempt.capsuleId || (attempt.capsuleDigest && !String(attempt.capsuleDigest).startsWith('sha256:') ? attempt.capsuleDigest : null);
+      if (boundCapsuleId && report.capsuleId !== boundCapsuleId) {
         return { rejection: [{ obligationId: 'capsule', command: 'kernel report', errorSummary: 'Report capsule does not match the bound Wave attempt' }] };
       }
-      const actorSessionId = report.actorSessionId || report.sessionId || report.workerSessionId;
-      if (attempt.actorSessionId && actorSessionId !== attempt.actorSessionId) {
+      const incompleteCredentials = rejectIncompleteAttemptCredentials(attempt, report);
+      if (incompleteCredentials) return incompleteCredentials;
+      if (report.attemptId && report.attemptId !== attempt.attemptId) {
+        return { rejection: [{ obligationId: 'attempt', command: 'kernel report', errorSummary: 'Report attempt does not match the bound Wave attempt' }] };
+      }
+      if (report.bindingId && report.bindingId !== attempt.bindingId) {
+        return { rejection: [{ obligationId: 'binding', command: 'kernel report', errorSummary: 'Report binding does not match the bound Wave attempt' }] };
+      }
+      const actorSession = report.actorSessionId || report.sessionId || report.workerSessionId;
+      const actorSessionId = hashSessionId(actorSession);
+      if (attempt.actorSessionId && attempt.actorSessionId !== actorSessionId && attempt.actorSessionId !== actorSession) {
         return { rejection: [{ obligationId: 'session', command: 'kernel report', errorSummary: 'Report session does not match the bound Worker session' }] };
       }
       if (attempt.workspaceId && report.workspaceId !== attempt.workspaceId) {
@@ -383,7 +542,28 @@ export const createWorkCursorApi = ({ store, projectRoot, runtimeHome }) => ({
       if (active && active.stepId !== named.stepId) {
         return { rejection: [{ obligationId: 'step', command: 'kernel report', errorSummary: `Step "${named.stepId}" is not the current work unit; "${active.stepId}" is` }] };
       }
-      return { step: named };
+      const attempt = store.getActiveStepAttempt(runId, {
+        stepId: named.stepId,
+        attemptId: report.attemptId,
+        capsuleId: report.capsuleId,
+      });
+      if (report.attemptId && !attempt) {
+        return { rejection: [{ obligationId: 'attempt', command: 'kernel report', errorSummary: `Attempt "${report.attemptId}" is not an active attempt for step "${named.stepId}"` }] };
+      }
+      if (attempt && report.capsuleId) {
+        const boundCapsuleId = attempt.capsuleId || (attempt.capsuleDigest && !String(attempt.capsuleDigest).startsWith('sha256:') ? attempt.capsuleDigest : null);
+        if (boundCapsuleId && boundCapsuleId !== report.capsuleId) {
+          return { rejection: [{ obligationId: 'capsule', command: 'kernel report', errorSummary: 'Report capsule does not match the active step attempt' }] };
+        }
+      }
+      if (report.bindingId && (!attempt || attempt.bindingId !== report.bindingId)) {
+        return { rejection: [{ obligationId: 'binding', command: 'kernel report', errorSummary: 'Report binding does not match the active step attempt' }] };
+      }
+      const incompleteCredentials = rejectIncompleteAttemptCredentials(attempt, report);
+      if (incompleteCredentials) return incompleteCredentials;
+      const staleAttempt = rejectStaleAttempt(attempt, named.stepId);
+      if (staleAttempt) return staleAttempt;
+      return { step: named, attempt };
     }
 
     const runnable = selectExecutableSteps(steps, { planRevision: run.planRevision }).steps;
@@ -393,7 +573,31 @@ export const createWorkCursorApi = ({ store, projectRoot, runtimeHome }) => ({
     if (liveCount > 1 && runnable.length > 1) {
       return { rejection: [{ obligationId: 'step', command: 'kernel report', errorSummary: `This run has a decomposed plan; name the stepId the report answers (current: ${active.stepId})` }] };
     }
-    return { step: active };
+    const attempt = store.getActiveStepAttempt(runId, {
+      stepId: active.stepId,
+      attemptId: report.attemptId,
+      capsuleId: report.capsuleId,
+    });
+    if (report.attemptId && !attempt) {
+      return { rejection: [{ obligationId: 'attempt', command: 'kernel report', errorSummary: `Attempt "${report.attemptId}" is not an active attempt for step "${active.stepId}"` }] };
+    }
+    if (report.bindingId) {
+      const ownerBinding = store.getRunOwnerBinding?.(runId);
+      if ((attempt && attempt.bindingId !== report.bindingId) || (!attempt && ownerBinding?.bindingId !== report.bindingId)) {
+        return { rejection: [{ obligationId: 'binding', command: 'kernel report', errorSummary: 'Report binding does not match the current work unit' }] };
+      }
+    }
+    if (attempt && report.capsuleId) {
+      const boundCapsuleId = attempt.capsuleId || (attempt.capsuleDigest && !String(attempt.capsuleDigest).startsWith('sha256:') ? attempt.capsuleDigest : null);
+      if (boundCapsuleId && boundCapsuleId !== report.capsuleId) {
+        return { rejection: [{ obligationId: 'capsule', command: 'kernel report', errorSummary: 'Report capsule does not match the active step attempt' }] };
+      }
+    }
+    const incompleteCredentials = rejectIncompleteAttemptCredentials(attempt, report);
+    if (incompleteCredentials) return incompleteCredentials;
+    const staleAttempt = rejectStaleAttempt(attempt, active.stepId);
+    if (staleAttempt) return staleAttempt;
+    return { step: active, attempt };
   },
 
   // K1: the bounded execution context for ONE unit of work. Everything in it
@@ -520,7 +724,9 @@ export const createWorkCursorApi = ({ store, projectRoot, runtimeHome }) => ({
         status: passed ? 'passed' : 'failed',
         workspaceIdentityEnd: observation.identity,
         resultDigest,
+        verificationRefs: store.getVerifications(runId).map((verification) => verification.evidenceRef).filter(Boolean),
         failureReasons: passed ? [] : [...evaluation.reasons, ...failures.map((failure) => failure.errorSummary).filter(Boolean)],
+        failureCategory: passed ? null : (failures[0]?.failureCategory || 'proof'),
       });
     }
 

@@ -9,7 +9,8 @@ import { openSqliteDb } from './sqlite-adapter.mjs';
 import { mapCandidateToCanonicalRecord } from './knowledge/canonical-record-mapper.mjs';
 import { isProtectedObligation } from './proof/protected-obligations.mjs';
 import { assertCommandBinding } from './run/obligation-compiler.mjs';
-import { normalizeModelRouteDecision, normalizeModelUsageReceipt } from './run/model-route-contract.mjs';
+import { hashSessionId, normalizeModelRouteDecision, normalizeModelUsageReceipt } from './run/model-route-contract.mjs';
+import { ATTEMPT_PROVENANCE_KINDS, assertAttemptLineage, normalizeAttemptProvenance } from './run/attempt-provenance.mjs';
 import { digestOfEvidence, evaluateReviewReceipt, normalizeReviewReceipt, parseReviewEvidenceRef } from './proof/review-receipt.mjs';
 import { sanitizePersistentPayload, sanitizePersistentText } from './persistent-sanitizer.mjs';
 import { buildSuccessorKey } from './run/successor-key.mjs';
@@ -395,6 +396,8 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       receipt_id TEXT PRIMARY KEY,
       decision_id TEXT NOT NULL,
       run_id TEXT NOT NULL,
+      attempt_id TEXT,
+      binding_id TEXT,
       host_surface TEXT NOT NULL,
       actor_session_id TEXT NOT NULL,
       parent_session_id TEXT,
@@ -415,6 +418,7 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
     CREATE TABLE IF NOT EXISTS route_admissions (
       admission_id TEXT PRIMARY KEY,
       run_id TEXT NOT NULL,
+      attempt_id TEXT,
       step_id TEXT,
       decision_id TEXT NOT NULL,
       capsule_id TEXT,
@@ -470,13 +474,23 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
     CREATE INDEX IF NOT EXISTS idx_run_steps_run ON run_steps(run_id, plan_revision, sequence);
     CREATE TABLE IF NOT EXISTS run_step_attempts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      attempt_id TEXT,
       run_id TEXT NOT NULL,
       step_id TEXT NOT NULL,
       attempt_number INTEGER NOT NULL,
+      binding_id TEXT,
       actor_session_id TEXT,
+      capsule_id TEXT,
       capsule_digest TEXT,
+      admission_id TEXT,
       route_decision_id TEXT,
       usage_receipt_id TEXT,
+      parent_attempt_id TEXT,
+      provenance_kind TEXT NOT NULL DEFAULT 'legacy-unattributed',
+      plan_revision INTEGER,
+      mutation_revision INTEGER,
+      retry_reason TEXT,
+      failure_category TEXT,
       status TEXT NOT NULL,
       workspace_identity_start TEXT,
       workspace_identity_end TEXT,
@@ -631,6 +645,8 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
   addCol('model_usage_receipts', 'admission_id', 'TEXT');
   addCol('model_usage_receipts', 'admission_digest', 'TEXT');
   addCol('model_usage_receipts', 'step_id', 'TEXT');
+  addCol('model_usage_receipts', 'attempt_id', 'TEXT');
+  addCol('model_usage_receipts', 'binding_id', 'TEXT');
   // Wave 8 cache/model economics. Additive only: existing rows keep NULL, which
   // reads as "not measured" rather than "measured as zero". There is no
   // destructive rollback for these columns by design.
@@ -677,6 +693,26 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
   addCol('run_step_attempts', 'patch_digest', 'TEXT');
   addCol('run_step_attempts', 'verification_refs_json', "TEXT DEFAULT '[]'");
   addCol('run_step_attempts', 'knowledge_observation_refs_json', "TEXT DEFAULT '[]'");
+  addCol('run_step_attempts', 'attempt_id', 'TEXT');
+  addCol('run_step_attempts', 'binding_id', 'TEXT');
+  addCol('run_step_attempts', 'capsule_id', 'TEXT');
+  addCol('run_step_attempts', 'admission_id', 'TEXT');
+  addCol('run_step_attempts', 'parent_attempt_id', 'TEXT');
+  addCol('run_step_attempts', 'provenance_kind', "TEXT DEFAULT 'legacy-unattributed'");
+  // These remain nullable so old rows do not acquire guessed plan/mutation
+  // lineage. Canonical attempts supply both values at creation time.
+  addCol('run_step_attempts', 'plan_revision', 'INTEGER');
+  addCol('run_step_attempts', 'mutation_revision', 'INTEGER');
+  addCol('run_step_attempts', 'retry_reason', 'TEXT');
+  addCol('run_step_attempts', 'failure_category', 'TEXT');
+  addCol('route_admissions', 'attempt_id', 'TEXT');
+  addCol('review_receipts', 'step_id', 'TEXT');
+  addCol('review_receipts', 'reviewer_binding_id', 'TEXT');
+  addCol('review_receipts', 'implementer_attempt_id', 'TEXT');
+
+  // Existing rows have no trustworthy provenance. Preserve them as
+  // legacy-unattributed rather than inferring an execution mode from defaults.
+  db.prepare(`UPDATE run_step_attempts SET provenance_kind='legacy-unattributed' WHERE attempt_id IS NULL`).run();
 
   try { db.exec(`ALTER TABLE runs ADD COLUMN source_identity TEXT;`); } catch {}
   try { db.exec(`ALTER TABLE runs ADD COLUMN mutation_revision INTEGER DEFAULT 0;`); } catch {}
@@ -726,6 +762,15 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       CREATE UNIQUE INDEX IF NOT EXISTS uq_runs_successor_key
       ON runs(successor_key)
       WHERE successor_key IS NOT NULL;
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_run_step_attempts_attempt_id
+      ON run_step_attempts(attempt_id)
+      WHERE attempt_id IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_run_step_attempts_lineage
+      ON run_step_attempts(run_id, step_id, plan_revision, mutation_revision);
+      CREATE INDEX IF NOT EXISTS idx_model_usage_receipts_attempt
+      ON model_usage_receipts(run_id, attempt_id);
+      CREATE INDEX IF NOT EXISTS idx_route_admissions_attempt
+      ON route_admissions(run_id, attempt_id);
     `);
   } catch (error) {
     db.close();
@@ -1712,6 +1757,18 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
     getRunMetadata(runId) {
       const row = db.prepare(`SELECT run_id as runId, project_id as projectId, workspace_id as workspaceId, owner_binding_id as ownerBindingId, status FROM runs WHERE run_id=?`).get(runId);
       return row || null;
+    },
+
+    getRunOwnerBinding(runId) {
+      if (!runId) return null;
+      return mapSessionBinding(db.prepare(`
+        SELECT b.*
+        FROM session_bindings b
+        JOIN runs r ON r.owner_binding_id=b.binding_id
+        WHERE r.run_id=? AND b.run_id=r.run_id AND b.access_mode='owner'
+        ORDER BY b.updated_at DESC
+        LIMIT 1
+      `).get(runId));
     },
 
     createSessionBinding(binding) {
@@ -3357,12 +3414,24 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       if (normalized.runId !== runId) throw new Error(`model usage receipt runId ${normalized.runId} does not match run ${runId}`);
       const decision = this.getModelRouteDecision(normalized.decisionId, { runId });
       if (!decision) throw new Error(`model usage receipt references decision ${normalized.decisionId}, which does not belong to run ${runId}`);
+      const attempt = normalized.attemptId ? this.getStepAttemptByAttemptId(normalized.attemptId, { runId }) : null;
+      if (normalized.attemptId && !attempt) throw new Error(`model usage receipt references attempt ${normalized.attemptId}, which does not belong to run ${runId}`);
+      if (attempt) {
+        assertAttemptLineage(attempt, {
+          runId,
+          stepId: normalized.stepId,
+          bindingId: normalized.bindingId,
+          capsuleId: normalized.capsuleId,
+          admissionId: normalized.admissionId,
+          planRevision: decision.planRevision,
+        });
+      }
       db.prepare(`
-        INSERT INTO model_usage_receipts(receipt_id, decision_id, run_id, host_surface, actor_session_id, parent_session_id, resolved_model, resolved_effort, enforcement_status, input_tokens, cached_input_tokens, output_tokens, cost_micros, wall_clock_ms, result_status, capsule_id, capsule_digest, admission_id, admission_digest, step_id, provider, surface, speed_mode, reasoning_context, reasoning_mode, delegation_mode, session_lineage_id, previous_response_id_digest, prompt_prefix_digest, prompt_cache_key_digest, cache_mode, cache_ttl, cache_miss_reason, model_escalation_reason, eligible_prefix_tokens, uncached_input_tokens, cache_read_input_tokens, cache_write_input_tokens, reasoning_tokens, receipt_json, created_at)
-        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(receipt_id) DO UPDATE SET enforcement_status=excluded.enforcement_status, resolved_model=excluded.resolved_model, resolved_effort=excluded.resolved_effort, input_tokens=excluded.input_tokens, cached_input_tokens=excluded.cached_input_tokens, output_tokens=excluded.output_tokens, cost_micros=excluded.cost_micros, wall_clock_ms=excluded.wall_clock_ms, result_status=excluded.result_status, capsule_id=excluded.capsule_id, capsule_digest=excluded.capsule_digest, admission_id=excluded.admission_id, admission_digest=excluded.admission_digest, step_id=excluded.step_id, provider=excluded.provider, surface=excluded.surface, speed_mode=excluded.speed_mode, reasoning_context=excluded.reasoning_context, reasoning_mode=excluded.reasoning_mode, delegation_mode=excluded.delegation_mode, session_lineage_id=excluded.session_lineage_id, previous_response_id_digest=excluded.previous_response_id_digest, prompt_prefix_digest=excluded.prompt_prefix_digest, prompt_cache_key_digest=excluded.prompt_cache_key_digest, cache_mode=excluded.cache_mode, cache_ttl=excluded.cache_ttl, cache_miss_reason=excluded.cache_miss_reason, model_escalation_reason=excluded.model_escalation_reason, eligible_prefix_tokens=excluded.eligible_prefix_tokens, uncached_input_tokens=excluded.uncached_input_tokens, cache_read_input_tokens=excluded.cache_read_input_tokens, cache_write_input_tokens=excluded.cache_write_input_tokens, reasoning_tokens=excluded.reasoning_tokens, receipt_json=excluded.receipt_json
+        INSERT INTO model_usage_receipts(receipt_id, decision_id, run_id, attempt_id, binding_id, host_surface, actor_session_id, parent_session_id, resolved_model, resolved_effort, enforcement_status, input_tokens, cached_input_tokens, output_tokens, cost_micros, wall_clock_ms, result_status, capsule_id, capsule_digest, admission_id, admission_digest, step_id, provider, surface, speed_mode, reasoning_context, reasoning_mode, delegation_mode, session_lineage_id, previous_response_id_digest, prompt_prefix_digest, prompt_cache_key_digest, cache_mode, cache_ttl, cache_miss_reason, model_escalation_reason, eligible_prefix_tokens, uncached_input_tokens, cache_read_input_tokens, cache_write_input_tokens, reasoning_tokens, receipt_json, created_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(receipt_id) DO UPDATE SET attempt_id=excluded.attempt_id, binding_id=excluded.binding_id, enforcement_status=excluded.enforcement_status, resolved_model=excluded.resolved_model, resolved_effort=excluded.resolved_effort, input_tokens=excluded.input_tokens, cached_input_tokens=excluded.cached_input_tokens, output_tokens=excluded.output_tokens, cost_micros=excluded.cost_micros, wall_clock_ms=excluded.wall_clock_ms, result_status=excluded.result_status, capsule_id=excluded.capsule_id, capsule_digest=excluded.capsule_digest, admission_id=excluded.admission_id, admission_digest=excluded.admission_digest, step_id=excluded.step_id, provider=excluded.provider, surface=excluded.surface, speed_mode=excluded.speed_mode, reasoning_context=excluded.reasoning_context, reasoning_mode=excluded.reasoning_mode, delegation_mode=excluded.delegation_mode, session_lineage_id=excluded.session_lineage_id, previous_response_id_digest=excluded.previous_response_id_digest, prompt_prefix_digest=excluded.prompt_prefix_digest, prompt_cache_key_digest=excluded.prompt_cache_key_digest, cache_mode=excluded.cache_mode, cache_ttl=excluded.cache_ttl, cache_miss_reason=excluded.cache_miss_reason, model_escalation_reason=excluded.model_escalation_reason, eligible_prefix_tokens=excluded.eligible_prefix_tokens, uncached_input_tokens=excluded.uncached_input_tokens, cache_read_input_tokens=excluded.cache_read_input_tokens, cache_write_input_tokens=excluded.cache_write_input_tokens, reasoning_tokens=excluded.reasoning_tokens, receipt_json=excluded.receipt_json
       `).run(
-        normalized.receiptId, normalized.decisionId, runId, normalized.hostSurface, normalized.actorSessionId,
+        normalized.receiptId, normalized.decisionId, runId, normalized.attemptId, normalized.bindingId, normalized.hostSurface, normalized.actorSessionId,
         normalized.parentSessionId, normalized.resolvedModel, normalized.resolvedEffort, normalized.enforcementStatus,
         normalized.inputTokens, normalized.cachedInputTokens, normalized.outputTokens, normalized.costMicros,
         normalized.wallClockMs, normalized.resultStatus,
@@ -3375,6 +3444,14 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         normalized.cacheWriteInputTokens, normalized.reasoningTokens,
         persistentJson(normalized), normalized.createdAt,
       );
+      if (attempt) {
+        this.attachAttemptLineage(attempt.attemptId, {
+          usageReceiptId: normalized.receiptId,
+          actorSessionId: normalized.actorSessionId,
+          status: normalized.resultStatus === 'failed' ? 'interrupted' : undefined,
+          failureCategory: normalized.resultStatus === 'failed' ? 'provider/infrastructure' : undefined,
+        });
+      }
       return normalized;
     },
 
@@ -3397,16 +3474,26 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       if (!admission?.admissionId) throw new Error('recordRouteAdmission requires a built admission');
       if (admission.runId !== runId) throw new Error(`route admission runId ${admission.runId} does not match run ${runId}`);
       if (!this.getRun(runId)) throw new Error(`Run ${runId} not found`);
+      const attempt = admission.attemptId ? this.getStepAttemptByAttemptId(admission.attemptId, { runId }) : null;
+      if (admission.attemptId && !attempt) throw new Error(`route admission references attempt ${admission.attemptId}, which does not belong to run ${runId}`);
+      if (attempt) assertAttemptLineage(attempt, { runId, stepId: admission.stepId, capsuleId: admission.capsuleId, planRevision: admission.planRevision });
       db.prepare(`
-        INSERT INTO route_admissions(admission_id, run_id, step_id, decision_id, capsule_id, requested_json, resolved_json, policy_json, economics_json, decision, rejection_code, digest, admission_json, created_at)
-        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO route_admissions(admission_id, run_id, attempt_id, step_id, decision_id, capsule_id, requested_json, resolved_json, policy_json, economics_json, decision, rejection_code, digest, admission_json, created_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(admission_id) DO NOTHING
       `).run(
-        admission.admissionId, runId, admission.stepId || null, admission.decisionId, admission.capsuleId || null,
+        admission.admissionId, runId, admission.attemptId || null, admission.stepId || null, admission.decisionId, admission.capsuleId || null,
         JSON.stringify(admission.requested), JSON.stringify(admission.resolved), JSON.stringify(admission.policy),
         JSON.stringify(admission.economics), admission.decision, admission.rejectionCode || null,
         admission.digest, persistentJson(admission), admission.createdAt,
       );
+      if (attempt) {
+        this.attachAttemptLineage(attempt.attemptId, {
+          admissionId: admission.admissionId,
+          status: admission.decision === 'blocked' || admission.decision === 'redecision_required' ? 'interrupted' : undefined,
+          failureCategory: admission.rejectionCode || undefined,
+        });
+      }
       return admission;
     },
 
@@ -3754,19 +3841,73 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       };
     },
 
-    recordStepAttempt(runId, { stepId, actorSessionId = null, capsuleDigest = null, capsuleId = null, routeDecisionId = null, usageReceiptId = null, workspaceIdentityStart = null, summary = null, changedPaths = [], waveId = null, workspaceId = null, workspaceRootHash = null, baseWorkspaceIdentity = null, verificationRefs = [], knowledgeObservationRefs = [] }) {
+    recordStepAttempt(runId, {
+      stepId,
+      attemptId = null,
+      bindingId = null,
+      actorSessionId = null,
+      capsuleDigest = null,
+      capsuleId = null,
+      admissionId = null,
+      routeDecisionId = null,
+      usageReceiptId = null,
+      parentAttemptId = null,
+      provenanceKind = 'owner-session',
+      planRevision = null,
+      mutationRevision = null,
+      retryReason = null,
+      failureCategory = null,
+      workspaceIdentityStart = null,
+      summary = null,
+      changedPaths = [],
+      waveId = null,
+      workspaceId = null,
+      workspaceRootHash = null,
+      baseWorkspaceIdentity = null,
+      verificationRefs = [],
+      knowledgeObservationRefs = [],
+    }) {
+      const run = this.getRun(runId);
+      if (!run) throw new Error(`Run ${runId} not found`);
+      const step = stepId ? this.getRunStep(runId, stepId) : null;
+      if (!step) throw new Error(`Run ${runId} step ${stepId || '<missing>'} not found`);
+      const provenance = normalizeAttemptProvenance({
+        attemptId,
+        bindingId,
+        capsuleId,
+        capsuleDigest,
+        admissionId,
+        parentAttemptId,
+        provenanceKind,
+        planRevision: provenanceKind === 'legacy-unattributed'
+          ? null
+          : planRevision ?? step?.planRevision ?? run.planRevision ?? 1,
+        mutationRevision: provenanceKind === 'legacy-unattributed'
+          ? null
+          : mutationRevision ?? run.mutationRevision ?? 0,
+        retryReason,
+        failureCategory,
+      });
       const attemptNumber = this.nextStepAttemptNumber(runId, stepId);
       const result = db.prepare(`
-        INSERT INTO run_step_attempts(run_id, step_id, attempt_number, actor_session_id, capsule_digest, route_decision_id, usage_receipt_id, status, workspace_identity_start, summary, changed_paths_json, wave_id, workspace_id, workspace_root_hash, base_workspace_identity, verification_refs_json, knowledge_observation_refs_json, started_at)
-        VALUES(?, ?, ?, ?, ?, ?, ?, 'started', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(runId, stepId, attemptNumber, actorSessionId, capsuleId || capsuleDigest, routeDecisionId, usageReceiptId, workspaceIdentityStart, summary, JSON.stringify(changedPaths), waveId, workspaceId, workspaceRootHash, baseWorkspaceIdentity, JSON.stringify(verificationRefs), JSON.stringify(knowledgeObservationRefs), now());
+        INSERT INTO run_step_attempts(attempt_id, run_id, step_id, attempt_number, binding_id, actor_session_id, capsule_id, capsule_digest, admission_id, route_decision_id, usage_receipt_id, parent_attempt_id, provenance_kind, plan_revision, mutation_revision, retry_reason, failure_category, status, workspace_identity_start, summary, changed_paths_json, wave_id, workspace_id, workspace_root_hash, base_workspace_identity, verification_refs_json, knowledge_observation_refs_json, started_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'started', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        provenance.attemptId, runId, stepId, attemptNumber, provenance.bindingId, hashSessionId(actorSessionId), provenance.capsuleId,
+        provenance.capsuleDigest, provenance.admissionId, routeDecisionId, usageReceiptId, provenance.parentAttemptId,
+        provenance.provenanceKind, provenance.planRevision, provenance.mutationRevision, provenance.retryReason,
+        provenance.failureCategory, workspaceIdentityStart, summary, JSON.stringify(changedPaths), waveId, workspaceId,
+        workspaceRootHash, baseWorkspaceIdentity, JSON.stringify(verificationRefs), JSON.stringify(knowledgeObservationRefs), now(),
+      );
       db.prepare(`UPDATE run_steps SET attempt_count=attempt_count+1, updated_at=? WHERE run_id=? AND step_id=?`).run(now(), runId, stepId);
       return this.getStepAttempt(result.lastInsertRowid);
     },
 
-    finishStepAttempt(attemptId, { status = 'finished', workspaceIdentityEnd = null, resultWorkspaceIdentity = null, resultCommitSha = null, patchDigest = null, verificationRefs = null, knowledgeObservationRefs = null, resultDigest = null, failureReasons = [], changedPaths = null } = {}) {
+    finishStepAttempt(attemptId, { status = 'passed', workspaceIdentityEnd = null, resultWorkspaceIdentity = null, resultCommitSha = null, patchDigest = null, verificationRefs = null, knowledgeObservationRefs = null, resultDigest = null, failureReasons = [], failureCategory = null, retryReason = null, changedPaths = null } = {}) {
       const assignments = ['status=?', 'finished_at=?', 'workspace_identity_end=?', 'result_workspace_identity=?', 'result_commit_sha=?', 'patch_digest=?', 'result_digest=?', 'failure_reasons_json=?'];
       const values = [status, now(), workspaceIdentityEnd, resultWorkspaceIdentity || workspaceIdentityEnd, resultCommitSha, patchDigest, resultDigest, JSON.stringify(failureReasons)];
+      if (failureCategory !== null) { assignments.push('failure_category=?'); values.push(failureCategory); }
+      if (retryReason !== null) { assignments.push('retry_reason=?'); values.push(retryReason); }
       if (changedPaths) {
         assignments.push('changed_paths_json=?');
         values.push(JSON.stringify(changedPaths));
@@ -3780,8 +3921,20 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
     updateStepAttempt(attemptId, patch = {}) {
       const columns = {
         actorSessionId: 'actor_session_id',
-        capsuleId: 'capsule_digest',
+        bindingId: 'binding_id',
+        capsuleId: 'capsule_id',
         capsuleDigest: 'capsule_digest',
+        admissionId: 'admission_id',
+        routeDecisionId: 'route_decision_id',
+        usageReceiptId: 'usage_receipt_id',
+        parentAttemptId: 'parent_attempt_id',
+        provenanceKind: 'provenance_kind',
+        planRevision: 'plan_revision',
+        mutationRevision: 'mutation_revision',
+        retryReason: 'retry_reason',
+        failureCategory: 'failure_category',
+        status: 'status',
+        finishedAt: 'finished_at',
         workspaceId: 'workspace_id',
         workspaceRootHash: 'workspace_root_hash',
         baseWorkspaceIdentity: 'base_workspace_identity',
@@ -3796,25 +3949,47 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       for (const [key, column] of Object.entries(columns)) {
         if (patch[key] === undefined) continue;
         assignments.push(`${column}=?`);
-        values.push(column.endsWith('_json') ? JSON.stringify(patch[key]) : patch[key]);
+        values.push(column.endsWith('_json') ? JSON.stringify(patch[key]) : key === 'actorSessionId' ? hashSessionId(patch[key]) : patch[key]);
       }
       if (assignments.length === 0) return this.getStepAttempt(attemptId);
       db.prepare(`UPDATE run_step_attempts SET ${assignments.join(', ')} WHERE id=?`).run(...values, attemptId);
       return this.getStepAttempt(attemptId);
     },
 
+    // Canonical lineage attachment points. They address the stable external
+    // attempt id; the integer row id remains an internal compatibility handle.
+    attachAttemptLineage(attemptId, patch = {}) {
+      const attempt = this.getStepAttemptByAttemptId(attemptId) || this.getStepAttempt(attemptId);
+      if (!attempt) throw new Error(`attempt ${attemptId} not found`);
+      return this.updateStepAttempt(attempt.id, patch);
+    },
+
     getStepAttempt(id) {
       const row = db.prepare(`SELECT * FROM run_step_attempts WHERE id=?`).get(id);
       if (!row) return null;
+      const provenanceKind = row.attempt_id && ATTEMPT_PROVENANCE_KINDS.includes(row.provenance_kind)
+        ? row.provenance_kind
+        : 'legacy-unattributed';
+      const legacy = provenanceKind === 'legacy-unattributed';
       return {
         id: row.id,
+        attemptId: row.attempt_id || null,
         runId: row.run_id,
         stepId: row.step_id,
         attemptNumber: row.attempt_number,
+        bindingId: row.binding_id || null,
         actorSessionId: row.actor_session_id || null,
+        capsuleId: row.capsule_id || null,
         capsuleDigest: row.capsule_digest || null,
+        admissionId: row.admission_id || null,
         routeDecisionId: row.route_decision_id || null,
         usageReceiptId: row.usage_receipt_id || null,
+        parentAttemptId: row.parent_attempt_id || null,
+        provenanceKind,
+        planRevision: legacy || row.plan_revision === null ? null : Number(row.plan_revision),
+        mutationRevision: legacy || row.mutation_revision === null ? null : Number(row.mutation_revision),
+        retryReason: row.retry_reason || null,
+        failureCategory: row.failure_category || null,
         status: row.status,
         workspaceIdentityStart: row.workspace_identity_start || null,
         workspaceIdentityEnd: row.workspace_identity_end || null,
@@ -3834,6 +4009,45 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         startedAt: row.started_at,
         finishedAt: row.finished_at || null,
       };
+    },
+
+    getStepAttemptByAttemptId(attemptId, { runId = null } = {}) {
+      if (!attemptId) return null;
+      const row = runId
+        ? db.prepare(`SELECT id FROM run_step_attempts WHERE attempt_id=? AND run_id=? LIMIT 1`).get(String(attemptId), runId)
+        : db.prepare(`SELECT id FROM run_step_attempts WHERE attempt_id=? LIMIT 1`).get(String(attemptId));
+      return row ? this.getStepAttempt(row.id) : null;
+    },
+
+    getActiveStepAttempt(runId, { stepId = null, attemptId = null, capsuleId = null, waveId = null } = {}) {
+      const activeStatuses = ['started', 'reported', 'verifying'];
+      if (attemptId) {
+        const requested = this.getStepAttemptByAttemptId(attemptId, { runId });
+        return requested && activeStatuses.includes(requested.status) ? requested : null;
+      }
+      const candidates = this.getStepAttempts(runId, { stepId })
+        .filter((attempt) => !waveId || attempt.waveId === waveId)
+        .filter((attempt) => !capsuleId || (attempt.capsuleId || attempt.capsuleDigest) === capsuleId)
+        .filter((attempt) => activeStatuses.includes(attempt.status));
+      return candidates.at(-1) || null;
+    },
+
+    getLatestImplementationAttempt(runId, { stepId = null } = {}) {
+      return this.getStepAttempts(runId, { stepId })
+        .filter((attempt) => attempt.provenanceKind !== 'legacy-unattributed')
+        .filter((attempt) => {
+          if (attempt.provenanceKind === 'owner-session') return true;
+          if (attempt.provenanceKind !== 'routed') return false;
+          // Routed reviewer turns use the same canonical attempt table as
+          // implementations. Only the route decision's role can distinguish
+          // those rows; legacy routed rows without a decision remain eligible
+          // for backward-compatible implementation provenance.
+          const decision = attempt.routeDecisionId
+            ? this.getModelRouteDecision(attempt.routeDecisionId, { runId })
+            : null;
+          return !decision || decision.role === 'implementer';
+        })
+        .at(-1) || null;
     },
 
     getStepAttempts(runId, { stepId = null } = {}) {
@@ -3895,12 +4109,30 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       const normalized = normalizeReviewReceipt(sanitizePersistentPayload({ ...receipt, runId: receipt?.runId || runId }));
       if (normalized.runId !== runId) throw new Error(`review receipt runId ${normalized.runId} does not match run ${runId}`);
       if (!this.getRun(runId)) throw new Error(`Run ${runId} not found`);
+      const implementerAttempt = normalized.implementerAttemptId
+        ? this.getStepAttemptByAttemptId(normalized.implementerAttemptId, { runId })
+        : null;
+      if (normalized.implementerAttemptId && !implementerAttempt) {
+        throw new Error(`review receipt references implementer attempt ${normalized.implementerAttemptId}, which does not belong to run ${runId}`);
+      }
+      if (implementerAttempt && normalized.stepId && implementerAttempt.stepId !== normalized.stepId) {
+        throw new Error(`review receipt step ${normalized.stepId} does not match implementer attempt step ${implementerAttempt.stepId}`);
+      }
+      const reviewerUsage = normalized.reviewer.usageReceiptId
+        ? this.getModelUsageReceipt(normalized.reviewer.usageReceiptId, { runId })
+        : null;
+      if (reviewerUsage?.stepId && normalized.stepId && reviewerUsage.stepId !== normalized.stepId) {
+        throw new Error(`review receipt step ${normalized.stepId} does not match reviewer usage step ${reviewerUsage.stepId || '<legacy>'}`);
+      }
+      if (reviewerUsage?.bindingId && normalized.reviewerBindingId && reviewerUsage.bindingId !== normalized.reviewerBindingId) {
+        throw new Error(`review receipt reviewer binding ${normalized.reviewerBindingId} does not match reviewer usage binding ${reviewerUsage.bindingId || '<missing>'}`);
+      }
       db.prepare(`
-        INSERT INTO review_receipts(receipt_id, run_id, obligation_id, review_stage, verdict, finding_class, plan_revision, reviewer_usage_receipt_id, implementer_usage_receipt_id, reviewer_session_id, implementer_session_id, route_decision_id, model_class, resolved_model, enforcement_status, workspace_identity, mutation_revision, changed_paths_digest, evidence_digest, acceptance_coverage_json, findings_json, rationale, digest, receipt_json, created_by_version, migration_origin, created_at)
-        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO review_receipts(receipt_id, run_id, obligation_id, step_id, reviewer_binding_id, implementer_attempt_id, review_stage, verdict, finding_class, plan_revision, reviewer_usage_receipt_id, implementer_usage_receipt_id, reviewer_session_id, implementer_session_id, route_decision_id, model_class, resolved_model, enforcement_status, workspace_identity, mutation_revision, changed_paths_digest, evidence_digest, acceptance_coverage_json, findings_json, rationale, digest, receipt_json, created_by_version, migration_origin, created_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(receipt_id) DO NOTHING
       `).run(
-        normalized.receiptId, runId, normalized.obligationId, normalized.reviewStage, normalized.verdict,
+        normalized.receiptId, runId, normalized.obligationId, normalized.stepId, normalized.reviewerBindingId, normalized.implementerAttemptId, normalized.reviewStage, normalized.verdict,
         normalized.findingClass, normalized.planRevision,
         normalized.reviewer.usageReceiptId, normalized.implementer.usageReceiptId,
         normalized.reviewer.actorSessionId, normalized.implementer.actorSessionId,
@@ -3934,6 +4166,8 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
     getLatestImplementationSession(runId) {
       const row = db.prepare(`
         SELECT u.receipt_id as receiptId, u.actor_session_id as actorSessionId, u.decision_id as decisionId,
+               u.attempt_id as attemptId, u.binding_id as bindingId,
+               u.step_id as stepId,
                u.capsule_id as capsuleId, u.capsule_digest as capsuleDigest, u.resolved_model as resolvedModel,
                d.model_class as modelClass, d.action_kind as actionKind
         FROM model_usage_receipts u JOIN model_route_decisions d ON d.decision_id = u.decision_id
@@ -3963,6 +4197,7 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         receiptId: null,
         actorSessionId: `sha256:${createHash('sha256').update(String(owner.sessionId)).digest('hex')}`,
         decisionId: null,
+        attemptId: null,
         capsuleId: null,
         capsuleDigest: null,
         resolvedModel: null,

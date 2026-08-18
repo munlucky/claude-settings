@@ -2,6 +2,7 @@ import { createCodexAdapter } from './adapters/codex.mjs';
 import { CODEX_MODELS } from './codex-model-policy.mjs';
 import { createCodexCliReviewLauncher } from './codex-cli-launcher.mjs';
 import { dispatchKernelTurn } from './turn-dispatcher.mjs';
+import { scanRepositoryEvidence } from '../../kernel/task/evidence-scan.mjs';
 
 export const runCodexIndependentReview = async ({
   controlPlane,
@@ -29,6 +30,7 @@ export const runCodexIndependentReview = async ({
       supportsCacheReadTokens: true,
     },
   });
+  const changedPaths = scanRepositoryEvidence({ projectRoot }).dirtyPaths;
   const dispatched = await dispatchKernelTurn({
     controlPlane,
     runId,
@@ -37,7 +39,7 @@ export const runCodexIndependentReview = async ({
     env,
     parentSessionId,
     overrides: { frontier_reasoning: { model, effort } },
-    actionContext: { actionKind: 'review_engineering', obligationId },
+    actionContext: { actionKind: 'review_engineering', obligationId, changedPaths },
   });
   if (!dispatched.dispatched || !dispatched.receipt || !dispatched.dispatch?.outcome) {
     throw new Error(`codex_review_not_dispatched: ${dispatched.reason || dispatched.dispatch?.errorSummary || 'missing outcome'}`);
@@ -67,4 +69,3 @@ export const runCodexIndependentReview = async ({
     review: ingested,
   };
 };
-

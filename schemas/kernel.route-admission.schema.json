@@ -13,6 +13,7 @@
     "schemaVersion": { "const": 1 },
     "admissionId": { "type": "string", "pattern": "^admission-[a-f0-9]{8,64}$" },
     "runId": { "type": "string", "minLength": 1 },
+    "attemptId": { "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "^attempt-[a-f0-9-]{8,96}$" }] },
     "stepId": { "type": ["string", "null"] },
     "decisionId": { "type": "string", "pattern": "^route-[a-f0-9]{8,64}$" },
     "capsuleId": { "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "^capsule-[a-f0-9]{8,64}$" }] },

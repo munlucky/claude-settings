@@ -277,6 +277,7 @@ export const normalizeReviewCapsule = (input = {}) => {
     })),
     implementationReceipt: {
       actorSessionId: input.implementationReceipt?.actorSessionId ? String(input.implementationReceipt.actorSessionId) : null,
+      attemptId: input.implementationReceipt?.attemptId ? String(input.implementationReceipt.attemptId) : null,
       capsuleDigest: input.implementationReceipt?.capsuleDigest ? String(input.implementationReceipt.capsuleDigest) : null,
       modelClass: input.implementationReceipt?.modelClass ? String(input.implementationReceipt.modelClass) : null,
       resolvedModel: input.implementationReceipt?.resolvedModel ? String(input.implementationReceipt.resolvedModel) : null,
@@ -342,6 +343,7 @@ export const buildReviewCapsule = ({
     })),
     implementationReceipt: {
       actorSessionId: implementationSession?.actorSessionId || null,
+      attemptId: implementationSession?.attemptId || null,
       capsuleDigest: implementationSession?.capsuleDigest || null,
       modelClass: implementationSession?.modelClass || null,
       resolvedModel: implementationSession?.resolvedModel || null,

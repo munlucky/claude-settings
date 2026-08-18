@@ -229,6 +229,8 @@ export const normalizeReport = (payload = {}) => {
     implementerId: payload.implementerId ? String(payload.implementerId) : null,
     // The bounded context (K1) and the work unit (K2) this report answers.
     capsuleId: payload.capsuleId ? String(payload.capsuleId) : null,
+    attemptId: payload.attemptId ? String(payload.attemptId) : null,
+    bindingId: payload.bindingId ? String(payload.bindingId) : null,
     stepId: payload.stepId ? String(payload.stepId) : null,
     waveId: payload.waveId ? String(payload.waveId) : null,
     planRevision: payload.planRevision === undefined || payload.planRevision === null ? undefined : Number(payload.planRevision),

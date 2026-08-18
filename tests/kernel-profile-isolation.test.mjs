@@ -41,6 +41,11 @@ test('Codex profile materializes Kernel marker without Relay catalog and configu
 
   const customEnv = {
     ...process.env,
+    MOON_RELAY_TRACK: '',
+    MOON_RELAY_KERNEL_HOME: path.join(d, 'non-kernel-runtime'),
+    CODEX_THREAD_ID: '',
+    MOON_RELAY_KERNEL_SESSION_ID: '',
+    MOON_RELAY_KERNEL_RUN_ID: '',
     PATH: `${tempBinDir}${path.delimiter}${process.env.PATH || ''}`,
   };
 

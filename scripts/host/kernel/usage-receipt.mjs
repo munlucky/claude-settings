@@ -34,7 +34,7 @@ const resolveCacheTelemetry = ({ capabilities, dispatch, cacheContext }) => {
   return { read, write, missReason };
 };
 
-export const buildUsageReceipt = ({ decision, capabilities, strategy, resolution, dispatch = {}, capsule = null, admission = null, actorSessionId, parentSessionId = null, startedAt = null, finishedAt = null, cacheContext = {}, envelope = null, sessionLineage = null } = {}) => {
+export const buildUsageReceipt = ({ decision, capabilities, strategy, resolution, dispatch = {}, capsule = null, admission = null, attemptId = null, bindingId = null, actorSessionId, parentSessionId = null, startedAt = null, finishedAt = null, cacheContext = {}, envelope = null, sessionLineage = null } = {}) => {
   if (!decision) throw new Error('a usage receipt requires the route decision it answers');
   if (decision.modelClass === 'kernel') throw new Error('kernel-owned actions run no provider model and produce no usage receipt');
   const actor = hashSessionId(actorSessionId);
@@ -49,6 +49,8 @@ export const buildUsageReceipt = ({ decision, capabilities, strategy, resolution
     hostSurface: capabilities.surface,
     actorSessionId: actor,
     parentSessionId: hashSessionId(parentSessionId),
+    attemptId,
+    bindingId,
     // Only an identity the Host actually observed is recorded. Echoing the
     // requested model back would turn a wish into evidence.
     resolvedModel: dispatch.resolvedModel || null,

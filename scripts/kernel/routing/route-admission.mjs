@@ -92,6 +92,7 @@ const checkRoleRules = ({ decision, resolution, capabilities, capsule, riskTier 
 export const admitRoute = ({
   run = {},
   step = null,
+  attemptId = null,
   decision,
   resolution,
   capabilities = {},
@@ -162,6 +163,7 @@ export const admitRoute = ({
   const body = {
     schemaVersion: ADMISSION_SCHEMA_VERSION,
     runId: decision.runId,
+    attemptId: attemptId || null,
     stepId: step?.stepId || capsule?.stepId || null,
     decisionId: decision.decisionId,
     capsuleId: capsule?.capsuleId || null,

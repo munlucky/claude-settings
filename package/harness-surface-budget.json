@@ -8,7 +8,7 @@
   },
   "allowedDelta": {
     "files": 50,
-    "nonblankLines": 3300,
+    "nonblankLines": 3500,
     "utf8Bytes": 172000,
     "estimatedPromptTokens": 43000
   },

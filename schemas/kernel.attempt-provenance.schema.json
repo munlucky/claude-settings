@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moon-relay-kernel.local/schemas/kernel.attempt-provenance.schema.json",
+  "title": "Kernel canonical work-attempt provenance",
+  "description": "The durable lineage for one run step attempt. Legacy-unattributed rows are retained without guessed provenance.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "runId", "stepId", "provenanceKind", "status"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "attemptId": { "type": ["string", "null"], "pattern": "^attempt-[a-f0-9-]{8,96}$" },
+    "runId": { "type": "string", "minLength": 1 },
+    "stepId": { "type": "string", "minLength": 1 },
+    "bindingId": { "type": ["string", "null"] },
+    "capsuleId": { "type": ["string", "null"] },
+    "capsuleDigest": { "type": ["string", "null"] },
+    "admissionId": { "type": ["string", "null"] },
+    "parentAttemptId": { "type": ["string", "null"] },
+    "provenanceKind": { "enum": ["routed", "owner-session", "kernel-owned", "legacy-unattributed"] },
+    "planRevision": { "type": ["integer", "null"], "minimum": 1 },
+    "mutationRevision": { "type": ["integer", "null"], "minimum": 0 },
+    "retryReason": { "type": ["string", "null"] },
+    "failureCategory": { "type": ["string", "null"] },
+    "status": { "enum": ["started", "passed", "failed", "interrupted", "superseded", "cancelled"] }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "provenanceKind": { "const": "legacy-unattributed" } } },
+      "then": {
+        "properties": {
+          "attemptId": { "type": "null" },
+          "planRevision": { "type": "null" },
+          "mutationRevision": { "type": "null" }
+        }
+      },
+      "else": {
+        "required": ["attemptId", "planRevision", "mutationRevision"],
+        "properties": {
+          "attemptId": { "type": "string", "pattern": "^attempt-[a-f0-9-]{8,96}$" },
+          "planRevision": { "type": "integer", "minimum": 1 },
+          "mutationRevision": { "type": "integer", "minimum": 0 }
+        }
+      }
+    }
+  ]
+}

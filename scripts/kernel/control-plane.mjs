@@ -1035,7 +1035,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         planInvalid,
         architectureDeviation,
         independentReviewRequired,
-        currentPlanRevision: Number(run.contractRevision || 1),
+        currentPlanRevision: Number(run.planRevision || 1),
         obligationId,
         // §5.4: an escalation holds for the rest of this plan revision, but a
         // replan produces a new revision that may return to the value class.
@@ -1099,21 +1099,72 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       // worker, so they get no capsule.
       let executionCapsule = null;
       if (decision.modelClass !== 'kernel') {
+        const latestImplementationAttempt = decision.role === 'reviewer'
+          ? store.getLatestImplementationAttempt?.(runId)
+          : null;
+        const capsuleStep = actionContext.stepId
+          ? this.ensureRunStepsMigrated(runId).find((entry) => entry.stepId === actionContext.stepId)
+          : this.getCurrentStep(runId)
+            || (latestImplementationAttempt?.stepId ? store.getRunStep(runId, latestImplementationAttempt.stepId) : null);
         executionCapsule = decision.role === 'reviewer'
           ? await this.buildReviewerCapsule(runId, {
             decision,
             stage: decision.actionKind === 'review_contract' ? 'contract' : 'engineering',
             obligationId: decision.obligationId,
             changedPaths: actionContext.changedPaths || [],
+            step: capsuleStep,
           })
           : await this.buildCapsule(runId, {
             role: 'implementer',
             decision,
-            step: actionContext.stepId ? this.ensureRunStepsMigrated(runId).find((entry) => entry.stepId === actionContext.stepId) : null,
+            step: capsuleStep,
             changedPaths: actionContext.changedPaths || [],
             workspaceIdentity: actionContext.workspaceIdentity || null,
           });
         if (modelInput.action) modelInput.action.capsuleId = executionCapsule.capsuleId;
+      }
+
+      // The attempt is opened after the Kernel has issued the bounded capsule
+      // but before admission/dispatch. Wave workers pass their pre-bound
+      // attempt so the shared path never creates a duplicate row.
+      let attempt = actionContext.attemptId
+        ? store.getStepAttemptByAttemptId(actionContext.attemptId, { runId })
+        : null;
+      if (!attempt && decision.modelClass !== 'kernel' && executionCapsule?.stepId) {
+        attempt = store.getActiveStepAttempt(runId, {
+          stepId: executionCapsule.stepId,
+          capsuleId: executionCapsule.capsuleId,
+          waveId: actionContext.waveId || null,
+        });
+      }
+      if (decision.modelClass !== 'kernel' && executionCapsule?.stepId) {
+        if (attempt) {
+          this.assertAttemptLineage(attempt, { runId, stepId: executionCapsule.stepId, planRevision: run.planRevision, mutationRevision: run.mutationRevision });
+          attempt = this.attachAttemptLineage(attempt.attemptId, {
+            bindingId: attempt.bindingId || store.getRunOwnerBinding?.(runId)?.bindingId || null,
+            capsuleId: executionCapsule.capsuleId,
+            capsuleDigest: executionCapsule.provenance?.capsuleDigest || null,
+            routeDecisionId: decision.decisionId,
+            provenanceKind: attempt.provenanceKind === 'legacy-unattributed' ? 'routed' : attempt.provenanceKind,
+            planRevision: run.planRevision,
+            mutationRevision: run.mutationRevision,
+          });
+        } else {
+          attempt = this.beginAttempt(runId, {
+            stepId: executionCapsule.stepId,
+            bindingId: store.getRunOwnerBinding?.(runId)?.bindingId || null,
+            capsuleId: executionCapsule.capsuleId,
+            capsuleDigest: executionCapsule.provenance?.capsuleDigest || null,
+            routeDecisionId: decision.decisionId,
+            provenanceKind: 'routed',
+            planRevision: run.planRevision,
+            mutationRevision: run.mutationRevision,
+            workspaceIdentityStart: executionCapsule.provenance?.workspaceIdentity || run.currentWorkspaceIdentity,
+            workspaceId: actionContext.workspaceId || run.workspaceId || null,
+            baseWorkspaceIdentity: actionContext.workspaceIdentity || null,
+            waveId: actionContext.waveId || null,
+          });
+        }
       }
 
       return {
@@ -1126,6 +1177,8 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
           hostCapabilities: capabilities,
           enforcementStrategy: resolveEnforcementStrategy(capabilities, decision),
           executionCapsule,
+          attemptId: attempt?.attemptId || null,
+          attempt,
           mutationLock,
         },
       };
@@ -1142,12 +1195,13 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     // K3: the Host asks for admission between the route decision and the actual
     // dispatch, and the answer is persisted whatever it is. A blocked admission
     // is evidence that a turn was refused, not an absence of a turn.
-    async admitRoute(runId, { decision, resolution, capabilities = {}, capsule = null, step = null, policies, economics = {} } = {}) {
+    async admitRoute(runId, { decision, resolution, capabilities = {}, capsule = null, step = null, attemptId = null, policies, economics = {} } = {}) {
       const run = store.getRun(runId);
       if (!run) throw new Error(`Run ${runId} not found`);
       const admission = admitRoute({
         run,
         step: step || this.getCurrentStep(runId),
+        attemptId,
         decision,
         resolution,
         capabilities,
@@ -1174,7 +1228,15 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       if (run.status === 'completed' && !lateObservation) {
         throw new Error(`Run ${runId} is completed; a late usage receipt requires an explicit late-observation flag`);
       }
-      return store.recordModelUsageReceipt(runId, { ...usageReceipt, runId });
+      const attempt = usageReceipt.attemptId
+        ? store.getStepAttemptByAttemptId(usageReceipt.attemptId, { runId })
+        : usageReceipt.capsuleId ? store.getActiveStepAttempt(runId, { capsuleId: usageReceipt.capsuleId }) : null;
+      return store.recordModelUsageReceipt(runId, {
+        ...usageReceipt,
+        runId,
+        ...(attempt && !usageReceipt.attemptId ? { attemptId: attempt.attemptId } : {}),
+        ...(attempt && !usageReceipt.bindingId ? { bindingId: attempt.bindingId } : {}),
+      });
     },
 
     modelRoutingSummary(runId) {
@@ -1231,7 +1293,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         reviewStage: normalized.stage,
         verdict: normalized.verdict,
         findingClass: findingClassOf(normalized.findings),
-        planRevision: Number(run.contractRevision || 1),
+        planRevision: Number(run.planRevision || run.contractRevision || 1),
         reviewer: usageReceipt
           ? {
             actorSessionId: usageReceipt.actorSessionId,
@@ -1253,6 +1315,14 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
           actorSessionId: implementationSession?.actorSessionId || null,
           usageReceiptId: implementationSession?.receiptId || null,
         },
+        stepId: usageReceipt?.stepId
+          || implementationSession?.stepId
+          || store.getLatestImplementationAttempt?.(runId)?.stepId
+          || null,
+        reviewerBindingId: usageReceipt?.bindingId || null,
+        implementerAttemptId: implementationSession?.attemptId
+          || store.getLatestImplementationAttempt?.(runId)?.attemptId
+          || null,
         subject: {
           workspaceIdentity: run.currentWorkspaceIdentity,
           mutationRevision: run.mutationRevision,
@@ -1845,13 +1915,34 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       const stepResolution = this.resolveReportStep(runId, report);
       const activeStep = stepResolution.step || null;
 
-      const capsuleRejection = stepResolution.rejection || this.assertCapsuleScope(runId, report, activeStep);
+      // A stale named capsule remains a capsule/scope failure even when the
+      // active attempt carrying it also has stale mutation lineage. Preserve
+      // that public rejection class while still refusing the report before
+      // any proof can run.
+      const lineageRejection = stepResolution.rejection;
+      const hasAttemptLineageRejection = lineageRejection
+        && lineageRejection.some((failure) => failure.errorCode === 'attempt_lineage_incomplete');
+      const scopeStep = activeStep
+        || (report.stepId ? store.getRunStep(runId, report.stepId) : this.getCurrentStep(runId));
+      const capsuleScopeRejection = hasAttemptLineageRejection
+        ? this.assertCapsuleScope(runId, report, scopeStep)
+        : null;
+      const staleCapsuleRejection = hasAttemptLineageRejection
+        && (report.capsuleId || capsuleScopeRejection)
+        ? capsuleScopeRejection || [{
+          obligationId: 'capsule',
+          command: 'kernel report',
+          errorSummary: `Execution capsule "${report.capsuleId}" no longer describes this run: ${lineageRejection.map((failure) => failure.errorSummary).join(', ')}`,
+          errorCode: 'capsule_lineage_incomplete',
+        }]
+        : null;
+      const capsuleRejection = staleCapsuleRejection || lineageRejection || this.assertCapsuleScope(runId, report, activeStep);
       if (capsuleRejection) {
         const currentRun = store.getRun(runId);
         return {
           schemaVersion: 1,
           runId,
-          status: stepResolution.rejection ? 'step-rejected' : 'scope-rejected',
+          status: staleCapsuleRejection ? 'scope-rejected' : stepResolution.rejection ? 'step-rejected' : 'scope-rejected',
           executed: [],
           failures: capsuleRejection,
           finalization: null,
@@ -1925,6 +2016,8 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
 
       // Each report is a durable attempt; the number is derived from persisted
       // rows so retry counting survives restarts.
+      // Compatibility projection only. Completion, retry, and lineage below
+      // use the step attempt returned by the canonical work-attempt authority.
       const attempt = store.recordAttempt(runId, { attemptNumber: store.nextAttemptNumber(runId), state: run.state, status: 'started' });
 
       const waveAttempt = stepResolution.attempt || null;
@@ -1941,23 +2034,11 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         : store.observeWorkspaceIdentity(runId, observation.identity);
 
       // The step moves to `running` and opens its own attempt row, so retries
-      // and failures are counted per unit of work rather than per run.
+      // and failures are counted per unit of work rather than per run. The
+      // canonical row is opened only after the pre-execution evidence binding
+      // checks below; a rejected command must not leave a live attempt that a
+      // legacy retry cannot identify.
       let stepAttempt = null;
-      if (activeStep) {
-        if (['ready', 'failed', 'planned'].includes(activeStep.state)) {
-          this.startStep(runId, activeStep.stepId, { workspaceIdentity: observation.identity, capsuleDigest: report.capsuleId ? store.getExecutionCapsule(report.capsuleId, { runId })?.provenance?.capsuleDigest : null });
-        }
-        stepAttempt = waveAttempt || store.recordStepAttempt(runId, {
-          stepId: activeStep.stepId,
-          capsuleDigest: report.capsuleId ? store.getExecutionCapsule(report.capsuleId, { runId })?.provenance?.capsuleDigest || report.capsuleId : null,
-          workspaceIdentityStart: observation.identity,
-          summary: report.summary || null,
-          changedPaths: report.changedPaths,
-          waveId: stepResolution.activeWave?.waveId || null,
-          workspaceId: report.workspaceId || null,
-          baseWorkspaceIdentity: stepResolution.activeWave?.baseWorkspaceIdentity || null,
-        });
-      }
 
       const failures = [];
       const executed = [];
@@ -2001,6 +2082,43 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
             failures: bindingFailures,
           }),
         };
+      }
+
+      if (activeStep) {
+        const boundCapsule = report.capsuleId ? store.getExecutionCapsule(report.capsuleId, { runId }) : null;
+        stepAttempt = waveAttempt || stepResolution.attempt || store.getActiveStepAttempt(runId, {
+          stepId: activeStep.stepId,
+          attemptId: report.attemptId,
+          capsuleId: report.capsuleId,
+          waveId: stepResolution.activeWave?.waveId || null,
+        });
+        if (!stepAttempt) {
+          stepAttempt = this.beginAttempt(runId, {
+            stepId: activeStep.stepId,
+            bindingId: store.getRunOwnerBinding?.(runId)?.bindingId || null,
+            capsuleId: report.capsuleId,
+            capsuleDigest: boundCapsule?.provenance?.capsuleDigest || null,
+            routeDecisionId: boundCapsule?.provenance?.routeDecisionId || null,
+            provenanceKind: boundCapsule?.provenance?.routeDecisionId ? 'routed' : 'owner-session',
+            planRevision: activeStep.planRevision,
+            mutationRevision: run.mutationRevision,
+            workspaceIdentityStart: observation.identity,
+            summary: report.summary || null,
+            changedPaths: report.changedPaths,
+            waveId: stepResolution.activeWave?.waveId || null,
+            workspaceId: report.workspaceId || null,
+            baseWorkspaceIdentity: stepResolution.activeWave?.baseWorkspaceIdentity || null,
+          });
+        }
+        // Workspace observation is what advances mutationRevision for a direct
+        // report. Bind the active attempt to that observed result before proof
+        // and before a later process resumes it; a manually stale attempt with
+        // no new workspace observation is still rejected by resolveReportStep.
+        if (stepAttempt && observed.changed && !stepResolution.activeWave) {
+          stepAttempt = this.attachAttemptLineage(stepAttempt.attemptId, {
+            mutationRevision: observed.run.mutationRevision,
+          });
+        }
       }
 
       if (report.verifications.length > 0 || report.judgments.length > 0) {

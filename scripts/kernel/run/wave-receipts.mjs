@@ -49,11 +49,11 @@ export const buildStepResultReceipt = ({
 } = {}) => {
   const receipt = {
     schemaVersion: 1,
-    receiptId: receiptId || `step-result-${sha256(`${run?.runId}:${wave?.waveId}:${step?.stepId}:${attempt?.id || attempt?.attemptId || 1}`).slice(7, 23)}`,
+    receiptId: receiptId || `step-result-${sha256(`${run?.runId}:${wave?.waveId}:${step?.stepId}:${attempt?.attemptId || 1}`).slice(7, 23)}`,
     runId: run?.runId || wave?.runId,
     waveId: wave?.waveId,
     stepId: step?.stepId,
-    attemptId: attempt?.id || attempt?.attemptId || null,
+    attemptId: attempt?.attemptId || null,
     actorSessionId: attempt?.actorSessionId || null,
     capsuleId: attempt?.capsuleId || attempt?.capsuleDigest || null,
     executionWorkspaceId: executionWorkspaceId || null,

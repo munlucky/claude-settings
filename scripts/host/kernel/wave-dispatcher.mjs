@@ -6,6 +6,7 @@ import { prepareWaveWorkspaces, createStepResultCommit, canUseWayfinderWorkspace
 import { buildStepResultReceipt, digestPatch } from '../../kernel/run/wave-receipts.mjs';
 import { integrateWave } from '../../kernel/run/integration-coordinator.mjs';
 import { executeTrustedProof } from '../../kernel/proof/proof-executor.mjs';
+import { buildUsageReceipt } from './usage-receipt.mjs';
 
 const baseCommit = (repoRoot) => {
   const result = runGit(repoRoot, ['rev-parse', '--verify', 'HEAD']);
@@ -89,6 +90,7 @@ export const dispatchKernelStep = async ({
       actionContext: {
         ...actionContext,
         stepId: step.stepId,
+        attemptId: boundAttempt?.attemptId || null,
         waveId,
         workingDirectory: workspace.workspaceRoot,
         workspaceId: workspace.workspaceId,
@@ -111,9 +113,44 @@ export const dispatchKernelStep = async ({
   if (!dispatchContext && typeof dispatchStep !== 'function') {
     return { status: 'failed', failureCode: 'worker-route-unresolved', hosted, attempt: boundAttempt };
   }
-  const result = await (typeof dispatchStep === 'function'
-    ? dispatchStep({ hosted, dispatchContext, adapter, step, workspace, waveId, parentSessionId })
-    : dispatchDefaultStep({ adapter, hosted, dispatchContext, workspace, parentSessionId, waveId, step, env }));
+  let result;
+  try {
+    result = await (typeof dispatchStep === 'function'
+      ? dispatchStep({ hosted, dispatchContext, adapter, step, workspace, waveId, parentSessionId })
+      : dispatchDefaultStep({ adapter, hosted, dispatchContext, workspace, parentSessionId, waveId, step, env }));
+  } catch (error) {
+    // A provider crash is still a completed Kernel observation. Preserve the
+    // failed usage receipt and let the shared failure path retain the attempt
+    // as interrupted instead of losing the worker lineage at the adapter edge.
+    result = {
+      status: 'failed',
+      resultStatus: 'failed',
+      errorSummary: error?.message || String(error),
+      failureCategory: 'provider/infrastructure',
+    };
+  }
+  const usageContext = dispatchContext || hosted;
+  const usageDecision = usageContext.decision || usageContext.hostDirective?.modelRouteDecision || hosted.hostDirective?.modelRouteDecision;
+  const usageAttempt = boundAttempt || usageContext.hostDirective?.attempt || null;
+  if (usageDecision && usageContext.resolution && usageContext.admission && controlPlane?.recordModelUsage) {
+    const usageReceipt = buildUsageReceipt({
+      decision: usageDecision,
+      capabilities: hostCapabilities,
+      strategy: usageContext.strategy || usageContext.hostDirective?.enforcementStrategy || 'unsupported',
+      resolution: usageContext.resolution,
+      dispatch: result || {},
+      capsule: usageContext.executionCapsule || hosted.executionCapsule || null,
+      admission: usageContext.admission,
+      attemptId: usageAttempt?.attemptId || usageContext.hostDirective?.attemptId || null,
+      bindingId: usageAttempt?.bindingId || null,
+      actorSessionId: result?.actorSessionId || `${hostCapabilities.surface}:${usageDecision.decisionId}`,
+      parentSessionId,
+      startedAt: result?.startedAt || null,
+      finishedAt: result?.finishedAt || new Date().toISOString(),
+      envelope: usageContext.envelope || hosted.envelope || null,
+    });
+    await controlPlane.recordModelUsage(runId, usageReceipt);
+  }
   let reportResult = null;
   const workerReport = result?.report || result?.kernelReport || null;
   if (workerReport && controlPlane?.report) {
@@ -121,8 +158,10 @@ export const dispatchKernelStep = async ({
       ...workerReport,
       stepId: step.stepId,
       waveId,
+      attemptId: boundAttempt?.attemptId || workerReport.attemptId,
       capsuleId: hosted.executionCapsule?.capsuleId || workerReport.capsuleId,
       workspaceId: workspace.workspaceId,
+      bindingId: boundAttempt?.bindingId || workerReport.bindingId,
       actorSessionId: boundAttempt?.actorSessionId || workerReport.actorSessionId,
     });
   }
