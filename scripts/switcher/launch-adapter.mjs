@@ -189,11 +189,15 @@ export function spawnTrack(spec, { spawnImpl = spawn } = {}) {
   }
 
   const isCmdOrBat = process.platform === 'win32' && (/\.(cmd|bat)$/i.test(spec.command) || spec.surface?.endsWith('_cli'));
+  // Antigravity is a native Electron desktop app. On Windows, keeping its
+  // child attached to the short-lived switcher process causes the app to be
+  // torn down as soon as the switcher exits, which later looks like a false
+  // launch_unverified result. Keep the desktop process alive independently.
   const options = {
     env: spec.env,
     cwd: spec.cwd || process.cwd(),
-    windowsHide: true,
-    detached: false,
+    windowsHide: process.platform === 'win32' && spec.surface === 'antigravity_desktop' ? false : true,
+    detached: process.platform === 'win32' && spec.surface === 'antigravity_desktop',
     stdio: 'ignore',
     ...(isCmdOrBat ? { shell: true } : {}),
   };

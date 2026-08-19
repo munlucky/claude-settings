@@ -12,14 +12,22 @@ const TARGETS = {
     { live: 'config.toml', source: '.codex/config.toml' }, { live: 'hooks.json', source: '.codex/hooks.json' },
   ],
   claude_cli: [{ live: 'skills', source: 'skills' }, { live: 'CLAUDE.md', source: 'CLAUDE.md' }, { live: 'settings.json', source: 'settings.json' }],
+  // Antigravity's native desktop app resolves its skills from the Gemini
+  // account config root even when GEMINI_HOME/ANTIGRAVITY_HOME is exported.
+  // Keep that mutable account surface under the same reversible overlay
+  // contract as the other desktop/provider surfaces.
+  antigravity_desktop: [{ live: 'skills', source: 'skills' }],
 };
 const exists = async (target) => { try { await lstat(target); return true; } catch (error) { if (error.code === 'ENOENT') return false; throw error; } };
 const fail = (code, message = code) => Object.assign(new Error(message), { code });
 const accountRootFor = (surface, home) => surface === 'codex_desktop'
   ? path.join(home, '.codex')
-  : surface === 'claude_cli' ? path.join(home, '.claude') : null;
+  : surface === 'claude_cli' ? path.join(home, '.claude')
+    : surface === 'antigravity_desktop' ? path.join(home, '.gemini', 'config') : null;
 export const requiresAccountSkillsOverlay = (surface, platform = process.platform) =>
-  surface === 'codex_desktop' || (surface === 'claude_cli' && ['win32', 'darwin'].includes(platform));
+  surface === 'codex_desktop'
+    || surface === 'antigravity_desktop'
+    || (surface === 'claude_cli' && ['win32', 'darwin'].includes(platform));
 
 const assertPlain = async (target) => {
   const info = await lstat(target); if (info.isSymbolicLink() || (!info.isDirectory() && !info.isFile())) throw fail('unsafe_target', `unsafe_target: ${target}`);

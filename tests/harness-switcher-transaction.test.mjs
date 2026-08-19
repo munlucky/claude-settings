@@ -281,3 +281,27 @@ test('spawnTrack handles non-existent executable without unhandled error event c
   assert.equal(res.status, 'launch_requested');
   assert.ok(['direct', 'cmd_start_cli'].includes(res.launcher));
 });
+
+test('Antigravity desktop launch detaches on Windows so the app outlives the switcher', () => {
+  let launchOptions = null;
+  const spec = buildLaunchSpec({
+    surface: 'antigravity_desktop',
+    track: 'kernel',
+    sourceRoot: process.cwd(),
+    command: 'Antigravity.exe',
+    roots: {
+      runtimeHome: 'C:\\Users\\moon\\.moon-relay-kernel',
+      providerHome: 'C:\\Users\\moon\\.moon-relay-kernel\\providers\\antigravity',
+      appDataRoot: 'C:\\Users\\moon\\AppData\\Roaming\\Antigravity-Kernel',
+    },
+  });
+  const result = spawnTrack(spec, {
+    spawnImpl: (_command, _args, options) => {
+      launchOptions = options;
+      return { pid: 1234, on() {}, unref() {} };
+    },
+  });
+  assert.equal(result.launcher, 'direct');
+  assert.equal(launchOptions.detached, process.platform === 'win32');
+  assert.equal(launchOptions.windowsHide, process.platform !== 'win32');
+});

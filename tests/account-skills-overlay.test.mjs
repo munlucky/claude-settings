@@ -6,6 +6,7 @@ import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:f
 import { applyAccountSkillsOverlay, inspectAccountSkillsOverlay, requiresAccountSkillsOverlay, restoreAccountSkillsOverlay } from '../scripts/switcher/account-skills-overlay.mjs';
 import { launchSwitch } from '../scripts/switcher/operations.mjs';
 import { installKernelProfile } from '../scripts/kernel/profile-install.mjs';
+import { bootstrapKernelProjectIdentity } from '../scripts/kernel/project-identity-preflight.mjs';
 
 const fixture = async () => {
   const home = await mkdtemp(path.join(os.tmpdir(), 'skills-overlay-'));
@@ -122,6 +123,30 @@ test('Claude desktop overlays and restores account settings with its Kernel prof
   } finally { await rm(home, { recursive: true, force: true }); }
 });
 
+test('Antigravity desktop overlays the native Gemini account skills root and restores it', async () => {
+  for (const platform of ['win32', 'darwin']) {
+    const home = await mkdtemp(path.join(os.tmpdir(), 'antigravity-overlay-'));
+    try {
+      const accountSkills = path.join(home, '.gemini', 'config', 'skills');
+      const provider = path.join(home, 'kernel', 'providers', 'antigravity');
+      await mkdir(path.join(accountSkills, 'relay-skill'), { recursive: true });
+      await writeFile(path.join(accountSkills, 'relay-skill', 'SKILL.md'), '# relay\n');
+      await mkdir(path.join(provider, 'skills', 'moon-relay-kernel'), { recursive: true });
+      await writeFile(path.join(provider, 'skills', 'moon-relay-kernel', 'SKILL.md'), '# kernel\n');
+      const args = { surface: 'antigravity_desktop', providerHome: provider, platform, accountHome: home };
+
+      assert.equal(requiresAccountSkillsOverlay('antigravity_desktop', platform), true);
+      assert.equal((await applyAccountSkillsOverlay(args)).status, 'applied');
+      assert.deepEqual(await readdir(accountSkills), ['moon-relay-kernel']);
+      assert.equal((await applyAccountSkillsOverlay(args)).status, 'already_applied');
+      assert.equal((await restoreAccountSkillsOverlay(args)).status, 'restored');
+      assert.deepEqual(await readdir(accountSkills), ['relay-skill']);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  }
+});
+
 test('executed desktop switches apply/restore the overlay and a failed spawn rolls it back', async () => {
   assert.equal(requiresAccountSkillsOverlay('claude_cli', 'linux'), false); assert.equal(requiresAccountSkillsOverlay('claude_cli', 'win32'), true);
   assert.equal(requiresAccountSkillsOverlay('claude_cli', 'darwin'), true);
@@ -130,6 +155,7 @@ test('executed desktop switches apply/restore the overlay and a failed spawn rol
   try {
     process.env.MOON_HARNESS_SWITCHER_HOME = path.join(value.home, 'switcher');
     const runtimeHome = path.join(value.home, 'kernel'); await writeFile(path.join(runtimeHome, 'install-manifest.json'), '{"productId":"moon-relay-kernel"}');
+    await bootstrapKernelProjectIdentity({ projectRoot: process.cwd(), runtimeHome });
     await installKernelProfile({ sourceRoot: process.cwd(), runtime: 'codex', targetRoot: value.providerHome });
     const base = {
       surface: 'codex_desktop', sourceRoot: process.cwd(), platform: 'win32', accountHome: value.home,
