@@ -2,15 +2,33 @@ import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { sha256Hex } from './candidate-identity.mjs';
+import { loadStandaloneCatalog, standaloneDescriptors } from '../kernel/standalone/catalog.mjs';
 
 const normalizePath = (value = '') => String(value).replaceAll('\\', '/');
 
 const readSkillBody = async (repoRoot, skillPath) => readFile(path.join(repoRoot, skillPath, 'SKILL.md'), 'utf8');
 
-const KERNEL_STANDALONE_SKILLS = new Set(['project-memory', 'kernel-commit', 'codebase-understanding']);
 const isKernelSkill = (name) => (name.startsWith('kernel-') && name !== 'kernel-commit') || name === 'moon-relay-kernel';
-const isRelaySkill = (name) => !isKernelSkill(name) && !KERNEL_STANDALONE_SKILLS.has(name);
 const commitShaRegex = /^[a-f0-9]{40}$/i;
+
+const standaloneMembership = async (repoRoot) => {
+  try {
+    const catalog = await loadStandaloneCatalog({ repoRoot, validateSources: false });
+    const entries = standaloneDescriptors(catalog);
+    return {
+      names: new Set(entries.map((entry) => entry.name)),
+      relayCompatibility: new Set(entries.filter((entry) => entry.legacyRelayCompatibility === true).map((entry) => entry.name)),
+    };
+  } catch {
+    return { names: new Set(), relayCompatibility: new Set() };
+  }
+};
+
+const skillBelongsToScope = (name, scope, standalone, relayCompatibility) => {
+  if (scope === 'kernel') return isKernelSkill(name);
+  if (scope === 'standalone') return standalone.has(name);
+  return !isKernelSkill(name) && (!standalone.has(name) || relayCompatibility.has(name));
+};
 
 export const discoverSourceSkills = async ({ repoRoot = process.cwd(), skillsRoot = 'skills' } = {}) => {
   const root = path.join(repoRoot, skillsRoot);
@@ -47,13 +65,14 @@ export const buildSkillsLock = async ({
   defaultStages = [],
   defaultPermissions = ['filesystem-read'],
 } = {}) => {
-  const sourceSkills = (await discoverSourceSkills({ repoRoot })).filter((s) => (scope === 'kernel' ? isKernelSkill(s.name) : isRelaySkill(s.name)));
+  const membership = await standaloneMembership(repoRoot);
+  const sourceSkills = (await discoverSourceSkills({ repoRoot })).filter((s) => skillBelongsToScope(s.name, scope, membership.names, membership.relayCompatibility));
 
   return {
     schemaVersion: 1,
     generatedAt,
     sourceCommit,
-    scope,
+    scope: scope === 'standalone' ? 'kernel-standalone' : scope,
     skills: sourceSkills.map((skill) => ({
       name: skill.name,
       path: skill.path,
@@ -76,6 +95,8 @@ export const auditSkillsLock = async ({
   runtimeSurface = null,
 } = {}) => {
   const findings = [];
+  const membership = await standaloneMembership(repoRoot);
+  const standalone = membership.names;
   if (!lock) {
     findings.push({ type: 'missing_lock', severity: 'blocking' });
     return { status: 'blocked', findings };
@@ -93,6 +114,9 @@ export const auditSkillsLock = async ({
       findings.push({ type: 'invalid_source_commit_sha', severity: 'blocking', actual: lock.sourceCommit });
     }
   }
+  if (scope === 'standalone' && lock.scope !== 'kernel-standalone') {
+    findings.push({ type: 'scope_mismatch', severity: 'blocking', expected: 'kernel-standalone', actual: lock.scope });
+  }
 
   const lockedNames = (lock.skills || []).map((s) => s.name);
   const duplicates = lockedNames.filter((name, idx) => lockedNames.indexOf(name) !== idx);
@@ -102,7 +126,7 @@ export const auditSkillsLock = async ({
 
   const sourceSkills = new Map(
     (await discoverSourceSkills({ repoRoot }))
-      .filter((s) => (scope === 'kernel' ? isKernelSkill(s.name) : isRelaySkill(s.name)))
+      .filter((s) => skillBelongsToScope(s.name, scope, standalone, membership.relayCompatibility))
       .map((skill) => [skill.name, skill])
   );
   const lockedSkills = new Map((lock.skills || []).map((skill) => [skill.name, skill]));

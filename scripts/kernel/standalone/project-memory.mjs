@@ -10,7 +10,6 @@ import { deduplicateCandidates } from '../knowledge-ingestion/deduplicate.mjs';
 import { detectCandidateConflicts } from '../knowledge-ingestion/conflict.mjs';
 import { verifyCandidates } from '../knowledge-ingestion/verify.mjs';
 import { normalizeSourceReceipt, normalizeSession } from '../knowledge-ingestion/normalize.mjs';
-import { commitImportedProjectKnowledge } from '../knowledge-ingestion/import.mjs';
 import { providerFor } from './session-providers/index.mjs';
 import { buildCodebaseManifest } from '../codebase/manifest.mjs';
 import { parseCliArgs, listArg, printResult, readJson, resolveStandaloneProject, writeJsonAtomic } from './common.mjs';
@@ -98,7 +97,30 @@ export async function importSelected({ project, stateStore, sourceFile, candidat
   const wanted = new Set(listArg(candidateIds));
   const candidates = (snapshot.candidates || []).filter((candidate) => wanted.has(candidate.candidateId)).map((candidate) => ({ ...candidate, selected: true }));
   if (candidates.length === 0) return { status: 'no_op', reason: 'no_candidates_selected', projectId: project.projectId };
-  return commitImportedProjectKnowledge({ stateStore, projectId: project.projectId, expectedKnowledgeRevision: stateStore.getProjectKnowledgeRevision(project.projectId), candidates, supersessionProposals: [], sourceReceipt: snapshot.sourceReceipt, userApprovalRef: approvalRef, receiptsRoot: project.receiptsRoot });
+  // Standalone project-memory may prepare and select candidates, but it does
+  // not write Kernel knowledge. The explicit approval is preserved as a
+  // handoff receipt for the Kernel closeout path; only Kernel authority may
+  // verify, commit, or supersede project knowledge.
+  const handoffPath = path.join(project.importsRoot, 'kernel-handoffs', `${snapshot.importId || Date.now()}.json`);
+  await writeJsonAtomic(handoffPath, {
+    schemaVersion: 1,
+    kind: 'KERNEL_KNOWLEDGE_HANDOFF',
+    authority: 'standalone-candidate-only',
+    projectId: project.projectId,
+    sourceReceipt: snapshot.sourceReceipt || null,
+    approvalRef,
+    candidateIds: candidates.map((candidate) => candidate.candidateId),
+    candidates,
+    createdAt: new Date().toISOString(),
+  });
+  return {
+    status: 'candidate_ready_for_kernel_closeout',
+    projectId: project.projectId,
+    candidateCount: candidates.length,
+    handoffPath: path.relative(project.projectRuntimeRoot, handoffPath).replaceAll('\\', '/'),
+    authority: 'standalone-candidate-only',
+    kernelActionRequired: 'kernel report or kernel-commit after accepted completion',
+  };
 }
 
 export async function projectMemoryStatus({ project, stateStore } = {}) {

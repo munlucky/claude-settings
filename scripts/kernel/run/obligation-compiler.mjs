@@ -260,6 +260,22 @@ export const compileRunObligations = ({
   for (const declared of contract?.requiredObligations || []) {
     declare(declared, { sourceType: 'caller', sourceRef: 'task-contract' });
   }
+  for (const [index, verification] of (Array.isArray(contract?.requiredVerifications) ? contract.requiredVerifications : []).entries()) {
+    const record = verification && typeof verification === 'object' ? verification : { method: String(verification) };
+    const obligationId = String(record.obligationId || record.id || `required-verification-${index + 1}`);
+    declare(obligationId, {
+      sourceType: 'caller',
+      sourceRef: 'task-contract.requiredVerifications',
+      commandRefs: Array.isArray(record.commandRefs) ? record.commandRefs : (record.commandRef ? [record.commandRef] : null),
+      evidenceClass: ['hard', 'judgment'].includes(record.evidenceClass || record.class) ? (record.evidenceClass || record.class) : 'hard',
+      method: record.method || record.kind || null,
+      metadata: {
+        scenarioId: record.scenarioId || null,
+        verificationKind: record.kind || record.type || null,
+        evidenceDepth: record.evidenceDepth || null,
+      },
+    });
+  }
   for (const item of contract?.acceptance || []) {
     const obligationId = obligationForAcceptancePlan(item, tierObligations);
     if (!obligationId) {

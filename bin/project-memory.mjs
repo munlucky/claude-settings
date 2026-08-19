@@ -1,9 +1,6 @@
 #!/usr/bin/env node
-import { parseCliArgs, printResult } from '../scripts/kernel/standalone/common.mjs';
-import { runProjectMemory } from '../scripts/kernel/standalone/project-memory.mjs';
+import { runStandaloneCli } from './moon-relay-standalone.mjs';
 
-const args = parseCliArgs(process.argv.slice(2));
-const command = args._[0] || 'status';
-runProjectMemory({ command, args: { ...args, provider: args.provider || 'codex,claude' } })
-  .then((result) => printResult(result, { json: args.json }))
-  .catch((error) => { printResult({ status: 'error', errorCode: error.code || error.message }, { json: true }); process.exitCode = 1; });
+runStandaloneCli('project-memory', process.argv.slice(2))
+  .then((result) => process.stdout.write(`${JSON.stringify(result, null, 2)}\n`))
+  .catch((error) => { process.stdout.write(`${JSON.stringify({ status: 'error', errorCode: error.code || error.message }, null, 2)}\n`); process.exitCode = 1; });

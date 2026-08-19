@@ -7,9 +7,7 @@
     "moonshot-relay": "bin/moonshot-relay.mjs",
     "moon-relay-kernel": "bin/moon-relay-kernel.mjs",
     "moon-relay-kernel-host": "bin/moon-relay-kernel-host.mjs",
-    "project-memory": "bin/project-memory.mjs",
-    "kernel-commit": "bin/kernel-commit.mjs",
-    "codebase-understanding": "bin/codebase-understanding.mjs"
+    "moon-relay-standalone": "bin/moon-relay-standalone.mjs"
   },
   "scripts": {
     "test": "npm run test:active:1 && npm run test:active:2 && npm run test:kernel-explicit-invocation",
@@ -18,6 +16,7 @@
     "test:kernel-lifecycle": "node --test tests/kernel-multi-provider-session.test.mjs tests/kernel-session-binding.test.mjs tests/kernel-session-run-lifecycle.test.mjs tests/kernel-successor-worktree.test.mjs tests/kernel-workspace-mutation-lock.test.mjs tests/kernel-lifecycle-doctor.test.mjs tests/kernel-attempt-provenance.test.mjs",
     "test:kernel": "node --test tests/kernel-*.test.mjs",
     "test:kernel-explicit-invocation": "node --test tests/kernel-explicit-invocation-policy.test.mjs",
+    "test:kernel-unification": "node scripts/kernel/unification-audit.mjs --with-tests tests/kernel-native-provider-policy.test.mjs tests/kernel-standalone-unification.test.mjs",
     "test:kernel:codex-review": "node --test tests/kernel-codex-cli-review-host.test.mjs tests/kernel-review-host-bridge.test.mjs tests/kernel-codex-model-adapter.test.mjs tests/kernel-package-materialization.test.mjs tests/kernel-profile-isolation.test.mjs",
     "test:kernel-reliability": "node --test tests/kernel-command-shim.test.mjs tests/kernel-completion-view.test.mjs tests/kernel-finalization-report-resume.test.mjs tests/kernel-mutation-guard.test.mjs tests/kernel-next-purity.test.mjs tests/kernel-path-canonicalization.test.mjs tests/kernel-required-capability.test.mjs tests/kernel-review-host-bridge.test.mjs tests/kernel-run-env-resolution.test.mjs tests/kernel-secret-redaction.test.mjs tests/kernel-sqlite-adapter-contract.test.mjs tests/kernel-workspace-mutation-lock.test.mjs",
     "lint:kernel": "node scripts/kernel/proof/static-analysis.mjs",
@@ -30,6 +29,7 @@
     "test:lab": "node tools/harness-lab/harness-lab.mjs run --candidate-root . --json",
     "test:switcher": "node --test --test-concurrency=1 tests/harness-switcher-phase01.test.mjs tests/harness-switcher-transaction.test.mjs tests/harness-switcher-fault-matrix.test.mjs tests/harness-switcher-shortcut.test.mjs tests/harness-switcher-adoption.test.mjs tests/kernel-profile-switcher-lifecycle.test.mjs tests/kernel-app-switching-parity.test.mjs tests/kernel-codex-project-hydration.test.mjs tests/kernel-global-skills-isolation.test.mjs tests/account-skills-overlay.test.mjs",
     "setup": "node bin/moonshot-relay.mjs install",
+    "setup:kernel": "node bin/moonshot-relay.mjs kernel",
     "doctor": "node bin/moon-harness-switcher.mjs doctor",
     "k": "node bin/moon-harness-switcher.mjs launch --surface all --track kernel --execute",
     "k:all": "node bin/moon-harness-switcher.mjs launch --surface all --track kernel --execute",

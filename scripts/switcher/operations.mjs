@@ -13,6 +13,7 @@ import { inspectProfile, installKernelProfile } from '../kernel/profile-install.
 import { cleanupLegacyKernelHydration } from '../kernel/legacy-hydration-cleanup.mjs';
 import { inspectKernelProjectIdentity } from '../kernel/project-identity-preflight.mjs';
 import { applyAccountSkillsOverlay, inspectAccountSkillsOverlay, restoreAccountSkillsOverlay, requiresAccountSkillsOverlay } from './account-skills-overlay.mjs';
+import { loadStandaloneCatalog, standaloneDescriptors } from '../kernel/standalone/catalog.mjs';
 
 const validate = (surface, track) => {
   if (!SURFACES.includes(surface)) throw new Error(`wrong_harness: unsupported surface ${surface}`);
@@ -41,7 +42,6 @@ const protectedRoots = ({ kernelRuntimeHome = null } = {}) => {
 const exists = async (file) => { try { await stat(file); return true; } catch { return false; } };
 
 export const KERNEL_ENTRYPOINT_SKILL = 'moon-relay-kernel';
-export const KERNEL_STANDALONE_SKILLS = new Set(['project-memory', 'kernel-commit', 'codebase-understanding']);
 
 export async function discoverProviderSkills(providerHome) {
   if (!providerHome) return [];
@@ -89,7 +89,14 @@ export async function inspectKernelLaunchReadiness({ runtimeHome, providerHome, 
   // Standalone utilities are installed in the isolated provider home but are
   // not part of the Kernel workflow's public skill surface. Keep them out of
   // the shared-mutable-surface check while still serving their files locally.
-  const workflowSkills = discoveredSkills.filter((name) => !KERNEL_STANDALONE_SKILLS.has(name));
+  let standaloneCatalog;
+  try {
+    standaloneCatalog = await loadStandaloneCatalog({ repoRoot: sourceRoot, validateSources: true });
+  } catch (error) {
+    return { status: 'kernel_profile_not_ready', reason: 'standalone_catalog_invalid', findings: error.findings || [] };
+  }
+  const standaloneNames = new Set(standaloneDescriptors(standaloneCatalog, { enabledOnly: true }).map((entry) => entry.name));
+  const workflowSkills = discoveredSkills.filter((name) => !standaloneNames.has(name));
   if (!workflowSkills.includes(KERNEL_ENTRYPOINT_SKILL)) {
     return { status: 'kernel_profile_not_ready', reason: 'skill_discovery_missing', discoveredSkills: workflowSkills };
   }

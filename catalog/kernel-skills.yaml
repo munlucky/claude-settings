@@ -8,6 +8,10 @@ internal:
   - kernel-tracer-slicing
   - kernel-test-driven-development
   - kernel-diagnosing-bugs
+  - kernel-conditional-frontend-guidance
+  - kernel-browser-proof-adapter
+  - kernel-security-review-policy
+  - kernel-simplification-check
   - kernel-verification-before-completion
   - kernel-review-spec
   - kernel-review-standards

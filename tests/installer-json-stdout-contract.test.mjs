@@ -94,7 +94,12 @@ test('setup refuses a symlinked Kernel home before the primary installer or adop
   const aliasKernel = path.join(home, 'kernel-alias');
   await mkdir(realKernel, { recursive: true });
   try {
-    await symlink(realKernel, aliasKernel, 'dir');
+    try {
+      await symlink(realKernel, aliasKernel, process.platform === 'win32' ? 'junction' : 'dir');
+    } catch (error) {
+      if (process.platform === 'win32' && error.code === 'EPERM') return;
+      throw error;
+    }
     const result = spawnSync(process.execPath, [wrapper, 'install', '--dry-run', '--json'], {
       cwd: repoRoot,
       env: { ...sandboxedEnv(home), MOON_RELAY_KERNEL_HOME: aliasKernel },

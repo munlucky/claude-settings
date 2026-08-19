@@ -12,12 +12,15 @@ const binPath = fileURLToPath(import.meta.url);
 const repoRoot = path.dirname(path.dirname(binPath));
 const installer = path.join(repoRoot, 'scripts', 'install-account-root-harness.mjs');
 const bridgeInstaller = path.join(repoRoot, 'scripts', 'install-project-runtime-bridge.mjs');
+const kernelInstaller = path.join(repoRoot, 'bin', 'moon-relay-kernel.mjs');
+const switcherInstaller = path.join(repoRoot, 'bin', 'moon-harness-switcher.mjs');
 const deliverySubmit = path.join(repoRoot, 'scripts', 'delivery-submit.mjs');
 const retroCli = path.join(repoRoot, 'tools', 'retro', 'retro-cli.mjs');
 
 const usage = `Usage:
   moonshot-relay [install] [--dry-run] [--json] [--no-backup]
   moonshot-relay install [--runtime all|claude|codex|qwen] [--moonshot-home <dir>] [--claude-home <dir>] [--codex-home <dir>] [--qwen-home <dir>]
+  moonshot-relay kernel [--json]
   moonshot-relay bridge [--target <project-root>] [--plan-package docs/implementation/<slug-or-account-root-package>] [--dry-run] [--json]
   moonshot-relay delivery submit --score <json-file> --verification <json-file> --current-sha <sha> [--mode local|pr|release] [--out <submission.json>] [--json]
   moonshot-relay retro collect|import|daily|propose|issue-draft [options]
@@ -36,7 +39,7 @@ if (args[0] && !args[0].startsWith('-')) {
   command = args.shift();
 }
 
-if (!['install', 'bridge', 'delivery', 'retro'].includes(command)) {
+if (!['install', 'kernel', 'bridge', 'delivery', 'retro'].includes(command)) {
   console.error(`Unknown command: ${command}\n${usage}`);
   process.exit(1);
 }
@@ -134,7 +137,7 @@ const relaySetupEnvironment = ({ userHome, kernelHome }) => {
   return relayEnv;
 };
 
-if (!existsSync(selectedInstaller)) {
+if (command !== 'kernel' && !existsSync(selectedInstaller)) {
   console.error(`Moonshot Relay installer not found: ${selectedInstaller}`);
   process.exit(1);
 }
@@ -171,6 +174,65 @@ if (!kernelHomeIdentity.safe) {
 const kernelHome = kernelHomeIdentity.canonicalPath;
 const relayEnv = command === 'install' ? relaySetupEnvironment({ userHome, kernelHome }) : process.env;
 
+const runKernelInstall = () => {
+  if (!existsSync(kernelInstaller)) {
+    console.error(`Kernel installer not found: ${kernelInstaller}`);
+    process.exit(1);
+  }
+  const kernelInstallArgs = ['install', '--target-root', kernelHome, '--source-root', repoRoot];
+  if (jsonMode) kernelInstallArgs.push('--json');
+  const kernelInstall = spawnSync(process.execPath, [kernelInstaller, ...kernelInstallArgs], {
+    cwd: repoRoot,
+    env: { ...process.env, MOON_RELAY_TRACK: 'kernel', MOON_RELAY_KERNEL_HOME: kernelHome },
+    stdio: command === 'kernel' ? 'inherit' : chainedStdio,
+  });
+  if (kernelInstall.error) {
+    console.error(`Kernel account install failed: ${kernelInstall.error.message}`);
+    process.exit(1);
+  }
+  if (kernelInstall.status !== 0) {
+    console.error(`Kernel account install failed with exit code ${kernelInstall.status}`);
+    process.exit(kernelInstall.status || 1);
+  }
+
+  // A Kernel install must establish the account-root project identity before
+  // any legacy Relay profile is allowed to run. This is setup-time bootstrap,
+  // not a bypass of the normal model-visible identity preflight.
+  const identityBootstrap = spawnSync(process.execPath, [
+    kernelInstaller,
+    'identity',
+    'bootstrap',
+    '--project-root',
+    repoRoot,
+    '--runtime-home',
+    kernelHome,
+    '--policy',
+    'isolate',
+    '--json',
+  ], {
+    cwd: repoRoot,
+    env: { ...process.env, MOON_RELAY_TRACK: 'kernel', MOON_RELAY_KERNEL_HOME: kernelHome },
+    stdio: chainedStdio,
+  });
+  if (identityBootstrap.error) {
+    console.error(`Kernel project identity bootstrap failed: ${identityBootstrap.error.message}`);
+    process.exit(1);
+  }
+  if (identityBootstrap.status !== 0) {
+    console.error(`Kernel project identity bootstrap failed with exit code ${identityBootstrap.status}`);
+    process.exit(identityBootstrap.status || 1);
+  }
+};
+
+if (command === 'kernel') {
+  runKernelInstall();
+  process.exit(0);
+}
+
+// Kernel is the first installation authority. The Relay installer below only
+// materializes the compatibility profile after Kernel ownership is ready.
+if (command === 'install' && !args.includes('--dry-run')) runKernelInstall();
+
 const installerArgs = command === 'bridge'
   ? [selectedInstaller, ...args]
   : [
@@ -195,51 +257,6 @@ if (result.error) {
 }
 
 if (result.status === 0 && command === 'install' && !args.includes('--dry-run')) {
-  const kernelInstaller = path.join(repoRoot, 'bin', 'moon-relay-kernel.mjs');
-  const switcherInstaller = path.join(repoRoot, 'bin', 'moon-harness-switcher.mjs');
-  if (existsSync(kernelInstaller)) {
-    const kernelInstall = spawnSync(process.execPath, [kernelInstaller, 'install', '--target-root', kernelHome, '--source-root', repoRoot], {
-      cwd: repoRoot,
-      env: { ...process.env, MOON_RELAY_TRACK: 'kernel', MOON_RELAY_KERNEL_HOME: kernelHome },
-      stdio: chainedStdio,
-    });
-    if (kernelInstall.error) {
-      console.error(`Kernel account install failed: ${kernelInstall.error.message}`);
-      process.exit(1);
-    }
-    if (kernelInstall.status !== 0) {
-      console.error(`Kernel account install failed with exit code ${kernelInstall.status}`);
-      process.exit(kernelInstall.status || 1);
-    }
-    // Setup is an explicit operator action. Bootstrap a fresh namespace when
-    // legacy data has no persisted ownership proof, but preserve that legacy
-    // data instead of guessing or rewriting it. Future sessions then reuse
-    // the current root identity without weakening the normal next preflight.
-    const identityBootstrap = spawnSync(process.execPath, [
-      kernelInstaller,
-      'identity',
-      'bootstrap',
-      '--project-root',
-      repoRoot,
-      '--runtime-home',
-      kernelHome,
-      '--policy',
-      'isolate',
-      '--json',
-    ], {
-      cwd: repoRoot,
-      env: { ...process.env, MOON_RELAY_TRACK: 'kernel', MOON_RELAY_KERNEL_HOME: kernelHome },
-      stdio: chainedStdio,
-    });
-    if (identityBootstrap.error) {
-      console.error(`Kernel project identity bootstrap failed: ${identityBootstrap.error.message}`);
-      process.exit(1);
-    }
-    if (identityBootstrap.status !== 0) {
-      console.error(`Kernel project identity bootstrap failed with exit code ${identityBootstrap.status}`);
-      process.exit(identityBootstrap.status || 1);
-    }
-  }
   if (existsSync(switcherInstaller)) {
     const adoption = spawnSync(process.execPath, [switcherInstaller, 'adopt', '--approved', '--approval-token', 'APPROVE_LIVE_HARNESS_SWITCHER', '--source-root', repoRoot, '--kernel-home', kernelHome], { cwd: repoRoot, env: relayEnv, stdio: chainedStdio });
     if (adoption.error) {

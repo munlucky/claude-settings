@@ -1,10 +1,164 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "scope": "kernel-standalone",
-  "generatedAt": "2026-08-05T00:00:00.000Z",
+  "catalogId": "moon-relay-kernel-standalone-skills.v2",
+  "catalogDigest": "b386152f1fe83456c47b931d65fa46b87b284a668a085365779677df97918880",
+  "generatedAt": "2026-08-19T11:17:44.221Z",
+  "sourceCommit": "738cecd504478d62dadab78cc92e2c4864275e41",
   "skills": [
-    { "name": "project-memory", "path": "skills/project-memory", "contentHash": "f25968769811004b0354a4fd8f83b85f36f665163815ade329f4074a5b3835e4", "license": "MIT", "permissions": ["filesystem-read", "filesystem-write", "subprocess-exec"] },
-    { "name": "kernel-commit", "path": "skills/kernel-commit", "contentHash": "c68c6fc3f9e76fa97932a5b8437aaea214957d809c5c03dbfa958d433244cbdf", "license": "MIT", "permissions": ["filesystem-read", "filesystem-write", "subprocess-exec", "git-commit", "git-push"] },
-    { "name": "codebase-understanding", "path": "skills/codebase-understanding", "contentHash": "e20fbd73cf9f364fda33bb875669f81b198458a278dda361dde216556c6511bf", "license": "MIT", "permissions": ["filesystem-read", "filesystem-write"] }
+    {
+      "name": "project-memory",
+      "kind": "project-utility",
+      "skillPath": "skills/project-memory",
+      "entrypoint": "scripts/kernel/standalone/project-memory.mjs",
+      "exportName": "runProjectMemory",
+      "contentHash": "05cf352aa8115a14b2de0e9911806a86959e95670d52d9f6a9083ba0eb7b94a5",
+      "cli": {
+        "enabled": true,
+        "binName": "project-memory"
+      },
+      "requiresKernelRun": false,
+      "mayMutateSource": false,
+      "mayMutateGit": false,
+      "mayMutateKnowledge": false,
+      "mayWriteArtifacts": true,
+      "permissions": [
+        "filesystem-read",
+        "filesystem-write",
+        "subprocess-exec",
+        "knowledge-candidate-write"
+      ]
+    },
+    {
+      "name": "kernel-commit",
+      "kind": "project-utility",
+      "skillPath": "skills/kernel-commit",
+      "entrypoint": "scripts/kernel/standalone/kernel-commit.mjs",
+      "exportName": "kernelCommit",
+      "contentHash": "81bd7112e489dd507d4232aadfeeec35077d04ead11a3297f753d3eead432aac",
+      "cli": {
+        "enabled": true,
+        "binName": "kernel-commit"
+      },
+      "requiresKernelRun": false,
+      "mayMutateSource": false,
+      "mayMutateGit": true,
+      "mayMutateKnowledge": true,
+      "mayWriteArtifacts": true,
+      "permissions": [
+        "filesystem-read",
+        "filesystem-write",
+        "subprocess-exec",
+        "git-commit",
+        "git-push",
+        "knowledge-candidate-write"
+      ]
+    },
+    {
+      "name": "codebase-understanding",
+      "kind": "analysis-utility",
+      "skillPath": "skills/codebase-understanding",
+      "entrypoint": "scripts/kernel/standalone/codebase-understanding.mjs",
+      "exportName": "runCodebaseUnderstanding",
+      "contentHash": "f0abc85a02985b5b830b6d6311328e8e50d9b161e6a2f0433c7ef702f70303f5",
+      "cli": {
+        "enabled": true,
+        "binName": "codebase-understanding"
+      },
+      "requiresKernelRun": false,
+      "mayMutateSource": false,
+      "mayMutateGit": false,
+      "mayMutateKnowledge": false,
+      "mayWriteArtifacts": true,
+      "permissions": [
+        "filesystem-read",
+        "filesystem-write"
+      ]
+    },
+    {
+      "name": "explain-diff-html",
+      "kind": "analysis-utility",
+      "skillPath": "skills/explain-diff-html",
+      "entrypoint": "scripts/kernel/standalone/explain-diff-html.mjs",
+      "exportName": "runExplainDiffHtml",
+      "contentHash": "b880ec0cfae15ff7fa929fac33ab5e999a0627e7c07f4faef7174ef2df376c8c",
+      "cli": {
+        "enabled": true,
+        "binName": "explain-diff-html"
+      },
+      "requiresKernelRun": false,
+      "mayMutateSource": false,
+      "mayMutateGit": false,
+      "mayMutateKnowledge": false,
+      "mayWriteArtifacts": true,
+      "permissions": [
+        "filesystem-read",
+        "filesystem-write",
+        "subprocess-exec"
+      ]
+    },
+    {
+      "name": "ui-audit",
+      "kind": "analysis-utility",
+      "skillPath": "skills/ui-audit",
+      "entrypoint": "scripts/kernel/standalone/ui-audit.mjs",
+      "exportName": "runUiAudit",
+      "contentHash": "9502ed620296cf055ad9940d2d81833477c3abc5293a42aec766d4ea9ccd2242",
+      "cli": {
+        "enabled": true,
+        "binName": "ui-audit"
+      },
+      "requiresKernelRun": false,
+      "mayMutateSource": false,
+      "mayMutateGit": false,
+      "mayMutateKnowledge": false,
+      "mayWriteArtifacts": true,
+      "permissions": [
+        "filesystem-read",
+        "filesystem-write"
+      ]
+    },
+    {
+      "name": "product-definition",
+      "kind": "prework-utility",
+      "skillPath": "skills/product-definition",
+      "entrypoint": "scripts/kernel/standalone/product-definition.mjs",
+      "exportName": "runProductDefinition",
+      "contentHash": "138b64423ab707d08e46faab244d80392532f7e84f31f73a60ac1551b34f66c2",
+      "cli": {
+        "enabled": true,
+        "binName": "product-definition"
+      },
+      "requiresKernelRun": false,
+      "mayMutateSource": false,
+      "mayMutateGit": false,
+      "mayMutateKnowledge": false,
+      "mayWriteArtifacts": true,
+      "permissions": [
+        "filesystem-read",
+        "filesystem-write"
+      ]
+    },
+    {
+      "name": "architecture-artifacts",
+      "kind": "prework-utility",
+      "skillPath": "skills/architecture-artifacts",
+      "entrypoint": "scripts/kernel/standalone/architecture-artifacts.mjs",
+      "exportName": "runArchitectureArtifacts",
+      "contentHash": "4141938837b09d1883271ba68fad05bbc4145e0b6d03b3d50cae93fb0d6685c0",
+      "cli": {
+        "enabled": true,
+        "binName": "architecture-artifacts"
+      },
+      "requiresKernelRun": false,
+      "mayMutateSource": false,
+      "mayMutateGit": false,
+      "mayMutateKnowledge": false,
+      "mayWriteArtifacts": true,
+      "permissions": [
+        "filesystem-read",
+        "filesystem-write"
+      ]
+    }
   ]
 }

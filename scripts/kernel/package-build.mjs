@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { mkdir, readFile, writeFile, cp, readdir, stat, realpath, lstat } from 'node:fs/promises';
 import { auditSkillsLock } from '../lib/skills-lock.mjs';
+import { buildStandaloneLock, loadStandaloneCatalog } from './standalone/catalog.mjs';
 
 const forbidden = ['.moonshot-relay', 'runtime-state.sqlite', 'package/claude/profile', 'package/codex/profile', 'package/qwen/profile'];
 const forbiddenNames = new Set(['runtime-state.sqlite', '.moonshot-relay']);
@@ -11,6 +12,8 @@ const mandatoryKernelFiles = [
   'skills/kernel-minimal-correct-change/SKILL.md',
   'skills/kernel-verification-before-completion/SKILL.md',
   'package/kernel/skills.lock.json',
+  'package/kernel/standalone-skills.lock.json',
+  'bin/moon-relay-standalone.mjs',
 ];
 
 const exists = async (p) => {
@@ -113,6 +116,7 @@ const resolvePattern = async (sourceRoot, entry) => {
 
 export const planKernelPackage = async ({ sourceRoot = process.cwd(), outputRoot }) => {
   const manifest = JSON.parse(await readFile(path.join(sourceRoot, 'package', 'kernel', 'manifest.json'), 'utf8'));
+  const standaloneCatalog = await loadStandaloneCatalog({ repoRoot: sourceRoot, validateSources: true });
 
   const excludePatterns = [...forbidden, ...(manifest.exclude || [])].map((p) => p.replaceAll('\\', '/'));
 
@@ -152,7 +156,7 @@ export const planKernelPackage = async ({ sourceRoot = process.cwd(), outputRoot
     }
   }
 
-  return { manifest, planned, excludePatterns };
+  return { manifest, planned, excludePatterns, standaloneCatalog };
 };
 
 export const materializeKernelPackage = async ({ sourceRoot = process.cwd(), outputRoot, dryRun = false }) => {
@@ -167,6 +171,17 @@ export const materializeKernelPackage = async ({ sourceRoot = process.cwd(), out
     }
   } else {
     throw new Error('Kernel skills lock file missing: package/kernel/skills.lock.json');
+  }
+  const standaloneLockPath = path.join(sourceRoot, 'package', 'kernel', 'standalone-skills.lock.json');
+  const standaloneLock = JSON.parse(await readFile(standaloneLockPath, 'utf8'));
+  const derivedStandaloneLock = await buildStandaloneLock({ repoRoot: sourceRoot, catalog: plan.standaloneCatalog, sourceCommit: standaloneLock.sourceCommit || '' });
+  if (standaloneLock.catalogId !== derivedStandaloneLock.catalogId || standaloneLock.catalogDigest !== derivedStandaloneLock.catalogDigest) {
+    throw new Error('Standalone catalog/lock parity failed: catalogDigest mismatch');
+  }
+  const expectedStandalone = new Map(derivedStandaloneLock.skills.map((entry) => [entry.name, entry.contentHash]));
+  const actualStandalone = new Map((standaloneLock.skills || []).map((entry) => [entry.name, entry.contentHash]));
+  if (expectedStandalone.size !== actualStandalone.size || [...expectedStandalone].some(([name, hash]) => actualStandalone.get(name) !== hash)) {
+    throw new Error('Standalone catalog/lock parity failed: contentHash mismatch');
   }
 
   // Create clean sanitized plan for package artifact (storing relative paths only)

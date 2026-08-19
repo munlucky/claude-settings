@@ -4,6 +4,7 @@ import { access, readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { buildStandaloneLock, loadStandaloneCatalog, STANDALONE_LOCK_REL, STANDALONE_CATALOG_REL } from './kernel/standalone/catalog.mjs';
 
 const scriptPath = fileURLToPath(import.meta.url);
 const repoRootDefault = path.dirname(path.dirname(scriptPath));
@@ -40,6 +41,28 @@ const sameOrder = (left, right) => left.length === right.length
 const diffSets = (expected, actual) => ({
   missing: [...new Set(expected)].filter((value) => !actual.includes(value)).sort(),
   extra: [...new Set(actual)].filter((value) => !expected.includes(value)).sort(),
+});
+
+const standaloneLockSignature = (lock) => JSON.stringify({
+  schemaVersion: lock?.schemaVersion,
+  scope: lock?.scope,
+  catalogId: lock?.catalogId,
+  catalogDigest: lock?.catalogDigest,
+  skills: (lock?.skills || []).map((entry) => ({
+    name: entry.name,
+    kind: entry.kind,
+    skillPath: entry.skillPath,
+    entrypoint: entry.entrypoint,
+    exportName: entry.exportName,
+    contentHash: entry.contentHash,
+    cli: entry.cli,
+    requiresKernelRun: entry.requiresKernelRun,
+    mayMutateSource: entry.mayMutateSource,
+    mayMutateGit: entry.mayMutateGit,
+    mayMutateKnowledge: entry.mayMutateKnowledge,
+    mayWriteArtifacts: entry.mayWriteArtifacts,
+    permissions: entry.permissions,
+  })),
 });
 
 export const parsePublicRuntimeSkillsFromContract = (text) => {
@@ -197,6 +220,46 @@ export const checkCatalog = async (options = {}) => {
     }
   }
 
+  let standaloneCatalogReport = { status: 'not-present', catalog: null, lock: null, findings: [] };
+  const standaloneCatalogPath = options.standaloneCatalogPath || path.join(repoRoot, STANDALONE_CATALOG_REL);
+  const standaloneLockPath = options.standaloneLockPath || path.join(repoRoot, STANDALONE_LOCK_REL);
+  if (await pathExists(standaloneCatalogPath)) {
+    const standaloneFindings = [];
+    let standaloneCatalog = null;
+    try {
+      standaloneCatalog = await loadStandaloneCatalog({ repoRoot, catalogPath: standaloneCatalogPath, validateSources: true });
+    } catch (error) {
+      standaloneFindings.push(...(error.findings || [finding('blocking', 'standalone.catalog_invalid', error.message)]));
+    }
+    let standaloneLock = null;
+    if (!await pathExists(standaloneLockPath)) {
+      standaloneFindings.push(finding('blocking', 'standalone.lock_missing', `Standalone lock is missing: ${toPortable(path.relative(repoRoot, standaloneLockPath))}.`));
+    } else {
+      try {
+        standaloneLock = await readJson(standaloneLockPath);
+      } catch (error) {
+        standaloneFindings.push(finding('blocking', 'standalone.lock_invalid_json', 'Standalone lock is not valid JSON.', { error: error.message }));
+      }
+    }
+    if (standaloneCatalog && standaloneLock) {
+      const expectedLock = await buildStandaloneLock({ repoRoot, catalog: standaloneCatalog, sourceCommit: standaloneLock.sourceCommit || '' });
+      if (standaloneLockSignature(expectedLock) !== standaloneLockSignature(standaloneLock)) {
+        standaloneFindings.push(finding('blocking', 'standalone.lock_catalog_drift', 'Standalone catalog, sources, and lock are not in parity.', {
+          catalog: toPortable(path.relative(repoRoot, standaloneCatalogPath)),
+          lock: toPortable(path.relative(repoRoot, standaloneLockPath)),
+        }));
+      }
+    }
+    standaloneCatalogReport = {
+      status: standaloneFindings.length === 0 ? 'pass' : 'fail',
+      catalog: toPortable(path.relative(repoRoot, standaloneCatalogPath)),
+      lock: toPortable(path.relative(repoRoot, standaloneLockPath)),
+      skills: standaloneCatalog?.skills?.map((entry) => entry.name) || [],
+      findings: standaloneFindings,
+    };
+    findings.push(...standaloneFindings);
+  }
+
   if (!packageContractText.includes('- catalog/') || !packageContractText.includes('source: catalog/moonshot-catalog.json')) {
     findings.push(finding('blocking', 'catalog.package_contract_omits_catalog', 'Package contract must declare catalog/ and catalog/moonshot-catalog.json in the common payload.'));
   }
@@ -228,6 +291,7 @@ export const checkCatalog = async (options = {}) => {
     publicEntrypoints: catalogPublic,
     runtimeSurfacePublicSkills: runtimePublic,
     sourceSkillCount: sourceSkillDirs.length,
+    standalone: standaloneCatalogReport,
     findings,
   };
 };

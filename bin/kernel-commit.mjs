@@ -1,8 +1,6 @@
 #!/usr/bin/env node
-import { parseCliArgs, printResult } from '../scripts/kernel/standalone/common.mjs';
-import { kernelCommit } from '../scripts/kernel/standalone/kernel-commit.mjs';
+import { runStandaloneCli } from './moon-relay-standalone.mjs';
 
-const args = parseCliArgs(process.argv.slice(2));
-kernelCommit({ message: args.message || null, push: args.push === true, memory: args.memory === true, memoryReview: args.memoryReview === true, approvalRef: args.approvalRef || null, runId: args.runId || null })
-  .then((result) => printResult(result, { json: args.json }))
-  .catch((error) => { printResult({ status: 'error', errorCode: error.code || error.message }, { json: true }); process.exitCode = 1; });
+runStandaloneCli('kernel-commit', process.argv.slice(2))
+  .then((result) => process.stdout.write(`${JSON.stringify(result, null, 2)}\n`))
+  .catch((error) => { process.stdout.write(`${JSON.stringify({ status: 'error', errorCode: error.code || error.message }, null, 2)}\n`); process.exitCode = 1; });

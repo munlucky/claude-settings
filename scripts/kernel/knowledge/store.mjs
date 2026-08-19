@@ -290,7 +290,11 @@ const copyNamespaceTree = (source, destination) => {
   fs.mkdirSync(path.dirname(destination), { recursive: true });
   fs.copyFileSync(source, destination);
   const handle = fs.openSync(destination, 'r');
-  try { fs.fsyncSync(handle); } finally { fs.closeSync(handle); }
+  try {
+    try { fs.fsyncSync(handle); } catch (error) {
+      if (!['EINVAL', 'ENOTSUP', 'EISDIR', 'EPERM'].includes(error?.code)) throw error;
+    }
+  } finally { fs.closeSync(handle); }
 };
 
 const rewriteProjectIdValue = (value, legacyIds, canonicalId) => {

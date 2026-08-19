@@ -1,8 +1,6 @@
 #!/usr/bin/env node
-import { parseCliArgs, printResult } from '../scripts/kernel/standalone/common.mjs';
-import { runCodebaseUnderstanding } from '../scripts/kernel/standalone/codebase-understanding.mjs';
+import { runStandaloneCli } from './moon-relay-standalone.mjs';
 
-const args = parseCliArgs(process.argv.slice(2));
-runCodebaseUnderstanding({ query: args.query || '', force: args.force === true })
-  .then((result) => printResult(result, { json: args.json }))
-  .catch((error) => { printResult({ status: 'error', errorCode: error.code || error.message }, { json: true }); process.exitCode = 1; });
+runStandaloneCli('codebase-understanding', process.argv.slice(2))
+  .then((result) => process.stdout.write(`${JSON.stringify(result, null, 2)}\n`))
+  .catch((error) => { process.stdout.write(`${JSON.stringify({ status: 'error', errorCode: error.code || error.message }, null, 2)}\n`); process.exitCode = 1; });

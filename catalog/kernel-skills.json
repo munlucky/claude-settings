@@ -45,6 +45,10 @@
         "kernel-tracer-slicing",
         "kernel-test-driven-development",
         "kernel-diagnosing-bugs",
+        "kernel-conditional-frontend-guidance",
+        "kernel-browser-proof-adapter",
+        "kernel-security-review-policy",
+        "kernel-simplification-check",
         "kernel-verification-before-completion",
         "kernel-review-spec",
         "kernel-review-standards",
@@ -68,7 +72,11 @@
     "kernel-conditional-design": { "condition": "architecture boundary, public contract, migration, or irreversible decision", "priority": 22, "guidance": "Record a short design judgment only when the decision changes the implementation boundary." },
     "kernel-conditional-planning": { "condition": "multiple independent deliverables, long-lived resume, or safe parallel split", "priority": 31, "guidance": "Use contract steps only when each slice has independent scope and verification." },
     "kernel-focused-test-guidance": { "condition": "behavior change with an appropriate test surface", "priority": 42, "guidance": "Prefer a focused regression test when the project exposes a suitable test seam." },
-    "kernel-systematic-debugging": { "condition": "repeated verification failure, repeated blocker, or unclear root cause", "priority": 43, "guidance": "On repeated failure, analyze the cause boundary before applying another patch." }
+    "kernel-systematic-debugging": { "condition": "repeated verification failure, repeated blocker, or unclear root cause", "priority": 43, "guidance": "On repeated failure, analyze the cause boundary before applying another patch." },
+    "kernel-conditional-frontend-guidance": { "condition": "frontend source mutation, UI redesign, or visual behavior change", "priority": 44, "guidance": "Preserve design context, tokens, responsive behavior, accessibility, and state design." },
+    "kernel-security-review-policy": { "condition": "authentication, untrusted input, dependency, security API, or high-risk data boundary", "priority": 52, "guidance": "Require project security verification and Kernel-recorded independent Review Receipt." },
+    "kernel-simplification-check": { "condition": "non-trivial behavior-changing implementation where preservation can be checked", "priority": 61, "guidance": "Check for unnecessary abstraction, duplication, scope expansion, and speculative configuration." },
+    "kernel-browser-proof-adapter": { "condition": "browser behavior is explicit, required, or necessary to judge completion", "priority": 91, "guidance": "Use the Kernel browser proof adapter only when the contract requires browser behavior; enforce evidence depth." }
   },
   "checks": {
     "publicEntrypointsMatchRuntimeSurface": true,

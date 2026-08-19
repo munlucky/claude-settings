@@ -13,6 +13,7 @@ import {
   normalizeCompletionPredicate,
   outcomeForEvidenceMethod,
 } from '../run/completion-outcomes.mjs';
+import { assertCurrentSeed } from '../standalone/prework.mjs';
 
 const EVIDENCE_CLASSES = ['hard', 'judgment'];
 
@@ -229,6 +230,7 @@ const RISK_FLAGS = [
   'baselineRequired', 'acceptanceUnverifiable', 'objectiveNonGoalConflict', 'architectureBoundary',
   'irreversibleDecision', 'independentDeliverables', 'longLivedResume', 'safeParallelSplit',
   'testSurfaceAvailable', 'repeatedFailure', 'repeatedBlocker', 'rootCauseAmbiguous',
+  'frontend', 'visualBehavior', 'browserProof',
 ];
 
 const normalizeSafeWave = (input) => {
@@ -252,6 +254,18 @@ const normalizeSafeWave = (input) => {
 export const normalizeTaskContract = (input = {}, { objective, changedFileCount = 0 } = {}) => {
   assertNoRawSecret(input);
   const contract = input && typeof input === 'object' ? input : {};
+  const suppliedSeed = contract.taskContractSeed || contract.seed || null;
+  const seed = suppliedSeed
+    ? assertCurrentSeed(suppliedSeed, { objective: objective || contract.objective || null })
+    : null;
+  const seedProvenance = seed ? {
+    kind: seed.kind,
+    authority: seed.authority,
+    seedDigest: seed.seedDigest,
+    artifactDigest: seed.artifactDigest || null,
+    sourceProvenance: seed.sourceProvenance || null,
+    referencedArtifacts: Array.isArray(seed.referencedArtifacts) ? seed.referencedArtifacts : [],
+  } : null;
   const acceptance = assertEvidencePlans(contract.acceptance || contract.acceptanceCriteria || []);
   const flags = {};
   for (const flag of RISK_FLAGS) {
@@ -273,7 +287,14 @@ export const normalizeTaskContract = (input = {}, { objective, changedFileCount 
     defectWithinScope: contract.defectWithinScope === true,
     replacement: contract.replacement === true,
     requiredObligations: asStringList(contract.requiredObligations),
+    requiredVerifications: Array.isArray(contract.requiredVerifications)
+      ? contract.requiredVerifications.map((item) => (item && typeof item === 'object' ? { ...item } : String(item)))
+      : [],
     completionPredicate: normalizeCompletionPredicate(contract.completionPredicate || contract.requiredOutcomes),
+    // Standalone pre-work may provide a validated seed, but the seed remains
+    // provenance only. It never becomes a completion, proof, review, or
+    // knowledge authority inside Kernel.
+    seedProvenance,
     // Work-unit scope (K1). Declared here so an Execution Capsule can bound a
     // worker to the paths the contract actually authorises; an empty list means
     // the whole workspace and can never be violated.
@@ -307,7 +328,9 @@ export const contractDigest = (contract) => `sha256:${createHash('sha256').updat
   defectWithinScope: contract.defectWithinScope,
   replacement: contract.replacement,
   requiredObligations: contract.requiredObligations,
+  requiredVerifications: contract.requiredVerifications || [],
   completionPredicate: contract.completionPredicate,
+  seedProvenance: contract.seedProvenance || null,
   steps: contract.steps,
   safeWave: contract.safeWave,
   allowedPaths: contract.allowedPaths,
@@ -346,6 +369,10 @@ const surfacesFromDeclaredRisks = (risks = []) => [...new Set(risks.flatMap((ris
 // change is carried through so an ordinary behavior-changing task is not left
 // at T0 (P1-1).
 export const riskSummaryFromContract = (contract) => ({
+  objective: contract.objective,
+  acceptance: contract.acceptance,
+  requiredVerifications: contract.requiredVerifications || [],
+  changedPaths: contract.changedPaths || [],
   requestedTier: contract.requestedTier || undefined,
   filesChanged: contract.filesChanged,
   surfaces: [...new Set([...contract.surfaces, ...surfacesFromFlags(contract.flags), ...surfacesFromDeclaredRisks(contract.risks)])],
@@ -371,6 +398,7 @@ export const contractBriefing = (contract) => ({
   constraints: contract.constraints,
   nonGoals: contract.nonGoals,
   risks: contract.risks,
+  seedProvenance: contract.seedProvenance || null,
 });
 
 const nextAcceptanceId = (items) => {
@@ -579,6 +607,7 @@ export const mergeContractRevisionWithBindings = (previous, next) => {
     flags: { ...previous.flags, ...next.flags },
     filesChanged: Math.max(Number(previous.filesChanged) || 0, Number(next.filesChanged) || 0),
     requestedTier: next.requestedTier || previous.requestedTier,
+    seedProvenance: next.seedProvenance || previous.seedProvenance || null,
   };
   const canonicalIds = acceptanceIdSet(merged.acceptance);
   const knownObligations = contractObligationIds(merged);

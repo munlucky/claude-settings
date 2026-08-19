@@ -3,6 +3,7 @@ import { spawn, execFileSync } from 'node:child_process';
 import { pathsOverlap, resolveTrackRoots } from './paths.mjs';
 import { canonicalPath } from '../kernel/runtime-home.mjs';
 import { canonicalizeHostSessionId, providerForSurface } from '../kernel/run/host-session.mjs';
+import { nativeProviderDescriptor } from './native-provider.mjs';
 
 function resolveClaudeDesktopAumid() {
   if (process.platform !== 'win32') return null;
@@ -124,17 +125,19 @@ const defaultCommand = (surface) => {
 export function buildLaunchSpec({ surface, track, sourceRoot = process.cwd(), workspaceRoot = null, workspaceId = null, runId = null, projectId = null, sessionId = null, command, args = [], roots = resolveTrackRoots({ track, surface, sourceRoot }) } = {}) {
   const resolvedWorkspace = workspaceRoot ? path.resolve(workspaceRoot) : (track === 'kernel' ? path.resolve(sourceRoot) : null);
   const expectedPublicSkills = track === 'kernel' ? ['moon-relay-kernel'] : null;
+  const nativeProvider = nativeProviderDescriptor({ surface, command, runtimeHome: roots.runtimeHome });
   return {
     schemaVersion: 1,
     surface,
     track,
-    command: command || defaultCommand(surface),
+    command: command || nativeProvider.command || defaultCommand(surface),
     args: [...args],
     aumid: null,
     roots,
     workspaceRoot: resolvedWorkspace,
     cwd: resolvedWorkspace || process.cwd(),
     expectedPublicSkills,
+    providerRuntime: nativeProvider,
     env: buildProcessEnvironment({ surface, track, roots, workspaceRoot: resolvedWorkspace, workspaceId, runId, projectId, sessionId }),
   };
 }

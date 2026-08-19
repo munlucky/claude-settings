@@ -5,7 +5,8 @@
   "description": "Project-scoped Moon Relay Kernel runtime package.",
   "type": "module",
   "bin": {
-    "moon-relay-kernel": "../../bin/moon-relay-kernel.mjs"
+    "moon-relay-kernel": "../../bin/moon-relay-kernel.mjs",
+    "moon-relay-standalone": "../../bin/moon-relay-standalone.mjs"
   },
   "engines": {
     "node": ">=20"

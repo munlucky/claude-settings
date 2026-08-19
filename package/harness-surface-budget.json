@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "baseline": {
-    "files": 1835,
-    "nonblankLines": 225502,
-    "utf8Bytes": 10172413,
-    "estimatedPromptTokens": 2543104
+    "files": 1867,
+    "nonblankLines": 230862,
+    "utf8Bytes": 10463961,
+    "estimatedPromptTokens": 2615991
   },
   "allowedDelta": {
     "files": 50,

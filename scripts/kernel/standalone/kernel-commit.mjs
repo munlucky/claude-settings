@@ -10,6 +10,8 @@ import { runGit, gitCurrentBranch } from '../../lib/git-safe.mjs';
 import { gitTreeDigest } from '../../lib/candidate-identity.mjs';
 import { parseCliArgs, printResult, readJson, resolveStandaloneProject, sha256, writeJsonAtomic } from './common.mjs';
 import { ensureAccountRootTrack } from '../runtime-home.mjs';
+import { registerWorkspace } from '../run/workspace-registration.mjs';
+import { observeWorkspaceIdentity } from '../run/workspace-identity.mjs';
 
 const DENY_PATTERNS = [
   /^\.agents(?:\/|$)/i,
@@ -53,14 +55,152 @@ const runGitChecked = (repoRoot, args) => {
   return result;
 };
 
+const pathKey = (value) => {
+  const normalized = String(value || '').replaceAll('\\', '/').replace(/^\.\//, '');
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+};
+
+const uniquePaths = (paths = []) => [...new Set(paths.map(pathKey).filter(Boolean))].sort();
+
+const admissionError = (code, details = {}) => Object.assign(new Error(code), {
+  code,
+  errorCode: code,
+  details,
+});
+
+export function mutationAdmissionDigest({ runId, projectId, workspaceId, sourceIdentity, mutationRevision, changedPaths, workspaceIdentity }) {
+  return sha256({
+    runId,
+    projectId,
+    workspaceId,
+    sourceIdentity,
+    mutationRevision: Number(mutationRevision || 0),
+    changedPaths: uniquePaths(changedPaths),
+    workspaceIdentity,
+  });
+}
+
+export function resolveKernelCloseoutRun({ stateStore, projectId, workspaceId, runId = null } = {}) {
+  const candidates = runId
+    ? [stateStore.getRun(runId)].filter(Boolean)
+    : stateStore.listRuns({ projectId, statuses: ['completed'] })
+      .filter((candidate) => candidate.workspaceId === workspaceId);
+  if (candidates.length === 0) {
+    throw admissionError(runId ? 'UNKNOWN_RUN_ID' : 'RUN_PROVENANCE_REQUIRED', { runId, projectId, workspaceId });
+  }
+  if (!runId && candidates.length > 1) {
+    throw admissionError('RUN_PROVENANCE_AMBIGUOUS', { projectId, workspaceId, runIds: candidates.map((candidate) => candidate.runId) });
+  }
+  const run = candidates[0];
+  if (run.projectId !== projectId) {
+    throw admissionError('RUN_PROJECT_MISMATCH', { runId: run.runId, expectedProjectId: projectId, actualProjectId: run.projectId });
+  }
+  if (!run.workspaceId || run.workspaceId !== workspaceId) {
+    throw admissionError('WORKSPACE_BINDING_MISMATCH', { runId: run.runId, expectedWorkspaceId: workspaceId, actualWorkspaceId: run.workspaceId });
+  }
+  if (run.status !== 'completed' || run.currentState !== 'CLOSE' || run.finalizationStatus !== 'completed') {
+    throw admissionError('RUN_NOT_FINALIZED', { runId: run.runId, status: run.status, state: run.currentState, finalizationStatus: run.finalizationStatus });
+  }
+  const completion = stateStore.getCompletionDecision(run.runId);
+  if (!completion || completion.decision !== 'accepted') {
+    throw admissionError('COMPLETION_NOT_ACCEPTED', { runId: run.runId, completion: completion?.decision || null });
+  }
+  return { run, completion };
+}
+
+export function admitKernelMutation({ stateStore, project, statusEntries = [], selected = [], runId = null } = {}) {
+  const workspace = registerWorkspace({ stateStore, projectId: project.projectId, workspaceRoot: project.projectRoot });
+  const currentObservation = observeWorkspaceIdentity({ projectRoot: project.projectRoot });
+  const { run, completion } = resolveKernelCloseoutRun({ stateStore, projectId: project.projectId, workspaceId: workspace.workspaceId, runId });
+  const provenance = stateStore.getMutationProvenance(run.runId) || stateStore.getLatestImplementationAttempt(run.runId);
+  if (!provenance || provenance.status && provenance.status !== 'passed') {
+    throw admissionError('MUTATION_PROVENANCE_MISSING', { runId: run.runId });
+  }
+  const approvedPaths = uniquePaths(provenance.changedPaths || []);
+  if (approvedPaths.length === 0) {
+    throw admissionError('MUTATION_PROVENANCE_MISSING', { runId: run.runId, reason: 'changed_paths_empty' });
+  }
+  const currentPaths = uniquePaths(statusEntries.map((entry) => entry.path));
+  const selectedPaths = uniquePaths(selected);
+  const approvedSet = new Set(approvedPaths);
+  const foreignPaths = currentPaths.filter((candidate) => !approvedSet.has(candidate));
+  const unapprovedSelectedPaths = selectedPaths.filter((candidate) => !approvedSet.has(candidate));
+  if (foreignPaths.length > 0 || unapprovedSelectedPaths.length > 0) {
+    throw admissionError('FOREIGN_MUTATION', {
+      runId: run.runId,
+      foreignPaths,
+      unapprovedSelectedPaths,
+      approvedPaths,
+    });
+  }
+  const expectedSourceIdentity = run.sourceIdentity;
+  if (!expectedSourceIdentity || provenance.sourceIdentity !== expectedSourceIdentity || completion.sourceIdentity !== expectedSourceIdentity) {
+    throw admissionError('SOURCE_IDENTITY_MISMATCH', {
+      runId: run.runId,
+      expectedSourceIdentity,
+      provenanceSourceIdentity: provenance.sourceIdentity || null,
+      completionSourceIdentity: completion.sourceIdentity || null,
+    });
+  }
+  const mutationRevision = Number(provenance.mutationRevision ?? run.mutationRevision ?? 0);
+  if (mutationRevision <= 0 || mutationRevision !== Number(run.mutationRevision || 0) || Number(completion.mutationRevision || 0) !== mutationRevision) {
+    throw admissionError('MUTATION_REVISION_MISMATCH', {
+      runId: run.runId,
+      runMutationRevision: run.mutationRevision,
+      provenanceMutationRevision: provenance.mutationRevision,
+      completionMutationRevision: completion.mutationRevision,
+    });
+  }
+  const expectedWorkspaceIdentity = provenance.workspaceIdentity || provenance.resultWorkspaceIdentity || provenance.workspaceIdentityEnd;
+  if (!expectedWorkspaceIdentity || expectedWorkspaceIdentity !== currentObservation.identity || (run.currentWorkspaceIdentity && run.currentWorkspaceIdentity !== currentObservation.identity)) {
+    throw admissionError('MUTATION_PROVENANCE_DRIFT', {
+      runId: run.runId,
+      expectedWorkspaceIdentity,
+      runWorkspaceIdentity: run.currentWorkspaceIdentity,
+      currentWorkspaceIdentity: currentObservation.identity,
+    });
+  }
+  if (provenance.workspaceId && provenance.workspaceId !== workspace.workspaceId) {
+    throw admissionError('WORKSPACE_BINDING_MISMATCH', {
+      runId: run.runId,
+      expectedWorkspaceId: workspace.workspaceId,
+      provenanceWorkspaceId: provenance.workspaceId,
+    });
+  }
+  return {
+    run,
+    completion,
+    workspace,
+    provenance,
+    sourceIdentity: expectedSourceIdentity,
+    mutationRevision,
+    approvedPaths,
+    currentPaths,
+    workspaceIdentity: currentObservation.identity,
+    mutationDigest: mutationAdmissionDigest({
+      runId: run.runId,
+      projectId: project.projectId,
+      workspaceId: workspace.workspaceId,
+      sourceIdentity: expectedSourceIdentity,
+      mutationRevision,
+      changedPaths: approvedPaths,
+      workspaceIdentity: currentObservation.identity,
+    }),
+  };
+}
+
 export async function kernelCommit({ cwd = process.cwd(), env = process.env, message = null, push = false, memory = false, memoryReview = false, approvalRef = null, runId = null } = {}) {
   await ensureAccountRootTrack({ startDir: cwd, track: 'kernel', env, source: 'standalone-kernel-commit' });
   const project = resolveStandaloneProject({ cwd, env });
   const statusResult = runGitChecked(project.projectRoot, ['status', '--porcelain=v1']);
-  const { selected, denied } = selectStagingPaths(parseGitStatus(statusResult.stdout));
+  const statusEntries = parseGitStatus(statusResult.stdout);
+  const { selected, denied } = selectStagingPaths(statusEntries);
   if (!message && selected.length > 0) throw new Error('COMMIT_MESSAGE_REQUIRED');
   const stateStore = await openKernelStateStore({ runtimeHome: project.runtimeHome });
   try {
+    const admission = selected.length > 0
+      ? admitKernelMutation({ stateStore, project, statusEntries, selected, runId })
+      : null;
     const index = await buildCodebaseIndex({ projectRoot: project.projectRoot, projectId: project.projectId, codebaseRoot: project.codebaseRoot, runtimeHome: project.runtimeHome });
     let candidates = [];
     if (memory || memoryReview) {
@@ -69,10 +209,33 @@ export async function kernelCommit({ cwd = process.cwd(), env = process.env, mes
     }
     if (memoryReview && !approvalRef) return { status: 'awaiting_review', projectId: project.projectId, staging: { selected, denied }, candidates, index };
     if (selected.length === 0) return { status: 'no_op', projectId: project.projectId, staging: { selected, denied }, index, candidates };
+    const beforeHeadSha = runGitChecked(project.projectRoot, ['rev-parse', 'HEAD']).stdout.trim();
     runGitChecked(project.projectRoot, ['add', '--', ...selected]);
     const commitResult = runGitChecked(project.projectRoot, ['commit', '-m', message]);
     const commitHash = runGitChecked(project.projectRoot, ['rev-parse', 'HEAD']).stdout.trim();
-    const receipt = { schemaVersion: 1, projectId: project.projectId, branch: gitCurrentBranch(project.projectRoot), commitHash, selectedPaths: selected, deniedPaths: denied, treeDigest: gitTreeDigest(project.projectRoot), knowledgeStatus: 'staged', closeoutStatus: 'partial', createdAt: new Date().toISOString() };
+    const receipt = {
+      schemaVersion: 2,
+      authority: 'kernel-closeout-only',
+      projectId: project.projectId,
+      branch: gitCurrentBranch(project.projectRoot),
+      commitHash,
+      selectedPaths: selected,
+      deniedPaths: denied,
+      treeDigest: gitTreeDigest(project.projectRoot),
+      knowledgeStatus: 'staged',
+      closeoutStatus: 'partial',
+      mutationAdmission: admission ? {
+        runId: admission.run.runId,
+        workspaceId: admission.workspace.workspaceId,
+        sourceIdentity: admission.sourceIdentity,
+        mutationRevision: admission.mutationRevision,
+        workspaceIdentityBeforeCommit: admission.workspaceIdentity,
+        approvedPaths: admission.approvedPaths,
+        mutationDigest: admission.mutationDigest,
+        provenanceAttemptId: admission.provenance.attemptId || null,
+      } : null,
+      createdAt: new Date().toISOString(),
+    };
     if (memory && candidates.length > 0) {
       const sourceDigest = index.manifest?.sourceTreeDigest || sha256(commitHash);
       if (approvalRef) {
@@ -95,6 +258,20 @@ export async function kernelCommit({ cwd = process.cwd(), env = process.env, mes
       receipt.remoteHead = remoteHead;
       if (receipt.pushStatus !== 'completed') throw new Error('REMOTE_PARITY_FAILED');
       await writeJsonAtomic(receiptPath, receipt);
+    }
+    if (admission) {
+      stateStore.recordGitCloseoutReceipt(admission.run.runId, {
+        projectId: project.projectId,
+        mode: 'kernel-commit',
+        commitSha: commitHash,
+        branch: receipt.branch,
+        pushStatus: push ? receipt.pushStatus : 'skipped',
+        parity: push ? 'remote' : 'local',
+        status: 'completed',
+        beforeHeadSha,
+        selectedPaths: selected,
+        receiptJson: receipt,
+      });
     }
     return { status: 'committed', projectId: project.projectId, commitHash, receipt, staging: { selected, denied }, index };
   } finally { await stateStore.close(); }

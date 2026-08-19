@@ -1,9 +1,23 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-24T06:28:42.216Z",
-  "sourceCommit": "761a0d19dc8abdccd9d32469af79f0ec600d104f",
+  "generatedAt": "2026-08-19T11:12:13.591Z",
+  "sourceCommit": "738cecd504478d62dadab78cc92e2c4864275e41",
   "scope": "kernel",
   "skills": [
+    {
+      "name": "kernel-browser-proof-adapter",
+      "path": "skills/kernel-browser-proof-adapter",
+      "source": "canonical",
+      "contentHash": "6138f4d7262960ac23d03391140aa7f7ed7596a1b13fdbff62688d760a1b34c5",
+      "license": "MIT",
+      "stages": [],
+      "permissions": [
+        "filesystem-read"
+      ],
+      "permissionReview": {
+        "status": "approved"
+      }
+    },
     {
       "name": "kernel-commit-closeout",
       "path": "skills/kernel-commit-closeout",
@@ -12,11 +26,21 @@
       "license": "MIT",
       "stages": [],
       "permissions": [
-        "filesystem-read",
-        "filesystem-write",
-        "subprocess-exec",
-        "git-commit",
-        "git-push"
+        "filesystem-read"
+      ],
+      "permissionReview": {
+        "status": "approved"
+      }
+    },
+    {
+      "name": "kernel-conditional-frontend-guidance",
+      "path": "skills/kernel-conditional-frontend-guidance",
+      "source": "canonical",
+      "contentHash": "0b4184a8473e36883b20795dd9e342945b310d1926b6982dc8f190025694a4af",
+      "license": "MIT",
+      "stages": [],
+      "permissions": [
+        "filesystem-read"
       ],
       "permissionReview": {
         "status": "approved"
@@ -97,6 +121,34 @@
       "path": "skills/kernel-review-standards",
       "source": "canonical",
       "contentHash": "12b04843e5b4240f21c7239e24c52a907ca3b78513de721a159e0e78fbd31d82",
+      "license": "MIT",
+      "stages": [],
+      "permissions": [
+        "filesystem-read"
+      ],
+      "permissionReview": {
+        "status": "approved"
+      }
+    },
+    {
+      "name": "kernel-security-review-policy",
+      "path": "skills/kernel-security-review-policy",
+      "source": "canonical",
+      "contentHash": "ec3540f760725bde4e04ae6bb59911988879be48d7b649152506e381b65b0893",
+      "license": "MIT",
+      "stages": [],
+      "permissions": [
+        "filesystem-read"
+      ],
+      "permissionReview": {
+        "status": "approved"
+      }
+    },
+    {
+      "name": "kernel-simplification-check",
+      "path": "skills/kernel-simplification-check",
+      "source": "canonical",
+      "contentHash": "328e5651ed55fd3e14e783b76cd949dcfa987ea709353b446b9f32e087263db3",
       "license": "MIT",
       "stages": [],
       "permissions": [

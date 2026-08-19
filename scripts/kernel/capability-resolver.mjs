@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { resolveDomainPolicies } from './proof/domain-policy.mjs';
 
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const catalog = JSON.parse(readFileSync(path.join(sourceRoot, 'catalog', 'kernel-skills.json'), 'utf8'));
@@ -24,6 +25,10 @@ const conditionState = (task = {}) => {
   const riskTier = task.riskTier || task.proofTier || 'T0';
   const route = Array.isArray(task.route) ? task.route : [];
   const routeIncludesExecute = route.length ? route.includes('EXECUTE') : task.taskClass !== 'analysis';
+  const flags = { ...(task.flags || {}) };
+  for (const key of ['securityBoundary', 'authBoundary', 'frontend', 'visualBehavior', 'browserProof']) {
+    if (task[key] === true) flags[key] = true;
+  }
   return {
     sourceMutation: hasMutation(task),
     behaviorChanging: task.behaviorChanging === true,
@@ -41,6 +46,7 @@ const conditionState = (task = {}) => {
     planning: task.independentDeliverables === true || task.longLivedResume === true || task.safeParallelSplit === true,
     focusedTest: task.behaviorChanging === true && task.testSurfaceAvailable === true,
     systematicDebugging: task.repeatedFailure === true || task.repeatedBlocker === true || task.rootCauseAmbiguous === true,
+    domainPolicies: resolveDomainPolicies({ ...task, flags }),
     verification: routeIncludesExecute || task.explicitCompletionAttempt === true,
     gitCloseoutRequested: task.gitCloseoutRequested === true,
     completionAccepted: task.completionAccepted === true,
@@ -63,6 +69,10 @@ const isActive = (id, state) => {
   if (id === 'kernel-conditional-planning') return state.planning;
   if (id === 'kernel-focused-test-guidance') return state.focusedTest;
   if (id === 'kernel-systematic-debugging') return state.systematicDebugging;
+  if (id === 'kernel-conditional-frontend-guidance') return state.domainPolicies.frontend.active;
+  if (id === 'kernel-browser-proof-adapter') return state.domainPolicies.browser.required;
+  if (id === 'kernel-security-review-policy') return state.domainPolicies.security.required;
+  if (id === 'kernel-simplification-check') return state.domainPolicies.simplification.active;
   if (id === 'kernel-verification-before-completion') return state.verification;
   if (id === 'kernel-commit-closeout') {
     return Boolean(state.gitCloseoutRequested && state.completionAccepted && state.knowledgeCommitReceiptExists);

@@ -21,12 +21,22 @@ test('phase 01 roots keep Relay and Kernel physically distinct', async () => {
   assert.equal(identity.sensitiveContentRead, undefined);
 });
 
-test('phase 01 physical target identity follows a symlinked parent and refuses it', async () => {
-  const root = await mkdir(path.join(os.tmpdir(), `switcher-p01-symlink-${Date.now()}`), { recursive: true });
+test('phase 01 physical target identity follows a symlinked parent and refuses it', async (t) => {
+  const root = path.join(os.tmpdir(), `switcher-p01-symlink-${Date.now()}`);
+  await mkdir(root, { recursive: true });
   const real = path.join(root, 'real');
   const alias = path.join(root, 'alias');
   await mkdir(real, { recursive: true });
-  await symlink(real, alias, 'dir');
+  try {
+    await symlink(real, alias, process.platform === 'win32' ? 'junction' : 'dir');
+  } catch (error) {
+    await rm(root, { recursive: true, force: true });
+    if (process.platform === 'win32' && error.code === 'EPERM') {
+      t.skip('Windows symlink/junction creation is unavailable in this account');
+      return;
+    }
+    throw error;
+  }
   try {
     const identity = await physicalTargetIdentity(path.join(alias, 'provider'), { protectedRoots: [] });
     assert.equal(identity.safe, false);
@@ -40,7 +50,7 @@ test('phase 01 physical target identity follows a symlinked parent and refuses i
 test('phase 01 process characterization is metadata-only and injectable', async () => {
   const rows = await listProviderProcesses({ surface: 'codex_desktop', processProvider: async () => [{ pid: 42, name: 'ChatGPT', executable: 'C:\\Codex\\ChatGPT.exe' }] });
   assert.deepEqual(rows, [{ pid: 42, name: 'ChatGPT', executable: 'C:\\Codex\\ChatGPT.exe', sessionId: null, userSid: null }]);
-  const quiet = await waitForQuiescence({ surface: 'codex_desktop', processProvider: async () => [], quiescenceMs: 1, timeoutMs: 10, pollMs: 1 });
+  const quiet = await waitForQuiescence({ surface: 'codex_desktop', processProvider: async () => [], quiescenceMs: 0, timeoutMs: 100, pollMs: 1 });
   assert.equal(quiet.status, 'quiescent');
 });
 

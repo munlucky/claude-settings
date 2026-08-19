@@ -723,6 +723,7 @@ export const createWorkCursorApi = ({ store, projectRoot, runtimeHome }) => ({
       store.finishStepAttempt(attempt.id, {
         status: passed ? 'passed' : 'failed',
         workspaceIdentityEnd: observation.identity,
+        changedPaths: report.changedPaths,
         resultDigest,
         verificationRefs: store.getVerifications(runId).map((verification) => verification.evidenceRef).filter(Boolean),
         failureReasons: passed ? [] : [...evaluation.reasons, ...failures.map((failure) => failure.errorSummary).filter(Boolean)],

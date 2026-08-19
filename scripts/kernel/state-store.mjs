@@ -276,6 +276,21 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       created_at TEXT NOT NULL,
       FOREIGN KEY(run_id) REFERENCES runs(run_id)
     );
+    CREATE TABLE IF NOT EXISTS mutation_provenance (
+      run_id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      workspace_id TEXT,
+      source_identity TEXT NOT NULL,
+      base_source_identity TEXT,
+      mutation_revision INTEGER NOT NULL,
+      changed_paths_json TEXT NOT NULL DEFAULT '[]',
+      workspace_identity TEXT NOT NULL,
+      mutation_digest TEXT NOT NULL,
+      attempt_id TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY(run_id) REFERENCES runs(run_id)
+    );
     CREATE TABLE IF NOT EXISTS finalization_receipts (
       run_id TEXT PRIMARY KEY,
       project_id TEXT NOT NULL,
@@ -2863,6 +2878,19 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       return rows.map((row) => this.getRun(row.runId)).filter(Boolean);
     },
 
+    listRuns({ projectId = null, statuses = null } = {}) {
+      const values = [];
+      const clauses = [];
+      if (projectId) { clauses.push('project_id=?'); values.push(projectId); }
+      if (Array.isArray(statuses) && statuses.length > 0) {
+        clauses.push(`status IN (${statuses.map(() => '?').join(',')})`);
+        values.push(...statuses.map(String));
+      }
+      const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+      return db.prepare(`SELECT run_id as runId FROM runs ${where} ORDER BY updated_at DESC`).all(...values)
+        .map((row) => this.getRun(row.runId)).filter(Boolean);
+    },
+
     acquireWorkspaceMutationLock({ projectId, runId, sessionToken, ttlMs = 60000 } = {}) {
       if (!projectId || !runId || !sessionToken) throw new Error('workspace mutation lock requires projectId, runId, and sessionToken');
       const acquiredAt = now();
@@ -3361,6 +3389,22 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       return { ...row, receiptJson: safeJsonParse(row.receiptJson, {}), selectedPaths: safeJsonParse(row.selectedPathsJson, []) };
     },
 
+    recordMutationProvenance(runId, { projectId, workspaceId = null, sourceIdentity, baseSourceIdentity = null, mutationRevision, changedPaths = [], workspaceIdentity, mutationDigest, attemptId = null } = {}) {
+      if (!runId || !projectId || !sourceIdentity || !workspaceIdentity || !mutationDigest) throw new Error('mutation_provenance_incomplete');
+      db.prepare(`
+        INSERT INTO mutation_provenance(run_id, project_id, workspace_id, source_identity, base_source_identity, mutation_revision, changed_paths_json, workspace_identity, mutation_digest, attempt_id, created_at, updated_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(run_id) DO UPDATE SET project_id=excluded.project_id, workspace_id=excluded.workspace_id, source_identity=excluded.source_identity, base_source_identity=excluded.base_source_identity, mutation_revision=excluded.mutation_revision, changed_paths_json=excluded.changed_paths_json, workspace_identity=excluded.workspace_identity, mutation_digest=excluded.mutation_digest, attempt_id=excluded.attempt_id, updated_at=excluded.updated_at
+      `).run(runId, projectId, workspaceId, sourceIdentity, baseSourceIdentity, Number(mutationRevision), JSON.stringify([...new Set(changedPaths.map((value) => String(value).replaceAll('\\', '/')))].sort()), workspaceIdentity, mutationDigest, attemptId, now(), now());
+      return this.getMutationProvenance(runId);
+    },
+
+    getMutationProvenance(runId) {
+      const row = db.prepare(`SELECT run_id as runId, project_id as projectId, workspace_id as workspaceId, source_identity as sourceIdentity, base_source_identity as baseSourceIdentity, mutation_revision as mutationRevision, changed_paths_json as changedPathsJson, workspace_identity as workspaceIdentity, mutation_digest as mutationDigest, attempt_id as attemptId, created_at as createdAt, updated_at as updatedAt FROM mutation_provenance WHERE run_id=?`).get(runId);
+      if (!row) return null;
+      return { ...row, changedPaths: safeJsonParse(row.changedPathsJson, []) };
+    },
+
     recordFinalizationReceipt(runId, receipt = {}) {
       const { projectId, completionStatus, knowledgeStatus, projectionStatus, gitCloseoutStatus, finalizationStatus, receiptJson } = receipt;
       const jsonStr = persistentJson(receiptJson || receipt || {});
@@ -3586,6 +3630,20 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         verificationRefs: result.verificationRefs || [],
         knowledgeObservationRefs: result.knowledgeObservationRefs || [],
       });
+      if (attempt && Array.isArray(result.changedPaths) && result.changedPaths.length > 0 && result.resultWorkspaceIdentity) {
+        const run = this.getRun(runId);
+        this.recordMutationProvenance(runId, {
+          projectId: run?.projectId,
+          workspaceId: result.executionWorkspaceId || attempt.workspaceId || run?.workspaceId || null,
+          sourceIdentity: run?.sourceIdentity,
+          baseSourceIdentity: run?.sourceIdentity,
+          mutationRevision: run?.mutationRevision || attempt.mutationRevision || 0,
+          changedPaths: result.changedPaths,
+          workspaceIdentity: result.resultWorkspaceIdentity,
+          mutationDigest: result.patchDigest || result.receiptDigest || result.resultDigest || result.resultWorkspaceIdentity,
+          attemptId: attempt.attemptId || null,
+        });
+      }
       return updated;
     },
 
@@ -3915,7 +3973,22 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       if (verificationRefs) { assignments.push('verification_refs_json=?'); values.push(JSON.stringify(verificationRefs)); }
       if (knowledgeObservationRefs) { assignments.push('knowledge_observation_refs_json=?'); values.push(JSON.stringify(knowledgeObservationRefs)); }
       db.prepare(`UPDATE run_step_attempts SET ${assignments.join(', ')} WHERE id=?`).run(...values, attemptId);
-      return this.getStepAttempt(attemptId);
+      const finished = this.getStepAttempt(attemptId);
+      if (finished && status === 'passed' && Array.isArray(finished.changedPaths) && finished.changedPaths.length > 0 && workspaceIdentityEnd) {
+        const run = this.getRun(finished.runId);
+        this.recordMutationProvenance(finished.runId, {
+          projectId: run?.projectId,
+          workspaceId: finished.workspaceId || run?.workspaceId || null,
+          sourceIdentity: run?.sourceIdentity,
+          baseSourceIdentity: run?.sourceIdentity,
+          mutationRevision: run?.mutationRevision || finished.mutationRevision || 0,
+          changedPaths: finished.changedPaths,
+          workspaceIdentity: workspaceIdentityEnd,
+          mutationDigest: patchDigest || resultDigest || workspaceIdentityEnd,
+          attemptId: finished.attemptId || null,
+        });
+      }
+      return finished;
     },
 
     updateStepAttempt(attemptId, patch = {}) {

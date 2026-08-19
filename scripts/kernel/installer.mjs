@@ -10,6 +10,7 @@ const TRACK_CONTENT = 'schemaVersion: 1\ntrack: kernel\nproduct: moon-relay-kern
 const PAYLOAD_ENTRIES = [
   'bin/moon-relay-kernel.mjs',
   'bin/moon-relay-kernel-host.mjs',
+  'bin/moon-relay-standalone.mjs',
   'kernel',
   'scripts/kernel',
   'scripts/host/kernel',
@@ -18,6 +19,14 @@ const PAYLOAD_ENTRIES = [
   'schemas/kernel.track.schema.json',
   'schemas/kernel.runtime-state.schema.json',
   'catalog/kernel-skills.json',
+  'catalog/standalone-skills.json',
+  'skills/project-memory',
+  'skills/kernel-commit',
+  'skills/codebase-understanding',
+  'skills/explain-diff-html',
+  'skills/ui-audit',
+  'skills/product-definition',
+  'skills/architecture-artifacts',
   'package/kernel',
   'package/profile-templates/codex',
 ];

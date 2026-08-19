@@ -228,7 +228,7 @@ try {
     }
   } else if (command === 'identity') {
     await assertKernelTrack(projectRoot);
-    const runtimeHome = runtimeHomeArg || resolveKernelRuntimeHome();
+    const runtimeHome = resolveKernelRuntimeHome({ env: trackEnv() });
     const subcommand = args[1] && !args[1].startsWith('--') ? args[1] : 'status';
     const identityArgs = { projectRoot, runtimeHome, env: kernelEnv };
     if (subcommand === 'status') {

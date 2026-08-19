@@ -4,21 +4,43 @@ import { cp, lstat, mkdir, readFile, readdir, rm, stat } from 'node:fs/promises'
 import { KERNEL_PROFILE_RUNTIMES } from './profile-build.mjs';
 import { canonicalPath } from './runtime-home.mjs';
 import { atomicWriteText } from './durable-write.mjs';
+import { loadStandaloneCatalog, standaloneDescriptors } from './standalone/catalog.mjs';
 
 export const PROFILE_PRODUCT_ID = 'moon-relay-kernel-profile';
 export const PROFILE_MANIFEST_NAME = '.moon-relay-kernel-profile-manifest.json';
 export const PROFILE_MARKER_NAME = '.moon-relay-kernel-profile.json';
 export const KERNEL_ENTRYPOINT_SKILL = 'moon-relay-kernel';
 export const KERNEL_SKILL_INSTALL_REL = `skills/${KERNEL_ENTRYPOINT_SKILL}`;
-export const STANDALONE_SKILLS = ['project-memory', 'kernel-commit', 'codebase-understanding'];
 export const canonicalKernelSkillDir = (sourceRoot) => path.resolve(sourceRoot, 'skills', KERNEL_ENTRYPOINT_SKILL);
-export const canonicalStandaloneSkillDirs = (sourceRoot) => STANDALONE_SKILLS.map((name) => ({ name, dir: path.resolve(sourceRoot, 'skills', name) }));
+export const canonicalStandaloneSkillDirs = async (sourceRoot) => {
+  let catalog;
+  try {
+    catalog = await loadStandaloneCatalog({ repoRoot: sourceRoot, validateSources: true });
+  } catch (error) {
+    // Older/minimal profile fixtures may intentionally contain only the
+    // Kernel entrypoint. In that compatibility shape there is no standalone
+    // surface to materialize; an existing catalog remains authoritative and
+    // still fails closed when malformed.
+    const missingCatalog = error?.code === 'ENOENT'
+      && path.resolve(error.path || '') === path.resolve(sourceRoot, 'catalog', 'standalone-skills.json');
+    if (!missingCatalog) throw error;
+    return [];
+  }
+  return standaloneDescriptors(catalog, { enabledOnly: true }).map((entry) => ({ name: entry.name, dir: path.resolve(sourceRoot, entry.skillPath) }));
+};
 
 const exists = async (file) => { try { await stat(file); return true; } catch { return false; } };
 const sha256 = async (file) => createHash('sha256').update(await readFile(file)).digest('hex');
 const COMMON_SYSTEM_SYMLINKS = new Set(['/tmp', '/var', '/etc']);
+const normalizeWin32NamespacePath = (value) => {
+  const raw = String(value || '');
+  if (process.platform !== 'win32') return raw;
+  if (raw.startsWith('\\\\?\\UNC\\')) return `\\\\${raw.slice('\\\\?\\UNC\\'.length)}`;
+  if (raw.startsWith('\\\\?\\')) return raw.slice('\\\\?\\'.length);
+  return raw;
+};
 const safeProfileRoot = async (target, label = 'profile root') => {
-  const lexical = path.resolve(target);
+  const lexical = path.resolve(normalizeWin32NamespacePath(target));
   let cursor = lexical;
   while (true) {
     try {
@@ -167,7 +189,7 @@ export async function installKernelProfile({ sourceRoot = process.cwd(), runtime
     // Standalone project utilities are public optional surfaces. They are
     // installed from the canonical source tree into every provider profile,
     // while their runtime state remains account-root and project-scoped.
-    for (const { name, dir } of canonicalStandaloneSkillDirs(sourceRoot)) {
+    for (const { name, dir } of await canonicalStandaloneSkillDirs(sourceRoot)) {
       if (!(await exists(dir))) continue;
       const installRel = `skills/${name}`;
       await copyTree(dir, safeJoin(root, installRel));
@@ -184,7 +206,7 @@ export async function installKernelProfile({ sourceRoot = process.cwd(), runtime
     }
     for (const rel of await files(source)) await stage(rel);
     for (const rel of await files(canonicalSkill)) await stage(`${KERNEL_SKILL_INSTALL_REL}/${rel}`);
-    for (const { name, dir } of canonicalStandaloneSkillDirs(sourceRoot)) {
+    for (const { name, dir } of await canonicalStandaloneSkillDirs(sourceRoot)) {
       if (!(await exists(dir))) continue;
       for (const rel of await files(dir)) await stage(`skills/${name}/${rel}`);
     }
