@@ -505,8 +505,12 @@ const materializeRuntime = async (runtime, options) => {
       schemaVersion: 1,
       platform: process.platform,
       arch: process.arch,
-      version: '22.11.0',
-      checksum: checksum
+      // The payload must identify the binary that was actually copied. A
+      // fixed version here makes an offline bundle report a different Node
+      // version from the managed executable and breaks target-version
+      // verification.
+      version: process.version.replace(/^v/u, ''),
+      checksum,
     };
     
     const versionString = `${manifest.version}-${manifest.platform}-${manifest.arch}`;

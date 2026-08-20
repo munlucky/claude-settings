@@ -252,7 +252,9 @@ const runtimeSpecs = {
   },
 };
 
-const usage = () => `Usage: node scripts/install-account-root-harness.mjs [--runtime all|claude|codex|qwen|antigravity] [--source-root <repo>] [--moonshot-home <dir>] [--codex-home <dir>] [--claude-home <dir>] [--qwen-home <dir>] [--antigravity-home <dir>] [--antigravity-skills-home <dir>] [--dry-run] [--json] [--no-backup] [--remove-legacy-harness-core]`;
+const profileRuntimeNames = Object.freeze(['claude', 'codex', 'qwen', 'antigravity']);
+
+const usage = () => `Usage: node scripts/install-account-root-harness.mjs [--runtime all|claude,codex,qwen,antigravity] [--source-root <repo>] [--payload-root <materialized-payload>] [--moonshot-home <dir>] [--codex-home <dir>] [--claude-home <dir>] [--qwen-home <dir>] [--antigravity-home <dir>] [--antigravity-skills-home <dir>] [--dry-run] [--json] [--no-backup] [--remove-legacy-harness-core]`;
 
 const parseArgs = (argv) => {
   const options = {
@@ -260,6 +262,7 @@ const parseArgs = (argv) => {
     sourceRoot: process.env.MOONSHOT_RELAY_SOURCE_ROOT || process.env.CLAUDE_SETTINGS_SOURCE_ROOT
       ? path.resolve(process.env.MOONSHOT_RELAY_SOURCE_ROOT || process.env.CLAUDE_SETTINGS_SOURCE_ROOT)
       : defaultSourceRoot,
+    payloadRoot: null,
     homes: {},
     dryRun: false,
     json: false,
@@ -273,6 +276,8 @@ const parseArgs = (argv) => {
       options.runtime = argv[++index];
     } else if (arg === '--source-root') {
       options.sourceRoot = path.resolve(argv[++index]);
+    } else if (arg === '--payload-root') {
+      options.payloadRoot = path.resolve(argv[++index]);
     } else if (arg === '--moonshot-home') {
       options.homes[commonSpec.runtime] = path.resolve(argv[++index]);
     } else if (arg === '--codex-home') {
@@ -301,9 +306,13 @@ const parseArgs = (argv) => {
     }
   }
 
-  if (!['all', 'claude', 'codex', 'qwen', 'antigravity'].includes(options.runtime)) {
+  const requestedRuntimes = options.runtime === 'all'
+    ? [...profileRuntimeNames]
+    : options.runtime.split(',').map((runtime) => runtime.trim()).filter(Boolean);
+  if (requestedRuntimes.length === 0 || requestedRuntimes.some((runtime) => !profileRuntimeNames.includes(runtime))) {
     throw new Error(`Unsupported runtime: ${options.runtime}\n${usage()}`);
   }
+  options.runtimeNames = [...new Set(requestedRuntimes)];
 
   return options;
 };
@@ -474,28 +483,45 @@ const resolvePackageBuilder = async (sourceRoot) => {
   return builder;
 };
 
-const materializePayloads = async (sourceRoot) => {
-  const packageBuilder = await resolvePackageBuilder(sourceRoot);
-  const tmpRoot = await mkdtemp(path.join(os.tmpdir(), 'moonshot-relay-account-root-'));
-  const result = spawnSync(process.execPath, [
-    packageBuilder,
-    '--runtime',
-    'all',
-    '--out',
-    tmpRoot,
-    '--clean',
-    '--json',
-  ], {
-    cwd: sourceRoot,
-    encoding: 'utf8',
-  });
-
-  if (result.status !== 0) {
-    await rm(tmpRoot, { recursive: true, force: true });
-    throw new Error(result.stderr || result.stdout || 'Package materialization failed.');
+const materializePayloads = async (sourceRoot, options) => {
+  if (options.payloadRoot) {
+    if (!await pathExists(options.payloadRoot)) {
+      throw new Error(`Materialized payload root not found: ${options.payloadRoot}`);
+    }
+    return { root: options.payloadRoot, cleanup: false };
   }
 
-  return tmpRoot;
+  const packageBuilder = await resolvePackageBuilder(sourceRoot);
+  const tmpRoot = await mkdtemp(path.join(os.tmpdir(), 'moonshot-relay-account-root-'));
+  const buildRuntimes = options.runtime === 'all'
+    ? ['all']
+    : ['moonshot-relay', ...options.runtimeNames];
+
+  try {
+    for (const runtime of buildRuntimes) {
+      const result = spawnSync(process.execPath, [
+        packageBuilder,
+        '--runtime',
+        runtime,
+        '--out',
+        tmpRoot,
+        '--clean',
+        '--json',
+      ], {
+        cwd: sourceRoot,
+        encoding: 'utf8',
+      });
+
+      if (result.status !== 0) {
+        throw new Error(result.stderr || result.stdout || `Package materialization failed for ${runtime}.`);
+      }
+    }
+  } catch (error) {
+    await rm(tmpRoot, { recursive: true, force: true });
+    throw error;
+  }
+
+  return { root: tmpRoot, cleanup: true };
 };
 
 const backupTarget = async (target, backupRoot) => {
@@ -1280,9 +1306,10 @@ const computeProfileSurfaceParity = async ({ manifest, sourceRepo, publicRuntime
 const main = async () => {
   const options = parseArgs(process.argv.slice(2));
   const sourceRepo = options.sourceRoot;
-  const runtimes = options.runtime === 'all' ? ['claude', 'codex', 'qwen', 'antigravity'] : [options.runtime];
+  const runtimes = options.runtimeNames;
   const installId = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, '').replace('T', '-');
-  const payloadRoot = await materializePayloads(sourceRepo);
+  const materialized = await materializePayloads(sourceRepo, options);
+  const payloadRoot = materialized.root;
   const publicRuntimeSkills = await readRuntimeSurface(sourceRepo);
 
   try {
@@ -1330,7 +1357,9 @@ const main = async () => {
       }
     }
   } finally {
-    await rm(payloadRoot, { recursive: true, force: true });
+    if (materialized.cleanup) {
+      await rm(payloadRoot, { recursive: true, force: true });
+    }
   }
 };
 
