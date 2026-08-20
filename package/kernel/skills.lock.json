@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "generatedAt": "2026-08-19T11:12:13.591Z",
-  "sourceCommit": "738cecd504478d62dadab78cc92e2c4864275e41",
+  "sourceCommit": "0915d978d65d507cc001d07f8d4bc903babbdada",
   "scope": "kernel",
   "skills": [
     {
@@ -148,7 +148,7 @@
       "name": "kernel-simplification-check",
       "path": "skills/kernel-simplification-check",
       "source": "canonical",
-      "contentHash": "328e5651ed55fd3e14e783b76cd949dcfa987ea709353b446b9f32e087263db3",
+      "contentHash": "7c6788bb55bc4f1a9db3945039031b5d7cc777853e11a139843b9b71a0d01882",
       "license": "MIT",
       "stages": [],
       "permissions": [
