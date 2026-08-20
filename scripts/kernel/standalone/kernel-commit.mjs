@@ -7,26 +7,21 @@ import { buildCodebaseIndex } from '../codebase/build-index.mjs';
 import { extractCodebaseCandidates } from '../knowledge-ingestion/candidate-extract.mjs';
 import { commitImportedProjectKnowledge } from '../knowledge-ingestion/import.mjs';
 import { runGit, gitCurrentBranch } from '../../lib/git-safe.mjs';
+import { isPathStagable, stageSelectedPaths } from '../git/staging-policy.mjs';
 import { gitTreeDigest } from '../../lib/candidate-identity.mjs';
 import { parseCliArgs, printResult, readJson, resolveStandaloneProject, sha256, writeJsonAtomic } from './common.mjs';
 import { ensureAccountRootTrack } from '../runtime-home.mjs';
 import { registerWorkspace } from '../run/workspace-registration.mjs';
 import { observeWorkspaceIdentity } from '../run/workspace-identity.mjs';
 
-const DENY_PATTERNS = [
-  /^\.agents(?:\/|$)/i,
-  /^\.mcp\.json$/i,
-  /^\.claude\/memory\.json$/i,
-  /^\.claude\/(?:memorygraph|cache\/memorygraph)(?:\/|$)/i,
-  /^\.moon-relay(?:\/|$)/i,
-  /^\.moonshot-relay(?:\/|$)/i,
-  /(?:^|\/)runtime-state\.sqlite$/i,
-  /(?:^|\/)\.moon-relay-kernel(?:\/|$)/i,
-];
-
+// The standalone commit path used to carry its own deny list, which was
+// narrower than the shared one: `.env*`, `.codex/state`, `.qwen/`, `.git/` and
+// non-runtime `*.sqlite` files were never refused here even though the skill
+// documents provider sessions and protected paths as never staged. Both paths
+// now judge against the same patterns.
 export function isDeniedStagingPath(relativePath) {
   const normalized = String(relativePath || '').replaceAll('\\', '/').replace(/^\.\//, '');
-  return DENY_PATTERNS.some((pattern) => pattern.test(normalized));
+  return !isPathStagable(normalized);
 }
 
 export function parseGitStatus(output = '') {
@@ -210,7 +205,7 @@ export async function kernelCommit({ cwd = process.cwd(), env = process.env, mes
     if (memoryReview && !approvalRef) return { status: 'awaiting_review', projectId: project.projectId, staging: { selected, denied }, candidates, index };
     if (selected.length === 0) return { status: 'no_op', projectId: project.projectId, staging: { selected, denied }, index, candidates };
     const beforeHeadSha = runGitChecked(project.projectRoot, ['rev-parse', 'HEAD']).stdout.trim();
-    runGitChecked(project.projectRoot, ['add', '--', ...selected]);
+    stageSelectedPaths({ repoRoot: project.projectRoot, paths: selected, git: runGit });
     const commitResult = runGitChecked(project.projectRoot, ['commit', '-m', message]);
     const commitHash = runGitChecked(project.projectRoot, ['rev-parse', 'HEAD']).stdout.trim();
     const receipt = {

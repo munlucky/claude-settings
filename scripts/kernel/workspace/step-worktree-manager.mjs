@@ -2,6 +2,7 @@ import path from 'node:path';
 import { mkdir, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { runGit } from '../../lib/git-safe.mjs';
+import { stageSelectedPaths } from '../git/staging-policy.mjs';
 import { resolveKernelRuntimeHome } from '../runtime-home.mjs';
 import { registerWorkspace } from '../run/workspace-registration.mjs';
 import { observeWorkspaceIdentity } from '../run/workspace-identity.mjs';
@@ -140,8 +141,11 @@ export const createStepResultCommit = ({ workspaceRoot, runId, waveId, stepId, a
   const measured = listChangedPaths(workspaceRoot);
   const selected = changedPaths.length > 0 ? changedPaths : measured;
   if (measured.length === 0) return { commitSha: null, changedPaths: [], patch: '' };
-  const add = runGit(workspaceRoot, ['add', '--all', '--', ...selected]);
-  if (add.error || add.status !== 0) throw commandError('stage-step-result', add);
+  try {
+    stageSelectedPaths({ repoRoot: workspaceRoot, paths: selected, git: runGit });
+  } catch (error) {
+    throw commandError('stage-step-result', { stderr: error.message, status: 1 });
+  }
   const commit = runGit(workspaceRoot, ['commit', '--no-verify', '-m', `kernel-step ${shortWorktreeToken(runId, 8)}/${shortWorktreeToken(waveId, 8)}/${stepId}/${attemptNumber}`]);
   if (commit.error || commit.status !== 0) throw commandError('commit-step-result', commit);
   const commitSha = gitOutput(workspaceRoot, ['rev-parse', 'HEAD']);

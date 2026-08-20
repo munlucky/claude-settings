@@ -7,6 +7,7 @@ import { openKernelStateStore } from '../scripts/kernel/state-store.mjs';
 import { buildCodebaseIndex } from '../scripts/kernel/codebase/build-index.mjs';
 import { redactText } from '../scripts/kernel/knowledge-ingestion/redact.mjs';
 import { isDeniedStagingPath, selectStagingPaths } from '../scripts/kernel/standalone/kernel-commit.mjs';
+import { isPathStagable } from '../scripts/kernel/git/staging-policy.mjs';
 
 test('manual knowledge import uses explicit approval without a Kernel Run and is idempotent by source digest', async () => {
   const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-import-home-'));
@@ -61,4 +62,17 @@ test('Kernel commit staging uses explicit paths and deny filters', () => {
   const selected = selectStagingPaths([{ status: ' M', path: 'src/app.mjs' }, { status: '??', path: '.mcp.json' }]);
   assert.deepEqual(selected.selected, ['src/app.mjs']);
   assert.equal(selected.denied[0].reason, 'deny_path');
+});
+
+test('Kernel commit deny judgement matches the shared staging policy', () => {
+  // These were staged-able through the standalone path before the deny lists
+  // were unified, even though the skill documents them as never staged.
+  for (const denied of ['.env', '.env.local', '.codex/state/session.json', '.qwen/session.json', '.git/config', 'data/local.sqlite']) {
+    assert.equal(isDeniedStagingPath(denied), true, `expected deny: ${denied}`);
+    assert.equal(isPathStagable(denied), false, `shared policy must agree: ${denied}`);
+  }
+  for (const allowed of ['src/app.mjs', 'scripts/kernel/git/closeout.mjs']) {
+    assert.equal(isDeniedStagingPath(allowed), false, `expected allow: ${allowed}`);
+    assert.equal(isPathStagable(allowed), true, `shared policy must agree: ${allowed}`);
+  }
 });

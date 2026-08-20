@@ -970,6 +970,12 @@ test('browser flow runner rejects agentic artifacts outside browser artifact roo
       backend: 'agent-browser',
       command: {
         command: process.execPath,
+        // Without an explicit cwd the adapter falls back to process.cwd(), so a
+        // relative artifact path is written into the real checkout while the
+        // boundary check evaluates it against the config dir. Pin the adapter
+        // to the same base the boundary uses, or this test rewrites the
+        // repository's own .moonshot-relay runtime state on every run.
+        cwd: '.',
         args: [
           fromRoot('tests', 'fixtures', 'browser-completion', 'agentic-confirmation.mjs'),
           '--url',
@@ -1017,6 +1023,11 @@ test('browser flow runner rejects agentic artifacts outside browser artifact roo
   assert.equal(verdict.blockerMapping[0].source, 'browser_completion_result');
   assert.equal(verdict.blockerMapping[0].failureClass, 'artifact_missing');
   assert.equal(verdict.blockerMapping[0].blocksCompletion, true);
+  // The in-boundary artifact must land under the temp base, never in the
+  // checkout that runs the suite.
+  const boundarySnapshot = '.moonshot-relay/browser-artifacts/run/goal/agentic/snapshot.json';
+  assert.equal(existsSync(path.join(tempRoot, boundarySnapshot)), true);
+  assert.equal(existsSync(outsideScreenshot), true);
 });
 
 test('browser flow runner reports unsupported agentic confirmation backend as setup gap', async () => {

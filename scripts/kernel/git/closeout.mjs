@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { rm } from 'node:fs/promises';
 import { runGit, gitCurrentBranch } from '../../lib/git-safe.mjs';
-import { filterStagingSelection, validateGitCloseoutPath } from './staging-policy.mjs';
+import { filterStagingSelection, stageSelectedPaths, validateGitCloseoutPath } from './staging-policy.mjs';
 import { verifyRemoteParity } from './remote-parity.mjs';
 import { observeWorkspaceIdentity } from '../run/workspace-identity.mjs';
 
@@ -210,9 +210,10 @@ export async function executeKernelGitCloseout({
         runGit(repoRoot, ['read-tree', 'HEAD'], { env: tempGitEnv });
       }
 
-      const addRes = runGit(repoRoot, ['add', '--', ...selectedPaths], { env: tempGitEnv });
-      if (addRes.status !== 0) {
-        throw new KernelGitCloseoutError('GIT_ADD_FAILED', `Git add failed: ${addRes.stderr}`);
+      try {
+        stageSelectedPaths({ repoRoot, paths: selectedPaths, git: runGit, env: tempGitEnv });
+      } catch (error) {
+        throw new KernelGitCloseoutError('GIT_ADD_FAILED', `Git add failed: ${error.message}`);
       }
 
       const writeTreeRes = runGit(repoRoot, ['write-tree'], { env: tempGitEnv });
