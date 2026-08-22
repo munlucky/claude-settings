@@ -4,6 +4,7 @@ import { buildEvidenceIdentity, buildEvidenceReuseReceipt, exactEvidenceIdentity
 import { deriveKnowledgeStatus, emptyKnowledgeDoctorFinding, extractStructuredKnowledgeCandidates, failureFingerprint, normalizeFailureSignalText } from '../scripts/kernel/knowledge/capture.mjs';
 import { classifyContractChange } from '../scripts/kernel/change-contract.mjs';
 import { compileRunObligations } from '../scripts/kernel/run/obligation-compiler.mjs';
+import { readFile } from 'node:fs/promises';
 
 test('structured repeated failures produce a bounded, evidence-bound knowledge candidate', () => {
   const candidate = extractStructuredKnowledgeCandidates({
@@ -77,4 +78,74 @@ test('required verification metadata compiles only for a related changed scope',
   assert.equal(obligations[0].metadata.receiptContractRef, 'project.auth.v1');
   assert.equal(classifyContractChange({ previous: { allowedPaths: ['src/auth/**'] }, next: { allowedPaths: ['src/auth/**'], defectWithinScope: true, taskClass: 'bug' } }), 'defect-within-scope');
   assert.equal(classifyContractChange({ previous: { allowedPaths: ['src/auth/**'] }, next: { allowedPaths: ['src/auth/**', 'src/billing/**'], scopeExtension: true } }), 'scope-extension');
+});
+
+test('project knowledge documentation states the required_verification contract convention', async () => {
+  const doc = await readFile(new URL('../docs/public/project-knowledge-plane.md', import.meta.url), 'utf8');
+  for (const heading of [
+    '## Project Verification Contract (`required_verification`)',
+    '### Command indirection',
+    '### Architecture fitness',
+    '### Mutation quality',
+    '### User-visible acceptance',
+    '### Linking a `known_failure_pattern`',
+    '### When to create a record',
+  ]) {
+    assert.ok(doc.includes(heading), `missing documentation section: ${heading}`);
+  }
+  assert.ok(doc.includes('commandRef: architecture:test'));
+  assert.ok(doc.includes('test:payment-mutation'));
+  assert.ok(doc.includes('e2e:login'));
+  assert.ok(doc.includes('test:refresh-regression'));
+});
+
+test('architecture, mutation, and acceptance verification compile only for a matching changed scope', () => {
+  const records = [
+    {
+      id: 'rv-architecture',
+      type: 'required_verification',
+      status: 'committed',
+      scope: ['src/domain/**'],
+      verification: { commandRefs: ['architecture:test'] },
+    },
+    {
+      id: 'rv-mutation',
+      type: 'required_verification',
+      status: 'committed',
+      scope: ['src/domain/payment/**'],
+      verification: { commandRefs: ['test:payment-mutation'] },
+    },
+    {
+      id: 'rv-e2e',
+      type: 'required_verification',
+      status: 'committed',
+      scope: ['src/features/login/**'],
+      verification: { commandRefs: ['e2e:login'] },
+    },
+  ];
+  const commands = [
+    { commandRef: 'architecture:test', commandClass: 'unit-test' },
+    { commandRef: 'test:payment-mutation', commandClass: 'unit-test' },
+    { commandRef: 'e2e:login', commandClass: 'e2e' },
+  ];
+  const compile = (changedPaths) => compileRunObligations({
+    projectRoot: process.cwd(),
+    requiredChecks: [],
+    contract: { requiredObligations: [], acceptance: [] },
+    commands,
+    knowledgeRecords: records,
+    changedPaths,
+  });
+
+  const payment = compile(['src/domain/payment/total.mjs']);
+  assert.deepEqual(
+    payment.flatMap((obligation) => obligation.allowedCommandRefs).sort(),
+    ['architecture:test', 'test:payment-mutation'],
+  );
+
+  const login = compile(['src/features/login/LoginForm.tsx']);
+  assert.deepEqual(login.flatMap((obligation) => obligation.allowedCommandRefs), ['e2e:login']);
+
+  // An unrelated scope must not trigger expensive project verification.
+  assert.deepEqual(compile(['docs/readme.md']), []);
 });

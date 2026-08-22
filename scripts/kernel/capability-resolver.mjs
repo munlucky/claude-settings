@@ -2,6 +2,7 @@ import path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolveDomainPolicies } from './proof/domain-policy.mjs';
+import { compactCapabilityGuidance } from './capability-guidance.mjs';
 
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const catalog = JSON.parse(readFileSync(path.join(sourceRoot, 'catalog', 'kernel-skills.json'), 'utf8'));
@@ -87,16 +88,19 @@ export const resolveKernelCapabilities = (task = {}) => {
     if (!known.has(capability)) throw new KernelCapabilityError('kernel_capability_unknown', `Unknown capability: ${capability}`);
   }
   const state = conditionState(task);
-  const selected = Object.entries(conditions)
+  // Internal activation stays granular; the guidance compiler decides what the
+  // model actually sees.
+  const internalSelected = Object.entries(conditions)
     .filter(([id]) => isActive(id, state))
     .map(([id, metadata]) => ({ id, priority: metadata.priority, reason: metadata.condition, activationCondition: metadata.condition, guidance: metadata.guidance }))
     .sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
-  const selectedIds = new Set(selected.map((entry) => entry.id));
+  const { selected, compacted } = compactCapabilityGuidance(internalSelected, state);
+  const internalIds = new Set(internalSelected.map((entry) => entry.id));
   const deferred = Object.entries(conditions)
-    .filter(([id]) => !selectedIds.has(id))
+    .filter(([id]) => !internalIds.has(id))
     .map(([id, metadata]) => ({ id, reason: 'condition_not_met', activationCondition: metadata.condition }));
   const ignoredRequested = requested
-    .filter((id) => !selectedIds.has(id))
+    .filter((id) => !internalIds.has(id))
     .map((id) => ({ id, reason: 'caller_forced_condition_not_met' }));
   return {
     schemaVersion: 1,
@@ -104,6 +108,8 @@ export const resolveKernelCapabilities = (task = {}) => {
     status: 'ready',
     conditions: state,
     selected,
+    internalSelected,
+    compacted,
     deferred,
     ignoredRequested,
   };

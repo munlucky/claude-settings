@@ -62,6 +62,73 @@ Required promotion artifacts:
 - `improvement/rollback/<proposalId>-rollback.json`
 - `improvement/releases/<proposalId>-release-manifest.json`
 
+## Project Verification Contract (`required_verification`)
+
+`required_verification` is the project-owned executable quality contract. The Kernel does not interpret what a check means; it only decides whether the changed scope matches, whether the `commandRef` is valid and bound to the obligation, whether the evidence is fresh, and whether completion may proceed.
+
+Machine-verifiable quality conditions belong here rather than in Kernel capability guidance. The model receives only the judgment guidance it needs for the current work unit.
+
+### Command indirection
+
+Never place a raw command string in a task contract or a knowledge record.
+
+```text
+❌ "./gradlew test --tests ArchitectureTest"
+✅ commandRef: architecture:test
+```
+
+The project command catalog resolves `architecture:test` to the real command. Kernel command classification and obligation binding are applied unchanged, so an unbound command cannot satisfy an obligation.
+
+### Architecture fitness
+
+Architecture decisions are not executable by themselves. Link the decision to a verification record explicitly; the Kernel never derives one from the other.
+
+```json
+{ "type": "architecture_decision", "statement": "Domain layer must not depend on web layer." }
+```
+
+```json
+{
+  "type": "required_verification",
+  "statement": "Domain dependency boundary must remain valid.",
+  "scope": ["src/domain/**"],
+  "verification": { "commandRefs": ["architecture:test"] }
+}
+```
+
+The underlying tool (dependency-cruiser, an ESLint boundary rule, ArchUnit, a custom AST check) stays a project concern.
+
+### Mutation quality
+
+Mutation testing is a project `commandRef`, not a Kernel concept. Register it for critical pure logic (payment calculation, permission decisions, state transitions, parsers, critical validation), not for docs, CSS, static config, mechanical renames, or generated code.
+
+```json
+{
+  "type": "required_verification",
+  "scope": ["src/domain/payment/**"],
+  "verification": { "commandRefs": ["test:payment-mutation"] }
+}
+```
+
+### User-visible acceptance
+
+User-visible QA is a command contract, not a separate reviewer role: `e2e:login` for a frontend scope, `smoke:cli-auth` for a CLI, `test:auth-contract` for an API, `migration:upgrade-downgrade-smoke` for a migration. The Kernel proof pipeline executes the command and records the evidence.
+
+### Linking a `known_failure_pattern`
+
+A repeated defect is managed as a pair: the pattern records what keeps regressing, and a `required_verification` in the same scope makes it executable.
+
+```text
+known_failure_pattern: "Refresh flow regresses whenever JWT expiry changes."
+required_verification: scope = src/auth/**, commandRef = test:refresh-regression
+```
+
+### When to create a record
+
+Create a `required_verification` for a repeated regression class, an architecture invariant, continuous acceptance of a critical feature, a security boundary, or any contract that must keep holding across runs. Do not create one for a single-run reproduction, a temporary debugging command, a commit-specific script, a plain full-suite `test` command, or a check the existing proof policy already covers.
+
+Records are authored by the model, the user, or the project and pass through knowledge review before commit. The Kernel does not infer verification records from architecture decisions or failure patterns.
+
 ## Helper Contract
 
 `knowledge-improvement-lifecycle.mjs` is a deterministic helper. It validates proposal shape, lifecycle state, target, promotion evidence, and unsafe candidate denial.
