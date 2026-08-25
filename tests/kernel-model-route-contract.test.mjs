@@ -44,6 +44,20 @@ test('T3 implementation stays on value coding but its review demands an independ
   assert.equal(t1Review.independentContextRequired, false);
 });
 
+test('Kernel route carries provider-neutral work shape and rejects provider fields', () => {
+  const standard = resolveModelRoute({ ...base, actionKind: 'implement' });
+  assert.deepEqual(standard.workProfile, {
+    complexity: 'standard',
+    repeatedFailure: false,
+    independentContextRequired: false,
+    parallelizable: false,
+  });
+  const routine = resolveModelRoute({ ...base, workProfile: { complexity: 'routine-batch', parallelizable: true } });
+  assert.equal(routine.workProfile.complexity, 'routine');
+  assert.equal(routine.workProfile.parallelizable, true);
+  assert.throws(() => resolveModelRoute({ ...base, workProfile: { complexity: 'standard', model: 'gpt-5.6-luna' } }), /must not carry provider field/);
+});
+
 test('build stagnation never reroutes a read-only review turn into a planner turn', () => {
   const review = resolveModelRoute({
     runId: 'r-review-after-stagnation',

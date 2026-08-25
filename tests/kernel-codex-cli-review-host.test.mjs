@@ -6,8 +6,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
-import { createCodexCliReviewLauncher, resolveObservedCodexModel, resolveObservedCodexSessionModel, runCodexReviewProcess } from '../scripts/host/kernel/codex-cli-launcher.mjs';
-import { runCodexIndependentReview } from '../scripts/host/kernel/codex-review-host.mjs';
+import { createCodexCliReviewLauncher, createCodexCliWorkerLauncher, resolveObservedCodexModel, resolveObservedCodexSessionModel, runCodexReviewProcess } from '../scripts/host/kernel/codex-cli-launcher.mjs';
+import { normalizeCodexWorkerReport, runCodexIndependentReview, runCodexKernelWorker } from '../scripts/host/kernel/codex-review-host.mjs';
+import { CODEX_MAIN_SESSION_POLICY } from '../scripts/host/kernel/codex-session-observer.mjs';
 
 const withOwnerRun = async (fn, suffix) => {
   const projectRoot = await mkdtemp(path.join(os.tmpdir(), `kernel-codex-review-project-${suffix}-`));
@@ -40,6 +41,72 @@ const withOwnerRun = async (fn, suffix) => {
     await rm(runtimeHome, { recursive: true, force: true });
   }
 };
+
+const stableParentObserver = async ({ parentSessionId }) => ({ sessionId: parentSessionId, model: CODEX_MAIN_SESSION_POLICY.model, effort: CODEX_MAIN_SESSION_POLICY.effort });
+
+test('the production Codex worker Host dispatches an ordinary child and reports its lineage', async () => {
+  const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-worker-host-project-'));
+  const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-worker-host-home-'));
+  const runId = 'codex-worker-host-run';
+  const parentSessionId = 'codex:worker-host-parent';
+  const env = {
+    MOON_RELAY_KERNEL_SESSION_ID: parentSessionId,
+    MOON_RELAY_KERNEL_PROVIDER: 'codex',
+    MOON_RELAY_KERNEL_RUN_ID: runId,
+  };
+  const controlPlane = await createKernelControlPlane({ runtimeHome, projectRoot, env, requireHostBinding: true });
+  try {
+    await controlPlane.ensureRun({ runId, objective: 'dispatch ordinary Codex work', taskContract: { acceptance: ['child work'] } });
+    const result = await runCodexKernelWorker({
+      controlPlane,
+      runId,
+      projectRoot,
+      runtimeHome,
+      parentSessionId,
+      parentSessionObserver: stableParentObserver,
+      cliLaunch: async ({ invocation }) => ({
+        status: 'completed',
+        resolvedModel: invocation.model,
+        resolvedEffort: invocation.effort,
+        observedModel: invocation.model,
+        observedEffort: invocation.effort,
+        observedSessionConfig: { model: invocation.model, effort: invocation.effort },
+        sessionId: 'codex:ordinary-child',
+        outcome: {
+          status: 'completed',
+          summary: 'child completed',
+          changedPaths: [],
+          risks: [],
+          requestedVerifications: [],
+          judgments: [],
+          knowledgeObservations: [],
+          blocker: null,
+        },
+      }),
+    });
+    assert.equal(result.dispatched.dispatch.dispatchMechanism, 'cli-worker');
+    assert.equal(result.dispatched.dispatch.actorSessionId, 'codex:ordinary-child');
+    assert.equal(result.report.status, 'in-progress', JSON.stringify(result.report));
+  } finally {
+    await controlPlane.close();
+    await rm(projectRoot, { recursive: true, force: true });
+    await rm(runtimeHome, { recursive: true, force: true });
+  }
+});
+
+test('the Codex worker Host maps worker verification requests and blockers into Kernel report fields', () => {
+  assert.deepEqual(normalizeCodexWorkerReport({
+    status: 'completed',
+    requestedVerifications: ['test:routing'],
+    blocker: null,
+  }).verifications, [{ commandRef: 'test:routing' }]);
+  assert.deepEqual(normalizeCodexWorkerReport({
+    status: 'blocked',
+    requestedVerifications: [],
+    blocker: 'unsupported-verification',
+  }).blocker, { reason: 'unsupported-verification', detail: 'unsupported-verification' });
+  assert.equal(normalizeCodexWorkerReport({ status: 'failed', blocker: null }).blocker.reason, 'external-dependency');
+});
 
 test('Codex CLI launcher enforces an explicit model, fresh session, read-only sandbox, and structured output', async () => {
   const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-launcher-'));
@@ -77,6 +144,97 @@ test('Codex CLI launcher enforces an explicit model, fresh session, read-only sa
     assert.ok(observed.args.includes('--output-schema'));
     assert.ok(observed.args.includes('--output-last-message'));
     assert.ok(observed.args.includes('--ignore-user-config'));
+  } finally {
+    await rm(projectRoot, { recursive: true, force: true });
+  }
+});
+
+test('Codex CLI worker passes model and effort to the child process and records observed values', async () => {
+  const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-worker-launcher-'));
+  const workerRoot = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-worker-worktree-'));
+  let observed = null;
+  const spawnImpl = (command, args, options) => {
+    observed = { command, args, options };
+    const child = new EventEmitter();
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    child.kill = () => {};
+    queueMicrotask(async () => {
+      const outputPath = args[args.indexOf('--output-last-message') + 1];
+      await writeFile(outputPath, JSON.stringify({
+        status: 'completed',
+        summary: 'worker completed',
+        changedPaths: ['src/a.mjs'],
+        risks: [],
+        requestedVerifications: ['test:routing'],
+        judgments: [],
+        knowledgeObservations: [],
+        blocker: null,
+      }));
+      child.stdout.end([
+        JSON.stringify({ type: 'thread.started', thread_id: 'worker-thread' }),
+        JSON.stringify({ type: 'turn.completed', model: 'gpt-5.6-luna', reasoning_effort: 'max', usage: { input_tokens: 4, output_tokens: 2 } }),
+      ].join('\n'));
+      child.stderr.end();
+      child.emit('close', 0);
+    });
+    return child;
+  };
+  try {
+    const launch = createCodexCliWorkerLauncher({ projectRoot, spawnImpl });
+    const result = await launch({
+      invocation: { model: 'gpt-5.6-luna', effort: 'max', sandbox: 'workspace-write' },
+      executionCapsule: { role: 'implementer' },
+      executionContract: { permissions: 'workspace_write' },
+      workingDirectory: workerRoot,
+    });
+    assert.equal(result.resolvedModel, 'gpt-5.6-luna');
+    assert.equal(result.resolvedEffort, 'max');
+    assert.equal(result.effortObserved, true);
+    assert.equal(result.report.summary, 'worker completed');
+    assert.ok(observed.args.includes('--model'));
+    assert.ok(observed.args.includes('gpt-5.6-luna'));
+    assert.ok(observed.args.includes('-c'));
+    assert.ok(observed.args.includes('model_reasoning_effort=max'));
+    assert.ok(observed.args.includes('workspace-write'));
+    assert.equal(observed.args[observed.args.indexOf('--cd') + 1], workerRoot);
+    assert.equal(observed.options.cwd, workerRoot);
+  } finally {
+    await rm(projectRoot, { recursive: true, force: true });
+    await rm(workerRoot, { recursive: true, force: true });
+  }
+});
+
+test('Codex CLI worker leaves effort null when the provider omits effort telemetry', async () => {
+  const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-worker-no-effort-'));
+  const spawnImpl = (command, args) => {
+    const child = new EventEmitter();
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    child.kill = () => {};
+    queueMicrotask(async () => {
+      const outputPath = args[args.indexOf('--output-last-message') + 1];
+      await writeFile(outputPath, JSON.stringify({
+        status: 'completed', summary: 'done', changedPaths: [], risks: [], requestedVerifications: [], judgments: [], knowledgeObservations: [], blocker: null,
+      }));
+      child.stdout.end([
+        JSON.stringify({ type: 'thread.started', thread_id: 'worker-no-effort' }),
+        JSON.stringify({ type: 'turn.completed', model: 'gpt-5.6-luna' }),
+      ].join('\n'));
+      child.stderr.end();
+      child.emit('close', 0);
+    });
+    return child;
+  };
+  try {
+    const result = await createCodexCliWorkerLauncher({ projectRoot, spawnImpl })({
+      invocation: { model: 'gpt-5.6-luna', effort: 'max', sandbox: 'workspace-write' },
+      executionContract: {},
+      executionCapsule: {},
+    });
+    assert.equal(result.resolvedModel, 'gpt-5.6-luna');
+    assert.equal(result.resolvedEffort, null);
+    assert.equal(result.effortObserved, true);
   } finally {
     await rm(projectRoot, { recursive: true, force: true });
   }
@@ -227,6 +385,10 @@ test('Codex review Host records a complete routed receipt from a distinct read-o
       projectRoot,
       runtimeHome,
       parentSessionId: owner,
+      parentSessionConfig: {
+        before: { sessionId: owner, model: CODEX_MAIN_SESSION_POLICY.model, effort: CODEX_MAIN_SESSION_POLICY.effort },
+        after: { sessionId: owner, model: CODEX_MAIN_SESSION_POLICY.model, effort: CODEX_MAIN_SESSION_POLICY.effort },
+      },
       env,
       launch: async ({ invocation }) => {
         assert.equal(invocation.sandbox, 'read-only');
@@ -234,6 +396,8 @@ test('Codex review Host records a complete routed receipt from a distinct read-o
         return {
           status: 'completed',
           resolvedModel: invocation.model,
+          resolvedEffort: invocation.effort,
+          effortObserved: true,
           sessionId: 'codex:independent-reviewer',
           outcome: { verdict: 'pass', findings: [], risks: [], evidenceRefs: ['package.json:1'] },
         };
@@ -257,6 +421,7 @@ test('Codex review Host rejects a reviewer session equal to the owner session', 
       projectRoot,
       runtimeHome,
       parentSessionId: owner,
+      parentSessionObserver: stableParentObserver,
       env,
       launch: async ({ invocation }) => ({
         status: 'completed',
@@ -277,6 +442,7 @@ test('Codex review Host rejects a protected review without observed model identi
       projectRoot,
       runtimeHome,
       parentSessionId: owner,
+      parentSessionObserver: stableParentObserver,
       env,
       launch: async () => ({
         status: 'completed',

@@ -55,13 +55,13 @@ test('each profile is a separate overlay file, not a nested [profiles.*] block',
 });
 
 test('the profile settings match the declared routing policy', () => {
-  assert.equal(CODEX_PROFILE_SETTINGS.default.model, 'gpt-5.6-terra');
-  assert.equal(CODEX_PROFILE_SETTINGS.default.model_reasoning_effort, 'medium');
+  assert.equal(CODEX_PROFILE_SETTINGS.default.model, 'gpt-5.6-luna');
+  assert.equal(CODEX_PROFILE_SETTINGS.default.model_reasoning_effort, 'max');
   assert.equal(CODEX_PROFILE_SETTINGS.plan.model, 'gpt-5.6-sol');
   assert.equal(CODEX_PROFILE_SETTINGS.plan.model_reasoning_effort, 'high');
-  assert.equal(CODEX_PROFILE_SETTINGS.review.model_reasoning_effort, 'xhigh');
+  assert.equal(CODEX_PROFILE_SETTINGS.review.model_reasoning_effort, 'high');
   assert.equal(CODEX_PROFILE_SETTINGS.batch.model, 'gpt-5.6-luna');
-  assert.equal(CODEX_PROFILE_SETTINGS.batch.model_reasoning_effort, 'low');
+  assert.equal(CODEX_PROFILE_SETTINGS.batch.model_reasoning_effort, 'max');
 });
 
 test('the review profile is read-only so the reviewer cannot edit what it judges', () => {

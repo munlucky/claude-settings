@@ -62,6 +62,11 @@ export const createClaudeAdapter = ({ launch = null, capabilities = {} } = {}) =
       resultStatus: result.resultStatus || (result.status === 'failed' ? 'failed' : 'completed'),
       resolvedModel: result.resolvedModel ?? null,
       resolvedEffort: result.resolvedEffort ?? invocation.effort ?? null,
+      // The Claude Host launcher exposes the provider identity it observed;
+      // keeping these separate lets the common receipt builder fail closed
+      // when a launcher omits terminal/session telemetry.
+      observedModel: result.observedModel ?? result.resolvedModel ?? null,
+      observedEffort: result.observedEffort ?? result.resolvedEffort ?? invocation.effort ?? null,
       actorSessionId: result.sessionId || null,
       inputTokens: result.inputTokens ?? null,
       cachedInputTokens: result.cachedInputTokens ?? result.cacheReadInputTokens ?? null,

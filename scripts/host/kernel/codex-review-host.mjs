@@ -4,6 +4,48 @@ import { createCodexCliReviewLauncher } from './codex-cli-launcher.mjs';
 import { dispatchKernelTurn } from './turn-dispatcher.mjs';
 import { scanRepositoryEvidence } from '../../kernel/task/evidence-scan.mjs';
 
+const KERNEL_BLOCK_REASONS = new Set([
+  'question',
+  'permission',
+  'external-dependency',
+  'unsupported-verification',
+  'unsafe-command',
+  'network-policy',
+]);
+
+// The worker contract deliberately speaks in worker terms. The Kernel report
+// contract speaks in trusted command requests and typed blockers. Translate at
+// this Host boundary so neither side silently drops requested proof or a child
+// failure before it reaches the Kernel authority.
+export const normalizeCodexWorkerReport = (workerReport = {}) => {
+  const requestedVerifications = Array.isArray(workerReport.requestedVerifications)
+    ? workerReport.requestedVerifications
+      .filter((commandRef) => typeof commandRef === 'string' && commandRef.trim())
+      .map((commandRef) => ({ commandRef: commandRef.trim() }))
+    : [];
+  const rawBlocker = workerReport.blocker;
+  const typedBlocker = rawBlocker && typeof rawBlocker === 'object'
+    ? rawBlocker
+    : typeof rawBlocker === 'string' && rawBlocker.trim()
+      ? {
+        reason: KERNEL_BLOCK_REASONS.has(rawBlocker.trim()) ? rawBlocker.trim() : 'external-dependency',
+        detail: rawBlocker.trim(),
+      }
+      : workerReport.status === 'blocked' || workerReport.status === 'failed'
+        ? {
+          reason: 'external-dependency',
+          detail: `Codex worker returned ${workerReport.status} without a typed blocker`,
+        }
+        : null;
+  return {
+    ...workerReport,
+    verifications: Array.isArray(workerReport.verifications) && workerReport.verifications.length > 0
+      ? workerReport.verifications
+      : requestedVerifications,
+    blocker: typedBlocker,
+  };
+};
+
 export const runCodexIndependentReview = async ({
   controlPlane,
   runId,
@@ -12,19 +54,25 @@ export const runCodexIndependentReview = async ({
   parentSessionId,
   obligationId = 'security-review',
   model = CODEX_MODELS.sol,
-  effort = 'high',
+  effort = null,
   images = [],
   launch = null,
+  parentSessionConfig = null,
+  parentSessionObserver = null,
   env = process.env,
 } = {}) => {
   if (!controlPlane || !runId || !projectRoot || !parentSessionId) {
     throw new Error('Codex review Host requires controlPlane, runId, projectRoot, and parentSessionId');
   }
+  const proofTier = controlPlane.stateStore?.getRun?.(runId)?.proofTier || 'T1';
+  const resolvedEffort = effort || (proofTier === 'T3' ? 'xhigh' : 'high');
   const launcher = launch || createCodexCliReviewLauncher({ projectRoot, images, env });
   const adapter = createCodexAdapter({
     launch: launcher,
     runtimeHome,
     env,
+    defaultParentSessionConfig: parentSessionConfig,
+    parentSessionObserver,
     capabilities: {
       supportsUsageTokens: true,
       supportsCacheReadTokens: true,
@@ -38,7 +86,8 @@ export const runCodexIndependentReview = async ({
     runtimeHome,
     env,
     parentSessionId,
-    overrides: { frontier_reasoning: { model, effort } },
+    parentSessionConfig,
+    overrides: { frontier_reasoning: { model, effort: resolvedEffort } },
     actionContext: { actionKind: 'review_engineering', obligationId, changedPaths },
   });
   if (!dispatched.dispatched || !dispatched.receipt || !dispatched.dispatch?.outcome) {
@@ -67,5 +116,76 @@ export const runCodexIndependentReview = async ({
     findings: outcome.findings,
     risks: outcome.risks,
     review: ingested,
+  };
+};
+
+// Ordinary Codex work uses the same Host boundary as review, but the worker
+// outcome is reported back through the Kernel only after the child identity,
+// capsule, attempt, and observed usage receipt have been attached. This is the
+// production Host entrypoint for implement/debug actors; the parent session
+// never receives a direct implementation fallback.
+export const runCodexKernelWorker = async ({
+  controlPlane,
+  runId,
+  projectRoot,
+  runtimeHome,
+  parentSessionId,
+  actionKind = 'implement',
+  obligationId = null,
+  complexity = null,
+  workProfile = null,
+  nativeLaunch = null,
+  nativeAgentHost = globalThis,
+  cliLaunch = null,
+  parentSessionConfig = null,
+  parentSessionObserver = null,
+  env = process.env,
+} = {}) => {
+  if (!controlPlane || !runId || !projectRoot || !parentSessionId) {
+    throw new Error('Codex worker Host requires controlPlane, runId, projectRoot, and parentSessionId');
+  }
+  const adapter = createCodexAdapter({
+    nativeLaunch,
+    nativeAgentHost,
+    cliLaunch,
+    projectRoot,
+    runtimeHome,
+    env,
+    defaultParentSessionConfig: parentSessionConfig,
+    parentSessionObserver,
+  });
+  const dispatched = await dispatchKernelTurn({
+    controlPlane,
+    runId,
+    adapter,
+    runtimeHome,
+    env,
+    parentSessionId,
+    parentSessionConfig,
+    actionContext: { actionKind, obligationId, complexity, workProfile },
+  });
+  if (!dispatched.dispatched || !dispatched.dispatch?.outcome) {
+    throw new Error(`codex_worker_not_dispatched: ${dispatched.reason || dispatched.dispatch?.errorSummary || 'missing outcome'}`);
+  }
+  const workerReport = dispatched.report || dispatched.dispatch.report || dispatched.dispatch.outcome;
+  if (!workerReport || typeof workerReport !== 'object') {
+    throw new Error('codex_worker_report_missing');
+  }
+  const report = await controlPlane.report(runId, {
+    ...normalizeCodexWorkerReport(workerReport),
+    stepId: workerReport.stepId || dispatched.executionCapsule?.stepId || null,
+    capsuleId: workerReport.capsuleId || dispatched.executionCapsule?.capsuleId || null,
+    attemptId: workerReport.attemptId || dispatched.attemptId || null,
+    bindingId: workerReport.bindingId || dispatched.hostDirective?.attempt?.bindingId || null,
+    assignmentId: workerReport.assignmentId || dispatched.hostDirective?.actorAssignment?.assignmentId || null,
+    actorSessionId: workerReport.actorSessionId || dispatched.dispatch.actorSessionId || null,
+  });
+  return {
+    schemaVersion: 1,
+    runId,
+    status: report.status,
+    dispatched,
+    worker: dispatched.dispatch,
+    report,
   };
 };

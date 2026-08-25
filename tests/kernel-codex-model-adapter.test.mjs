@@ -1,12 +1,21 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { test } from 'node:test';
+import os from 'node:os';
+import path from 'node:path';
 import { CODEX_CAPABILITIES, buildCodexInvocation, createCodexAdapter, selectCodexMechanism } from '../scripts/host/kernel/adapters/codex.mjs';
 import { resolveModelRoute } from '../scripts/kernel/run/model-routing.mjs';
 import { buildUsageReceipt } from '../scripts/host/kernel/usage-receipt.mjs';
+import { resolveCodexActorRoute } from '../scripts/host/kernel/codex-actor-router.mjs';
+import { CODEX_MAIN_SESSION_POLICY, compareCodexMainSessionInvariance } from '../scripts/host/kernel/codex-session-observer.mjs';
 
 const decisionFor = (actionKind, riskTier = 'T1') => resolveModelRoute({ runId: 'r-codex', actionKind, riskTier, obligationId: 'default' });
 const resolution = (model) => ({ model, effort: model ? 'high' : null, enforcementIntent: model ? 'enforced' : 'advisory' });
+const stableParentObserver = async ({ parentSessionId }) => ({
+  sessionId: parentSessionId,
+  model: CODEX_MAIN_SESSION_POLICY.model,
+  effort: CODEX_MAIN_SESSION_POLICY.effort,
+});
 
 test('the installed Codex profile still pins no global model', async () => {
   const config = await readFile(new URL('../package/profile-templates/codex/.codex/config.toml', import.meta.url), 'utf8');
@@ -57,10 +66,10 @@ test('a launch profile is named by the materialized overlay, never by provider m
 });
 
 test('Codex reports no usage tokens, so they stay unavailable rather than zero', async () => {
-  const adapter = createCodexAdapter({ launch: async ({ invocation }) => ({ resolvedModel: invocation.model, sessionId: 'codex-session', wallClockMs: 4200 }) });
+  const adapter = createCodexAdapter({ parentSessionObserver: stableParentObserver, launch: async ({ invocation }) => ({ resolvedModel: invocation.model, resolvedEffort: invocation.effort, effortObserved: true, sessionId: 'codex-session', wallClockMs: 4200 }) });
   assert.equal(adapter.capabilities.supportsUsageTokens, false);
   const decision = decisionFor('implement');
-  const dispatch = await adapter.dispatch({ decision, resolution: resolution('value-model'), strategy: 'session', executionContract: {} });
+  const dispatch = await adapter.dispatch({ decision, resolution: resolution('value-model'), strategy: 'session', parentSessionId: 'codex-parent-session', executionContract: {} });
   const receipt = buildUsageReceipt({ decision, capabilities: adapter.capabilities, strategy: 'session', resolution: resolution('value-model'), dispatch, actorSessionId: dispatch.actorSessionId });
   assert.equal(receipt.enforcementStatus, 'enforced');
   assert.equal(receipt.inputTokens, null);
@@ -69,10 +78,279 @@ test('Codex reports no usage tokens, so they stay unavailable rather than zero',
 });
 
 test('an unresolvable model is advisory and never reported as enforced', async () => {
-  const adapter = createCodexAdapter({ launch: async () => ({ resolvedModel: 'whatever-the-cli-defaults-to', sessionId: 'codex-session' }) });
+  const adapter = createCodexAdapter({ parentSessionObserver: stableParentObserver, launch: async () => ({ resolvedModel: 'whatever-the-cli-defaults-to', sessionId: 'codex-session' }) });
   const decision = decisionFor('implement');
-  const dispatch = await adapter.dispatch({ decision, resolution: resolution(null), strategy: 'session', executionContract: {} });
+  const dispatch = await adapter.dispatch({ decision, resolution: resolution(null), strategy: 'session', parentSessionId: 'codex-parent-session', executionContract: {} });
   assert.equal(dispatch.invocation.mechanism, 'host-default');
   const receipt = buildUsageReceipt({ decision, capabilities: adapter.capabilities, strategy: 'session', resolution: resolution(null), dispatch, actorSessionId: 'codex-session' });
   assert.equal(receipt.enforcementStatus, 'advisory');
+});
+
+test('the Codex actor route keeps the parent as an orchestrator and escalates repeated failure to a fresh actor', () => {
+  const route = resolveCodexActorRoute({
+    decision: { role: 'implementer', actionKind: 'debug', workProfile: { repeatedFailure: true } },
+    invocation: { model: 'gpt-5.6-sol', effort: 'xhigh', freshSessionRequired: true, mechanism: 'session-model-override' },
+    capabilities: CODEX_CAPABILITIES,
+    hasCliLauncher: true,
+  });
+  assert.equal(route.role, 'debugger');
+  assert.equal(route.dispatchMechanism, 'cli-worker');
+  assert.equal(route.sessionPolicy, 'fresh');
+  assert.equal(route.parentMayImplement, false);
+  assert.equal(route.nestedDelegationAllowed, false);
+});
+
+test('the main Codex session invariance guard requires Sol/High before and after the run', () => {
+  const stable = compareCodexMainSessionInvariance({
+    expectedSessionId: 'main-session',
+    before: { sessionId: 'main-session', model: CODEX_MAIN_SESSION_POLICY.model, effort: CODEX_MAIN_SESSION_POLICY.effort },
+    after: { sessionId: 'main-session', model: CODEX_MAIN_SESSION_POLICY.model, effort: CODEX_MAIN_SESSION_POLICY.effort },
+  });
+  assert.equal(stable.exact, true);
+  const changed = compareCodexMainSessionInvariance({
+    expectedSessionId: 'main-session',
+    before: { sessionId: 'main-session', model: CODEX_MAIN_SESSION_POLICY.model, effort: CODEX_MAIN_SESSION_POLICY.effort },
+    after: { sessionId: 'main-session', model: 'gpt-5.6-luna', effort: 'max' },
+  });
+  assert.equal(changed.exact, false);
+  assert.equal(changed.reason, 'after-model-mismatch');
+});
+
+test('a parent session observation mismatch blocks Codex work before the launcher runs', async () => {
+  let launched = false;
+  const adapter = createCodexAdapter({
+    launch: async () => { launched = true; return {}; },
+  });
+  const dispatch = await adapter.dispatch({
+    decision: decisionFor('implement'),
+    resolution: resolution('gpt-5.6-luna'),
+    parentSessionId: 'main-session',
+    parentSessionConfig: {
+      before: { sessionId: 'main-session', model: 'gpt-5.6-luna', effort: 'max' },
+      after: { sessionId: 'main-session', model: 'gpt-5.6-luna', effort: 'max' },
+    },
+    executionContract: {},
+  });
+  assert.equal(launched, false);
+  assert.equal(dispatch.status, 'failed');
+  assert.equal(dispatch.errorCode, 'parent-session-invariant-failed');
+  assert.match(dispatch.enforcementReason, /model-mismatch/);
+});
+
+test('the production native launcher sends explicit model and effort and observes parent invariance around the child', async () => {
+  const parentPhases = [];
+  let request = null;
+  const nativeAgentHost = {
+    spawn_agent: async (payload) => {
+      request = payload;
+      return {
+        session_id: 'native-child-session',
+        status: 'completed',
+        terminalEvents: [
+          { type: 'turn.completed', model: 'gpt-5.6-luna', reasoning_effort: 'max' },
+        ],
+        outcome: {
+          status: 'completed',
+          summary: 'native worker completed',
+          changedPaths: ['src/worker.mjs'],
+          risks: [],
+          requestedVerifications: [],
+          judgments: [],
+          knowledgeObservations: [],
+          blocker: null,
+        },
+      };
+    },
+  };
+  const adapter = createCodexAdapter({
+    nativeAgentHost,
+    parentSessionObserver: async ({ parentSessionId, phase }) => {
+      parentPhases.push(phase);
+      return { sessionId: parentSessionId, model: CODEX_MAIN_SESSION_POLICY.model, effort: CODEX_MAIN_SESSION_POLICY.effort };
+    },
+  });
+  const dispatch = await adapter.dispatch({
+    decision: decisionFor('implement'),
+    resolution: { model: 'gpt-5.6-luna', effort: 'max', enforcementIntent: 'enforced' },
+    parentSessionId: 'main-session',
+    executionContract: { permissions: 'workspace_write' },
+    workingDirectory: '/workspace/worker',
+    concurrencyGroup: 'run-1',
+    childSession: { canDelegate: false, canCommit: false },
+  });
+  assert.deepEqual(parentPhases, ['before', 'after']);
+  assert.equal(request.task_name, 'kernel_implementer');
+  assert.equal(request.model, 'gpt-5.6-luna');
+  assert.equal(request.reasoning_effort, 'max');
+  assert.equal(request.working_directory, '/workspace/worker');
+  assert.equal(request.concurrency_group, 'run-1');
+  assert.deepEqual(request.child_session, { canDelegate: false, canCommit: false });
+  assert.equal(dispatch.dispatchMechanism, 'native-subagent');
+  assert.equal(dispatch.status, 'completed');
+  assert.equal(dispatch.enforcementStatus, 'enforced');
+  assert.equal(dispatch.parentSessionPolicy.observationStatus, 'enforced');
+  assert.equal(dispatch.parentSessionPolicy.observedModel, CODEX_MAIN_SESSION_POLICY.model);
+  assert.equal(dispatch.actorSessionId, 'native-child-session');
+});
+
+test('native reviewer dispatch uses the read-only review contract and schema', async () => {
+  let request = null;
+  const adapter = createCodexAdapter({
+    nativeAgentHost: {
+      spawn_agent: async (payload) => {
+        request = payload;
+        return {
+          session_id: 'native-reviewer-session',
+          terminalEvents: [{ type: 'turn.completed', model: 'gpt-5.6-sol', reasoning_effort: 'high' }],
+          outcome: { verdict: 'pass', findings: [], risks: [], evidenceRefs: ['review://native'] },
+        };
+      },
+    },
+    parentSessionObserver: stableParentObserver,
+  });
+  const dispatch = await adapter.dispatch({
+    decision: decisionFor('review_engineering', 'T3'),
+    resolution: { model: 'gpt-5.6-sol', effort: 'high', enforcementIntent: 'enforced' },
+    parentSessionId: 'main-session',
+    executionContract: { permissions: 'read_only' },
+  });
+  assert.equal(dispatch.status, 'completed');
+  assert.equal(dispatch.outcome.verdict, 'pass');
+  assert.match(request.message, /independent Kernel review/i);
+  assert.doesNotMatch(request.message, /bounded Kernel worker action/i);
+});
+
+test('a parent model change observed after child execution fails the whole dispatch closed', async () => {
+  let phase = null;
+  let launched = false;
+  const adapter = createCodexAdapter({
+    parentSessionObserver: async ({ parentSessionId, phase: currentPhase }) => {
+      phase = currentPhase;
+      return {
+        sessionId: parentSessionId,
+        model: currentPhase === 'before' ? CODEX_MAIN_SESSION_POLICY.model : 'gpt-5.6-luna',
+        effort: currentPhase === 'before' ? CODEX_MAIN_SESSION_POLICY.effort : 'max',
+      };
+    },
+    launch: async ({ invocation }) => {
+      launched = true;
+      return { resolvedModel: invocation.model, resolvedEffort: invocation.effort, sessionId: 'worker-session' };
+    },
+  });
+  const dispatch = await adapter.dispatch({
+    decision: decisionFor('implement'),
+    resolution: { model: 'gpt-5.6-luna', effort: 'max', enforcementIntent: 'enforced' },
+    parentSessionId: 'main-session',
+    executionContract: {},
+  });
+  assert.equal(launched, true);
+  assert.equal(phase, 'after');
+  assert.equal(dispatch.status, 'failed');
+  assert.equal(dispatch.errorCode, 'parent-session-invariant-failed');
+  assert.match(dispatch.enforcementReason, /after-model-mismatch/);
+});
+
+test('the default Host observer proves the canonical parent rollout before and after a child dispatch', async () => {
+  const codexHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-parent-rollout-'));
+  const threadId = '01234567-89ab-cdef-0123-456789abcdef';
+  const now = new Date();
+  const sessionsDir = path.join(codexHome, 'sessions', String(now.getFullYear()), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0'));
+  await mkdir(sessionsDir, { recursive: true });
+  await writeFile(path.join(sessionsDir, `rollout-${threadId}.jsonl`), [
+    JSON.stringify({ type: 'session_meta', payload: { session_id: threadId } }),
+    JSON.stringify({ type: 'turn_context', model: CODEX_MAIN_SESSION_POLICY.model, reasoning_effort: CODEX_MAIN_SESSION_POLICY.effort }),
+  ].join('\n'));
+  try {
+    const adapter = createCodexAdapter({
+      env: { CODEX_HOME: codexHome },
+      launch: async ({ invocation }) => ({ resolvedModel: invocation.model, resolvedEffort: invocation.effort, sessionId: 'codex:worker-child' }),
+    });
+    const dispatch = await adapter.dispatch({
+      decision: decisionFor('implement'),
+      resolution: { model: 'gpt-5.6-luna', effort: 'max', enforcementIntent: 'enforced' },
+      parentSessionId: `codex:${threadId}`,
+      executionContract: {},
+    });
+    assert.equal(dispatch.status, 'completed');
+    assert.equal(dispatch.parentSessionPolicy.observationStatus, 'enforced');
+    assert.equal(dispatch.parentSessionPolicy.observedSessionId, `codex:${threadId}`);
+  } finally {
+    await rm(codexHome, { recursive: true, force: true });
+  }
+});
+
+test('a legacy Codex launcher cannot silently execute in the parent session', async () => {
+  const adapter = createCodexAdapter({
+    parentSessionObserver: stableParentObserver,
+    launch: async ({ invocation }) => ({
+      resolvedModel: invocation.model,
+      resolvedEffort: invocation.effort,
+      effortObserved: true,
+      sessionId: 'main-session',
+    }),
+  });
+  const dispatch = await adapter.dispatch({
+    decision: decisionFor('implement'),
+    resolution: resolution('gpt-5.6-luna'),
+    parentSessionId: 'main-session',
+    executionContract: {},
+  });
+  assert.equal(dispatch.dispatchMechanism, 'legacy-launch');
+  assert.equal(dispatch.status, 'failed');
+  assert.equal(dispatch.enforcementReason, 'worker-session-not-distinct');
+});
+
+test('a native model mismatch fails a mutating dispatch before CLI can inherit its workspace', async () => {
+  const calls = [];
+  const workerRoot = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-native-mismatch-'));
+  const marker = path.join(workerRoot, 'native-marker');
+  try {
+    const adapter = createCodexAdapter({
+      parentSessionObserver: stableParentObserver,
+      capabilities: { supportsSubagentModel: true },
+      nativeLaunch: async ({ workingDirectory }) => {
+        calls.push('native');
+        await writeFile(path.join(workingDirectory, 'native-marker'), 'native touched the workspace');
+        return { resolvedModel: 'gpt-5.6-sol', resolvedEffort: 'high', observedSessionConfig: { model: 'gpt-5.6-sol', effort: 'high' }, effortObserved: true, sessionId: 'native-session' };
+      },
+      cliLaunch: async ({ invocation }) => {
+        calls.push(invocation.dispatchMechanism);
+        const inheritedMarker = await readFile(marker, 'utf8');
+        return { resolvedModel: invocation.model, resolvedEffort: invocation.effort, observedSessionConfig: { model: invocation.model, effort: invocation.effort }, effortObserved: true, sessionId: 'cli-session', inheritedMarker };
+      },
+    });
+    const dispatch = await adapter.dispatch({
+      decision: resolveModelRoute({ runId: 'r-codex-fallback', actionKind: 'implement', complexity: 'standard' }),
+      resolution: { model: 'gpt-5.6-luna', effort: 'max', enforcementIntent: 'enforced' },
+      parentSessionId: 'parent-session',
+      workingDirectory: workerRoot,
+      executionContract: {},
+    });
+    assert.deepEqual(calls, ['native']);
+    assert.equal(dispatch.status, 'failed');
+    assert.equal(dispatch.dispatchMechanism, 'native-subagent');
+    assert.equal(dispatch.errorCode, 'model-enforcement-failed');
+    assert.match(dispatch.fallbackReason, /native-model-mismatch-mutating-fallback-disabled/);
+    assert.equal(await readFile(marker, 'utf8'), 'native touched the workspace');
+  } finally {
+    await rm(workerRoot, { recursive: true, force: true });
+  }
+});
+
+test('when native and CLI observations both mismatch the dispatch fails closed', async () => {
+  const adapter = createCodexAdapter({
+    parentSessionObserver: stableParentObserver,
+    capabilities: { supportsSubagentModel: true },
+    nativeLaunch: async () => ({ resolvedModel: 'wrong-model', resolvedEffort: 'low', observedSessionConfig: { model: 'wrong-model', effort: 'low' }, effortObserved: true, sessionId: 'native-session' }),
+    cliLaunch: async () => ({ resolvedModel: 'wrong-model', resolvedEffort: 'low', observedSessionConfig: { model: 'wrong-model', effort: 'low' }, effortObserved: true, sessionId: 'cli-session' }),
+  });
+  const dispatch = await adapter.dispatch({
+    decision: resolveModelRoute({ runId: 'r-codex-failed', actionKind: 'implement' }),
+    resolution: { model: 'gpt-5.6-luna', effort: 'max', enforcementIntent: 'enforced' },
+    parentSessionId: 'parent-session',
+    executionContract: {},
+  });
+  assert.equal(dispatch.status, 'failed');
+  assert.equal(dispatch.errorCode, 'model-enforcement-failed');
+  assert.equal(dispatch.enforcementReason, 'model-mismatch');
 });

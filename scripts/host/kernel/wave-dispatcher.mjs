@@ -24,7 +24,7 @@ const fallback = async ({ sequentialDispatcher, reason, context }) => {
   return { schemaVersion: 1, dispatched: false, fallback: true, reason };
 };
 
-const dispatchDefaultStep = async ({ adapter, hosted, dispatchContext = null, workspace, parentSessionId, waveId, step, env = process.env }) => {
+const dispatchDefaultStep = async ({ adapter, hosted, dispatchContext = null, workspace, parentSessionId, parentSessionConfig = null, waveId, step, env = process.env }) => {
   if (!adapter?.dispatch) throw new Error('Wayfinder adapter requires dispatch');
   const context = dispatchContext || hosted;
   if (!context.resolution) throw Object.assign(new Error('Wayfinder worker dispatch requires an admitted model resolution'), { code: 'WORKER_ROUTE_UNRESOLVED' });
@@ -56,6 +56,7 @@ const dispatchDefaultStep = async ({ adapter, hosted, dispatchContext = null, wo
       MOON_RELAY_KERNEL_SESSION_ID: context.actorSessionId || hosted.actorSessionId || `worker:${step.stepId}`,
     },
     parentSessionId,
+    parentSessionConfig,
     concurrencyGroup: waveId,
     childSession: { parentSessionId, maxNestedAgents: 0, canDelegate: false, canCommit: false },
   });
@@ -70,6 +71,7 @@ export const dispatchKernelStep = async ({
   adapter,
   hostCapabilities,
   parentSessionId = null,
+  parentSessionConfig = null,
   actionContext = {},
   dispatchStep = null,
   prepareDispatch = null,
@@ -96,6 +98,8 @@ export const dispatchKernelStep = async ({
         workspaceId: workspace.workspaceId,
         workspaceIdentity: workspace.baseWorkspaceIdentity,
         parentSessionId,
+        workProfile: step.workProfile || actionContext.workProfile || null,
+        complexity: step.complexity || actionContext.complexity || null,
       },
     })
     : { runId, executionCapsule: null, hostDirective: {}, modelInput: { action: { type: 'implement' } } };
@@ -116,8 +120,8 @@ export const dispatchKernelStep = async ({
   let result;
   try {
     result = await (typeof dispatchStep === 'function'
-      ? dispatchStep({ hosted, dispatchContext, adapter, step, workspace, waveId, parentSessionId })
-      : dispatchDefaultStep({ adapter, hosted, dispatchContext, workspace, parentSessionId, waveId, step, env }));
+      ? dispatchStep({ hosted, dispatchContext, adapter, step, workspace, waveId, parentSessionId, parentSessionConfig })
+      : dispatchDefaultStep({ adapter, hosted, dispatchContext, workspace, parentSessionId, parentSessionConfig, waveId, step, env }));
   } catch (error) {
     // A provider crash is still a completed Kernel observation. Preserve the
     // failed usage receipt and let the shared failure path retain the attempt
@@ -150,6 +154,14 @@ export const dispatchKernelStep = async ({
       envelope: usageContext.envelope || hosted.envelope || null,
     });
     await controlPlane.recordModelUsage(runId, usageReceipt);
+    // recordModelUsage attaches the observed child identity to the canonical
+    // attempt. Refresh the local binding before accepting the worker report;
+    // retaining the synthetic pre-dispatch actor would make a legitimate
+    // child report look like a cross-worker report at the Wave boundary.
+    if (boundAttempt?.attemptId) {
+      boundAttempt = controlPlane.stateStore?.getStepAttemptByAttemptId?.(boundAttempt.attemptId, { runId })
+        || boundAttempt;
+    }
   }
   let reportResult = null;
   const workerReport = result?.report || result?.kernelReport || null;
@@ -162,7 +174,8 @@ export const dispatchKernelStep = async ({
       capsuleId: hosted.executionCapsule?.capsuleId || workerReport.capsuleId,
       workspaceId: workspace.workspaceId,
       bindingId: boundAttempt?.bindingId || workerReport.bindingId,
-      actorSessionId: boundAttempt?.actorSessionId || workerReport.actorSessionId,
+      assignmentId: workerReport.assignmentId || hosted.hostDirective?.actorAssignment?.assignmentId || null,
+      actorSessionId: result?.actorSessionId || boundAttempt?.actorSessionId || workerReport.actorSessionId,
     });
   }
   const workerCompleted = ['passed', 'completed', 'success'].includes(result?.status || result?.resultStatus);
@@ -193,7 +206,9 @@ export const dispatchKernelWave = async ({
   runtimeHome,
   stateStore = null,
   parentSessionId = null,
+  parentSessionConfig = null,
   env = process.env,
+  actionContext = {},
   sequentialDispatcher = null,
   dispatchStep = null,
   prepareDispatch = null,
@@ -249,7 +264,21 @@ export const dispatchKernelWave = async ({
   const workspaceByStep = new Map(workspaces.steps.map((workspace) => [workspace.stepId, workspace]));
   const dispatched = await Promise.allSettled((executable.steps || []).map(async (step) => {
     const workspace = workspaceByStep.get(step.stepId);
-    const outcome = await dispatchKernelStep({ controlPlane, runId, waveId: wave.waveId, step, workspace, adapter, hostCapabilities: capabilities, parentSessionId, dispatchStep, prepareDispatch, env });
+    const outcome = await dispatchKernelStep({
+      controlPlane,
+      runId,
+      waveId: wave.waveId,
+      step,
+      workspace,
+      adapter,
+      hostCapabilities: capabilities,
+      parentSessionId,
+      parentSessionConfig,
+      actionContext,
+      dispatchStep,
+      prepareDispatch,
+      env,
+    });
     if (outcome.status !== 'passed' && outcome.status !== 'completed' && outcome.status !== 'success') {
       if (controlPlane.failStepAttempt) await controlPlane.failStepAttempt(runId, wave.waveId, step.stepId, { code: outcome.failureCode || 'worker-failed' });
       return { step, workspace, outcome, status: 'failed' };

@@ -35,6 +35,9 @@ test('a usage receipt binds to its decision and preserves unreported counts as n
       hostSurface: 'claude',
       actorSessionId: SESSION_A,
       resolvedModel: 'host-configured-value-model',
+      resolvedEffort: 'high',
+      observedModel: 'host-configured-value-model',
+      observedEffort: 'high',
       enforcementStatus: 'enforced',
       resultStatus: 'completed',
       inputTokens: 1200,
@@ -68,6 +71,36 @@ test('receipts reject raw session identifiers, negative counts, and unknown stat
   assert.throws(() => normalizeModelUsageReceipt({ ...base, enforcementStatus: 'pretend' }), /enforcementStatus must be one of/);
   assert.throws(() => normalizeModelUsageReceipt({ ...base, resultStatus: 'maybe' }), /resultStatus must be one of/);
   assert.equal(normalizeModelUsageReceipt(base).inputTokens, null);
+});
+
+test('an enforced receipt requires requested, resolved, and observed identity to agree', () => {
+  const exact = {
+    decisionId: 'route-abcdef12',
+    runId: 'r-identity',
+    hostSurface: 'codex',
+    actorSessionId: SESSION_A,
+    resultStatus: 'completed',
+    enforcementStatus: 'enforced',
+    requestedModel: 'gpt-5.6-luna',
+    requestedEffort: 'max',
+    resolvedModel: 'gpt-5.6-luna',
+    resolvedEffort: 'max',
+    observedModel: 'gpt-5.6-luna',
+    observedEffort: 'max',
+  };
+  assert.equal(normalizeModelUsageReceipt(exact).observedModel, 'gpt-5.6-luna');
+  assert.throws(
+    () => normalizeModelUsageReceipt({ ...exact, resolvedModel: 'gpt-5.6-sol' }),
+    /resolved provider model to equal the requested model/,
+  );
+  assert.throws(
+    () => normalizeModelUsageReceipt({ ...exact, observedEffort: 'high' }),
+    /observed reasoning effort equal to the requested effort/,
+  );
+  assert.throws(
+    () => normalizeModelUsageReceipt({ ...exact, observedModel: undefined }),
+    /observed provider model equal to the requested model/,
+  );
 });
 
 test('a receipt cannot reference a decision from another run', async () => {

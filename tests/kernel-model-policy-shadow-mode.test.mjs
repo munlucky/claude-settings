@@ -15,13 +15,19 @@ test('the model policy mode is its own switch', () => {
   assert.equal(modes.cacheMode, 'off');
 });
 
+test('Codex has an isolated final-profile switch with generic fallback', () => {
+  assert.equal(resolveOptimizationModes({}).codexModelPolicyMode, 'on');
+  assert.equal(resolveOptimizationModes({ MOON_RELAY_KERNEL_MODEL_POLICY_MODE: 'shadow' }).codexModelPolicyMode, 'shadow');
+  assert.equal(resolveOptimizationModes({ MOON_RELAY_KERNEL_MODEL_POLICY_MODE: 'on', MOON_RELAY_KERNEL_CODEX_MODEL_POLICY_MODE: 'off' }).codexModelPolicyMode, 'off');
+});
+
 test('a recommendation is produced regardless of the active mode', () => {
   for (const mode of ['off', 'shadow', 'on']) {
     resolveOptimizationModes({ MOON_RELAY_KERNEL_MODEL_POLICY_MODE: mode });
     const codex = resolveCodexModelPolicy({ actionKind: 'implement' });
     const claude = resolveClaudeEffort({ actionKind: 'implement' });
-    assert.equal(codex.model, 'gpt-5.6-terra');
-    assert.equal(codex.reasoning, 'medium');
+    assert.equal(codex.model, 'gpt-5.6-luna');
+    assert.equal(codex.reasoning, 'max');
     assert.equal(claude.effort, 'high');
   }
 });
@@ -35,7 +41,7 @@ test('the recommendation is deterministic for identical input', () => {
 test('every routing decision carries the reasons that produced it', () => {
   const escalated = resolveCodexModelPolicy({ actionKind: 'implement', repeatedFailure: true });
   assert.ok(escalated.reasons.includes('repeated-failure-escalation'));
-  assert.equal(escalated.policyRevision, 'kernel-codex-model.v1');
+  assert.equal(escalated.policyRevision, 'kernel-codex-model.v2');
   const claude = resolveClaudeEffort({ actionKind: 'implement', triggers: ['broad-refactor'] });
   assert.ok(claude.reasons.includes('broad-refactor'));
 });

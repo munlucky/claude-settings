@@ -7,6 +7,7 @@ import path from 'node:path';
 import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
 import { buildActiveWave, resolveWayfinderAdmission } from '../scripts/kernel/run/active-wave.mjs';
 import { createCodexAdapter } from '../scripts/host/kernel/adapters/codex.mjs';
+import { CODEX_MAIN_SESSION_POLICY } from '../scripts/host/kernel/codex-session-observer.mjs';
 import { dispatchKernelStep, hostSupportsWayfinder } from '../scripts/host/kernel/wave-dispatcher.mjs';
 import { observeWorkspaceIdentity } from '../scripts/kernel/run/workspace-identity.mjs';
 
@@ -120,9 +121,10 @@ test('Active Wave accepts independently bound reports and rejects cross-worker r
 test('Wayfinder worker adapters preserve the isolated session boundary', async () => {
   let received = null;
   const adapter = createCodexAdapter({
+    parentSessionObserver: async ({ parentSessionId }) => ({ sessionId: parentSessionId, model: CODEX_MAIN_SESSION_POLICY.model, effort: CODEX_MAIN_SESSION_POLICY.effort }),
     launch: async (request) => {
       received = request;
-      return { status: 'completed', sessionId: 'worker-session' };
+      return { status: 'completed', resolvedModel: request.invocation.model, resolvedEffort: request.invocation.effort, effortObserved: true, sessionId: 'worker-session' };
     },
   });
   await adapter.dispatch({
@@ -173,4 +175,74 @@ test('Wayfinder worker completion requires an accepted Step report', async () =>
   });
   assert.equal(missingReport.status, 'failed');
   assert.equal(missingReport.failureCode, 'worker-report-missing');
+});
+
+test('Wayfinder reports the observed child session after usage attaches it to the attempt', async () => {
+  const reportInputs = [];
+  const boundAttempt = {
+    id: 1,
+    attemptId: 'attempt-aaaaaaaa',
+    bindingId: 'binding-a',
+    actorSessionId: 'parent-worker',
+  };
+  const refreshedAttempt = {
+    ...boundAttempt,
+    actorSessionId: 'sha256:' + 'b'.repeat(64),
+  };
+  const controlPlane = {
+    stateStore: {
+      getStepAttemptByAttemptId: () => refreshedAttempt,
+    },
+    bindStepAttempt: async () => boundAttempt,
+    updateStepAttempt: async () => refreshedAttempt,
+    hostNext: async () => ({
+      runId: 'run-a',
+      executionCapsule: {
+        capsuleId: 'capsule-a',
+        stepId: 'step-a',
+        provenance: { capsuleDigest: 'sha256:' + 'c'.repeat(64) },
+      },
+      hostDirective: {
+        modelRouteDecision: {
+          decisionId: 'route-abcdef12',
+          runId: 'run-a',
+          role: 'implementer',
+          actionKind: 'implement',
+          modelClass: 'value_coding',
+          workProfile: null,
+        },
+        enforcementStrategy: 'subagent',
+      },
+      resolution: { model: 'gpt-5.6-luna', effort: 'max', enforcementIntent: 'enforced' },
+      strategy: 'subagent',
+      admission: { admissionId: 'admission-a', digest: 'sha256:' + 'd'.repeat(64) },
+      envelope: null,
+    }),
+    recordModelUsage: async () => {},
+    report: async (_runId, payload) => {
+      reportInputs.push(payload);
+      return { status: 'in-progress', step: { state: 'passed' } };
+    },
+  };
+  const passed = await dispatchKernelStep({
+    controlPlane,
+    runId: 'run-a',
+    waveId: 'wave-a',
+    step: { stepId: 'step-a', objective: 'update a' },
+    workspace: { workspaceId: 'workspace-a', workspaceRoot: 'C:/runtime/step-a', baseWorkspaceIdentity: 'sha256:base' },
+    adapter: {},
+    hostCapabilities: { surface: 'codex', supportsResolvedModelIdentity: true },
+    dispatchStep: async () => ({
+      status: 'completed',
+      actorSessionId: 'child-session',
+      resolvedModel: 'gpt-5.6-luna',
+      resolvedEffort: 'max',
+      observedModel: 'gpt-5.6-luna',
+      observedEffort: 'max',
+      report: { status: 'completed', summary: 'child done', changedPaths: [], risks: [], requestedVerifications: [], judgments: [], knowledgeObservations: [], blocker: null },
+    }),
+  });
+  assert.equal(passed.status, 'passed');
+  assert.equal(reportInputs.length, 1);
+  assert.equal(reportInputs[0].actorSessionId, 'child-session');
 });

@@ -20,7 +20,106 @@ import { observeWorkspaceIdentity } from './workspace-identity.mjs';
 import { projectRunState } from '../state-projector.mjs';
 import { buildActiveWave, isApprovalSource, waveStatusIsActive } from './active-wave.mjs';
 import { assertAttemptLineage } from './attempt-provenance.mjs';
-import { hashSessionId } from './model-route-contract.mjs';
+import { buildActorAssignmentId, hashSessionId } from './model-route-contract.mjs';
+
+const isCodexOwnerBinding = (binding) => Boolean(
+  binding
+  && (String(binding.provider || '').toLowerCase().startsWith('codex')
+    || String(binding.surface || '').toLowerCase().startsWith('codex')),
+);
+
+// Codex ordinary work is Host-routed. A report that arrives for the active
+// implementation step without a routed attempt would mean the owner session
+// performed the mutation itself, which defeats the actor boundary even when
+// the report names a plausible worker session. `provenanceKind=routed` is only
+// a pre-dispatch reservation made by hostNext; it is not evidence that a child
+// ran. The report therefore consumes the assignment and requires the durable
+// route/admission/usage chain before any proof can execute.
+const rejectCodexActorBoundary = ({ store, runId, attempt, report }) => {
+  const owner = store.getRunOwnerBinding?.(runId);
+  if (!isCodexOwnerBinding(owner)) return null;
+
+  const reject = (errorCode, errorSummary) => ({
+    rejection: [{
+      obligationId: 'actor-assignment',
+      command: 'kernel report',
+      errorSummary,
+      errorCode,
+    }],
+  });
+
+  if (!attempt || attempt.provenanceKind !== 'routed') {
+    return reject(
+      'actor-assignment-missing',
+      'Codex ordinary work requires a Host actor assignment and a distinct routed worker session',
+    );
+  }
+
+  const decision = attempt.routeDecisionId
+    ? store.getModelRouteDecision?.(attempt.routeDecisionId, { runId })
+    : null;
+  const expectedAssignmentId = buildActorAssignmentId(decision?.decisionId || attempt.routeDecisionId);
+  if (!decision || decision.runId !== runId || !expectedAssignmentId) {
+    return reject('actor-assignment-incomplete', 'The routed attempt has no valid persisted route decision');
+  }
+  if (report?.assignmentId !== expectedAssignmentId) {
+    return reject('actor-assignment-mismatch', 'Report must echo the Host-issued actor assignment for this route');
+  }
+  if (!attempt.capsuleId || !attempt.admissionId) {
+    return reject('actor-lineage-incomplete', 'Codex ordinary work requires the routed capsule and route admission to be persisted');
+  }
+
+  const receipt = attempt.usageReceiptId
+    ? store.getModelUsageReceipt?.(attempt.usageReceiptId, { runId })
+    : null;
+  const admission = attempt.admissionId
+    ? store.getRouteAdmission?.(attempt.admissionId, { runId })
+    : null;
+  if (!receipt || receipt.resultStatus !== 'completed' || receipt.enforcementStatus !== 'enforced') {
+    return reject('actor-usage-receipt-missing', 'Codex ordinary work requires a completed, enforced worker usage receipt');
+  }
+  if (!admission || !['admitted', 'fallback_admitted'].includes(admission.decision)) {
+    return reject('actor-admission-missing', 'Codex ordinary work requires the persisted route admission that permitted the worker');
+  }
+
+  const expected = {
+    decisionId: decision.decisionId,
+    attemptId: attempt.attemptId,
+    capsuleId: attempt.capsuleId || null,
+    admissionId: attempt.admissionId,
+    stepId: attempt.stepId,
+  };
+  for (const field of ['decisionId', 'attemptId', 'capsuleId', 'admissionId', 'stepId']) {
+    if ((receipt[field] || null) !== expected[field]) {
+      return reject('actor-lineage-mismatch', `Worker usage receipt ${field} does not match the routed attempt`);
+    }
+  }
+  if (String(receipt.hostSurface || '').toLowerCase() !== 'codex'
+    || (receipt.role && receipt.role !== decision.role)
+    || (receipt.actionKind && receipt.actionKind !== decision.actionKind)) {
+    return reject('actor-lineage-mismatch', 'Worker usage receipt does not describe the Codex route that assigned this attempt');
+  }
+  if (admission.runId !== runId
+    || admission.decisionId !== decision.decisionId
+    || admission.attemptId !== attempt.attemptId
+    || admission.capsuleId !== (attempt.capsuleId || null)
+    || admission.stepId !== attempt.stepId) {
+    return reject('actor-lineage-mismatch', 'Persisted route admission does not match the routed attempt');
+  }
+
+  const ownerSessionId = hashSessionId(owner.sessionId);
+  const actorSessionId = hashSessionId(report?.actorSessionId || null);
+  if (!actorSessionId || !attempt.actorSessionId || actorSessionId !== attempt.actorSessionId || receipt.actorSessionId !== actorSessionId) {
+    return reject('actor-session-missing', 'Codex ordinary work requires the distinct worker session recorded by the usage receipt');
+  }
+  if (actorSessionId === ownerSessionId) {
+    return reject('actor-session-not-distinct', 'Codex worker session must be distinct from the owner session');
+  }
+  if (receipt.parentSessionId && receipt.parentSessionId !== ownerSessionId) {
+    return reject('actor-parent-session-mismatch', 'Codex worker usage receipt must name the current owner as its parent session');
+  }
+  return null;
+};
 
 export const createWorkCursorApi = ({ store, projectRoot, runtimeHome }) => ({
   getActiveWave(runId) {
@@ -495,6 +594,8 @@ export const createWorkCursorApi = ({ store, projectRoot, runtimeHome }) => ({
       if (report.bindingId && report.bindingId !== attempt.bindingId) {
         return { rejection: [{ obligationId: 'binding', command: 'kernel report', errorSummary: 'Report binding does not match the bound Wave attempt' }] };
       }
+      const actorAssignment = rejectCodexActorBoundary({ store, runId, attempt, report });
+      if (actorAssignment) return actorAssignment;
       const actorSession = report.actorSessionId || report.sessionId || report.workerSessionId;
       const actorSessionId = hashSessionId(actorSession);
       if (attempt.actorSessionId && attempt.actorSessionId !== actorSessionId && attempt.actorSessionId !== actorSession) {
@@ -561,6 +662,8 @@ export const createWorkCursorApi = ({ store, projectRoot, runtimeHome }) => ({
       }
       const incompleteCredentials = rejectIncompleteAttemptCredentials(attempt, report);
       if (incompleteCredentials) return incompleteCredentials;
+      const actorAssignment = rejectCodexActorBoundary({ store, runId, attempt, report });
+      if (actorAssignment) return actorAssignment;
       const staleAttempt = rejectStaleAttempt(attempt, named.stepId);
       if (staleAttempt) return staleAttempt;
       return { step: named, attempt };
@@ -595,6 +698,8 @@ export const createWorkCursorApi = ({ store, projectRoot, runtimeHome }) => ({
     }
     const incompleteCredentials = rejectIncompleteAttemptCredentials(attempt, report);
     if (incompleteCredentials) return incompleteCredentials;
+    const actorAssignment = rejectCodexActorBoundary({ store, runId, attempt, report });
+    if (actorAssignment) return actorAssignment;
     const staleAttempt = rejectStaleAttempt(attempt, active.stepId);
     if (staleAttempt) return staleAttempt;
     return { step: active, attempt };

@@ -7,7 +7,7 @@ import { planDryRunWave } from './wave-plan.mjs';
 import { planBoundedWaves } from './run/bounded-wave.mjs';
 import { detectStagnation } from './run/stagnation.mjs';
 import { recommendModelRouting, resolveModelRoute } from './run/model-routing.mjs';
-import { normalizeHostCapabilities, resolveEnforcementStrategy, summarizeModelRouting } from './run/model-route-contract.mjs';
+import { buildActorAssignmentId, normalizeHostCapabilities, resolveEnforcementStrategy, summarizeModelRouting } from './run/model-route-contract.mjs';
 import { buildReleaseEvidencePack } from './evidence-pack.mjs';
 import { projectRunState } from './state-projector.mjs';
 import { resolveKernelRuntimeHome } from './runtime-home.mjs';
@@ -1014,7 +1014,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     // Decides the LOGICAL model class for the action the model is about to
     // perform and persists it before the Host dispatches (§16.5). Provider
     // identity is never decided here — only the class the Host must satisfy.
-    async decideModelRoute(runId, { actionKind, obligationId = null, independentReviewRequired = false, planInvalid = false, architectureDeviation = false, protectedObligationFailed = false } = {}) {
+    async decideModelRoute(runId, { actionKind, obligationId = null, independentReviewRequired = false, planInvalid = false, architectureDeviation = false, protectedObligationFailed = false, workProfile = null, complexity = null } = {}) {
       const run = store.getRun(runId);
       if (!run) throw new Error(`Run ${runId} not found`);
       const attempts = store.getAttempts(runId);
@@ -1035,6 +1035,8 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         planInvalid,
         architectureDeviation,
         independentReviewRequired,
+        workProfile,
+        complexity,
         currentPlanRevision: Number(run.planRevision || 1),
         obligationId,
         // §5.4: an escalation holds for the rest of this plan revision, but a
@@ -1091,6 +1093,8 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         planInvalid: actionContext.planInvalid === true,
         architectureDeviation: actionContext.architectureDeviation === true,
         protectedObligationFailed: actionContext.protectedObligationFailed === true,
+        workProfile: actionContext.workProfile || null,
+        complexity: actionContext.complexity || null,
       });
 
       // K1: the worker's bounded context is built here, beside the routing
@@ -1167,6 +1171,24 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         }
       }
 
+      // The model-visible `next` action carries the provider-neutral
+      // requirement. Host callers also receive the concrete assignment handle
+      // that must be echoed by the worker report. Provider model names stay in
+      // the Host-only route decision; the assignment itself is role- and
+      // lineage-shaped so Claude and other providers retain the same boundary.
+      const actorAssignment = decision.modelClass === 'kernel'
+        ? null
+        : {
+          assignmentId: buildActorAssignmentId(decision.decisionId),
+          role: decision.role,
+          parentRole: 'orchestrator',
+          workProfile: decision.workProfile,
+          parentMayImplement: false,
+          nestedDelegationAllowed: false,
+          freshSessionRequired: decision.independentContextRequired === true
+            || decision.workProfile?.independentContextRequired === true
+            || decision.role === 'reviewer',
+        };
       return {
         schemaVersion: 1,
         runId,
@@ -1174,6 +1196,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         executionCapsule,
         hostDirective: {
           modelRouteDecision: decision,
+          actorAssignment,
           hostCapabilities: capabilities,
           enforcementStrategy: resolveEnforcementStrategy(capabilities, decision),
           executionCapsule,

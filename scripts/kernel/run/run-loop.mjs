@@ -72,6 +72,32 @@ const describeObligations = (obligations = [], obligationIds = []) => obligation
   };
 });
 
+// An ordinary work unit is assigned to a bounded actor before the model can
+// report implementation work.  This is deliberately provider-neutral: the
+// Host maps the role onto its own worker mechanism and model policy.
+const actorRoleForAction = (actionType) => {
+  if (actionType === 'review') return 'reviewer';
+  if (actionType === 'debug') return 'debugger';
+  if (['implement', 'fix'].includes(actionType)) return 'implementer';
+  if (['understand', 'design', 'plan', 'replan'].includes(actionType)) return 'planner';
+  return null;
+};
+
+const withActorAssignment = (action) => {
+  const role = actorRoleForAction(action?.type);
+  if (!role) return action;
+  return {
+    ...action,
+    actorAssignment: {
+      required: true,
+      role,
+      parentRole: 'orchestrator',
+      parentMayImplement: false,
+      nestedDelegationAllowed: false,
+    },
+  };
+};
+
 // Model-visible payload for `kernel next`: contract, current evidence, and one
 // action. Internal state names are never exposed.
 export const buildNextPayload = ({
@@ -141,7 +167,7 @@ export const buildNextPayload = ({
   if (failing.length > 0) {
     return {
       ...base,
-      action: {
+      action: withActorAssignment({
         type: 'fix',
         guidance: 'Fix the failing verification(s), then submit kernel report again with the verifications to re-run.',
         failures: failing.map((failure) => ({
@@ -150,7 +176,7 @@ export const buildNextPayload = ({
           errorSummary: failure.errorSummary || null,
           allowedCommandRefs: failure.allowedCommandRefs || undefined,
         })),
-      },
+      }),
     };
   }
 
@@ -161,20 +187,20 @@ export const buildNextPayload = ({
     if (outstanding.length > 0 && described.every((entry) => entry.evidenceClass === 'judgment')) {
       return {
         ...base,
-        action: {
+        action: withActorAssignment({
           type: 'review',
           guidance: 'Route the outstanding judgment obligations to an independent reviewer session and submit the Kernel-recorded review receipt in kernel report.',
           outstandingObligations: outstanding,
           obligations: described,
           independentReviewRequired: true,
-        },
+        }),
       };
     }
     const unsatisfiable = described
       .filter((entry) => entry.evidenceClass === 'hard' && entry.allowedCommandRefs.length === 0);
     return {
       ...base,
-      action: {
+      action: withActorAssignment({
         type: 'implement',
         guidance: missingEvidencePlans.length > 0
           ? `Before submitting proof, provide one structured evidencePlan per acceptance criterion (${missingEvidencePlans.join(', ')}), each bound to the real obligation and project commandRef.`
@@ -185,7 +211,7 @@ export const buildNextPayload = ({
         obligations: described,
         evidencePlansRequired: missingEvidencePlans,
         shapeRequired: Boolean(run.route?.shapeRequired),
-      },
+      }),
     };
   }
 
@@ -231,6 +257,10 @@ export const normalizeReport = (payload = {}) => {
     capsuleId: payload.capsuleId ? String(payload.capsuleId) : null,
     attemptId: payload.attemptId ? String(payload.attemptId) : null,
     bindingId: payload.bindingId ? String(payload.bindingId) : null,
+    // The Host-issued actor handle is consumed at the report boundary.  It is
+    // not part of the model-visible action, and a capsule id cannot substitute
+    // for it.
+    assignmentId: payload.assignmentId ? String(payload.assignmentId) : null,
     stepId: payload.stepId ? String(payload.stepId) : null,
     waveId: payload.waveId ? String(payload.waveId) : null,
     planRevision: payload.planRevision === undefined || payload.planRevision === null ? undefined : Number(payload.planRevision),

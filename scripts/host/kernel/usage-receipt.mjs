@@ -8,11 +8,14 @@ import { buildReceiptId, hashSessionId, normalizeModelUsageReceipt } from '../..
 // model AND the Host can prove which model actually answered.
 const resolveEnforcementStatus = ({ resolution, capabilities, strategy, dispatch }) => {
   if (dispatch.status === 'failed') return 'failed';
+  if (dispatch.enforcementStatus === 'failed') return 'failed';
   if (strategy === 'unsupported' || !capabilities.supportsResolvedModelIdentity) return 'unsupported';
   if (dispatch.status === 'unsupported') return 'unsupported';
   if (!resolution.model || resolution.enforcementIntent !== 'enforced') return 'advisory';
   if (!dispatch.resolvedModel) return 'advisory';
-  return dispatch.resolvedModel === resolution.model ? 'enforced' : 'fallback';
+  if (dispatch.resolvedModel !== resolution.model) return 'fallback';
+  if (resolution.effort && dispatch.resolvedEffort !== resolution.effort) return 'fallback';
+  return 'enforced';
 };
 
 const countOrNull = (value, allowed) => (allowed && Number.isInteger(value) && value >= 0 ? value : null);
@@ -54,7 +57,21 @@ export const buildUsageReceipt = ({ decision, capabilities, strategy, resolution
     // Only an identity the Host actually observed is recorded. Echoing the
     // requested model back would turn a wish into evidence.
     resolvedModel: dispatch.resolvedModel || null,
-    resolvedEffort: dispatch.resolvedEffort || resolution.effort || null,
+    resolvedEffort: dispatch.resolvedEffort || null,
+    requestedModel: resolution.model || null,
+    requestedEffort: resolution.effort || null,
+    // Resolution is not observation. A Host that only reports a resolved
+    // value cannot claim that the provider terminal/rollout actually emitted
+    // the same identity; the Kernel will keep the receipt advisory/fallback
+    // until both observed fields are present.
+    observedModel: dispatch.observedModel || null,
+    observedEffort: dispatch.observedEffort || null,
+    role: decision.role || null,
+    actionKind: decision.actionKind || null,
+    workProfile: decision.workProfile || null,
+    dispatchMechanism: dispatch.dispatchMechanism || dispatch.invocation?.mechanism || null,
+    enforcementReason: dispatch.enforcementReason || null,
+    fallbackReason: dispatch.fallbackReason || null,
     // Lineage: which bounded context the worker ran on (K1), which admission
     // permitted the dispatch (K3), and which step it belongs to (K2).
     capsuleId: capsule?.capsuleId || null,

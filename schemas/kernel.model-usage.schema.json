@@ -9,6 +9,38 @@
     "schemaVersion", "receiptId", "decisionId", "runId", "hostSurface",
     "actorSessionId", "enforcementStatus", "resultStatus", "createdAt"
   ],
+  "allOf": [
+    {
+      "if": {
+        "allOf": [
+          { "required": ["enforcementStatus"], "properties": { "enforcementStatus": { "const": "enforced" } } },
+          {
+            "anyOf": [
+              { "required": ["requestedModel"], "properties": { "requestedModel": { "type": "string", "minLength": 1 } } },
+              { "required": ["requestedEffort"], "properties": { "requestedEffort": { "type": "string", "minLength": 1 } } },
+              { "required": ["observedModel"], "properties": { "observedModel": { "type": "string", "minLength": 1 } } },
+              { "required": ["observedEffort"], "properties": { "observedEffort": { "type": "string", "minLength": 1 } } }
+            ]
+          }
+        ]
+      },
+      "then": { "required": ["resolvedModel", "observedModel"] }
+    },
+    {
+      "if": {
+        "allOf": [
+          { "required": ["enforcementStatus"], "properties": { "enforcementStatus": { "const": "enforced" } } },
+          {
+            "anyOf": [
+              { "required": ["requestedEffort"], "properties": { "requestedEffort": { "type": "string", "minLength": 1 } } },
+              { "required": ["observedEffort"], "properties": { "observedEffort": { "type": "string", "minLength": 1 } } }
+            ]
+          }
+        ]
+      },
+      "then": { "required": ["observedEffort"] }
+    }
+  ],
   "properties": {
     "schemaVersion": { "const": 1 },
     "receiptId": { "type": "string", "pattern": "^usage-[a-f0-9]{8,64}$" },
@@ -21,6 +53,26 @@
     "parentSessionId": { "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }] },
     "resolvedModel": { "type": ["string", "null"] },
     "resolvedEffort": { "type": ["string", "null"] },
+    "requestedModel": { "type": ["string", "null"] },
+    "requestedEffort": { "type": ["string", "null"] },
+    "observedModel": { "type": ["string", "null"] },
+    "observedEffort": { "type": ["string", "null"] },
+    "role": { "type": ["string", "null"] },
+    "actionKind": { "type": ["string", "null"] },
+    "workProfile": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["complexity", "repeatedFailure", "independentContextRequired", "parallelizable"],
+      "properties": {
+        "complexity": { "enum": ["routine", "standard", "complex", "large-refactor"] },
+        "repeatedFailure": { "type": "boolean" },
+        "independentContextRequired": { "type": "boolean" },
+        "parallelizable": { "type": "boolean" }
+      }
+    },
+    "dispatchMechanism": { "type": ["string", "null"] },
+    "enforcementReason": { "type": ["string", "null"] },
+    "fallbackReason": { "type": ["string", "null"] },
     "capsuleId": { "type": ["string", "null"] },
     "capsuleDigest": { "type": ["string", "null"] },
     "admissionId": { "type": ["string", "null"] },

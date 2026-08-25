@@ -73,7 +73,14 @@ const runArm = ({ arm, corpus, hostCapabilities }) => {
         resolution,
         dispatch: strategy === 'unsupported'
           ? { status: 'unsupported', resultStatus: 'completed' }
-          : { status: 'completed', resultStatus: 'completed', resolvedModel: resolution.model, inputTokens: turn.estimatedTokens || 0, outputTokens: Math.round((turn.estimatedTokens || 0) / 5) },
+          : {
+            status: 'completed',
+            resultStatus: 'completed',
+            resolvedModel: resolution.model,
+            observedModel: resolution.model,
+            inputTokens: turn.estimatedTokens || 0,
+            outputTokens: Math.round((turn.estimatedTokens || 0) / 5),
+          },
         actorSessionId: sessionFor(testCase.id, index),
       });
       receipts += 1;

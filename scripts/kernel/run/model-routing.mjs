@@ -11,6 +11,7 @@ import {
   buildDecisionId,
   loadModelPolicy,
   normalizeModelRouteDecision,
+  normalizeWorkProfile,
 } from './model-route-contract.mjs';
 
 // Fixed priority (§5.3). Stagnation outranks retry escalation, because more
@@ -25,6 +26,27 @@ const resolveEscalation = ({ actionKind, retryCount, stagnant, planInvalid, arch
   // §5.4: within one plan revision and obligation an escalation never demotes.
   if (escalationLocked) return { action: actionKind, reasonCode: 'ESCALATION_LOCKED' };
   return null;
+};
+
+// Work shape is derived in the Kernel from task signals. The Host receives the
+// resulting profile and may choose an actor, but it cannot feed a provider
+// model or effort setting back into this function.
+export const resolveWorkProfile = ({
+  actionKind,
+  riskTier,
+  retryCount = 0,
+  independentContextRequired = false,
+  workProfile = null,
+  complexity = null,
+  policy,
+} = {}) => {
+  const supplied = workProfile === null || workProfile === undefined ? null : normalizeWorkProfile(workProfile);
+  return normalizeWorkProfile({
+    complexity: supplied?.complexity ?? complexity ?? 'standard',
+    repeatedFailure: supplied?.repeatedFailure ?? (Number(retryCount) >= Number(policy?.thresholds?.retryEscalationThreshold || 2)),
+    independentContextRequired: supplied?.independentContextRequired ?? independentContextRequired,
+    parallelizable: supplied?.parallelizable ?? false,
+  });
 };
 
 // The full Kernel→Host decision for the action the model is about to perform.
@@ -44,6 +66,8 @@ export const resolveModelRoute = ({
   obligationId = null,
   escalatedObligations = [],
   sequence = 0,
+  workProfile = null,
+  complexity = null,
   createdAt,
   policy = loadModelPolicy(),
 } = {}) => {
@@ -53,6 +77,7 @@ export const resolveModelRoute = ({
   const tier = RISK_TIERS.includes(riskTier) ? riskTier : 'T0';
   const base = policy.actionDefaults[actionKind];
   const reasonCodes = [];
+  const baseWorkProfile = resolveWorkProfile({ actionKind, riskTier: tier, retryCount, independentContextRequired: false, workProfile, complexity, policy });
 
   // prove/close belong to the Kernel runtime; no signal may hand them a model.
   if (base.modelClass === 'kernel') {
@@ -68,6 +93,7 @@ export const resolveModelRoute = ({
       modelClass: base.modelClass,
       riskTier: tier,
       independentContextRequired: false,
+      workProfile: baseWorkProfile,
       permissions: base.permissions,
       reasonCodes: ['KERNEL_ONLY_ACTION'],
       policyRevision: policy.policyRevision,
@@ -102,6 +128,16 @@ export const resolveModelRoute = ({
   const independentContextRequired = isReview && (tier === 'T3' || independentReviewRequired === true);
   if (independentContextRequired) reasonCodes.push('INDEPENDENT_REVIEW_REQUIRED');
 
+  const effectiveWorkProfile = resolveWorkProfile({
+    actionKind: effectiveAction,
+    riskTier: tier,
+    retryCount,
+    independentContextRequired,
+    workProfile,
+    complexity,
+    policy,
+  });
+
   return normalizeModelRouteDecision({
     decisionId: buildDecisionId({ runId, attemptNumber, sequence, actionKind: effectiveAction }),
     runId,
@@ -114,6 +150,7 @@ export const resolveModelRoute = ({
     modelClass,
     riskTier: tier,
     independentContextRequired,
+    workProfile: effectiveWorkProfile,
     permissions: spec.permissions,
     reasonCodes,
     policyRevision: policy.policyRevision,

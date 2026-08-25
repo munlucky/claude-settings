@@ -37,6 +37,13 @@ test('the model-visible next payload is unchanged and carries no routing vocabul
     const { capsuleId, ...hostAction } = host.modelInput.action;
     assert.match(capsuleId, /^capsule-[a-f0-9]{8,64}$/);
     assert.deepEqual({ ...host.modelInput, action: hostAction }, plain);
+    assert.deepEqual(plain.action.actorAssignment, {
+      required: true,
+      role: 'implementer',
+      parentRole: 'orchestrator',
+      parentMayImplement: false,
+      nestedDelegationAllowed: false,
+    });
     const serialized = JSON.stringify(host.modelInput);
     for (const term of ['modelClass', 'frontier_reasoning', 'value_coding', 'modelRouteDecision', 'enforcementStrategy', 'hostDirective']) {
       assert.doesNotMatch(serialized, new RegExp(term), `next payload must not mention ${term}`);
@@ -52,6 +59,9 @@ test('hostNext derives the action kind from the action the model was handed', as
     assert.equal(host.hostDirective.modelRouteDecision.actionKind, 'implement');
     assert.equal(host.hostDirective.modelRouteDecision.modelClass, 'value_coding');
     assert.equal(host.hostDirective.enforcementStrategy, 'subagent');
+    assert.equal(host.hostDirective.actorAssignment.role, 'implementer');
+    assert.equal(host.hostDirective.actorAssignment.parentMayImplement, false);
+    assert.equal(host.hostDirective.actorAssignment.nestedDelegationAllowed, false);
     const review = await cp.hostNext(runId, { hostCapabilities: CLAUDE, actionContext: { actionKind: 'review_engineering' } });
     assert.equal(review.hostDirective.modelRouteDecision.modelClass, 'frontier_reasoning');
     assert.equal(review.hostDirective.modelRouteDecision.permissions, 'read_only');

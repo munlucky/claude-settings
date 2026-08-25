@@ -48,7 +48,7 @@ const WAVE_CONTRACT = {
   safeWave: { approved: true, approvedBy: 'operator-policy:test', integrationVerification: { commandRef: 'test:ok' } },
 };
 
-const setup = async (runId = 'r-attempt', taskContract = CONTRACT) => {
+const setup = async (runId = 'r-attempt', taskContract = CONTRACT, controlPlaneOptions = {}) => {
   const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'krn-attempt-home-'));
   const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'krn-attempt-proj-'));
   spawnSync('git', ['init'], { cwd: projectRoot, encoding: 'utf8' });
@@ -58,8 +58,15 @@ const setup = async (runId = 'r-attempt', taskContract = CONTRACT) => {
   await writeFile(path.join(projectRoot, 'app.mjs'), 'export const value = 0;\n');
   await writeFile(path.join(projectRoot, 'app-a.mjs'), 'export const value = 0;\n');
   await writeFile(path.join(projectRoot, 'app-b.mjs'), 'export const value = 0;\n');
-  const controlPlane = await createKernelControlPlane({ runtimeHome, projectRoot });
-  await controlPlane.startRun({ runId, objective: 'preserve attempt lineage', taskContract });
+  const { hostProvider = null, hostSessionId = null, ...restOptions } = controlPlaneOptions;
+  const env = {
+    ...(restOptions.env || process.env),
+    ...(hostProvider ? { MOON_RELAY_KERNEL_PROVIDER: hostProvider } : {}),
+    ...(hostSessionId ? { MOON_RELAY_KERNEL_SESSION_ID: hostSessionId } : {}),
+  };
+  const controlPlane = await createKernelControlPlane({ runtimeHome, projectRoot, ...restOptions, env });
+  const bootstrap = restOptions.requireHostBinding ? controlPlane.ensureRun.bind(controlPlane) : controlPlane.startRun.bind(controlPlane);
+  await bootstrap({ runId, objective: 'preserve attempt lineage', taskContract });
   return { runtimeHome, projectRoot, controlPlane, runId };
 };
 
@@ -119,6 +126,9 @@ test('a routed attempt carries capsule, admission, usage, retry, and failure lin
       hostSurface: 'claude',
       actorSessionId: hashSessionId('worker-session'),
       resolvedModel: 'configured-value',
+      resolvedEffort: 'high',
+      observedModel: 'configured-value',
+      observedEffort: 'high',
       enforcementStatus: 'enforced',
       resultStatus: 'failed',
       attemptId: attempt.attemptId,
@@ -285,6 +295,70 @@ test('a direct report enters and closes the canonical attempt before legacy proj
     assert.equal(canonical.status, 'passed');
     assert.deepEqual(canonical.verificationRefs.length > 0, true);
     assert.equal(cp.stateStore.getAttempts(runId).at(-1).status, 'finished');
+  } finally {
+    await cleanup(fixture);
+  }
+});
+
+test('a Codex owner report cannot mutate an ordinary step without a routed actor assignment', async () => {
+  const fixture = await setup('r-codex-direct-attempt', DIRECT_CONTRACT, {
+    hostProvider: 'codex',
+    hostSessionId: 'codex-owner-session',
+    requireHostBinding: true,
+  });
+  try {
+    const { controlPlane: cp, runId } = fixture;
+    const step = cp.getCurrentStep(runId);
+    const rejected = await cp.report(runId, {
+      stepId: step.stepId,
+      summary: 'parent attempted implementation',
+      changedPaths: ['app.mjs'],
+      verifications: [{ obligationId: 'default', commandRef: 'test:ok', acceptanceCoverage: ['AC-1'] }],
+    });
+    assert.equal(rejected.status, 'step-rejected');
+    assert.equal(rejected.executed.length, 0);
+    assert.equal(rejected.failures[0].errorCode, 'actor-assignment-missing');
+  } finally {
+    await cleanup(fixture);
+  }
+});
+
+test('a Codex parent cannot reuse a hostNext capsule before a worker receipt exists', async () => {
+  const fixture = await setup('r-codex-capsule-reuse', DIRECT_CONTRACT, {
+    hostProvider: 'codex',
+    hostSessionId: 'codex-owner-session',
+    requireHostBinding: true,
+  });
+  try {
+    const { controlPlane: cp, runId } = fixture;
+    const host = await cp.hostNext(runId, {
+      hostCapabilities: {
+        surface: 'codex',
+        supportsSessionModelOverride: true,
+        supportsIndependentContext: true,
+        supportsResolvedModelIdentity: true,
+      },
+    });
+    const step = cp.getCurrentStep(runId);
+    const reportBase = {
+      stepId: step.stepId,
+      capsuleId: host.executionCapsule.capsuleId,
+      changedPaths: ['app.mjs'],
+      verifications: [{ obligationId: 'default', commandRef: 'test:ok', acceptanceCoverage: ['the direct path is durable'] }],
+    };
+    const noAssignment = await cp.report(runId, reportBase);
+    assert.equal(noAssignment.status, 'step-rejected');
+    assert.equal(noAssignment.executed.length, 0);
+    assert.equal(noAssignment.failures[0].errorCode, 'actor-assignment-mismatch');
+
+    const assignmentOnly = await cp.report(runId, {
+      ...reportBase,
+      assignmentId: host.hostDirective.actorAssignment.assignmentId,
+      actorSessionId: 'codex-owner-session',
+    });
+    assert.equal(assignmentOnly.status, 'step-rejected');
+    assert.equal(assignmentOnly.executed.length, 0);
+    assert.equal(assignmentOnly.failures[0].errorCode, 'actor-lineage-incomplete');
   } finally {
     await cleanup(fixture);
   }

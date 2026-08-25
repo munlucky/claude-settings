@@ -1,8 +1,7 @@
-// Codex GPT-5.6 model routing (Wave 6.2). Sol for hard and high-stakes work,
-// Terra for everyday implementation and debugging, Luna for well-specified
-// repetitive work. The default is Terra at medium: reaching for Sol/high on
-// routine edits costs more without a measured quality gain, and `max`, Ultra,
-// and Pro stay off the default path entirely until an eval says otherwise.
+// Codex GPT-5.6 model routing. Luna/Max is the default implementation and
+// debugging actor; Sol is reserved for planning, complex work, protected
+// review, and explicit repeated-failure escalation. This is Host-only policy:
+// the Kernel still chooses only a logical model class.
 //
 // This module lives on the Host side. The Kernel decides a logical model class;
 // only here does that become a provider model id.
@@ -20,30 +19,29 @@ const PLANNING_ACTIONS = new Set(['understand', 'design', 'plan', 'replan']);
 const REVIEW_ACTIONS = new Set(['review_contract', 'review_engineering']);
 const HIGH_RISK_SHAPES = Object.freeze(['security', 'migration', 'authentication', 'authorization', 'payment', 'data-loss', 'irreversible']);
 
-// The Codex "launch-profile" dispatch mechanism (§11.2) selects one of the
+// The Codex "launch-profile" dispatch mechanism selects one of the
 // four profiles codex-profile-materializer.mjs actually writes
 // (default/plan/review/batch), not a Kernel model class name — a model class
 // alone cannot distinguish a protected review from a routine one, and the
 // profile choice needs exactly that distinction. No `complexity`/`shapes`
-// signal reaches this call site from a route decision today, so 'batch' is
-// not reachable here; that stays a known limitation, not a silent guess.
-export const selectCodexProfileName = ({ actionKind = 'implement' } = {}) => {
+export const selectCodexProfileName = ({ actionKind = 'implement', complexity = 'standard' } = {}) => {
   if (REVIEW_ACTIONS.has(actionKind)) return 'review';
   if (PLANNING_ACTIONS.has(actionKind)) return 'plan';
+  if (['routine', 'routine-batch'].includes(String(complexity))) return 'batch';
   return 'default';
 };
 
 export const resolveCodexModelPolicy = ({
   actionKind = 'implement',
   riskTier = 'T1',
-  complexity = 'simple',
+  complexity = 'standard',
   shapes = [],
   repeatedFailure = false,
   userRequested = null,
 } = {}) => {
   const reasons = [];
-  let model = CODEX_MODELS.terra;
-  let reasoning = 'medium';
+  let model = CODEX_MODELS.luna;
+  let reasoning = 'max';
 
   if (PLANNING_ACTIONS.has(actionKind)) {
     model = CODEX_MODELS.sol; reasoning = 'high'; reasons.push('planning-action');
@@ -52,10 +50,10 @@ export const resolveCodexModelPolicy = ({
     model = CODEX_MODELS.sol;
     reasoning = protectedReview ? 'xhigh' : 'high';
     reasons.push(protectedReview ? 'protected-review' : 'engineering-review');
-  } else if (complexity === 'routine-batch') {
-    // Luna only where the transformation is already specified: classification,
-    // mechanical rewrites, bulk formatting.
-    model = CODEX_MODELS.luna; reasoning = 'low'; reasons.push('routine-batch');
+  } else if (complexity === 'routine' || complexity === 'routine-batch') {
+    // Routine batches stay on the same bounded Luna actor; Max is the policy
+    // default so mechanical work does not silently downgrade enforcement.
+    model = CODEX_MODELS.luna; reasoning = 'max'; reasons.push('routine-batch');
   } else if (complexity === 'complex' || complexity === 'large-refactor') {
     model = CODEX_MODELS.sol; reasoning = 'high'; reasons.push('complex-implementation');
   } else {
@@ -65,8 +63,9 @@ export const resolveCodexModelPolicy = ({
   if (repeatedFailure) { model = CODEX_MODELS.sol; reasoning = 'xhigh'; reasons.push('repeated-failure-escalation'); }
 
   if (userRequested?.model) { model = resolveCodexModelAlias(userRequested.model); reasons.push('user-requested-model'); }
-  if (userRequested?.reasoning && CODEX_REASONING_EFFORTS.includes(userRequested.reasoning)) {
-    reasoning = userRequested.reasoning; reasons.push('user-requested-reasoning');
+  const requestedReasoning = userRequested?.reasoning ?? userRequested?.effort;
+  if (requestedReasoning && CODEX_REASONING_EFFORTS.includes(requestedReasoning)) {
+    reasoning = requestedReasoning; reasons.push('user-requested-reasoning');
   }
 
   return Object.freeze({
@@ -74,10 +73,8 @@ export const resolveCodexModelPolicy = ({
     model,
     reasoning,
     reasons: Object.freeze(reasons),
-    // `max` is reachable only by explicit request, and is reported as such so
-    // the eval can see it was never taken by default.
-    offDefaultPath: reasoning === 'max' || model === CODEX_MODELS.sol && reasoning === 'max',
-    policyRevision: 'kernel-codex-model.v1',
+    offDefaultPath: false,
+    policyRevision: 'kernel-codex-model.v2',
   });
 };
 

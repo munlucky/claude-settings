@@ -59,9 +59,19 @@ const readMode = (value, fallback = 'shadow') => (CACHE_MODES.includes(String(va
 // rather than a hardcoded 'shadow' that could never be overridden by it.
 export const resolveOptimizationModes = (env = process.env) => {
   const cacheMode = readMode(env.MOON_RELAY_KERNEL_CACHE_MODE);
+  const genericModelPolicyMode = readMode(env.MOON_RELAY_KERNEL_MODEL_POLICY_MODE);
+  // The final Kernel Codex profile is on by default, while an explicit
+  // provider-specific or generic switch can still roll it back to shadow/off.
+  // Claude continues to read the generic modelPolicyMode below and is not
+  // changed by this Codex-only default.
+  const codexModelPolicyMode = readMode(
+    env.MOON_RELAY_KERNEL_CODEX_MODEL_POLICY_MODE
+      ?? (env.MOON_RELAY_KERNEL_MODEL_POLICY_MODE !== undefined ? env.MOON_RELAY_KERNEL_MODEL_POLICY_MODE : 'on'),
+  );
   return Object.freeze({
     cacheMode,
-    modelPolicyMode: readMode(env.MOON_RELAY_KERNEL_MODEL_POLICY_MODE),
+    modelPolicyMode: genericModelPolicyMode,
+    codexModelPolicyMode,
     claude: readMode(env.MOON_RELAY_KERNEL_CLAUDE_OPTIMIZATION, cacheMode),
     codex: readMode(env.MOON_RELAY_KERNEL_CODEX_OPTIMIZATION, cacheMode),
   });

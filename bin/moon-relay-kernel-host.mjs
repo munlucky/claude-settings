@@ -4,7 +4,7 @@ import path from 'node:path';
 import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
 import { resolveKernelRuntimeHome, resolveProjectTrack, ensureAccountRootTrack } from '../scripts/kernel/runtime-home.mjs';
 import { canonicalizeHostSessionId } from '../scripts/kernel/run/host-session.mjs';
-import { runCodexIndependentReview } from '../scripts/host/kernel/codex-review-host.mjs';
+import { runCodexIndependentReview, runCodexKernelWorker } from '../scripts/host/kernel/codex-review-host.mjs';
 
 const args = process.argv.slice(2);
 const command = args[0] || '';
@@ -17,7 +17,7 @@ const json = args.includes('--json');
 const output = (payload) => console.log(json ? JSON.stringify(payload) : Object.entries(payload).map(([key, item]) => `${key}: ${typeof item === 'object' ? JSON.stringify(item) : item}`).join('\n'));
 
 try {
-  if (command !== 'review') throw new Error('Usage: moon-relay-kernel-host review --run-id <id> --project-root <path> [--image <path>] [--json]');
+  if (!['review', 'dispatch'].includes(command)) throw new Error('Usage: moon-relay-kernel-host <review|dispatch> --run-id <id> --project-root <path> [--image <path>] [--json]');
   const runId = value('--run-id');
   const projectRoot = path.resolve(value('--project-root') || process.cwd());
   const runtimeHome = value('--runtime-home') || resolveKernelRuntimeHome();
@@ -60,18 +60,32 @@ try {
   };
   const controlPlane = await createKernelControlPlane({ runtimeHome, projectRoot, env, requireHostBinding: true });
   try {
-    output(await runCodexIndependentReview({
-      controlPlane,
-      runId,
-      projectRoot,
-      runtimeHome,
-      parentSessionId,
-      obligationId: value('--obligation') || 'security-review',
-      model: value('--model') || undefined,
-      effort: value('--effort') || 'high',
-      images: values('--image'),
-      env,
-    }));
+    if (command === 'review') {
+      output(await runCodexIndependentReview({
+        controlPlane,
+        runId,
+        projectRoot,
+        runtimeHome,
+        parentSessionId,
+        obligationId: value('--obligation') || 'security-review',
+        model: value('--model') || undefined,
+        effort: value('--effort') || 'high',
+        images: values('--image'),
+        env,
+      }));
+    } else {
+      output(await runCodexKernelWorker({
+        controlPlane,
+        runId,
+        projectRoot,
+        runtimeHome,
+        parentSessionId,
+        actionKind: value('--action') || 'implement',
+        obligationId: value('--obligation') || null,
+        complexity: value('--complexity') || null,
+        env,
+      }));
+    }
   } finally {
     await controlPlane.close();
   }

@@ -8,6 +8,8 @@ import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
 import { observeWorkspaceIdentity } from '../scripts/kernel/run/workspace-identity.mjs';
 import { resolveTrustedCommand, executeTrustedProof, UntrustedCommandError, redactSecretLikeOutput } from '../scripts/kernel/proof/proof-executor.mjs';
 import { planStatePath, buildNextPayload } from '../scripts/kernel/run/run-loop.mjs';
+import { runCodexKernelWorker } from '../scripts/host/kernel/codex-review-host.mjs';
+import { CODEX_MAIN_SESSION_POLICY } from '../scripts/host/kernel/codex-session-observer.mjs';
 
 const setupProject = async () => {
   const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'krn-host-loop-proj-'));
@@ -26,14 +28,6 @@ const setupProject = async () => {
     `console.log('focused test passed');`,
   ].join('\n'));
   return projectRoot;
-};
-
-const parseCliJson = (result) => {
-  const line = String(result.stdout || result.stderr || '')
-    .split(/\r?\n/)
-    .find((entry) => entry.trim().startsWith('{'));
-  assert.ok(line, result.stderr || result.stdout);
-  return JSON.parse(line);
 };
 
 test('workspace identity observation reflects working tree changes', async () => {
@@ -185,86 +179,89 @@ test('host loop E2E: fail -> fix -> hard evidence -> accepted completion', async
   }
 });
 
-test('CLI subprocess E2E: next -> failed report -> fix -> proof -> accepted completion', async () => {
+test('routed Codex worker E2E: worker receipt -> failed proof -> fix -> accepted completion', async () => {
   const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'krn-host-loop-cli-home-'));
   const projectRoot = await setupProject();
-  const contractPath = path.join(projectRoot, 'contract.json');
-  const reportPath = path.join(projectRoot, 'report.json');
-  const cliPath = path.resolve(process.cwd(), 'bin', 'moon-relay-kernel.mjs');
   const runId = 'host-loop-cli-1';
   const sessionId = 'codex:host-loop-cli-session';
-  const {
-    CODEX_THREAD_ID: _codexThreadId,
-    MOON_RELAY_KERNEL_SESSION_ID: _kernelSessionId,
-    MOON_RELAY_KERNEL_RUN_ID: _kernelRunId,
-    ...isolatedEnv
-  } = process.env;
   const env = {
-    ...isolatedEnv,
-    MOON_RELAY_KERNEL_REEXEC: '1',
+    ...process.env,
+    MOON_RELAY_KERNEL_SESSION_ID: sessionId,
     MOON_RELAY_KERNEL_PROVIDER: 'codex',
+    MOON_RELAY_KERNEL_RUN_ID: runId,
   };
-  const commonArgs = [
-    '--run-id', runId,
-    '--session-id', sessionId,
-    '--provider', 'codex',
-    '--project-root', projectRoot,
-    '--runtime-home', runtimeHome,
-    '--json',
-  ];
+  const controlPlane = await createKernelControlPlane({ runtimeHome, projectRoot, env, requireHostBinding: true });
   try {
-    await writeFile(contractPath, JSON.stringify({
-      objective: 'Fix invalid password status through the public Kernel CLI',
-      requestedTier: 'T0',
-      acceptance: [{
-        acceptance: 'invalid password returns 401',
-        evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:focus'], obligationId: 'default' },
-      }],
-    }));
-
-    const next = spawnSync(process.execPath, [cliPath, 'next', '--contract-json', contractPath, ...commonArgs], {
-      cwd: projectRoot,
-      env,
-      encoding: 'utf8',
+    await controlPlane.ensureRun({
+      runId,
+      objective: 'Fix invalid password status through a routed Codex worker',
+      taskContract: {
+        acceptance: [{
+          acceptance: 'invalid password returns 401',
+          evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:focus'], obligationId: 'default' },
+        }],
+      },
     });
-    assert.equal(next.status, 0, next.stderr || next.stdout);
-    const nextPayload = parseCliJson(next);
-    assert.equal(nextPayload.action.type, 'implement');
-    assert.ok(nextPayload.action.step?.stepId);
-
-    const report = {
-      stepId: nextPayload.action.step.stepId,
-      summary: 'exercise the public report boundary',
-      changedPaths: ['app.mjs'],
-      verifications: [{
-        obligationId: 'default',
-        commandRef: 'test:focus',
-        acceptanceCoverage: ['invalid password returns 401'],
-      }],
+    let workerNumber = 0;
+    const cliLaunch = async ({ invocation }) => {
+      workerNumber += 1;
+      return {
+        status: 'completed',
+        resolvedModel: invocation.model,
+        resolvedEffort: invocation.effort,
+        observedModel: invocation.model,
+        observedEffort: invocation.effort,
+        observedSessionConfig: { model: invocation.model, effort: invocation.effort },
+        sessionId: `codex:routed-worker-${workerNumber}`,
+        outcome: {
+          status: 'completed',
+          summary: workerNumber === 1 ? 'worker attempted the fix' : 'worker fixed the status code',
+          changedPaths: ['app.mjs'],
+          risks: [],
+          requestedVerifications: ['test:focus'],
+          verifications: [{ obligationId: 'default', commandRef: 'test:focus', acceptanceCoverage: ['invalid password returns 401'] }],
+          judgments: [],
+          knowledgeObservations: [],
+          blocker: null,
+        },
+      };
     };
-    await writeFile(reportPath, JSON.stringify(report));
-    const failed = spawnSync(process.execPath, [cliPath, 'report', '--report-json', reportPath, ...commonArgs], {
-      cwd: projectRoot,
-      env,
-      encoding: 'utf8',
+    const parentSessionObserver = async ({ parentSessionId }) => ({
+      sessionId: parentSessionId,
+      model: CODEX_MAIN_SESSION_POLICY.model,
+      effort: CODEX_MAIN_SESSION_POLICY.effort,
     });
-    assert.equal(failed.status, 0, failed.stderr || failed.stdout);
-    const failedPayload = parseCliJson(failed);
-    assert.equal(failedPayload.status, 'evidence-failed');
-    assert.equal(failedPayload.next.action.type, 'fix');
+    const first = await runCodexKernelWorker({
+      controlPlane,
+      runId,
+      projectRoot,
+      runtimeHome,
+      parentSessionId: sessionId,
+      parentSessionObserver,
+      cliLaunch,
+      actionKind: 'implement',
+      env,
+    });
+    assert.equal(first.report.status, 'evidence-failed', JSON.stringify(first.report));
+    assert.equal(first.report.failures[0].obligationId, 'default');
 
     await writeFile(path.join(projectRoot, 'app.mjs'), `export const statusForInvalidPassword = () => 401;\n`);
-    const completed = spawnSync(process.execPath, [cliPath, 'report', '--report-json', reportPath, ...commonArgs], {
-      cwd: projectRoot,
+    const completed = await runCodexKernelWorker({
+      controlPlane,
+      runId,
+      projectRoot,
+      runtimeHome,
+      parentSessionId: sessionId,
+      parentSessionObserver,
+      cliLaunch,
+      actionKind: 'debug',
       env,
-      encoding: 'utf8',
     });
-    assert.equal(completed.status, 0, completed.stderr || completed.stdout);
-    const completedPayload = parseCliJson(completed);
-    assert.equal(completedPayload.status, 'completed');
-    assert.equal(completedPayload.finalization.completionStatus, 'accepted');
-    assert.equal(completedPayload.next.action.type, 'done');
+    assert.equal(completed.report.status, 'completed', JSON.stringify(completed.report));
+    assert.equal(completed.report.finalization.completionStatus, 'accepted');
+    assert.equal(completed.report.next.action.type, 'done');
   } finally {
+    await controlPlane.close();
     await rm(runtimeHome, { recursive: true, force: true });
     await rm(projectRoot, { recursive: true, force: true });
   }

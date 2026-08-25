@@ -10,8 +10,10 @@ import { createModelRegistry } from '../scripts/host/kernel/model-registry.mjs';
 import { createClaudeAdapter } from '../scripts/host/kernel/adapters/claude.mjs';
 import { createCodexAdapter } from '../scripts/host/kernel/adapters/codex.mjs';
 import { createFableAdapter } from '../scripts/host/kernel/adapters/fable.mjs';
+import { CODEX_MAIN_SESSION_POLICY } from '../scripts/host/kernel/codex-session-observer.mjs';
 
 const registryFor = (surface, env) => createModelRegistry({ surface, env });
+const stableParentObserver = async ({ parentSessionId }) => ({ sessionId: parentSessionId, model: CODEX_MAIN_SESSION_POLICY.model, effort: CODEX_MAIN_SESSION_POLICY.effort });
 const FRONTIER_ENV = { MOON_RELAY_KERNEL_MODEL_FRONTIER: 'configured-frontier', MOON_RELAY_KERNEL_MODEL_VALUE: 'configured-value' };
 
 const withRun = async (fn) => {
@@ -77,8 +79,8 @@ test('a Host without model switching is recorded as unsupported, never as enforc
 
 test('a Host that cannot report tokens leaves them unavailable rather than zero', async () => {
   await withRun(async (cp, runId) => {
-    const adapter = createCodexAdapter({ launch: async ({ invocation }) => ({ resolvedModel: invocation.model, sessionId: 'codex-1' }) });
-    const result = await dispatchKernelTurn({ controlPlane: cp, runId, adapter, registry: registryFor('codex', FRONTIER_ENV) });
+    const adapter = createCodexAdapter({ parentSessionObserver: stableParentObserver, launch: async ({ invocation }) => ({ resolvedModel: invocation.model, resolvedEffort: invocation.effort, effortObserved: true, sessionId: 'codex-1' }) });
+    const result = await dispatchKernelTurn({ controlPlane: cp, runId, adapter, parentSessionId: 'codex-parent-session', registry: registryFor('codex', FRONTIER_ENV) });
     assert.equal(result.dispatch.invocation.mechanism, 'session-model-override');
     assert.equal(result.dispatch.invocation.sandbox, 'workspace-write');
     assert.equal(result.receipt.enforcementStatus, 'enforced');

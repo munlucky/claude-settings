@@ -23,10 +23,11 @@ import { dispatchKernelRun } from './wave-dispatcher.mjs';
 // reason resolveModelRoute() emits to KEEP an already-escalated obligation on
 // frontier_reasoning for its subsequent attempts. Without it, applying the
 // model-policy recommendation on a locked turn would fall through to the
-// default Codex Terra/medium (or Claude's default effort) and silently undo
+// default Codex Luna/Max (or Claude's default effort) and silently undo
 // the very escalation the lock exists to hold.
 const isRepeatedFailure = (decision) =>
-  (decision.reasonCodes || []).some((code) => code.endsWith('_ESCALATION') || code.endsWith('_REPLAN') || code === 'PROTECTED_OBLIGATION_FAILURE' || code === 'ESCALATION_LOCKED');
+  decision.workProfile?.repeatedFailure === true
+  || (decision.reasonCodes || []).some((code) => code.endsWith('_ESCALATION') || code.endsWith('_REPLAN') || code === 'PROTECTED_OBLIGATION_FAILURE' || code === 'ESCALATION_LOCKED');
 
 // Maps each policy module's internal reason vocabulary onto the receipt's
 // closed MODEL_ESCALATION_REASONS enum; a reason with no honest mapping
@@ -60,7 +61,12 @@ const firstMappedEscalationReason = (reasons = []) => {
 export const resolveTurnModelPolicy = ({ decision, hostCapabilities } = {}) => {
   const repeatedFailure = isRepeatedFailure(decision);
   if (hostCapabilities.surface === 'codex') {
-    const policy = resolveCodexModelPolicy({ actionKind: decision.actionKind, riskTier: decision.riskTier, repeatedFailure });
+    const policy = resolveCodexModelPolicy({
+      actionKind: decision.actionKind,
+      riskTier: decision.riskTier,
+      complexity: decision.workProfile?.complexity || 'standard',
+      repeatedFailure,
+    });
     return { model: policy.model, effort: policy.reasoning, reasons: policy.reasons };
   }
   if (hostCapabilities.surface === 'claude') {
@@ -81,6 +87,7 @@ export const buildExecutionContract = (modelInput = {}, decision = {}) => {
     nonGoals: modelInput.nonGoals || [],
     role: decision.role,
     permissions: decision.permissions,
+    workProfile: decision.workProfile || null,
     action: { type: action.type, guidance: action.guidance || '' },
   };
   if (decision.role === 'reviewer') {
@@ -193,7 +200,8 @@ export const prepareWayfinderWorkerDispatch = async ({
 
   const modelRegistry = registry || createModelRegistry({ surface: hostCapabilities.surface, runtimeHome, env, overrides });
   let resolution = modelRegistry.resolve(decision.modelClass, overrides);
-  const modelPolicyMode = resolveOptimizationModes(env).modelPolicyMode;
+  const modes = resolveOptimizationModes(env);
+  const modelPolicyMode = hostCapabilities.surface === 'codex' ? modes.codexModelPolicyMode : modes.modelPolicyMode;
   const modelPolicyRecommendation = resolveTurnModelPolicy({ decision, hostCapabilities });
   if (modelPolicyMode === 'on' && modelPolicyRecommendation && resolution.source !== 'invocation-override') {
     const appliedModel = modelPolicyRecommendation.model || resolution.model;
@@ -269,6 +277,7 @@ export const dispatchKernelTurn = async ({
   overrides = {},
   actionContext = {},
   parentSessionId = null,
+  parentSessionConfig = null,
   toolPolicy = {},
   permissionPolicy = {},
   economics = {},
@@ -285,7 +294,9 @@ export const dispatchKernelTurn = async ({
       runtimeHome,
       stateStore: controlPlane.stateStore,
       parentSessionId,
+      parentSessionConfig,
       env,
+      actionContext,
       prepareDispatch: ({ hosted, step }) => prepareWayfinderWorkerDispatch({
         controlPlane,
         runId,
@@ -310,6 +321,7 @@ export const dispatchKernelTurn = async ({
         overrides,
         actionContext: { ...actionContext, skipWayfinder: true },
         parentSessionId,
+        parentSessionConfig,
         toolPolicy,
         permissionPolicy,
         economics,
@@ -334,8 +346,10 @@ export const dispatchKernelTurn = async ({
   // Wave 5/6: the model-policy recommendation is computed unconditionally so
   // its reasons can be recorded on the receipt even in shadow mode, but it is
   // only applied to the resolution admission and dispatch actually use when
-  // MOON_RELAY_KERNEL_MODEL_POLICY_MODE=on — shadow must not change what runs.
-  const modelPolicyMode = resolveOptimizationModes(env).modelPolicyMode;
+  // Codex uses its provider-specific switch; Claude continues to use the
+  // generic switch. Shadow must never change what actually runs.
+  const modes = resolveOptimizationModes(env);
+  const modelPolicyMode = hostCapabilities.surface === 'codex' ? modes.codexModelPolicyMode : modes.modelPolicyMode;
   const modelPolicyRecommendation = resolveTurnModelPolicy({ decision, hostCapabilities });
   // 'invocation-override' is the registry's own highest-precedence source
   // (§10.2: an explicit per-call override outranks environment, profile, and
@@ -432,6 +446,17 @@ export const dispatchKernelTurn = async ({
       executionCapsule: modelVisibleCapsule,
       executionContract: buildExecutionContract(modelInput, decision),
       envelope,
+      workingDirectory: controlPlane.projectRoot || null,
+      environment: env,
+      parentSessionId,
+      parentSessionConfig,
+      concurrencyGroup: actionContext.concurrencyGroup || runId,
+      childSession: {
+        role: decision.role,
+        canDelegate: false,
+        canCommit: false,
+        freshSessionRequired: decision.workProfile?.independentContextRequired === true || decision.independentContextRequired === true || decision.role === 'reviewer',
+      },
     }) || {};
   } catch (error) {
     dispatch = { status: 'failed', resultStatus: 'failed', errorSummary: error.message };
@@ -482,6 +507,14 @@ export const dispatchKernelTurn = async ({
     receipt,
     envelope,
     attemptId,
-    report: dispatch.report ? { ...dispatch.report, attemptId, bindingId: attempt?.bindingId || dispatch.report.bindingId } : null,
+    report: dispatch.report
+      ? {
+        ...dispatch.report,
+        attemptId,
+        bindingId: attempt?.bindingId || dispatch.report.bindingId,
+        assignmentId: dispatch.report.assignmentId || hostDirective.actorAssignment?.assignmentId || null,
+        actorSessionId: dispatch.report.actorSessionId || dispatch.actorSessionId || null,
+      }
+      : null,
   };
 };

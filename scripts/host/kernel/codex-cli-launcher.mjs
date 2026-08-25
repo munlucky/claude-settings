@@ -5,6 +5,9 @@ import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
 import { cleanupWindowsTimeoutProcessTree } from '../../kernel/proof/process-tree.mjs';
+import {
+  resolveObservedCodexSessionConfig as resolveObservedCodexSessionConfigFromEvents,
+} from './codex-session-observer.mjs';
 
 export const CODEX_REVIEW_OUTPUT_SCHEMA = Object.freeze({
   type: 'object',
@@ -41,17 +44,7 @@ const parseJsonLines = (text) => String(text || '')
   });
 
 export const resolveObservedCodexModel = (events = []) => {
-  for (const event of [...events].reverse()) {
-    if (!['turn.completed', 'response.completed'].includes(event?.type)) continue;
-    const observed = event?.model
-      ?? event?.model_id
-      ?? event?.model_slug
-      ?? event?.response?.model
-      ?? event?.turn?.model
-      ?? event?.metadata?.model;
-    if (typeof observed === 'string' && observed.trim()) return observed.trim();
-  }
-  return null;
+  return resolveObservedCodexSessionConfigFromEvents(events).model;
 };
 
 const codexSessionDateDirectories = (sessionsRoot, startedAt = new Date()) => {
@@ -80,11 +73,11 @@ const findCodexSessionRollout = async ({ threadId, env, startedAt }) => {
   return null;
 };
 
-export const resolveObservedCodexSessionModel = async ({ threadId, env = process.env, startedAt = new Date() } = {}) => {
+export const resolveObservedCodexSessionConfig = async ({ threadId, env = process.env, startedAt = new Date() } = {}) => {
   const rolloutPath = await findCodexSessionRollout({ threadId, env, startedAt });
   if (!rolloutPath) return null;
   let identityMatched = false;
-  let observed = null;
+  let observed = { model: null, effort: null };
   const lines = readline.createInterface({ input: createReadStream(rolloutPath), crlfDelay: Infinity });
   for await (const line of lines) {
     let event;
@@ -93,13 +86,19 @@ export const resolveObservedCodexSessionModel = async ({ threadId, env = process
       const sessionId = event?.payload?.session_id ?? event?.payload?.id;
       identityMatched = sessionId === threadId;
     }
-    if (event?.type === 'turn_context') {
-      const model = event?.payload?.model;
-      if (typeof model === 'string' && model.trim()) observed = model.trim();
+    if (event?.type === 'turn_context' || event?.type === 'turn.completed' || event?.type === 'response.completed') {
+      const current = resolveObservedCodexSessionConfigFromEvents([event]);
+      observed = {
+        model: current.model || observed.model,
+        effort: current.effort || observed.effort,
+      };
     }
   }
-  return identityMatched ? observed : null;
+  return identityMatched ? Object.freeze(observed) : null;
 };
+
+export const resolveObservedCodexSessionModel = async (options = {}) =>
+  (await resolveObservedCodexSessionConfig(options))?.model || null;
 
 const assertReviewOutcome = (value) => {
   if (!value || typeof value !== 'object' || !['pass', 'fail', 'blocked'].includes(value.verdict)) {
@@ -123,6 +122,142 @@ const reviewPrompt = ({ executionContract, executionCapsule }) => [
   'REVIEW CAPSULE',
   JSON.stringify(executionCapsule || {}, null, 2),
 ].join('\n');
+
+export const CODEX_WORKER_OUTPUT_SCHEMA = Object.freeze({
+  type: 'object',
+  properties: {
+    status: { type: 'string', enum: ['completed', 'blocked', 'failed'] },
+    summary: { type: 'string' },
+    changedPaths: { type: 'array', items: { type: 'string' } },
+    risks: { type: 'array', items: { type: 'string' } },
+    requestedVerifications: { type: 'array', items: { type: 'string' } },
+    judgments: { type: 'array', items: { type: 'object' } },
+    knowledgeObservations: { type: 'array', items: { type: 'object' } },
+    blocker: { type: ['string', 'null'] },
+  },
+  required: ['status', 'summary', 'changedPaths', 'risks', 'requestedVerifications', 'judgments', 'knowledgeObservations', 'blocker'],
+  additionalProperties: false,
+});
+
+const workerPrompt = ({ executionContract, executionCapsule }) => [
+  'Perform the bounded Kernel worker action described below.',
+  'You are a child actor assigned by the Host. Do not invoke Kernel next/report commands, do not delegate to another agent, and do not claim completion authority.',
+  'Use only the supplied execution contract and capsule. Apply the requested workspace changes when the permissions allow them.',
+  'Return only the JSON object required by the supplied output schema. Include every verification, risk, judgment, and reusable knowledge observation needed by the parent orchestrator.',
+  '',
+  'EXECUTION CONTRACT',
+  JSON.stringify(executionContract || {}, null, 2),
+  '',
+  'WORKER CAPSULE',
+  JSON.stringify(executionCapsule || {}, null, 2),
+].join('\n');
+
+const assertWorkerOutcome = (value) => {
+  if (!value || typeof value !== 'object' || !['completed', 'blocked', 'failed'].includes(value.status)) {
+    throw new Error('codex_worker_output_invalid: status must be completed, blocked, or failed');
+  }
+  for (const field of ['changedPaths', 'risks', 'requestedVerifications', 'judgments', 'knowledgeObservations']) {
+    if (!Array.isArray(value[field])) throw new Error(`codex_worker_output_invalid: ${field} must be an array`);
+  }
+  if (typeof value.summary !== 'string' || (value.blocker !== null && typeof value.blocker !== 'string')) {
+    throw new Error('codex_worker_output_invalid: summary and blocker have invalid types');
+  }
+  return value;
+};
+
+const resolveNativeSpawnAgent = ({ spawnAgent = null, host = globalThis } = {}) => {
+  if (typeof spawnAgent === 'function') return spawnAgent;
+  if (typeof host?.spawn_agent === 'function') return host.spawn_agent.bind(host);
+  if (typeof host?.spawnAgent === 'function') return host.spawnAgent.bind(host);
+  if (typeof host?.codex?.spawn_agent === 'function') return host.codex.spawn_agent.bind(host.codex);
+  if (typeof host?.codex?.spawnAgent === 'function') return host.codex.spawnAgent.bind(host.codex);
+  return null;
+};
+
+const firstNativeValue = (values) => values.find((value) => value !== undefined && value !== null && String(value).trim()) ?? null;
+
+// The Codex App Host may expose the native `spawn_agent` bridge to the Kernel
+// process. Keeping this bridge in the Host layer makes the model/effort request
+// concrete while leaving the provider-neutral Kernel Core unaware of Codex ids.
+// If the bridge is absent, the adapter selects the bounded CLI worker instead.
+export const createCodexNativeAgentLauncher = ({ spawnAgent = null, host = globalThis } = {}) => {
+  const dispatch = resolveNativeSpawnAgent({ spawnAgent, host });
+  if (!dispatch) return null;
+  return async ({ invocation, executionCapsule, executionContract, parentSessionId = null, actorRoute = null, childSession = null, workingDirectory = null, concurrencyGroup = null }) => {
+    if (!invocation?.model || !invocation?.effort) throw new Error('codex_native_worker_requires_explicit_model_and_effort');
+    const reviewer = actorRoute?.role === 'reviewer';
+    const handle = await dispatch({
+      task_name: `kernel_${actorRoute?.role || 'worker'}`,
+      model: invocation.model,
+      reasoning_effort: invocation.effort,
+      message: reviewer
+        ? reviewPrompt({ executionContract, executionCapsule })
+        : workerPrompt({ executionContract, executionCapsule }),
+      execution_contract: executionContract || null,
+      execution_capsule: executionCapsule || null,
+      parent_session_id: parentSessionId,
+      child_session: childSession || { canDelegate: false, canCommit: false },
+      working_directory: workingDirectory,
+      concurrency_group: concurrencyGroup,
+    });
+    const completed = typeof handle?.waitForOutcome === 'function'
+      ? await handle.waitForOutcome()
+      : typeof handle?.wait === 'function'
+        ? await handle.wait()
+        : typeof handle?.result === 'function'
+          ? await handle.result()
+          : null;
+    const candidate = {
+      ...(handle && typeof handle === 'object' ? handle : {}),
+      ...(completed && typeof completed === 'object' ? completed : {}),
+      ...(completed?.result && typeof completed.result === 'object' ? completed.result : {}),
+    };
+    const outcome = candidate.outcome || candidate.report || null;
+    if (outcome) {
+      if (reviewer) assertReviewOutcome(outcome);
+      else assertWorkerOutcome(outcome);
+    }
+    // A native Host must return terminal/session telemetry or an equivalent
+    // observed config. Handle fields such as `model` are not evidence: they
+    // can merely echo the requested invocation. Missing telemetry therefore
+    // stays null and the adapter fails closed instead of claiming enforcement.
+    const terminalEvents = Array.isArray(candidate.terminalEvents)
+      ? candidate.terminalEvents
+      : Array.isArray(candidate.events) ? candidate.events : [];
+    const terminalConfig = resolveObservedCodexSessionConfigFromEvents(terminalEvents);
+    const observedConfig = candidate.observedSessionConfig || candidate.observedConfig || terminalConfig;
+    const resolvedModel = firstNativeValue([
+      observedConfig?.model,
+    ]);
+    const resolvedEffort = firstNativeValue([
+      observedConfig?.effort,
+      observedConfig?.reasoning_effort,
+      observedConfig?.reasoningEffort,
+    ]);
+    const sessionId = firstNativeValue([
+      candidate.sessionId,
+      candidate.session_id,
+      candidate.actorSessionId,
+      candidate.actor_session_id,
+      candidate.threadId,
+      candidate.thread_id,
+    ]);
+    return {
+      ...candidate,
+      status: candidate.status || (outcome?.status === 'completed' ? 'completed' : outcome?.status || 'completed'),
+      resultStatus: candidate.resultStatus || (candidate.status === 'failed' || outcome?.status === 'failed' ? 'failed' : 'completed'),
+      resolvedModel,
+      resolvedEffort,
+      observedSessionConfig: { model: resolvedModel, effort: resolvedEffort },
+      observedModel: resolvedModel,
+      observedEffort: resolvedEffort,
+      effortObserved: Boolean(resolvedEffort),
+      sessionId,
+      outcome: outcome || null,
+      report: reviewer ? null : candidate.report || (outcome && candidate.outcome ? outcome : null),
+    };
+  };
+};
 
 const resolveWindowsCodexScript = (command, env) => {
   if (path.extname(command).toLowerCase() === '.ps1' && path.isAbsolute(command) && existsSync(command)) return command;
@@ -216,6 +351,7 @@ export const createCodexCliReviewLauncher = ({
     await writeFile(schemaPath, JSON.stringify(CODEX_REVIEW_OUTPUT_SCHEMA, null, 2));
     const args = [
       'exec', '--json', '--model', invocation.model, '--sandbox', 'read-only',
+      '-c', `model_reasoning_effort=${invocation.effort}`,
       '--cd', path.resolve(projectRoot), '--skip-git-repo-check',
       '--ignore-user-config',
       '--output-schema', schemaPath, '--output-last-message', outputPath,
@@ -233,19 +369,105 @@ export const createCodexCliReviewLauncher = ({
       throw new Error(`codex_review_dispatch_failed: exit=${processResult.code}; ${failed?.message || processResult.stderr || 'missing terminal event'}`);
     }
     const outcome = assertReviewOutcome(JSON.parse(await readFile(outputPath, 'utf8')));
-    const resolvedModel = resolveObservedCodexModel(events)
-      ?? await resolveObservedCodexSessionModel({ threadId, env, startedAt: new Date(started) });
+    const eventConfig = resolveObservedCodexSessionConfigFromEvents(events);
+    const rolloutConfig = await resolveObservedCodexSessionConfig({ threadId, env, startedAt: new Date(started) });
+    const observedConfig = {
+      model: eventConfig.model || rolloutConfig?.model || null,
+      effort: eventConfig.effort || rolloutConfig?.effort || null,
+    };
     return {
       status: 'completed',
       resultStatus: 'completed',
-      resolvedModel,
-      resolvedEffort: invocation.effort || null,
+      resolvedModel: observedConfig.model,
+      resolvedEffort: observedConfig.effort,
+      observedSessionConfig: observedConfig,
+      effortObserved: true,
       sessionId: threadId,
       wallClockMs: Date.now() - started,
       inputTokens: completed.usage?.input_tokens ?? null,
       cachedInputTokens: completed.usage?.cached_input_tokens ?? null,
       outputTokens: completed.usage?.output_tokens ?? null,
       outcome,
+    };
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+};
+
+// General implementation/debug worker launcher. Review keeps its stricter
+// read-only schema above; this path is the production CLI fallback for a
+// native Codex actor that is unavailable or cannot prove the requested config.
+export const createCodexCliWorkerLauncher = ({
+  executable = process.platform === 'win32' ? 'codex.ps1' : 'codex',
+  projectRoot,
+  images = [],
+  timeoutMs = 600_000,
+  env = process.env,
+  spawnImpl = spawn,
+} = {}) => async ({ invocation, executionCapsule, executionContract, parentSessionId = null, environment = null, workingDirectory = null }) => {
+  if (!projectRoot) throw new Error('Codex CLI worker launcher requires projectRoot');
+  if (!invocation?.model || !invocation?.effort) throw new Error('codex_worker_requires_explicit_model_and_effort');
+
+  // Wayfinder workers run in isolated sibling worktrees. The dispatch-time
+  // directory is therefore authoritative; the constructor root is only the
+  // fallback for ordinary sequential turns.
+  const workerRoot = path.resolve(workingDirectory || projectRoot);
+  if (!existsSync(workerRoot)) throw new Error(`codex_worker_working_directory_missing: ${workerRoot}`);
+
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-worker-'));
+  const schemaPath = path.join(tempRoot, 'worker-output.schema.json');
+  const outputPath = path.join(tempRoot, 'worker-output.json');
+  const processEnv = { ...env, ...(environment || {}) };
+  try {
+    await writeFile(schemaPath, JSON.stringify(CODEX_WORKER_OUTPUT_SCHEMA, null, 2));
+    const args = [
+      'exec', '--json', '--model', invocation.model,
+      '-c', `model_reasoning_effort=${invocation.effort}`,
+      '--sandbox', invocation.sandbox || 'workspace-write',
+      '--cd', workerRoot, '--skip-git-repo-check',
+      '--ignore-user-config',
+      '--output-schema', schemaPath, '--output-last-message', outputPath,
+    ];
+    for (const image of images) args.push('--image', path.resolve(image));
+    const started = Date.now();
+    const processResult = await runCodexReviewProcess({
+      command: executable,
+      args,
+      input: workerPrompt({ executionContract, executionCapsule }),
+      cwd: workerRoot,
+      env: processEnv,
+      timeoutMs,
+      spawnImpl,
+    });
+    const events = parseJsonLines(processResult.stdout);
+    const threadId = events.find((event) => event.type === 'thread.started')?.thread_id || null;
+    const completed = [...events].reverse().find((event) => event.type === 'turn.completed') || null;
+    const failed = [...events].reverse().find((event) => event.type === 'turn.failed' || event.type === 'error') || null;
+    if (processResult.code !== 0 || failed || !threadId || !completed) {
+      throw new Error(`codex_worker_dispatch_failed: exit=${processResult.code}; ${failed?.message || processResult.stderr || 'missing terminal event'}`);
+    }
+    if (parentSessionId && threadId === parentSessionId) throw new Error('codex_worker_session_not_distinct');
+    const outcome = assertWorkerOutcome(JSON.parse(await readFile(outputPath, 'utf8')));
+    const eventConfig = resolveObservedCodexSessionConfigFromEvents(events);
+    const rolloutConfig = await resolveObservedCodexSessionConfig({ threadId, env: processEnv, startedAt: new Date(started) });
+    const observedConfig = {
+      model: eventConfig.model || rolloutConfig?.model || null,
+      effort: eventConfig.effort || rolloutConfig?.effort || null,
+    };
+    return {
+      status: outcome.status === 'completed' ? 'completed' : outcome.status,
+      resultStatus: outcome.status === 'completed' ? 'completed' : 'failed',
+      resolvedModel: observedConfig.model,
+      resolvedEffort: observedConfig.effort,
+      observedSessionConfig: observedConfig,
+      effortObserved: true,
+      sessionId: threadId,
+      wallClockMs: Date.now() - started,
+      inputTokens: completed.usage?.input_tokens ?? null,
+      cachedInputTokens: completed.usage?.cached_input_tokens ?? null,
+      outputTokens: completed.usage?.output_tokens ?? null,
+      outcome,
+      report: outcome,
     };
   } finally {
     await rm(tempRoot, { recursive: true, force: true });

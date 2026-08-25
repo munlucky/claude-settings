@@ -34,8 +34,8 @@ const PACKAGED_AGENTS_MD = path.resolve(path.dirname(fileURLToPath(import.meta.u
 
 export const CODEX_PROFILE_SETTINGS = Object.freeze({
   default: Object.freeze({
-    model: CODEX_MODELS.terra,
-    model_reasoning_effort: 'medium',
+    model: CODEX_MODELS.luna,
+    model_reasoning_effort: 'max',
     model_verbosity: 'low',
     approval_policy: 'on-request',
     sandbox_mode: 'workspace-write',
@@ -51,7 +51,7 @@ export const CODEX_PROFILE_SETTINGS = Object.freeze({
   }),
   review: Object.freeze({
     model: CODEX_MODELS.sol,
-    model_reasoning_effort: 'xhigh',
+    model_reasoning_effort: 'high',
     model_verbosity: 'medium',
     approval_policy: 'on-request',
     // A reviewer that can write is not an independent reviewer.
@@ -60,7 +60,7 @@ export const CODEX_PROFILE_SETTINGS = Object.freeze({
   }),
   batch: Object.freeze({
     model: CODEX_MODELS.luna,
-    model_reasoning_effort: 'low',
+    model_reasoning_effort: 'max',
     model_verbosity: 'low',
     approval_policy: 'on-request',
     sandbox_mode: 'workspace-write',

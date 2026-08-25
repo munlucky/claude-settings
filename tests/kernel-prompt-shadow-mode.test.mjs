@@ -14,7 +14,13 @@ const envelopeFor = (env) => buildPromptEnvelope({
 
 test('every mode defaults to shadow when nothing is configured', () => {
   const modes = resolveOptimizationModes({});
-  assert.deepEqual(modes, { cacheMode: 'shadow', modelPolicyMode: 'shadow', claude: 'shadow', codex: 'shadow' });
+  assert.deepEqual(modes, {
+    cacheMode: 'shadow',
+    modelPolicyMode: 'shadow',
+    codexModelPolicyMode: 'on',
+    claude: 'shadow',
+    codex: 'shadow',
+  });
 });
 
 test('an unrecognized mode value falls back to shadow rather than turning on', () => {

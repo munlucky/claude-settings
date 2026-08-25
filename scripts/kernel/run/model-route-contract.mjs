@@ -18,6 +18,7 @@ export const PERMISSIONS = Object.freeze(['read_only', 'plan_write', 'workspace_
 export const RISK_TIERS = Object.freeze(['T0', 'T1', 'T2', 'T3']);
 export const BUILD_ACTIONS = Object.freeze(['implement', 'debug']);
 export const REVIEW_ACTIONS = Object.freeze(['review_contract', 'review_engineering']);
+export const WORK_PROFILE_COMPLEXITIES = Object.freeze(['routine', 'standard', 'complex', 'large-refactor']);
 
 // Host-only or secret-bearing fields. A decision carrying any of them is
 // rejected rather than trimmed, so a leak fails closed instead of silently.
@@ -36,6 +37,40 @@ export class ModelRouteContractError extends Error {
 }
 
 const fail = (code, message) => { throw new ModelRouteContractError(code, message); };
+
+const normalizeComplexity = (value) => {
+  const aliases = { 'routine-batch': 'routine', simple: 'standard' };
+  const normalized = aliases[String(value)] || String(value);
+  if (!WORK_PROFILE_COMPLEXITIES.includes(normalized)) {
+    fail('kernel_work_profile_invalid', `workProfile.complexity must be one of: ${WORK_PROFILE_COMPLEXITIES.join(', ')}`);
+  }
+  return normalized;
+};
+
+// The work profile is intentionally provider-neutral. It tells a Host actor
+// what shape of work it is receiving; it never carries a model id, provider,
+// prompt, or effort setting across the Kernel boundary.
+export const normalizeWorkProfile = (profile = null) => {
+  if (profile === null || profile === undefined) return null;
+  if (!profile || typeof profile !== 'object' || Array.isArray(profile)) {
+    fail('kernel_work_profile_invalid', 'workProfile must be an object or null');
+  }
+  for (const field of ['model', 'effort', 'provider', 'providerModel', 'resolvedModel', 'resolvedEffort']) {
+    if (Object.hasOwn(profile, field)) fail('kernel_work_profile_forbidden_field', `workProfile must not carry provider field: ${field}`);
+  }
+  const complexity = normalizeComplexity(profile.complexity ?? 'standard');
+  const booleanField = (name, fallback = false) => {
+    if (profile[name] === undefined) return fallback;
+    if (typeof profile[name] !== 'boolean') fail('kernel_work_profile_invalid', `workProfile.${name} must be boolean`);
+    return profile[name];
+  };
+  return Object.freeze({
+    complexity,
+    repeatedFailure: booleanField('repeatedFailure'),
+    independentContextRequired: booleanField('independentContextRequired'),
+    parallelizable: booleanField('parallelizable'),
+  });
+};
 
 const parseValue = (raw) => {
   const value = raw.trim();
@@ -109,6 +144,18 @@ export const loadModelPolicy = ({ sourceRoot: root = sourceRoot, text } = {}) =>
 export const buildDecisionId = ({ runId = 'run', attemptNumber = 1, sequence = 0, actionKind = 'implement' } = {}) =>
   `route-${createHash('sha256').update(`${runId}|${attemptNumber}|${sequence}|${actionKind}`).digest('hex').slice(0, 24)}`;
 
+// A Host actor assignment is derived from the persisted route decision.  It is
+// intentionally provider-neutral and deterministic so the report boundary can
+// consume the handle without adding provider/session data to the Kernel
+// decision.  The worker must echo this value; a capsule id alone is not an
+// actor assignment.
+export const buildActorAssignmentId = (decisionId = null) => {
+  const value = String(decisionId || '');
+  return /^route-[a-f0-9]{8,64}$/.test(value)
+    ? `assignment-${value.slice('route-'.length)}`
+    : null;
+};
+
 // A route decision is only usable once it is closed and provider-free.
 export const normalizeModelRouteDecision = (decision = {}) => {
   if (!decision || typeof decision !== 'object' || Array.isArray(decision)) fail('kernel_model_route_invalid', 'model route decision must be an object');
@@ -126,6 +173,7 @@ export const normalizeModelRouteDecision = (decision = {}) => {
   if (reasonCodes.length === 0) fail('kernel_model_route_invalid', 'model route decision requires at least one reason code');
   if (!decision.policyRevision) fail('kernel_model_route_invalid', 'model route decision requires a policyRevision');
   const positiveInt = (value, fallbackValue) => (Number.isInteger(value) && value >= 0 ? value : fallbackValue);
+  const workProfile = normalizeWorkProfile(decision.workProfile);
   return Object.freeze({
     schemaVersion: 1,
     decisionId: String(decision.decisionId),
@@ -139,6 +187,7 @@ export const normalizeModelRouteDecision = (decision = {}) => {
     modelClass: decision.modelClass,
     riskTier: decision.riskTier,
     independentContextRequired: decision.independentContextRequired === true,
+    workProfile,
     permissions: decision.permissions,
     reasonCodes: Object.freeze(reasonCodes),
     policyRevision: String(decision.policyRevision),
@@ -238,6 +287,46 @@ export const normalizeModelUsageReceipt = (receipt = {}) => {
   if (!resolvedModel && receipt.enforcementStatus === 'enforced') {
     fail('kernel_model_usage_enforcement_unproven', 'enforcementStatus "enforced" requires the resolved provider model the Host actually used');
   }
+  const requestedModel = receipt.requestedModel ? String(receipt.requestedModel) : null;
+  const requestedEffort = receipt.requestedEffort ? String(receipt.requestedEffort).toLowerCase() : null;
+  const resolvedEffort = receipt.resolvedEffort ? String(receipt.resolvedEffort).toLowerCase() : null;
+  const observedModel = receipt.observedModel ? String(receipt.observedModel) : null;
+  const observedEffort = receipt.observedEffort ? String(receipt.observedEffort).toLowerCase() : null;
+  // Receipts written before requested/observed identity fields existed remain
+  // readable. New receipts carry at least one of those fields and therefore
+  // must prove the provider terminal/rollout independently of resolution.
+  const modernModelIdentity = Boolean(requestedModel || observedModel);
+  const modernEffortIdentity = Boolean(requestedEffort || observedEffort);
+  if (receipt.enforcementStatus === 'enforced' && modernModelIdentity) {
+    if (!observedModel) {
+      fail('kernel_model_usage_enforcement_unproven', 'enforcementStatus "enforced" requires an observed provider model equal to the requested model');
+    }
+  }
+  if (receipt.enforcementStatus === 'enforced' && modernEffortIdentity) {
+    if (!observedEffort) {
+      fail('kernel_model_usage_enforcement_unproven', 'enforcementStatus "enforced" requires an observed reasoning effort equal to the requested effort');
+    }
+  }
+  if (receipt.enforcementStatus === 'enforced' && (modernModelIdentity || modernEffortIdentity)) {
+    if (requestedModel && resolvedModel !== requestedModel) {
+      fail('kernel_model_usage_enforcement_unproven', 'enforcementStatus "enforced" requires the resolved provider model to equal the requested model');
+    }
+    if (requestedEffort && requestedEffort !== resolvedEffort) {
+      fail('kernel_model_usage_enforcement_unproven', 'enforcementStatus "enforced" requires the resolved reasoning effort to equal the requested effort');
+    }
+    if (requestedModel && observedModel !== requestedModel) {
+      fail('kernel_model_usage_enforcement_unproven', 'enforcementStatus "enforced" requires an observed provider model equal to the requested model');
+    }
+    if (requestedEffort && observedEffort !== requestedEffort) {
+      fail('kernel_model_usage_enforcement_unproven', 'enforcementStatus "enforced" requires an observed reasoning effort equal to the requested effort');
+    }
+    if (modernModelIdentity && observedModel !== resolvedModel) {
+      fail('kernel_model_usage_enforcement_unproven', 'enforcementStatus "enforced" requires observed and resolved provider models to agree');
+    }
+    if (modernEffortIdentity && requestedEffort && observedEffort !== resolvedEffort) {
+      fail('kernel_model_usage_enforcement_unproven', 'enforcementStatus "enforced" requires observed and resolved reasoning effort to agree');
+    }
+  }
   const startedAt = receipt.startedAt ? String(receipt.startedAt) : null;
   // Backward compatibility runs both ways: a Host that reports only the legacy
   // `cachedInputTokens` is read as a cache read, and a Host that reports the new
@@ -259,7 +348,17 @@ export const normalizeModelUsageReceipt = (receipt = {}) => {
     actorSessionId: String(receipt.actorSessionId),
     parentSessionId: receipt.parentSessionId ? String(receipt.parentSessionId) : null,
     resolvedModel,
-    resolvedEffort: receipt.resolvedEffort ? String(receipt.resolvedEffort) : null,
+    resolvedEffort,
+    requestedModel,
+    requestedEffort,
+    observedModel,
+    observedEffort,
+    role: optionalText(receipt.role),
+    actionKind: optionalText(receipt.actionKind),
+    workProfile: normalizeWorkProfile(receipt.workProfile),
+    dispatchMechanism: optionalText(receipt.dispatchMechanism),
+    enforcementReason: optionalText(receipt.enforcementReason),
+    fallbackReason: optionalText(receipt.fallbackReason),
     // Lineage the later phases attach: which bounded context the turn ran on
     // (K1) and which admission let it dispatch (K3). Absent on a legacy or
     // un-capsuled turn, never invented.

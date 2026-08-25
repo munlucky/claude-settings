@@ -14,8 +14,10 @@ import { createModelRegistry } from '../scripts/host/kernel/model-registry.mjs';
 import { createClaudeAdapter } from '../scripts/host/kernel/adapters/claude.mjs';
 import { createCodexAdapter } from '../scripts/host/kernel/adapters/codex.mjs';
 import { createFableAdapter } from '../scripts/host/kernel/adapters/fable.mjs';
+import { CODEX_MAIN_SESSION_POLICY } from '../scripts/host/kernel/codex-session-observer.mjs';
 
 const CONFIGURED = { MOON_RELAY_KERNEL_MODEL_FRONTIER: 'configured-frontier', MOON_RELAY_KERNEL_MODEL_VALUE: 'configured-value' };
+const stableParentObserver = async ({ parentSessionId }) => ({ sessionId: parentSessionId, model: CODEX_MAIN_SESSION_POLICY.model, effort: CODEX_MAIN_SESSION_POLICY.effort });
 
 const withRun = async (fn, { taskContract = { acceptance: ['works'] } } = {}) => {
   const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'krn-adme2e-home-'));
@@ -78,13 +80,27 @@ test('K3-7: a Host that answers with another model is admitted but recorded as a
 });
 
 test('K3-8: a Host that cannot report tokens leaves them unavailable on an admitted turn', async () => {
-  await withRun(async (cp, runId) => {
-    const adapter = createCodexAdapter({ launch: async ({ invocation }) => ({ resolvedModel: invocation.model, sessionId: 'codex-1' }) });
-    const result = await dispatchKernelTurn({ controlPlane: cp, runId, adapter, registry: createModelRegistry({ surface: 'codex', env: CONFIGURED }) });
+  await withRun(async (cp, runId, fixture) => {
+    const adapter = createCodexAdapter({ parentSessionObserver: stableParentObserver, launch: async ({ invocation }) => ({ resolvedModel: invocation.model, resolvedEffort: invocation.effort, effortObserved: true, sessionId: 'codex-1' }) });
+    const result = await dispatchKernelTurn({ controlPlane: cp, runId, adapter, parentSessionId: 'codex-parent-session', registry: createModelRegistry({ surface: 'codex', env: CONFIGURED }) });
     assert.equal(result.admission.decision, 'admitted');
     assert.equal(result.receipt.enforcementStatus, 'enforced');
     assert.equal(result.receipt.inputTokens, null);
     assert.equal(result.receipt.outputTokens, null);
+    assert.equal(result.receipt.requestedModel, result.resolution.model);
+    assert.equal(result.receipt.requestedEffort, result.resolution.effort);
+    assert.equal(result.receipt.observedModel, result.resolution.model);
+    assert.equal(result.receipt.observedEffort, result.resolution.effort);
+    const store = await openKernelStateStore({ runtimeHome: fixture.runtimeHome });
+    try {
+      const [stored] = store.listModelUsageReceipts(runId);
+      assert.equal(stored.requestedModel, result.resolution.model);
+      assert.equal(stored.requestedEffort, result.resolution.effort);
+      assert.equal(stored.observedModel, result.resolution.model);
+      assert.equal(stored.observedEffort, result.resolution.effort);
+    } finally {
+      store.close();
+    }
   });
 });
 

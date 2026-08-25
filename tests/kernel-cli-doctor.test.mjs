@@ -73,7 +73,8 @@ test('account-root runtime track admits an unmarked project and records only the
     assert.equal(result.status, 0, result.stderr);
     const payload = JSON.parse(result.stdout);
     assert.equal(payload.status, 'bootstrap_required');
-    assert.equal(path.resolve(payload.runtimeHome).replaceAll('\\', '/').toLowerCase(), canonical(runtimeHome));
+    const reportedRuntimeHome = path.resolve(payload.runtimeHome).replaceAll('\\', '/');
+    assert.equal(process.platform === 'win32' ? reportedRuntimeHome.toLowerCase() : reportedRuntimeHome, canonical(runtimeHome));
     assert.equal((await import('../scripts/kernel/runtime-home.mjs')).resolveProjectTrackSync(project, {
       env: { ...cleanTrackEnv(), MOON_RELAY_KERNEL_HOME: runtimeHome },
     }).source, 'account_root_scope');

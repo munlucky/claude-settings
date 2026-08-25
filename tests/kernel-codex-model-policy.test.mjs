@@ -2,11 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { resolveCodexModelPolicy, resolveCodexModelAlias, CODEX_MODELS } from '../scripts/host/kernel/codex-model-policy.mjs';
 
-test('everyday implementation and debugging default to Terra at medium', () => {
+test('ordinary implementation and debugging default to Luna at max', () => {
   for (const actionKind of ['implement', 'debug']) {
     const policy = resolveCodexModelPolicy({ actionKind });
-    assert.equal(policy.model, CODEX_MODELS.terra);
-    assert.equal(policy.reasoning, 'medium');
+    assert.equal(policy.model, CODEX_MODELS.luna);
+    assert.equal(policy.reasoning, 'max');
     assert.ok(policy.reasons.includes('default-implementation'));
   }
 });
@@ -27,15 +27,14 @@ test('complex implementation and large refactors escalate to Sol high', () => {
   }
 });
 
-test('Luna is reached only by an explicitly routine batch shape', () => {
+test('routine batch uses the same Luna max actor as ordinary work', () => {
   const luna = resolveCodexModelPolicy({ actionKind: 'implement', complexity: 'routine-batch' });
   assert.equal(luna.model, CODEX_MODELS.luna);
-  assert.equal(luna.reasoning, 'low');
-  // Ambiguity must never fall through to the cheapest tier.
-  assert.equal(resolveCodexModelPolicy({ actionKind: 'implement', complexity: 'ambiguous' }).model, CODEX_MODELS.terra);
+  assert.equal(luna.reasoning, 'max');
+  assert.equal(resolveCodexModelPolicy({ actionKind: 'implement', complexity: 'standard' }).model, CODEX_MODELS.luna);
 });
 
-test('max is never selected on the default path', () => {
+test('max is the default implementation effort and explicit requests remain attributable', () => {
   const selections = [
     { actionKind: 'implement' }, { actionKind: 'debug' }, { actionKind: 'plan' },
     { actionKind: 'design' }, { actionKind: 'review_engineering' },
@@ -43,10 +42,7 @@ test('max is never selected on the default path', () => {
     { actionKind: 'implement', repeatedFailure: true },
     { actionKind: 'implement', complexity: 'routine-batch' },
   ].map((input) => resolveCodexModelPolicy(input).reasoning);
-  assert.ok(!selections.includes('max'));
-});
-
-test('an explicit request can reach max and is attributed', () => {
+  assert.ok(selections.includes('max'));
   const policy = resolveCodexModelPolicy({ actionKind: 'implement', userRequested: { reasoning: 'max' } });
   assert.equal(policy.reasoning, 'max');
   assert.ok(policy.reasons.includes('user-requested-reasoning'));

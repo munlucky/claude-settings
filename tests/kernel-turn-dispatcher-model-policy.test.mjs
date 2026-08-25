@@ -9,13 +9,14 @@ import { dispatchKernelTurn, resolveTurnModelPolicy } from '../scripts/host/kern
 import { createModelRegistry } from '../scripts/host/kernel/model-registry.mjs';
 import { createCodexAdapter } from '../scripts/host/kernel/adapters/codex.mjs';
 import { CODEX_MODELS } from '../scripts/host/kernel/codex-model-policy.mjs';
+import { CODEX_MAIN_SESSION_POLICY } from '../scripts/host/kernel/codex-session-observer.mjs';
 
-// Regression for a Codex review finding on PR #19: MOON_RELAY_KERNEL_MODEL_
-// POLICY_MODE=on had no runtime consumer — dispatchKernelTurn only ever
+// Regression for a Codex review finding: the provider-specific model policy
+// switch must reach dispatchKernelTurn instead of only computing a diagnostic.
 // resolved the logical class through the registry, never the Wave 5/6
 // Sol/Terra/Luna or Claude-effort recommendation.
 
-const withRun = async (fn) => {
+const withRun = async (fn, envOverrides = {}) => {
   const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'krn-modelpolicy-home-'));
   const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'krn-modelpolicy-proj-'));
   spawnSync('git', ['init'], { cwd: projectRoot, encoding: 'utf8' });
@@ -26,7 +27,7 @@ const withRun = async (fn) => {
     name: 'x',
     scripts: { test: 'node -e "process.exit(0)"' },
   }));
-  const cp = await createKernelControlPlane({ runtimeHome, projectRoot });
+  const cp = await createKernelControlPlane({ runtimeHome, projectRoot, env: envOverrides });
   try {
     await cp.startRun({ runId: 'r-modelpolicy', objective: 'exercise the model-policy mode switch' });
     return await fn(cp, 'r-modelpolicy');
@@ -37,13 +38,15 @@ const withRun = async (fn) => {
   }
 };
 
-test('resolveTurnModelPolicy recommends Terra/medium for a routine Codex implement turn', () => {
+const stableParentObserver = async ({ parentSessionId }) => ({ sessionId: parentSessionId, model: CODEX_MAIN_SESSION_POLICY.model, effort: CODEX_MAIN_SESSION_POLICY.effort });
+
+test('resolveTurnModelPolicy recommends Luna/max for a standard Codex implement turn', () => {
   const recommendation = resolveTurnModelPolicy({
     decision: { actionKind: 'implement', riskTier: 'T1', reasonCodes: ['ACTION_DEFAULT'] },
     hostCapabilities: { surface: 'codex' },
   });
-  assert.equal(recommendation.model, CODEX_MODELS.terra);
-  assert.equal(recommendation.effort, 'medium');
+  assert.equal(recommendation.model, CODEX_MODELS.luna);
+  assert.equal(recommendation.effort, 'max');
 });
 
 test('resolveTurnModelPolicy recommends a Claude effort with no model override', () => {
@@ -59,16 +62,45 @@ test('an unrecognized surface gets no recommendation', () => {
   assert.equal(resolveTurnModelPolicy({ decision: { actionKind: 'implement', reasonCodes: [] }, hostCapabilities: { surface: 'fable' } }), null);
 });
 
-test('shadow mode (the default) computes the recommendation but does not apply it', async () => {
+test('Codex shadow mode computes the recommendation but does not apply it', async () => {
   await withRun(async (cp, runId) => {
-    const adapter = createCodexAdapter({ launch: async () => ({ resolvedModel: 'host-configured', sessionId: 'codex-session-1' }) });
-    const result = await dispatchKernelTurn({ controlPlane: cp, runId, adapter, registry: createModelRegistry({ surface: 'codex' }) });
+    const adapter = createCodexAdapter({ parentSessionObserver: stableParentObserver, launch: async ({ invocation }) => ({ resolvedModel: 'host-configured', resolvedEffort: invocation.effort, effortObserved: true, sessionId: 'codex-session-1' }) });
+    const result = await dispatchKernelTurn({
+      controlPlane: cp,
+      runId,
+      adapter,
+      parentSessionId: 'codex-parent-session',
+      registry: createModelRegistry({ surface: 'codex' }),
+      env: { MOON_RELAY_KERNEL_CODEX_MODEL_POLICY_MODE: 'shadow' },
+    });
     assert.equal(result.dispatched, true);
-    // No env var configured on the registry, so resolution.model stays
-    // whatever the (unconfigured) registry produced — not the Terra
-    // recommendation — because MOON_RELAY_KERNEL_MODEL_POLICY_MODE defaults
-    // to shadow.
-    assert.notEqual(result.resolution.model, CODEX_MODELS.terra);
+    // The final Codex profile defaults on; explicitly selecting shadow must
+    // leave the registry resolution unchanged.
+    assert.notEqual(result.resolution.model, CODEX_MODELS.luna);
+    assert.equal(result.resolution.model, null);
+    assert.equal(result.resolution.effort, null);
+  });
+});
+
+test('Codex-specific on mode applies Luna/max to the actual dispatch', async () => {
+  await withRun(async (cp, runId) => {
+    let seenResolution = null;
+    const adapter = createCodexAdapter({
+      parentSessionObserver: stableParentObserver,
+      launch: async ({ invocation }) => { seenResolution = invocation; return { resolvedModel: invocation.model, resolvedEffort: invocation.effort, effortObserved: true, sessionId: 'codex-session-default-on' }; },
+    });
+    const result = await dispatchKernelTurn({
+      controlPlane: cp,
+      runId,
+      adapter,
+      parentSessionId: 'codex-parent-session',
+      registry: createModelRegistry({ surface: 'codex' }),
+      env: { MOON_RELAY_KERNEL_CODEX_MODEL_POLICY_MODE: 'on' },
+    });
+    assert.equal(result.resolution.model, CODEX_MODELS.luna);
+    assert.equal(result.resolution.effort, 'max');
+    assert.equal(seenResolution.model, CODEX_MODELS.luna);
+    assert.equal(seenResolution.effort, 'max');
   });
 });
 
@@ -76,20 +108,22 @@ test('MOON_RELAY_KERNEL_MODEL_POLICY_MODE=on applies the recommendation to the a
   await withRun(async (cp, runId) => {
     let seenResolution = null;
     const adapter = createCodexAdapter({
-      launch: async ({ invocation }) => { seenResolution = invocation; return { resolvedModel: invocation.model, sessionId: 'codex-session-2' }; },
+      parentSessionObserver: stableParentObserver,
+      launch: async ({ invocation }) => { seenResolution = invocation; return { resolvedModel: invocation.model, resolvedEffort: invocation.effort, effortObserved: true, sessionId: 'codex-session-2' }; },
     });
     const result = await dispatchKernelTurn({
       controlPlane: cp,
       runId,
       adapter,
+      parentSessionId: 'codex-parent-session',
       registry: createModelRegistry({ surface: 'codex' }),
       env: { MOON_RELAY_KERNEL_MODEL_POLICY_MODE: 'on' },
     });
     assert.equal(result.dispatched, true);
-    assert.equal(result.resolution.model, CODEX_MODELS.terra);
-    assert.equal(result.resolution.effort, 'medium');
+    assert.equal(result.resolution.model, CODEX_MODELS.luna);
+    assert.equal(result.resolution.effort, 'max');
     assert.equal(result.resolution.source, 'model-policy');
-    assert.equal(seenResolution.model, CODEX_MODELS.terra, 'the adapter must dispatch with the applied resolution, not the registry default');
+    assert.equal(seenResolution.model, CODEX_MODELS.luna, 'the adapter must dispatch with the applied resolution, not the registry default');
   });
 });
 
@@ -139,15 +173,17 @@ test('an explicit invocation-override model survives model-policy mode', async (
   await withRun(async (cp, runId) => {
     let seenModel = null;
     const adapter = createCodexAdapter({
-      launch: async ({ invocation }) => { seenModel = invocation.model; return { resolvedModel: invocation.model, sessionId: 'codex-session-4' }; },
+      parentSessionObserver: stableParentObserver,
+      launch: async ({ invocation }) => { seenModel = invocation.model; return { resolvedModel: invocation.model, resolvedEffort: invocation.effort, effortObserved: true, sessionId: 'codex-session-4' }; },
     });
     const result = await dispatchKernelTurn({
       controlPlane: cp,
       runId,
       adapter,
+      parentSessionId: 'codex-parent-session',
       registry: createModelRegistry({ surface: 'codex' }),
       overrides: { value_coding: 'explicit-strong-model' },
-      env: { MOON_RELAY_KERNEL_MODEL_POLICY_MODE: 'on' },
+      env: { MOON_RELAY_KERNEL_CODEX_MODEL_POLICY_MODE: 'on' },
     });
     assert.equal(result.resolution.source, 'invocation-override');
     assert.equal(result.resolution.model, 'explicit-strong-model');
@@ -160,14 +196,15 @@ test('shadow mode still records the model-policy escalation reason on the receip
   // discarding the only receipt-level evidence of the recommendation shadow
   // mode is supposed to let an operator measure before turning it on.
   await withRun(async (cp, runId) => {
-    const adapter = createCodexAdapter({ launch: async () => ({ resolvedModel: 'host-configured', sessionId: 'codex-session-5' }) });
+    const adapter = createCodexAdapter({ parentSessionObserver: stableParentObserver, launch: async ({ invocation }) => ({ resolvedModel: 'host-configured', resolvedEffort: invocation.effort, effortObserved: true, sessionId: 'codex-session-5' }) });
     const result = await dispatchKernelTurn({
       controlPlane: cp,
       runId,
       adapter,
+      parentSessionId: 'codex-parent-session',
       registry: createModelRegistry({ surface: 'codex' }),
       actionContext: { actionKind: 'review_engineering', obligationId: 'security-review' },
-      // No MOON_RELAY_KERNEL_MODEL_POLICY_MODE set: defaults to shadow.
+      env: { MOON_RELAY_KERNEL_CODEX_MODEL_POLICY_MODE: 'shadow' },
     });
     assert.equal(result.receipt.cacheMode, 'shadow');
     assert.notEqual(result.resolution.model, CODEX_MODELS.sol, 'shadow must not apply the recommendation to the actual resolution');
