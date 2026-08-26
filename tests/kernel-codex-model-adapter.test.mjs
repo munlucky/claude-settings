@@ -7,7 +7,7 @@ import { CODEX_CAPABILITIES, buildCodexInvocation, createCodexAdapter, selectCod
 import { resolveModelRoute } from '../scripts/kernel/run/model-routing.mjs';
 import { buildUsageReceipt } from '../scripts/host/kernel/usage-receipt.mjs';
 import { resolveCodexActorRoute } from '../scripts/host/kernel/codex-actor-router.mjs';
-import { CODEX_MAIN_SESSION_POLICY, compareCodexMainSessionInvariance } from '../scripts/host/kernel/codex-session-observer.mjs';
+import { CODEX_MAIN_SESSION_POLICY, compareCodexMainSessionInvariance, buildCodexMainSessionPolicy } from '../scripts/host/kernel/codex-session-observer.mjs';
 
 const decisionFor = (actionKind, riskTier = 'T1') => resolveModelRoute({ runId: 'r-codex', actionKind, riskTier, obligationId: 'default' });
 const resolution = (model) => ({ model, effort: model ? 'high' : null, enforcementIntent: model ? 'enforced' : 'advisory' });
@@ -100,7 +100,7 @@ test('the Codex actor route keeps the parent as an orchestrator and escalates re
   assert.equal(route.nestedDelegationAllowed, false);
 });
 
-test('the main Codex session invariance guard requires Sol/High before and after the run', () => {
+test('the main Codex session invariance guard requires Luna/Max before and after the run', () => {
   const stable = compareCodexMainSessionInvariance({
     expectedSessionId: 'main-session',
     before: { sessionId: 'main-session', model: CODEX_MAIN_SESSION_POLICY.model, effort: CODEX_MAIN_SESSION_POLICY.effort },
@@ -110,7 +110,7 @@ test('the main Codex session invariance guard requires Sol/High before and after
   const changed = compareCodexMainSessionInvariance({
     expectedSessionId: 'main-session',
     before: { sessionId: 'main-session', model: CODEX_MAIN_SESSION_POLICY.model, effort: CODEX_MAIN_SESSION_POLICY.effort },
-    after: { sessionId: 'main-session', model: 'gpt-5.6-luna', effort: 'max' },
+    after: { sessionId: 'main-session', model: 'gpt-5.6-sol', effort: 'high' },
   });
   assert.equal(changed.exact, false);
   assert.equal(changed.reason, 'after-model-mismatch');
@@ -126,8 +126,8 @@ test('a parent session observation mismatch blocks Codex work before the launche
     resolution: resolution('gpt-5.6-luna'),
     parentSessionId: 'main-session',
     parentSessionConfig: {
-      before: { sessionId: 'main-session', model: 'gpt-5.6-luna', effort: 'max' },
-      after: { sessionId: 'main-session', model: 'gpt-5.6-luna', effort: 'max' },
+      before: { sessionId: 'main-session', model: 'gpt-5.6-sol', effort: 'high' },
+      after: { sessionId: 'main-session', model: 'gpt-5.6-sol', effort: 'high' },
     },
     executionContract: {},
   });
@@ -135,6 +135,48 @@ test('a parent session observation mismatch blocks Codex work before the launche
   assert.equal(dispatch.status, 'failed');
   assert.equal(dispatch.errorCode, 'parent-session-invariant-failed');
   assert.match(dispatch.enforcementReason, /model-mismatch/);
+});
+
+test('missing parent model/session telemetry is an actionable unsupported capability, not a missing worker', async () => {
+  let launched = false;
+  const adapter = createCodexAdapter({
+    parentSessionObserver: async () => null,
+    launch: async () => {
+      launched = true;
+      return {};
+    },
+  });
+  const dispatch = await adapter.dispatch({
+    decision: decisionFor('implement'),
+    resolution: { model: 'gpt-5.6-luna', effort: 'max', enforcementIntent: 'enforced' },
+    parentSessionId: 'external-node-parent',
+    executionContract: {},
+  });
+  assert.equal(launched, false);
+  assert.equal(dispatch.status, 'unsupported');
+  assert.equal(dispatch.resultStatus, 'failed');
+  assert.equal(dispatch.enforcementStatus, 'unsupported');
+  assert.equal(dispatch.errorCode, 'codex-host-capability-unsupported');
+  assert.equal(dispatch.outcome, null);
+  assert.equal(dispatch.actorSessionId, null);
+  assert.equal(dispatch.capability.capability, 'parent-session-telemetry');
+  assert.match(dispatch.capability.remediation, /native Codex Host bridge|before\/after parent session observations/);
+});
+
+test('a parent policy with incomplete telemetry is unsupported while a complete mismatch remains a failure', () => {
+  const missing = buildCodexMainSessionPolicy({
+    parentSessionId: 'main-session',
+    observed: { sessionId: 'main-session', model: CODEX_MAIN_SESSION_POLICY.model },
+  });
+  assert.equal(missing.observationStatus, 'unsupported');
+  assert.equal(missing.capability.reason, 'parent-session-effort-telemetry-missing');
+
+  const mismatch = buildCodexMainSessionPolicy({
+    parentSessionId: 'main-session',
+    observed: { sessionId: 'other-session', model: CODEX_MAIN_SESSION_POLICY.model, effort: CODEX_MAIN_SESSION_POLICY.effort },
+  });
+  assert.equal(mismatch.observationStatus, 'failed');
+  assert.equal(mismatch.capability, null);
 });
 
 test('the production native launcher sends explicit model and effort and observes parent invariance around the child', async () => {
@@ -228,8 +270,8 @@ test('a parent model change observed after child execution fails the whole dispa
       phase = currentPhase;
       return {
         sessionId: parentSessionId,
-        model: currentPhase === 'before' ? CODEX_MAIN_SESSION_POLICY.model : 'gpt-5.6-luna',
-        effort: currentPhase === 'before' ? CODEX_MAIN_SESSION_POLICY.effort : 'max',
+        model: currentPhase === 'before' ? CODEX_MAIN_SESSION_POLICY.model : 'gpt-5.6-sol',
+        effort: currentPhase === 'before' ? CODEX_MAIN_SESSION_POLICY.effort : 'high',
       };
     },
     launch: async ({ invocation }) => {

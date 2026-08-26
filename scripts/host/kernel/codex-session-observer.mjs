@@ -1,10 +1,15 @@
 // Codex Host session telemetry. Requested model/effort are configuration;
-// only terminal events or the matching persisted Codex rollout are evidence of
-// what actually ran. Missing observations stay null and never echo a request.
+// only terminal events or the matching persisted Codex rollout settings are
+// evidence of what actually ran. Missing observations stay null and never echo
+// a request.
 
 const MODEL_KEYS = Object.freeze(['model', 'model_id', 'modelId', 'model_slug', 'modelSlug']);
 const EFFORT_KEYS = Object.freeze(['effort', 'reasoning_effort', 'reasoningEffort', 'model_reasoning_effort']);
 const TERMINAL_EVENT_TYPES = new Set(['turn.completed', 'response.completed', 'turn_context']);
+const isThreadSettingsAppliedEvent = (event) => event?.type === 'event_msg'
+  && event?.payload?.type === 'thread_settings_applied'
+  && event?.payload?.thread_settings
+  && typeof event.payload.thread_settings === 'object';
 
 const nestedObjects = (value) => [
   value,
@@ -12,6 +17,8 @@ const nestedObjects = (value) => [
   value?.turn,
   value?.metadata,
   value?.payload,
+  value?.thread_settings,
+  value?.payload?.thread_settings,
 ].filter((entry) => entry && typeof entry === 'object');
 
 const firstText = (objects, keys) => {
@@ -30,21 +37,29 @@ const normalizeEffort = (value) => {
 };
 
 // The main Codex session is a Host invariant, not a Kernel model enum. The
-// parent is the Sol/High orchestrator for the whole run; concrete model and
+// parent is the Luna/Max orchestrator for the whole run; concrete model and
 // effort choices belong only to child worker invocations.
 export const CODEX_MAIN_SESSION_POLICY = Object.freeze({
   role: 'orchestrator',
-  model: 'gpt-5.6-sol',
-  effort: 'high',
+  model: 'gpt-5.6-luna',
+  effort: 'max',
   parentMayImplement: false,
   nestedDelegationAllowed: false,
 });
+
+// These are Host capabilities, not model-routing outcomes. A missing parent
+// observation means that this process cannot prove the session boundary; it
+// is actionable unsupported capability, whereas an observed mismatch is a
+// hard invariant failure.
+export const CODEX_HOST_UNSUPPORTED_CAPABILITY = 'codex-host-capability-unsupported';
+export const CODEX_PARENT_SESSION_TELEMETRY_CAPABILITY = 'parent-session-telemetry';
+export const CODEX_PARENT_SESSION_REMEDIATION = 'Run through a native Codex Host bridge or provide trusted before/after parent session observations.';
 
 export const resolveObservedCodexSessionConfig = (events = []) => {
   let model = null;
   let effort = null;
   for (const event of [...events].reverse()) {
-    if (!TERMINAL_EVENT_TYPES.has(event?.type)) continue;
+    if (!TERMINAL_EVENT_TYPES.has(event?.type) && !isThreadSettingsAppliedEvent(event)) continue;
     const objects = nestedObjects(event);
     model ||= firstText(objects, MODEL_KEYS);
     effort ||= normalizeEffort(firstText(objects, EFFORT_KEYS));
@@ -118,6 +133,20 @@ export const compareCodexMainSessionInvariance = ({ expectedSessionId = null, be
   });
 };
 
+const comparisonEntries = (comparison) => comparison?.before && comparison?.after
+  ? [comparison.before, comparison.after]
+  : comparison ? [comparison] : [];
+
+const missingParentTelemetryReason = ({ parentSessionId, comparison } = {}) => {
+  if (!parentSessionId) return 'parent-session-id-missing';
+  const entries = comparisonEntries(comparison);
+  if (entries.length === 0) return 'parent-session-telemetry-missing';
+  if (entries.some((entry) => !entry?.observedSessionId)) return 'parent-session-id-telemetry-missing';
+  if (entries.some((entry) => !entry?.observedModel)) return 'parent-session-model-telemetry-missing';
+  if (entries.some((entry) => !entry?.observedEffort)) return 'parent-session-effort-telemetry-missing';
+  return null;
+};
+
 // This is deliberately explicit about an unobserved parent. A policy
 // declaration is not telemetry: callers may only call the parent `declared`
 // until a Host supplies a before/after observation. When supplied, a mismatch
@@ -129,9 +158,12 @@ export const buildCodexMainSessionPolicy = ({ parentSessionId = null, observed =
       ? compareCodexMainSessionConfig({ expectedSessionId: parentSessionId, observed })
     : null;
   const current = comparison?.after || comparison;
+  const capabilityReason = missingParentTelemetryReason({ parentSessionId, comparison });
   const observationStatus = comparison
-    ? (comparison.exact ? (observed?.before && observed?.after ? 'enforced' : 'observed') : 'failed')
-    : (parentSessionId ? 'declared' : 'unbound');
+    ? (comparison.exact
+      ? (observed?.before && observed?.after ? 'enforced' : 'observed')
+      : capabilityReason ? 'unsupported' : 'failed')
+    : (parentSessionId ? 'declared' : 'unsupported');
   return Object.freeze({
     ...CODEX_MAIN_SESSION_POLICY,
     sessionId: parentSessionId ? String(parentSessionId) : null,
@@ -139,8 +171,19 @@ export const buildCodexMainSessionPolicy = ({ parentSessionId = null, observed =
     observedEffort: current?.observedEffort || null,
     observedSessionId: current?.observedSessionId || null,
     observationStatus,
-    observationReason: comparison?.reason || (parentSessionId ? 'parent-session-observation-missing' : 'parent-session-missing'),
+    observationReason: comparison?.reason || capabilityReason,
+    capability: capabilityReason
+      ? Object.freeze({
+        type: 'unsupported-capability',
+        code: CODEX_HOST_UNSUPPORTED_CAPABILITY,
+        capability: CODEX_PARENT_SESSION_TELEMETRY_CAPABILITY,
+        reason: capabilityReason,
+        remediation: CODEX_PARENT_SESSION_REMEDIATION,
+      })
+      : null,
   });
 };
+
+export const isCodexCapabilityUnavailable = (policy = {}) => policy.observationStatus === 'unsupported';
 
 export const resolveObservedCodexSessionConfigFromEvents = resolveObservedCodexSessionConfig;

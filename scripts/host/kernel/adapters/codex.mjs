@@ -8,6 +8,10 @@ import { resolveCodexActorRoute } from '../codex-actor-router.mjs';
 import {
   buildCodexMainSessionPolicy,
   compareCodexSessionConfig,
+  CODEX_HOST_UNSUPPORTED_CAPABILITY,
+  CODEX_PARENT_SESSION_REMEDIATION,
+  CODEX_PARENT_SESSION_TELEMETRY_CAPABILITY,
+  isCodexCapabilityUnavailable,
   resolveObservedCodexSessionConfig as resolveObservedCodexSessionConfigFromEvents,
 } from '../codex-session-observer.mjs';
 import {
@@ -107,6 +111,71 @@ const defaultParentSessionObserver = async ({ parentSessionId, environment = nul
   return normalizeParentObservation(observed, parentSessionId);
 };
 
+const buildUnsupportedCapability = ({ capability, reason, remediation = CODEX_PARENT_SESSION_REMEDIATION } = {}) => Object.freeze({
+  type: 'unsupported-capability',
+  code: CODEX_HOST_UNSUPPORTED_CAPABILITY,
+  capability,
+  reason,
+  remediation,
+});
+
+const buildUnsupportedDispatch = ({
+  invocation,
+  parentSessionId = null,
+  parentSessionPolicy = null,
+  actorRole = null,
+  sessionPolicy = null,
+  dispatchMechanism = 'capability-guard',
+  capability,
+  reason,
+  remediation = CODEX_PARENT_SESSION_REMEDIATION,
+  fallbackReason = null,
+} = {}) => {
+  const unsupportedCapability = buildUnsupportedCapability({ capability, reason, remediation });
+  return {
+    status: 'unsupported',
+    // `completed` is reserved for a worker outcome. Unsupported capability
+    // is a terminal Host refusal, so receipts cannot mistake it for worker
+    // completion even though the dispatch call itself returned normally.
+    resultStatus: 'failed',
+    resolvedModel: null,
+    resolvedEffort: null,
+    requestedModel: invocation?.model || null,
+    requestedEffort: invocation?.effort || null,
+    observedModel: null,
+    observedEffort: null,
+    dispatchMechanism,
+    actorRole,
+    sessionPolicy,
+    parentSessionPolicy,
+    enforcementStatus: 'unsupported',
+    enforcementReason: reason,
+    fallbackReason,
+    errorCode: CODEX_HOST_UNSUPPORTED_CAPABILITY,
+    errorSummary: `${capability} is unavailable: ${reason}. ${remediation}`,
+    capability: unsupportedCapability,
+    unsupportedCapability,
+    actorSessionId: null,
+    outcome: null,
+    report: null,
+    parentSessionId: parentSessionId || null,
+    invocation,
+  };
+};
+
+const WORKER_TELEMETRY_MISSING_REASONS = new Set([
+  'model-observation-missing',
+  'effort-observation-missing',
+  'worker-session-observation-missing',
+  'parent-session-missing',
+]);
+
+const isWorkerTelemetryUnavailable = ({ actualLauncher, identityRequired, observation, lineageReason } = {}) => Boolean(
+  actualLauncher
+  && (WORKER_TELEMETRY_MISSING_REASONS.has(observation?.reason) || WORKER_TELEMETRY_MISSING_REASONS.has(lineageReason))
+  && (identityRequired || Boolean(lineageReason)),
+);
+
 export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeAgentHost = globalThis, cliLaunch = null, parentSessionObserver = null, defaultParentSessionConfig = null, projectRoot = null, images = [], timeoutMs = 600_000, executable = null, spawnImpl = undefined, capabilities = {}, runtimeHome = null, env = process.env } = {}) => {
   const automaticNativeLaunch = nativeLaunch === null ? createCodexNativeAgentLauncher({ host: nativeAgentHost }) : null;
   const effectiveNativeLaunch = nativeLaunch || automaticNativeLaunch;
@@ -131,7 +200,14 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
       // Keep the no-launcher surface honest instead of returning a synthetic
       // completed result for `host-default`.
       if (!nativeAvailable && !effectiveCliLaunch && !launch) {
-        return { status: 'unsupported', resultStatus: 'completed', invocation };
+        return buildUnsupportedDispatch({
+          invocation,
+          parentSessionId,
+          dispatchMechanism: 'capability-guard',
+          capability: 'bounded-child-worker-launcher',
+          reason: 'worker-launcher-missing',
+          remediation: 'Provide a native Codex Host bridge or an explicit bounded CLI worker launcher.',
+        });
       }
       if (runtimeHome && !profilesMaterialized) {
         profilesMaterialized = materializeCodexProfiles({ runtimeHome, env });
@@ -155,7 +231,7 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
         }
       };
       const parentBefore = await observeParent('before');
-      const parentBeforePolicy = buildCodexMainSessionPolicy({ parentSessionId, observed: parentBefore });
+      const parentBeforePolicy = buildCodexMainSessionPolicy({ parentSessionId, observed: parentBefore || {} });
       const actorRoute = resolveCodexActorRoute({
         decision,
         invocation,
@@ -165,10 +241,25 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
         parentSessionId,
         parentSessionConfig,
       });
-      if (actorRoute.parentSessionPolicy.observationStatus === 'failed' || !['observed', 'enforced'].includes(parentBeforePolicy.observationStatus)) {
+      const routeParentCapabilityUnavailable = isCodexCapabilityUnavailable(actorRoute.parentSessionPolicy);
+      const parentBeforeCapabilityUnavailable = isCodexCapabilityUnavailable(parentBeforePolicy);
+      if (routeParentCapabilityUnavailable || parentBeforeCapabilityUnavailable || actorRoute.parentSessionPolicy.observationStatus === 'failed' || !['observed', 'enforced'].includes(parentBeforePolicy.observationStatus)) {
         const parentSessionPolicy = actorRoute.parentSessionPolicy.observationStatus === 'failed'
           ? actorRoute.parentSessionPolicy
           : parentBeforePolicy;
+        if (isCodexCapabilityUnavailable(parentSessionPolicy)) {
+          return buildUnsupportedDispatch({
+            invocation,
+            parentSessionId,
+            parentSessionPolicy,
+            actorRole: actorRoute.role,
+            sessionPolicy: actorRoute.sessionPolicy,
+            dispatchMechanism: 'parent-session-guard',
+            capability: parentSessionPolicy.capability?.capability || CODEX_PARENT_SESSION_TELEMETRY_CAPABILITY,
+            reason: parentSessionPolicy.capability?.reason || parentSessionPolicy.observationReason,
+            remediation: parentSessionPolicy.capability?.remediation || CODEX_PARENT_SESSION_REMEDIATION,
+          });
+        }
         return {
           status: 'failed',
           resultStatus: 'failed',
@@ -191,7 +282,7 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
       }
       // A snapshot is enough to prove the parent before launch, but it is not
       // the final invariant. The after snapshot below must match the same
-      // Sol/High session before this dispatch can be reported as successful.
+      // Luna/Max session before this dispatch can be reported as successful.
       const parentSessionPolicyBefore = parentBeforePolicy;
       const invoke = async (selectedLaunch, dispatchMechanism, fallbackReason = null) => {
         if (!selectedLaunch) return { result: {}, dispatchMechanism, fallbackReason };
@@ -307,13 +398,31 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
       const parentAfter = await observeParent('after');
       const parentSessionPolicy = buildCodexMainSessionPolicy({
         parentSessionId,
-        observed: { before: parentBefore, after: parentAfter },
+        observed: { before: parentBefore || {}, after: parentAfter || {} },
       });
+      const parentCapabilityUnavailable = isCodexCapabilityUnavailable(parentSessionPolicy);
       const parentInvariantFailed = parentSessionPolicy.observationStatus !== 'enforced';
+      const workerCapabilityUnavailable = isWorkerTelemetryUnavailable({
+        actualLauncher,
+        identityRequired,
+        observation,
+        lineageReason: observedResult.lineageReason,
+      });
+      const capabilityUnavailable = parentCapabilityUnavailable || workerCapabilityUnavailable;
       const failedByEnforcement = dispatchMismatch() || parentInvariantFailed;
+      const unsupportedReason = parentCapabilityUnavailable
+        ? parentSessionPolicy.capability?.reason || parentSessionPolicy.observationReason
+        : workerCapabilityUnavailable
+          ? observation.reason || observedResult.lineageReason
+          : null;
+      const unsupportedCapability = parentCapabilityUnavailable
+        ? parentSessionPolicy.capability?.capability || CODEX_PARENT_SESSION_TELEMETRY_CAPABILITY
+        : workerCapabilityUnavailable ? 'worker-session-telemetry' : null;
+      const completionOutcome = capabilityUnavailable ? null : (result.outcome ?? null);
+      const completionReport = capabilityUnavailable ? null : (result.report ?? null);
       return {
-        status: failedByEnforcement ? 'failed' : (result.status || 'completed'),
-        resultStatus: failedByEnforcement ? 'failed' : (result.resultStatus || (result.status === 'failed' ? 'failed' : 'completed')),
+        status: capabilityUnavailable ? 'unsupported' : failedByEnforcement ? 'failed' : (result.status || 'completed'),
+        resultStatus: capabilityUnavailable ? 'failed' : failedByEnforcement ? 'failed' : (result.resultStatus || (result.status === 'failed' ? 'failed' : 'completed')),
         // Codex reports no usage tokens today; they stay unavailable rather
         // than being invented as zeros.
         resolvedModel,
@@ -326,21 +435,42 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
         actorRole: actorRoute.role,
         sessionPolicy: actorRoute.sessionPolicy,
         parentSessionPolicy,
-        enforcementStatus: failedByEnforcement ? 'failed' : (actualLauncher && identityRequired ? 'enforced' : null),
-        enforcementReason: failedByEnforcement
+        enforcementStatus: capabilityUnavailable ? 'unsupported' : failedByEnforcement ? 'failed' : (actualLauncher && identityRequired ? 'enforced' : null),
+        enforcementReason: capabilityUnavailable
+          ? unsupportedReason
+          : failedByEnforcement
           ? (parentInvariantFailed ? `parent-session-invariant-${parentSessionPolicy.observationReason}` : observation.reason)
           : null,
         fallbackReason,
-        errorCode: parentInvariantFailed
+        errorCode: capabilityUnavailable
+          ? CODEX_HOST_UNSUPPORTED_CAPABILITY
+          : parentInvariantFailed
           ? 'parent-session-invariant-failed'
           : failedByEnforcement ? 'model-enforcement-failed' : (result.errorCode ?? null),
+        errorSummary: capabilityUnavailable
+          ? `${unsupportedCapability} is unavailable: ${unsupportedReason}. ${parentSessionPolicy.capability?.remediation || CODEX_PARENT_SESSION_REMEDIATION}`
+          : result.errorSummary ?? null,
+        capability: capabilityUnavailable
+          ? buildUnsupportedCapability({
+            capability: unsupportedCapability,
+            reason: unsupportedReason,
+            remediation: parentSessionPolicy.capability?.remediation || CODEX_PARENT_SESSION_REMEDIATION,
+          })
+          : null,
+        unsupportedCapability: capabilityUnavailable
+          ? buildUnsupportedCapability({
+            capability: unsupportedCapability,
+            reason: unsupportedReason,
+            remediation: parentSessionPolicy.capability?.remediation || CODEX_PARENT_SESSION_REMEDIATION,
+          })
+          : null,
         actorSessionId: result.sessionId || null,
         wallClockMs: result.wallClockMs ?? null,
         inputTokens: result.inputTokens ?? null,
         cachedInputTokens: result.cachedInputTokens ?? null,
         outputTokens: result.outputTokens ?? null,
-        outcome: result.outcome ?? null,
-        report: result.report ?? null,
+        outcome: completionOutcome,
+        report: completionReport,
         // Only forwarded when the Host observed them; the receipt gates these
         // on the declared capability regardless.
         cacheReadInputTokens: result.cacheReadInputTokens ?? null,

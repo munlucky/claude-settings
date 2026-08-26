@@ -86,13 +86,11 @@ export const resolveObservedCodexSessionConfig = async ({ threadId, env = proces
       const sessionId = event?.payload?.session_id ?? event?.payload?.id;
       identityMatched = sessionId === threadId;
     }
-    if (event?.type === 'turn_context' || event?.type === 'turn.completed' || event?.type === 'response.completed') {
-      const current = resolveObservedCodexSessionConfigFromEvents([event]);
-      observed = {
-        model: current.model || observed.model,
-        effort: current.effort || observed.effort,
-      };
-    }
+    const current = resolveObservedCodexSessionConfigFromEvents([event]);
+    observed = {
+      model: current.model || observed.model,
+      effort: current.effort || observed.effort,
+    };
   }
   return identityMatched ? Object.freeze(observed) : null;
 };
@@ -130,9 +128,48 @@ export const CODEX_WORKER_OUTPUT_SCHEMA = Object.freeze({
     summary: { type: 'string' },
     changedPaths: { type: 'array', items: { type: 'string' } },
     risks: { type: 'array', items: { type: 'string' } },
+    verifications: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          obligationId: { type: 'string' },
+          commandRef: { type: 'string' },
+          acceptanceCoverage: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['obligationId', 'commandRef', 'acceptanceCoverage'],
+        additionalProperties: false,
+      },
+    },
     requestedVerifications: { type: 'array', items: { type: 'string' } },
-    judgments: { type: 'array', items: { type: 'object' } },
-    knowledgeObservations: { type: 'array', items: { type: 'object' } },
+    judgments: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          obligationId: { type: 'string' },
+          verdict: { type: 'string', enum: ['pass', 'fail'] },
+          reviewReceiptId: { type: ['string', 'null'] },
+          acceptanceCoverage: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['obligationId', 'verdict', 'reviewReceiptId', 'acceptanceCoverage'],
+        additionalProperties: false,
+      },
+    },
+    knowledgeObservations: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          proposedType: { type: 'string' },
+          statement: { type: 'string' },
+          scope: { type: 'array', items: { type: 'string' } },
+          evidenceRefs: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['proposedType', 'statement', 'scope', 'evidenceRefs'],
+        additionalProperties: false,
+      },
+    },
     blocker: { type: ['string', 'null'] },
   },
   required: ['status', 'summary', 'changedPaths', 'risks', 'requestedVerifications', 'judgments', 'knowledgeObservations', 'blocker'],
@@ -144,6 +181,7 @@ const workerPrompt = ({ executionContract, executionCapsule }) => [
   'You are a child actor assigned by the Host. Do not invoke Kernel next/report commands, do not delegate to another agent, and do not claim completion authority.',
   'Use only the supplied execution contract and capsule. Apply the requested workspace changes when the permissions allow them.',
   'Return only the JSON object required by the supplied output schema. Include every verification, risk, judgment, and reusable knowledge observation needed by the parent orchestrator.',
+  'Report verification requests in the structured verifications array. Copy the exact obligationId, one exact commandRef from allowedCommandRefs, and exact acceptance IDs from acceptanceIds in WORKER CAPSULE.verification.obligations. Never invent, rename, infer, or substitute these IDs. When using structured verifications, set legacy requestedVerifications to [].',
   '',
   'EXECUTION CONTRACT',
   JSON.stringify(executionContract || {}, null, 2),

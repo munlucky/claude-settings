@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
-import { createCodexCliReviewLauncher, createCodexCliWorkerLauncher, resolveObservedCodexModel, resolveObservedCodexSessionModel, runCodexReviewProcess } from '../scripts/host/kernel/codex-cli-launcher.mjs';
+import { CODEX_WORKER_OUTPUT_SCHEMA, createCodexCliReviewLauncher, createCodexCliWorkerLauncher, resolveObservedCodexModel, resolveObservedCodexSessionModel, runCodexReviewProcess } from '../scripts/host/kernel/codex-cli-launcher.mjs';
 import { normalizeCodexWorkerReport, runCodexIndependentReview, runCodexKernelWorker } from '../scripts/host/kernel/codex-review-host.mjs';
 import { CODEX_MAIN_SESSION_POLICY } from '../scripts/host/kernel/codex-session-observer.mjs';
 
@@ -94,6 +94,29 @@ test('the production Codex worker Host dispatches an ordinary child and reports 
   }
 });
 
+test('an external Node Host returns typed unsupported capability when parent telemetry is unavailable', async () => {
+  await withOwnerRun(async ({ controlPlane, runId, projectRoot, runtimeHome, owner, env }) => {
+    const result = await runCodexKernelWorker({
+      controlPlane,
+      runId,
+      projectRoot,
+      runtimeHome,
+      parentSessionId: owner,
+      env,
+      actionKind: 'implement',
+    });
+    assert.equal(result.status, 'unsupported');
+    assert.equal(result.errorCode, 'codex-host-capability-unsupported');
+    assert.equal(result.worker.status, 'unsupported');
+    assert.equal(result.worker.resultStatus, 'failed');
+    assert.equal(result.worker.enforcementStatus, 'unsupported');
+    assert.equal(result.worker.outcome, null);
+    assert.equal(result.report, null);
+    assert.equal(result.dispatched.receipt.enforcementStatus, 'unsupported');
+    assert.equal(result.dispatched.receipt.resultStatus, 'failed');
+  }, 'external-node-capability');
+});
+
 test('the Codex worker Host maps worker verification requests and blockers into Kernel report fields', () => {
   assert.deepEqual(normalizeCodexWorkerReport({
     status: 'completed',
@@ -101,11 +124,115 @@ test('the Codex worker Host maps worker verification requests and blockers into 
     blocker: null,
   }).verifications, [{ commandRef: 'test:routing' }]);
   assert.deepEqual(normalizeCodexWorkerReport({
+    status: 'completed',
+    verifications: [],
+    requestedVerifications: ['legacy-only'],
+    blocker: null,
+  }).verifications, []);
+  assert.deepEqual(normalizeCodexWorkerReport({
     status: 'blocked',
     requestedVerifications: [],
     blocker: 'unsupported-verification',
   }).blocker, { reason: 'unsupported-verification', detail: 'unsupported-verification' });
   assert.equal(normalizeCodexWorkerReport({ status: 'failed', blocker: null }).blocker.reason, 'external-dependency');
+});
+
+test('the Codex worker output schema closes structured verification bindings while retaining legacy refs', () => {
+  const structured = CODEX_WORKER_OUTPUT_SCHEMA.properties.verifications;
+  assert.equal(structured.type, 'array');
+  assert.deepEqual(structured.items.required, ['obligationId', 'commandRef', 'acceptanceCoverage']);
+  assert.equal(structured.items.additionalProperties, false);
+  assert.deepEqual(structured.items.properties, {
+    obligationId: { type: 'string' },
+    commandRef: { type: 'string' },
+    acceptanceCoverage: { type: 'array', items: { type: 'string' } },
+  });
+  assert.deepEqual(CODEX_WORKER_OUTPUT_SCHEMA.properties.requestedVerifications, { type: 'array', items: { type: 'string' } });
+  assert.ok(CODEX_WORKER_OUTPUT_SCHEMA.required.includes('requestedVerifications'));
+});
+
+test('the Codex worker Host preserves structured obligation and acceptance bindings and rejects incomplete entries', () => {
+  const verifications = [
+    {
+      obligationId: 'unit-test',
+      commandRef: 'test:kernel:codex-review',
+      acceptanceCoverage: ['AC-1', 'AC-2', 'AC-3', 'AC-4'],
+    },
+    {
+      obligationId: 'static-analysis',
+      commandRef: 'lint:kernel',
+      acceptanceCoverage: ['AC-5'],
+    },
+  ];
+  assert.deepEqual(normalizeCodexWorkerReport({
+    status: 'completed',
+    verifications,
+    requestedVerifications: ['legacy-command-must-not-win'],
+    blocker: null,
+  }).verifications, verifications);
+  assert.throws(() => normalizeCodexWorkerReport({
+    status: 'completed',
+    verifications: [{ commandRef: 'lint:kernel', acceptanceCoverage: ['AC-5'] }],
+  }), /obligationId/);
+  assert.throws(() => normalizeCodexWorkerReport({
+    status: 'completed',
+    verifications: [{ obligationId: 'static-analysis', commandRef: 'lint:kernel' }],
+  }), /acceptanceCoverage/);
+});
+
+test('the Codex worker Host forwards structured verification bindings unchanged to the Kernel report boundary', async () => {
+  await withOwnerRun(async ({ controlPlane, runId, projectRoot, runtimeHome, owner, env }) => {
+    const forwarded = [];
+    controlPlane.report = async (_runId, payload) => {
+      forwarded.push(payload);
+      return { status: 'in-progress', runId: _runId };
+    };
+    const verifications = [
+      {
+        obligationId: 'unit-test',
+        commandRef: 'test:kernel:codex-review',
+        acceptanceCoverage: ['AC-1', 'AC-2', 'AC-3', 'AC-4'],
+      },
+      {
+        obligationId: 'static-analysis',
+        commandRef: 'lint:kernel',
+        acceptanceCoverage: ['AC-5'],
+      },
+    ];
+    const result = await runCodexKernelWorker({
+      controlPlane,
+      runId,
+      projectRoot,
+      runtimeHome,
+      parentSessionId: owner,
+      parentSessionObserver: stableParentObserver,
+      env,
+      cliLaunch: async ({ invocation }) => ({
+        status: 'completed',
+        resolvedModel: invocation.model,
+        resolvedEffort: invocation.effort,
+        observedModel: invocation.model,
+        observedEffort: invocation.effort,
+        observedSessionConfig: { model: invocation.model, effort: invocation.effort },
+        sessionId: 'codex:structured-child',
+        outcome: {
+          status: 'completed',
+          summary: 'structured child completed',
+          changedPaths: [],
+          risks: [],
+          verifications,
+          requestedVerifications: [],
+          judgments: [],
+          knowledgeObservations: [],
+          blocker: null,
+        },
+      }),
+    });
+    assert.equal(result.report.status, 'in-progress');
+    assert.equal(forwarded.length, 1);
+    assert.deepEqual(forwarded[0].verifications, verifications);
+    assert.deepEqual(forwarded[0].requestedVerifications, []);
+  }, 'structured-forwarding');
 });
 
 test('Codex CLI launcher enforces an explicit model, fresh session, read-only sandbox, and structured output', async () => {

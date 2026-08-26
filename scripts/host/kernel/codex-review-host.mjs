@@ -13,6 +13,32 @@ const KERNEL_BLOCK_REASONS = new Set([
   'network-policy',
 ]);
 
+const unsupportedHostResult = ({ runId, dispatched, kind } = {}) => {
+  const dispatch = dispatched?.dispatch || {};
+  const capability = dispatch.unsupportedCapability || dispatch.capability || null;
+  return {
+    schemaVersion: 1,
+    runId,
+    status: 'unsupported',
+    errorCode: dispatch.errorCode || 'codex-host-capability-unsupported',
+    errorSummary: dispatch.errorSummary || `${kind} Host capability is unavailable`,
+    capability,
+    dispatched,
+    ...(kind === 'review' ? { review: null } : { worker: dispatch, report: null }),
+  };
+};
+
+const unsupportedReviewError = (dispatched) => {
+  const dispatch = dispatched?.dispatch || {};
+  const error = new Error(`incomplete_review_chain: ${dispatch.errorSummary || 'Codex review Host capability is unavailable'}`);
+  error.code = dispatch.errorCode || 'codex-host-capability-unsupported';
+  error.details = {
+    capability: dispatch.unsupportedCapability || dispatch.capability || null,
+    dispatched,
+  };
+  return error;
+};
+
 // The worker contract deliberately speaks in worker terms. The Kernel report
 // contract speaks in trusted command requests and typed blockers. Translate at
 // this Host boundary so neither side silently drops requested proof or a child
@@ -23,6 +49,29 @@ export const normalizeCodexWorkerReport = (workerReport = {}) => {
       .filter((commandRef) => typeof commandRef === 'string' && commandRef.trim())
       .map((commandRef) => ({ commandRef: commandRef.trim() }))
     : [];
+  const hasStructuredVerifications = Object.prototype.hasOwnProperty.call(workerReport, 'verifications');
+  let structuredVerifications = null;
+  if (hasStructuredVerifications) {
+    if (!Array.isArray(workerReport.verifications)) {
+      throw new Error('codex_worker_report_invalid: verifications must be an array');
+    }
+    structuredVerifications = workerReport.verifications.map((verification, index) => {
+      if (!verification || typeof verification !== 'object' || Array.isArray(verification)) {
+        throw new Error(`codex_worker_report_invalid: verifications[${index}] must be an object`);
+      }
+      if (typeof verification.obligationId !== 'string' || !verification.obligationId.trim()) {
+        throw new Error(`codex_worker_report_invalid: verifications[${index}].obligationId must be a non-empty string`);
+      }
+      if (typeof verification.commandRef !== 'string' || !verification.commandRef.trim()) {
+        throw new Error(`codex_worker_report_invalid: verifications[${index}].commandRef must be a non-empty string`);
+      }
+      if (!Array.isArray(verification.acceptanceCoverage)
+        || verification.acceptanceCoverage.some((acceptanceId) => typeof acceptanceId !== 'string' || !acceptanceId.trim())) {
+        throw new Error(`codex_worker_report_invalid: verifications[${index}].acceptanceCoverage must be an array of non-empty strings`);
+      }
+      return verification;
+    });
+  }
   const rawBlocker = workerReport.blocker;
   const typedBlocker = rawBlocker && typeof rawBlocker === 'object'
     ? rawBlocker
@@ -39,9 +88,7 @@ export const normalizeCodexWorkerReport = (workerReport = {}) => {
         : null;
   return {
     ...workerReport,
-    verifications: Array.isArray(workerReport.verifications) && workerReport.verifications.length > 0
-      ? workerReport.verifications
-      : requestedVerifications,
+    verifications: structuredVerifications || requestedVerifications,
     blocker: typedBlocker,
   };
 };
@@ -91,6 +138,9 @@ export const runCodexIndependentReview = async ({
     actionContext: { actionKind: 'review_engineering', obligationId, changedPaths },
   });
   if (!dispatched.dispatched || !dispatched.receipt || !dispatched.dispatch?.outcome) {
+    if (dispatched.dispatch?.status === 'unsupported' || dispatched.dispatch?.enforcementStatus === 'unsupported') {
+      throw unsupportedReviewError(dispatched);
+    }
     throw new Error(`codex_review_not_dispatched: ${dispatched.reason || dispatched.dispatch?.errorSummary || 'missing outcome'}`);
   }
   const outcome = {
@@ -165,6 +215,9 @@ export const runCodexKernelWorker = async ({
     actionContext: { actionKind, obligationId, complexity, workProfile },
   });
   if (!dispatched.dispatched || !dispatched.dispatch?.outcome) {
+    if (dispatched.dispatch?.status === 'unsupported' || dispatched.dispatch?.enforcementStatus === 'unsupported') {
+      return unsupportedHostResult({ runId, dispatched, kind: 'worker' });
+    }
     throw new Error(`codex_worker_not_dispatched: ${dispatched.reason || dispatched.dispatch?.errorSummary || 'missing outcome'}`);
   }
   const workerReport = dispatched.report || dispatched.dispatch.report || dispatched.dispatch.outcome;
