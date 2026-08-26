@@ -104,6 +104,9 @@ export const runCodexIndependentReview = async ({
   effort = null,
   images = [],
   launch = null,
+  nativeLaunch = null,
+  nativeAgentHost = globalThis,
+  cliLaunch = null,
   parentSessionConfig = null,
   parentSessionObserver = null,
   env = process.env,
@@ -113,9 +116,22 @@ export const runCodexIndependentReview = async ({
   }
   const proofTier = controlPlane.stateStore?.getRun?.(runId)?.proofTier || 'T1';
   const resolvedEffort = effort || (proofTier === 'T3' ? 'xhigh' : 'high');
-  const launcher = launch || createCodexCliReviewLauncher({ projectRoot, images, env });
+  // A review may run through the Host's bounded native sub-agent bridge. Keep
+  // the explicit `launch` seam for older callers, but make the review CLI a
+  // named fallback so a native child can fail over without changing the
+  // read-only output contract. Both paths still pass through the same Kernel
+  // route, capsule, admission, usage receipt, and outcome-ingest chain below.
+  const launcher = launch || null;
+  const reviewCliLaunch = cliLaunch || (!launch
+    ? createCodexCliReviewLauncher({ projectRoot, images, env })
+    : null);
   const adapter = createCodexAdapter({
     launch: launcher,
+    nativeLaunch,
+    nativeAgentHost,
+    cliLaunch: reviewCliLaunch,
+    projectRoot,
+    images,
     runtimeHome,
     env,
     defaultParentSessionConfig: parentSessionConfig,

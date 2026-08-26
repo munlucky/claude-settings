@@ -540,6 +540,53 @@ test('Codex review Host records a complete routed receipt from a distinct read-o
   }, 'pass');
 });
 
+test('Codex review Host uses a bounded native sub-agent and keeps the Kernel receipt chain', async () => {
+  await withOwnerRun(async ({ controlPlane, runId, projectRoot, runtimeHome, owner, env }) => {
+    let request = null;
+    const result = await runCodexIndependentReview({
+      controlPlane,
+      runId,
+      projectRoot,
+      runtimeHome,
+      parentSessionId: owner,
+      parentSessionObserver: stableParentObserver,
+      env,
+      nativeAgentHost: {
+        spawn_agent: async (payload) => {
+          request = payload;
+          return {
+            session_id: 'codex:local-reviewer',
+            terminalEvents: [{ type: 'turn.completed', model: CODEX_MAIN_SESSION_POLICY.model.replace('luna', 'sol'), reasoning_effort: 'xhigh' }],
+            outcome: { verdict: 'pass', findings: [], risks: [], evidenceRefs: ['package.json:1'] },
+          };
+        },
+      },
+      // If the native local path regresses to the external launcher, this
+      // test must fail rather than silently exercising the wrong boundary.
+      cliLaunch: async () => {
+        throw new Error('external-review-launcher-should-not-run');
+      },
+    });
+    assert.equal(result.verdict, 'pass');
+    assert.match(result.reviewReceiptId, /^review-receipt-/);
+    assert.equal(request.task_name, 'kernel_reviewer');
+    assert.equal(request.model, 'gpt-5.6-sol');
+    assert.equal(request.reasoning_effort, 'xhigh');
+    assert.deepEqual(request.child_session, {
+      role: 'reviewer',
+      canDelegate: false,
+      canCommit: false,
+      freshSessionRequired: true,
+    });
+    assert.match(request.message, /read-only reviewer/i);
+    assert.match(request.message, /Do not edit files/i);
+    const receipt = controlPlane.listReviewReceipts(runId).find((item) => item.receiptId === result.reviewReceiptId);
+    assert.equal(receipt.reviewer.modelClass, 'frontier_reasoning');
+    assert.equal(receipt.reviewer.enforcementStatus, 'enforced');
+    assert.notEqual(receipt.reviewer.actorSessionId, receipt.implementer.actorSessionId);
+  }, 'native-local');
+});
+
 test('Codex review Host rejects a reviewer session equal to the owner session', async () => {
   await withOwnerRun(async ({ controlPlane, runId, projectRoot, runtimeHome, owner, env }) => {
     await assert.rejects(() => runCodexIndependentReview({
