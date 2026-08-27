@@ -342,6 +342,28 @@ test('a legacy Codex launcher cannot silently execute in the parent session', as
   assert.equal(dispatch.enforcementReason, 'worker-session-not-distinct');
 });
 
+test('a Codex launcher failure stays a dispatch failure instead of becoming telemetry unsupported', async () => {
+  const adapter = createCodexAdapter({
+    parentSessionObserver: stableParentObserver,
+    launch: async () => {
+      throw new Error("invalid_json_schema: Missing 'verifications'");
+    },
+  });
+  const dispatch = await adapter.dispatch({
+    decision: decisionFor('implement'),
+    resolution: resolution('gpt-5.6-luna'),
+    parentSessionId: 'main-session',
+    executionContract: {},
+  });
+  assert.equal(dispatch.dispatchMechanism, 'legacy-launch');
+  assert.equal(dispatch.status, 'failed');
+  assert.equal(dispatch.resultStatus, 'failed');
+  assert.equal(dispatch.enforcementStatus, 'failed');
+  assert.equal(dispatch.enforcementReason, 'codex-launch-failed');
+  assert.equal(dispatch.errorCode, 'codex-launch-failed');
+  assert.match(dispatch.errorSummary, /invalid_json_schema/);
+});
+
 test('a native model mismatch fails a mutating dispatch before CLI can inherit its workspace', async () => {
   const calls = [];
   const workerRoot = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-native-mismatch-'));

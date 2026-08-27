@@ -172,7 +172,7 @@ export const CODEX_WORKER_OUTPUT_SCHEMA = Object.freeze({
     },
     blocker: { type: ['string', 'null'] },
   },
-  required: ['status', 'summary', 'changedPaths', 'risks', 'requestedVerifications', 'judgments', 'knowledgeObservations', 'blocker'],
+  required: ['status', 'summary', 'changedPaths', 'risks', 'verifications', 'requestedVerifications', 'judgments', 'knowledgeObservations', 'blocker'],
   additionalProperties: false,
 });
 

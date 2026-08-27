@@ -402,14 +402,20 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
       });
       const parentCapabilityUnavailable = isCodexCapabilityUnavailable(parentSessionPolicy);
       const parentInvariantFailed = parentSessionPolicy.observationStatus !== 'enforced';
-      const workerCapabilityUnavailable = isWorkerTelemetryUnavailable({
+      const explicitDispatchFailure = result.status === 'failed'
+        || result.resultStatus === 'failed'
+        || Boolean(result.errorCode);
+      const workerCapabilityUnavailable = !explicitDispatchFailure && isWorkerTelemetryUnavailable({
         actualLauncher,
         identityRequired,
         observation,
         lineageReason: observedResult.lineageReason,
       });
       const capabilityUnavailable = parentCapabilityUnavailable || workerCapabilityUnavailable;
-      const failedByEnforcement = dispatchMismatch() || parentInvariantFailed;
+      const failedByEnforcement = parentInvariantFailed || (!explicitDispatchFailure && dispatchMismatch());
+      const dispatchFailed = explicitDispatchFailure || failedByEnforcement;
+      const explicitFailureCode = result.errorCode
+        || (explicitDispatchFailure ? 'codex-worker-failed' : null);
       const unsupportedReason = parentCapabilityUnavailable
         ? parentSessionPolicy.capability?.reason || parentSessionPolicy.observationReason
         : workerCapabilityUnavailable
@@ -421,8 +427,8 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
       const completionOutcome = capabilityUnavailable ? null : (result.outcome ?? null);
       const completionReport = capabilityUnavailable ? null : (result.report ?? null);
       return {
-        status: capabilityUnavailable ? 'unsupported' : failedByEnforcement ? 'failed' : (result.status || 'completed'),
-        resultStatus: capabilityUnavailable ? 'failed' : failedByEnforcement ? 'failed' : (result.resultStatus || (result.status === 'failed' ? 'failed' : 'completed')),
+        status: capabilityUnavailable ? 'unsupported' : dispatchFailed ? 'failed' : (result.status || 'completed'),
+        resultStatus: capabilityUnavailable ? 'failed' : dispatchFailed ? 'failed' : (result.resultStatus || (result.status === 'failed' ? 'failed' : 'completed')),
         // Codex reports no usage tokens today; they stay unavailable rather
         // than being invented as zeros.
         resolvedModel,
@@ -435,17 +441,23 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
         actorRole: actorRoute.role,
         sessionPolicy: actorRoute.sessionPolicy,
         parentSessionPolicy,
-        enforcementStatus: capabilityUnavailable ? 'unsupported' : failedByEnforcement ? 'failed' : (actualLauncher && identityRequired ? 'enforced' : null),
+        enforcementStatus: capabilityUnavailable ? 'unsupported' : dispatchFailed ? 'failed' : (actualLauncher && identityRequired ? 'enforced' : null),
         enforcementReason: capabilityUnavailable
           ? unsupportedReason
+          : parentInvariantFailed
+          ? `parent-session-invariant-${parentSessionPolicy.observationReason}`
+          : explicitDispatchFailure
+          ? explicitFailureCode
           : failedByEnforcement
-          ? (parentInvariantFailed ? `parent-session-invariant-${parentSessionPolicy.observationReason}` : observation.reason)
+          ? observation.reason
           : null,
         fallbackReason,
         errorCode: capabilityUnavailable
           ? CODEX_HOST_UNSUPPORTED_CAPABILITY
           : parentInvariantFailed
           ? 'parent-session-invariant-failed'
+          : explicitDispatchFailure
+          ? explicitFailureCode
           : failedByEnforcement ? 'model-enforcement-failed' : (result.errorCode ?? null),
         errorSummary: capabilityUnavailable
           ? `${unsupportedCapability} is unavailable: ${unsupportedReason}. ${parentSessionPolicy.capability?.remediation || CODEX_PARENT_SESSION_REMEDIATION}`

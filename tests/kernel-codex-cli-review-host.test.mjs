@@ -148,7 +148,12 @@ test('the Codex worker output schema closes structured verification bindings whi
     acceptanceCoverage: { type: 'array', items: { type: 'string' } },
   });
   assert.deepEqual(CODEX_WORKER_OUTPUT_SCHEMA.properties.requestedVerifications, { type: 'array', items: { type: 'string' } });
+  assert.ok(CODEX_WORKER_OUTPUT_SCHEMA.required.includes('verifications'));
   assert.ok(CODEX_WORKER_OUTPUT_SCHEMA.required.includes('requestedVerifications'));
+  assert.deepEqual(
+    [...CODEX_WORKER_OUTPUT_SCHEMA.required].sort(),
+    Object.keys(CODEX_WORKER_OUTPUT_SCHEMA.properties).sort(),
+  );
 });
 
 test('the Codex worker Host preserves structured obligation and acceptance bindings and rejects incomplete entries', () => {
