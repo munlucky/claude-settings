@@ -11,6 +11,9 @@ export const NATIVE_PROVIDER_POLICY = Object.freeze({
   managedRuntime: 'kernel-node-only',
   dataRoot: 'isolated-provider-home',
   relayRuntimeDependency: 'forbidden',
+  executionLayer: 'shared-host-dispatch',
+  trackIsolation: 'profile-and-data-root',
+  completionAuthority: 'track-owned',
 });
 
 const PROVIDERS = Object.freeze({
@@ -56,4 +59,3 @@ export async function resolveNativeProvider({ surface, command = null, runtimeHo
   const resolved = await commandResolver(descriptor.command);
   return { ...descriptor, status: resolved ? 'resolved' : 'not_found', resolvedCommand: resolved || null };
 }
-

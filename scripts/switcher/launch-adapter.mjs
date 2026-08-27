@@ -125,7 +125,13 @@ const defaultCommand = (surface) => {
 export function buildLaunchSpec({ surface, track, sourceRoot = process.cwd(), workspaceRoot = null, workspaceId = null, runId = null, projectId = null, sessionId = null, command, args = [], roots = resolveTrackRoots({ track, surface, sourceRoot }) } = {}) {
   const resolvedWorkspace = workspaceRoot ? path.resolve(workspaceRoot) : (track === 'kernel' ? path.resolve(sourceRoot) : null);
   const expectedPublicSkills = track === 'kernel' ? ['moon-relay-kernel'] : null;
-  const nativeProvider = nativeProviderDescriptor({ surface, command, runtimeHome: roots.runtimeHome });
+  const nativeProvider = {
+    ...nativeProviderDescriptor({ surface, command, runtimeHome: roots.runtimeHome }),
+    // The Host/dispatch layer is shared, but completion remains owned by the
+    // selected track. Kernel completion is runtime-state authority; Relay
+    // completion must never inherit that authority by using this adapter.
+    completionAuthority: track === 'kernel' ? 'kernel' : 'relay',
+  };
   return {
     schemaVersion: 1,
     surface,

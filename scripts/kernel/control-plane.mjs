@@ -308,6 +308,30 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     });
   };
 
+  // Blocking a run closes its owner binding by design. Build the model-visible
+  // blocked action directly from persisted state instead of calling the
+  // binding-gated `next()` immediately after that transition; otherwise the
+  // real blocker is replaced by the secondary `host_binding_missing` error.
+  const buildUnboundNextPayload = (runId) => {
+    const run = store.getRun(runId);
+    if (!run) return { schemaVersion: 1, runId, status: 'not_found' };
+    return buildNextPayload({
+      run,
+      verifications: store.getVerifications(runId),
+      requiredObligations: run.requiredObligations,
+      obligations: store.getRunObligations(runId),
+      contract: run.taskContract ? contractBriefing(run.taskContract) : null,
+    });
+  };
+  const buildBlockedResponse = ({ runId, reason, detail = null }) => ({
+    schemaVersion: 1,
+    runId,
+    status: 'blocked',
+    blockedReason: reason,
+    blockedDetail: detail,
+    next: buildUnboundNextPayload(runId),
+  });
+
   const persistReleaseEvidenceIfNeeded = (runId, updated) => {
     if (updated.evidenceTier !== 'E2') return;
     const pack = buildReleaseEvidencePack({
@@ -1924,7 +1948,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         }
         store.markRunBlocked(runId, report.blocker.reason);
         await projectRunState(store.getRun(runId), { runtimeHome });
-        return { schemaVersion: 1, runId, status: 'blocked', blockedReason: report.blocker.reason, blockedDetail: report.blocker.detail || null, next: await this.next(runId) };
+        return buildBlockedResponse({ runId, reason: report.blocker.reason, detail: report.blocker.detail || null });
       }
       if (run.status === 'blocked') store.resumeBlockedRun(runId);
 
@@ -2182,14 +2206,14 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
             if (error instanceof UntrustedCommandError) {
               store.markRunBlocked(runId, 'unsafe-command');
               await projectRunState(store.getRun(runId), { runtimeHome });
-              return { schemaVersion: 1, runId, status: 'blocked', blockedReason: 'unsafe-command', blockedDetail: error.message, next: await this.next(runId) };
+              return buildBlockedResponse({ runId, reason: 'unsafe-command', detail: error.message });
             }
             // A requested isolation that cannot be truly enforced blocks the run
             // rather than recording a false security boundary (§11.5).
             if (error instanceof NetworkPolicyUnenforceableError) {
               store.markRunBlocked(runId, 'network-policy');
               await projectRunState(store.getRun(runId), { runtimeHome });
-              return { schemaVersion: 1, runId, status: 'blocked', blockedReason: 'network-policy', blockedDetail: error.message, next: await this.next(runId) };
+              return buildBlockedResponse({ runId, reason: 'network-policy', detail: error.message });
             }
             throw error;
           }

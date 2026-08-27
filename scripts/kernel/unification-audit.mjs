@@ -124,8 +124,13 @@ export async function runUnificationAudit({ repoRoot = repoRootDefault } = {}) {
   const forbiddenKernelPayload = (manifest.include || []).filter((entry) => /catalog[\\/]moonshot-catalog|skills[\\/](?:moonshot-|product-orchestrator)|scripts[\\/](?:prepare-phase-runner-state|phase-runner-session-audit)/i.test(entry));
   if (forbiddenKernelPayload.length > 0) findings.push(finding('kernel-payload-relay-surface', 'Kernel package manifest still ships a legacy Relay runtime surface.', { entries: forbiddenKernelPayload }));
   const providerPolicy = manifest.providerRuntimePolicy || {};
-  if (providerPolicy.mode !== 'native-provider' || providerPolicy.managedRuntime !== 'kernel-node-only' || providerPolicy.relayRuntimeDependency !== 'forbidden') {
-    findings.push(finding('kernel-native-provider-policy-missing', 'Kernel package must declare native-provider execution with a Node-only managed runtime.'));
+  if (providerPolicy.mode !== 'native-provider'
+    || providerPolicy.managedRuntime !== 'kernel-node-only'
+    || providerPolicy.relayRuntimeDependency !== 'forbidden'
+    || providerPolicy.executionLayer !== 'shared-host-dispatch'
+    || providerPolicy.trackIsolation !== 'profile-and-data-root'
+    || providerPolicy.completionAuthority !== 'kernel') {
+    findings.push(finding('kernel-native-provider-policy-missing', 'Kernel package must declare shared Host dispatch with isolated provider data and Kernel completion authority.'));
   }
   const managedProviderPayload = (manifest.include || []).filter((entry) => /(?:providers[\\/](?:claude|codex|qwen|antigravity)|(?:claude|codex|qwen|antigravity)\\.(?:exe|app|bin))$/i.test(entry));
   if (managedProviderPayload.length > 0) findings.push(finding('kernel-managed-provider-payload', 'Kernel package must not ship provider binaries or provider application bundles.', { entries: managedProviderPayload }));

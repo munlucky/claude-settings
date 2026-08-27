@@ -7,7 +7,10 @@
     "mode": "native-provider",
     "managedRuntime": "kernel-node-only",
     "dataRoot": "isolated-provider-home",
-    "relayRuntimeDependency": "forbidden"
+    "relayRuntimeDependency": "forbidden",
+    "executionLayer": "shared-host-dispatch",
+    "trackIsolation": "profile-and-data-root",
+    "completionAuthority": "kernel"
   },
   "include": [
     "bin/moon-relay-kernel.mjs",

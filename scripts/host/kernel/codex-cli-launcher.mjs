@@ -8,6 +8,10 @@ import { cleanupWindowsTimeoutProcessTree } from '../../kernel/proof/process-tre
 import {
   resolveObservedCodexSessionConfig as resolveObservedCodexSessionConfigFromEvents,
 } from './codex-session-observer.mjs';
+import {
+  buildCodexChildEnvironment,
+  preflightCodexRuntime,
+} from './codex-runtime.mjs';
 
 export const CODEX_REVIEW_OUTPUT_SCHEMA = Object.freeze({
   type: 'object',
@@ -369,18 +373,27 @@ export const runCodexReviewProcess = ({
 });
 
 export const createCodexCliReviewLauncher = ({
-  executable = process.platform === 'win32' ? 'codex.ps1' : 'codex',
+  executable = null,
   projectRoot,
   images = [],
   timeoutMs = 600_000,
   env = process.env,
   spawnImpl = spawn,
+  runtimePreflight = preflightCodexRuntime,
 } = {}) => async ({ invocation, executionCapsule, executionContract }) => {
   if (!projectRoot) throw new Error('Codex CLI review launcher requires projectRoot');
   if (invocation?.sandbox !== 'read-only' || invocation?.freshSessionRequired !== true) {
     throw new Error('codex_review_requires_fresh_read_only_session');
   }
   if (!invocation.model) throw new Error('codex_review_requires_explicit_model');
+
+  const selectedExecutable = executable || env?.CODEX_EXECUTABLE || (process.platform === 'win32' ? 'codex.ps1' : 'codex');
+  const processEnv = buildCodexChildEnvironment({ env, executable: selectedExecutable });
+  const runtimePreflightResult = await runtimePreflight({
+    executable: selectedExecutable,
+    codexHome: processEnv.CODEX_HOME,
+    env: processEnv,
+  });
 
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-review-'));
   const schemaPath = path.join(tempRoot, 'review-output.schema.json');
@@ -398,7 +411,7 @@ export const createCodexCliReviewLauncher = ({
     const input = reviewPrompt({ executionContract, executionCapsule });
 
     const started = Date.now();
-    const processResult = await runCodexReviewProcess({ command: executable, args, input, cwd: projectRoot, env, timeoutMs, spawnImpl });
+    const processResult = await runCodexReviewProcess({ command: selectedExecutable, args, input, cwd: projectRoot, env: processEnv, timeoutMs, spawnImpl });
     const events = parseJsonLines(processResult.stdout);
     const threadId = events.find((event) => event.type === 'thread.started')?.thread_id || null;
     const completed = [...events].reverse().find((event) => event.type === 'turn.completed') || null;
@@ -408,7 +421,7 @@ export const createCodexCliReviewLauncher = ({
     }
     const outcome = assertReviewOutcome(JSON.parse(await readFile(outputPath, 'utf8')));
     const eventConfig = resolveObservedCodexSessionConfigFromEvents(events);
-    const rolloutConfig = await resolveObservedCodexSessionConfig({ threadId, env, startedAt: new Date(started) });
+    const rolloutConfig = await resolveObservedCodexSessionConfig({ threadId, env: processEnv, startedAt: new Date(started) });
     const observedConfig = {
       model: eventConfig.model || rolloutConfig?.model || null,
       effort: eventConfig.effort || rolloutConfig?.effort || null,
@@ -425,6 +438,7 @@ export const createCodexCliReviewLauncher = ({
       inputTokens: completed.usage?.input_tokens ?? null,
       cachedInputTokens: completed.usage?.cached_input_tokens ?? null,
       outputTokens: completed.usage?.output_tokens ?? null,
+      runtimePreflight: runtimePreflightResult,
       outcome,
     };
   } finally {
@@ -436,12 +450,13 @@ export const createCodexCliReviewLauncher = ({
 // read-only schema above; this path is the production CLI fallback for a
 // native Codex actor that is unavailable or cannot prove the requested config.
 export const createCodexCliWorkerLauncher = ({
-  executable = process.platform === 'win32' ? 'codex.ps1' : 'codex',
+  executable = null,
   projectRoot,
   images = [],
   timeoutMs = 600_000,
   env = process.env,
   spawnImpl = spawn,
+  runtimePreflight = preflightCodexRuntime,
 } = {}) => async ({ invocation, executionCapsule, executionContract, parentSessionId = null, environment = null, workingDirectory = null }) => {
   if (!projectRoot) throw new Error('Codex CLI worker launcher requires projectRoot');
   if (!invocation?.model || !invocation?.effort) throw new Error('codex_worker_requires_explicit_model_and_effort');
@@ -452,10 +467,18 @@ export const createCodexCliWorkerLauncher = ({
   const workerRoot = path.resolve(workingDirectory || projectRoot);
   if (!existsSync(workerRoot)) throw new Error(`codex_worker_working_directory_missing: ${workerRoot}`);
 
+  const inheritedEnv = { ...env, ...(environment || {}) };
+  const selectedExecutable = executable || inheritedEnv.CODEX_EXECUTABLE || (process.platform === 'win32' ? 'codex.ps1' : 'codex');
+  const processEnv = buildCodexChildEnvironment({ env: inheritedEnv, executable: selectedExecutable });
+  const runtimePreflightResult = await runtimePreflight({
+    executable: selectedExecutable,
+    codexHome: processEnv.CODEX_HOME,
+    env: processEnv,
+  });
+
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-worker-'));
   const schemaPath = path.join(tempRoot, 'worker-output.schema.json');
   const outputPath = path.join(tempRoot, 'worker-output.json');
-  const processEnv = { ...env, ...(environment || {}) };
   try {
     await writeFile(schemaPath, JSON.stringify(CODEX_WORKER_OUTPUT_SCHEMA, null, 2));
     const args = [
@@ -469,7 +492,7 @@ export const createCodexCliWorkerLauncher = ({
     for (const image of images) args.push('--image', path.resolve(image));
     const started = Date.now();
     const processResult = await runCodexReviewProcess({
-      command: executable,
+      command: selectedExecutable,
       args,
       input: workerPrompt({ executionContract, executionCapsule }),
       cwd: workerRoot,
@@ -504,6 +527,7 @@ export const createCodexCliWorkerLauncher = ({
       inputTokens: completed.usage?.input_tokens ?? null,
       cachedInputTokens: completed.usage?.cached_input_tokens ?? null,
       outputTokens: completed.usage?.output_tokens ?? null,
+      runtimePreflight: runtimePreflightResult,
       outcome,
       report: outcome,
     };

@@ -362,7 +362,10 @@ try {
         res = ensured.next;
       }
     } else {
-      res = await cp.next(invocation.runId);
+      // ensureRun performs the host lifecycle re-entry needed after a
+      // blocker report deactivates the owner binding. Calling next directly
+      // here would turn the original blocker into host_binding_missing.
+      res = (await cp.ensureRun({ runId: invocation.runId })).next;
     }
     await cp.close();
     output(res);

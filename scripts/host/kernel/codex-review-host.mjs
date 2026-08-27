@@ -107,6 +107,7 @@ export const runCodexIndependentReview = async ({
   nativeLaunch = null,
   nativeAgentHost = globalThis,
   cliLaunch = null,
+  executable = null,
   parentSessionConfig = null,
   parentSessionObserver = null,
   env = process.env,
@@ -123,7 +124,7 @@ export const runCodexIndependentReview = async ({
   // route, capsule, admission, usage receipt, and outcome-ingest chain below.
   const launcher = launch || null;
   const reviewCliLaunch = cliLaunch || (!launch
-    ? createCodexCliReviewLauncher({ projectRoot, images, env })
+    ? createCodexCliReviewLauncher({ projectRoot, images, executable: executable || undefined, env })
     : null);
   const adapter = createCodexAdapter({
     launch: launcher,
@@ -132,6 +133,7 @@ export const runCodexIndependentReview = async ({
     cliLaunch: reviewCliLaunch,
     projectRoot,
     images,
+    executable,
     runtimeHome,
     env,
     defaultParentSessionConfig: parentSessionConfig,
@@ -157,7 +159,13 @@ export const runCodexIndependentReview = async ({
     if (dispatched.dispatch?.status === 'unsupported' || dispatched.dispatch?.enforcementStatus === 'unsupported') {
       throw unsupportedReviewError(dispatched);
     }
-    throw new Error(`codex_review_not_dispatched: ${dispatched.reason || dispatched.dispatch?.errorSummary || 'missing outcome'}`);
+    throw Object.assign(
+      new Error(`codex_review_not_dispatched: ${dispatched.reason || dispatched.dispatch?.errorSummary || 'missing outcome'}`),
+      {
+        code: dispatched.dispatch?.errorCode || 'codex_review_not_dispatched',
+        details: { dispatched },
+      },
+    );
   }
   const outcome = {
     ...dispatched.dispatch.outcome,
@@ -203,6 +211,7 @@ export const runCodexKernelWorker = async ({
   nativeLaunch = null,
   nativeAgentHost = globalThis,
   cliLaunch = null,
+  executable = null,
   parentSessionConfig = null,
   parentSessionObserver = null,
   env = process.env,
@@ -214,6 +223,7 @@ export const runCodexKernelWorker = async ({
     nativeLaunch,
     nativeAgentHost,
     cliLaunch,
+    executable,
     projectRoot,
     runtimeHome,
     env,
@@ -234,7 +244,13 @@ export const runCodexKernelWorker = async ({
     if (dispatched.dispatch?.status === 'unsupported' || dispatched.dispatch?.enforcementStatus === 'unsupported') {
       return unsupportedHostResult({ runId, dispatched, kind: 'worker' });
     }
-    throw new Error(`codex_worker_not_dispatched: ${dispatched.reason || dispatched.dispatch?.errorSummary || 'missing outcome'}`);
+    throw Object.assign(
+      new Error(`codex_worker_not_dispatched: ${dispatched.reason || dispatched.dispatch?.errorSummary || 'missing outcome'}`),
+      {
+        code: dispatched.dispatch?.errorCode || 'codex_worker_not_dispatched',
+        details: { dispatched },
+      },
+    );
   }
   const workerReport = dispatched.report || dispatched.dispatch.report || dispatched.dispatch.outcome;
   if (!workerReport || typeof workerReport !== 'object') {

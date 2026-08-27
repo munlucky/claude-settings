@@ -317,7 +317,7 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
           result: {
             status: 'failed',
             resultStatus: 'failed',
-            errorCode: 'codex-launch-failed',
+            errorCode: error?.code || 'codex-launch-failed',
             errorSummary: error?.message || String(error),
           },
           dispatchMechanism,
@@ -376,7 +376,7 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
             result: {
               status: 'failed',
               resultStatus: 'failed',
-              errorCode: 'codex-launch-failed',
+              errorCode: error?.code || 'codex-launch-failed',
               errorSummary: error?.message || String(error),
             },
             dispatchMechanism,
@@ -481,6 +481,7 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
         inputTokens: result.inputTokens ?? null,
         cachedInputTokens: result.cachedInputTokens ?? null,
         outputTokens: result.outputTokens ?? null,
+        runtimePreflight: result.runtimePreflight ?? null,
         outcome: completionOutcome,
         report: completionReport,
         // Only forwarded when the Host observed them; the receipt gates these

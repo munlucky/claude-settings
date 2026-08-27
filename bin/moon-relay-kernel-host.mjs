@@ -5,6 +5,7 @@ import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
 import { resolveKernelRuntimeHome, resolveProjectTrack, ensureAccountRootTrack } from '../scripts/kernel/runtime-home.mjs';
 import { canonicalizeHostSessionId } from '../scripts/kernel/run/host-session.mjs';
 import { runCodexIndependentReview, runCodexKernelWorker } from '../scripts/host/kernel/codex-review-host.mjs';
+import { buildKernelCodexHostEnvironment, resolveCodexCliExecutable } from '../scripts/host/kernel/codex-runtime.mjs';
 
 const args = process.argv.slice(2);
 const command = args[0] || '';
@@ -52,14 +53,25 @@ try {
     workspaceId: trackEnv.MOON_RELAY_KERNEL_WORKSPACE_ID || null,
     source: 'kernel-host',
   });
+  const codexExecutable = await resolveCodexCliExecutable({ env: trackEnv });
   const env = {
-    ...process.env,
+    ...buildKernelCodexHostEnvironment({
+      runtimeHome,
+      env: process.env,
+      executable: codexExecutable.executable,
+    }),
     MOON_RELAY_KERNEL_SESSION_ID: parentSessionId,
     MOON_RELAY_KERNEL_PROVIDER: 'codex',
     MOON_RELAY_KERNEL_RUN_ID: runId,
   };
   const controlPlane = await createKernelControlPlane({ runtimeHome, projectRoot, env, requireHostBinding: true });
   try {
+    // A blocker report intentionally closes the owner binding. Re-enter the
+    // Host lifecycle before dispatching a retry so `next` sees the same
+    // operator-approved run instead of surfacing a secondary binding error.
+    if (controlPlane.stateStore.getRun(runId)?.status === 'blocked') {
+      await controlPlane.ensureRun({ runId });
+    }
     if (command === 'review') {
       output(await runCodexIndependentReview({
         controlPlane,
@@ -71,6 +83,7 @@ try {
         model: value('--model') || undefined,
         effort: value('--effort') || 'high',
         images: values('--image'),
+        executable: codexExecutable.executable,
         env,
       }));
     } else {
@@ -83,6 +96,7 @@ try {
         actionKind: value('--action') || 'implement',
         obligationId: value('--obligation') || null,
         complexity: value('--complexity') || null,
+        executable: codexExecutable.executable,
         env,
       }));
     }

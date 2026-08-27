@@ -9,6 +9,11 @@ import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
 import { CODEX_WORKER_OUTPUT_SCHEMA, createCodexCliReviewLauncher, createCodexCliWorkerLauncher, resolveObservedCodexModel, resolveObservedCodexSessionModel, runCodexReviewProcess } from '../scripts/host/kernel/codex-cli-launcher.mjs';
 import { normalizeCodexWorkerReport, runCodexIndependentReview, runCodexKernelWorker } from '../scripts/host/kernel/codex-review-host.mjs';
 import { CODEX_MAIN_SESSION_POLICY } from '../scripts/host/kernel/codex-session-observer.mjs';
+import {
+  buildCodexChildEnvironment,
+  preflightCodexRuntime,
+  resolveCodexCliExecutable,
+} from '../scripts/host/kernel/codex-runtime.mjs';
 
 const withOwnerRun = async (fn, suffix) => {
   const projectRoot = await mkdtemp(path.join(os.tmpdir(), `kernel-codex-review-project-${suffix}-`));
@@ -313,7 +318,22 @@ test('Codex CLI worker passes model and effort to the child process and records 
     return child;
   };
   try {
-    const launch = createCodexCliWorkerLauncher({ projectRoot, spawnImpl });
+    const launch = createCodexCliWorkerLauncher({
+      projectRoot,
+      spawnImpl,
+      executable: '/native/codex',
+      env: {
+        ...process.env,
+        CODEX_HOME: workerRoot,
+        CODEX_APP_TOOLS_PIPE_PATH: '/tmp/app-tools.pipe',
+        CODEX_MCP_NODE_PATH: '/tmp/app-mcp-node',
+        CODEX_THREAD_ID: 'parent-thread',
+        CODEX_SESSION_ID: 'parent-session',
+        MOON_RELAY_TRACK: 'kernel',
+        MOON_RELAY_KERNEL_HOME: '/tmp/kernel-home',
+        MOON_RELAY_KERNEL_RUN_ID: 'run-id',
+      },
+    });
     const result = await launch({
       invocation: { model: 'gpt-5.6-luna', effort: 'max', sandbox: 'workspace-write' },
       executionCapsule: { role: 'implementer' },
@@ -331,10 +351,95 @@ test('Codex CLI worker passes model and effort to the child process and records 
     assert.ok(observed.args.includes('workspace-write'));
     assert.equal(observed.args[observed.args.indexOf('--cd') + 1], workerRoot);
     assert.equal(observed.options.cwd, workerRoot);
+    assert.equal(observed.command, '/native/codex');
+    assert.equal(observed.options.env.CODEX_HOME, path.resolve(workerRoot));
+    assert.equal(observed.options.env.CODEX_EXECUTABLE, '/native/codex');
+    assert.equal(observed.options.env.CODEX_APP_TOOLS_PIPE_PATH, undefined);
+    assert.equal(observed.options.env.CODEX_MCP_NODE_PATH, undefined);
+    assert.equal(observed.options.env.CODEX_THREAD_ID, undefined);
+    assert.equal(observed.options.env.MOON_RELAY_KERNEL_HOME, undefined);
+    assert.equal(observed.options.env.MOON_RELAY_KERNEL_RUN_ID, undefined);
+    assert.equal(observed.options.env.MOON_RELAY_TRACK, undefined);
   } finally {
     await rm(projectRoot, { recursive: true, force: true });
     await rm(workerRoot, { recursive: true, force: true });
   }
+});
+
+test('Kernel Codex runtime selects the bundled CLI and rejects cache/executable release mismatches', async () => {
+  const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-runtime-'));
+  const appExecutable = path.join(fixtureRoot, 'ChatGPT.app', 'Contents', 'Resources', 'codex');
+  const providerHome = path.join(fixtureRoot, 'providers', 'codex');
+  try {
+    await mkdir(path.dirname(appExecutable), { recursive: true });
+    await mkdir(providerHome, { recursive: true });
+    await writeFile(appExecutable, 'bundled codex fixture');
+    await writeFile(path.join(providerHome, 'models_cache.json'), JSON.stringify({ client_version: '0.150.0', models: [] }));
+
+    const resolved = await resolveCodexCliExecutable({
+      platform: 'darwin',
+      env: {},
+      appRoots: [fixtureRoot],
+      commandResolver: async () => { throw new Error('PATH fallback must not win over bundled Codex'); },
+    });
+    assert.equal(resolved.executable, appExecutable);
+    assert.equal(resolved.source, 'bundled-app-cli');
+
+    const verified = await preflightCodexRuntime({
+      executable: appExecutable,
+      codexHome: providerHome,
+      versionProbe: async () => 'codex-cli 0.150.0-alpha.8',
+    });
+    assert.equal(verified.status, 'verified');
+    assert.equal(verified.cacheClientVersion, '0.150.0');
+    assert.equal(verified.executableVersion, '0.150.0-alpha.8');
+    assert.equal(verified.modelCount, 0);
+
+    await assert.rejects(
+      () => preflightCodexRuntime({
+        executable: '/opt/homebrew/bin/codex',
+        codexHome: providerHome,
+        versionProbe: async () => 'codex-cli 0.147.0',
+      }),
+      (error) => {
+        assert.equal(error.code, 'codex_runtime_version_mismatch');
+        assert.equal(error.details.cacheClientVersion, '0.150.0');
+        assert.equal(error.details.executableVersion, '0.147.0');
+        return true;
+      },
+    );
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test('Codex child environment strips app-host and Kernel binding capabilities while preserving provider scope', () => {
+  const childEnv = buildCodexChildEnvironment({
+    env: {
+      CODEX_HOME: '/tmp/global-codex',
+      CODEX_APP_TOOLS_PIPE_PATH: '/tmp/app-tools.pipe',
+      CODEX_MCP_NODE_PATH: '/tmp/app-mcp-node',
+      CODEX_THREAD_ID: 'parent-thread',
+      CODEX_SESSION_ID: 'parent-session',
+      CODEX_INTERNAL_ORIGINATOR_OVERRIDE: 'Codex Desktop',
+      CODEX_PERMISSION_PROFILE: ':danger-full-access',
+      CODEX_SHELL: '1',
+      MOON_RELAY_TRACK: 'kernel',
+      MOON_RELAY_KERNEL_HOME: '/tmp/kernel-home',
+      MOON_RELAY_KERNEL_SESSION_ID: 'codex:parent',
+      PRESERVE_ME: 'yes',
+    },
+    executable: '/native/codex',
+    codexHome: '/tmp/kernel-home/providers/codex',
+  });
+  assert.equal(childEnv.CODEX_HOME, '/tmp/kernel-home/providers/codex');
+  assert.equal(childEnv.CODEX_EXECUTABLE, '/native/codex');
+  assert.equal(childEnv.PRESERVE_ME, 'yes');
+  for (const key of [
+    'CODEX_APP_TOOLS_PIPE_PATH', 'CODEX_MCP_NODE_PATH', 'CODEX_THREAD_ID',
+    'CODEX_SESSION_ID', 'CODEX_INTERNAL_ORIGINATOR_OVERRIDE', 'CODEX_PERMISSION_PROFILE',
+    'CODEX_SHELL', 'MOON_RELAY_TRACK', 'MOON_RELAY_KERNEL_HOME', 'MOON_RELAY_KERNEL_SESSION_ID',
+  ]) assert.equal(childEnv[key], undefined, `${key} must not reach a standalone CLI child`);
 });
 
 test('Codex CLI worker leaves effort null when the provider omits effort telemetry', async () => {
