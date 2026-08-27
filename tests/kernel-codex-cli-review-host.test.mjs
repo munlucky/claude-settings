@@ -267,7 +267,7 @@ test('Codex CLI launcher enforces an explicit model, fresh session, read-only sa
     return child;
   };
   try {
-    const launch = createCodexCliReviewLauncher({ projectRoot, spawnImpl });
+    const launch = createCodexCliReviewLauncher({ projectRoot, spawnImpl, env: { ...process.env, CODEX_HOME: undefined } });
     const result = await launch({
       invocation: { model: 'gpt-5.6-sol', effort: 'high', sandbox: 'read-only', freshSessionRequired: true },
       executionCapsule: { role: 'reviewer' },
@@ -464,7 +464,7 @@ test('Codex CLI worker leaves effort null when the provider omits effort telemet
     return child;
   };
   try {
-    const result = await createCodexCliWorkerLauncher({ projectRoot, spawnImpl })({
+    const result = await createCodexCliWorkerLauncher({ projectRoot, spawnImpl, env: { ...process.env, CODEX_HOME: undefined } })({
       invocation: { model: 'gpt-5.6-luna', effort: 'max', sandbox: 'workspace-write' },
       executionContract: {},
       executionCapsule: {},

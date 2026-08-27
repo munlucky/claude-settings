@@ -5,7 +5,8 @@ import os from 'node:os';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import {
   materializeCodexProfiles, renderCodexProfileToml, resolveCodexProfilePath,
-  assertCodexProfileIsolation, CODEX_PROFILE_NAMES, CODEX_PROFILE_SETTINGS,
+  assertCodexProfileIsolation, assertCodexProviderHome, CODEX_PROFILE_NAMES,
+  CODEX_PROFILE_SETTINGS, CODEX_PROVIDER_HOME_MISMATCH,
 } from '../scripts/host/kernel/codex-profile-materializer.mjs';
 
 const withTempHome = async (fn) => {
@@ -13,12 +14,18 @@ const withTempHome = async (fn) => {
   try { return await fn(dir); } finally { await rm(dir, { recursive: true, force: true }); }
 };
 
+const envForRuntimeHome = (runtimeHome) => ({
+  ...process.env,
+  MOON_RELAY_KERNEL_HOME: runtimeHome,
+  CODEX_HOME: path.join(runtimeHome, 'providers', 'codex'),
+});
+
 test('all four profiles plus the AGENTS contract materialize under the Kernel runtime home', async () => {
   await withTempHome(async (runtimeHome) => {
-    const result = await materializeCodexProfiles({ runtimeHome });
+    const result = await materializeCodexProfiles({ runtimeHome, env: envForRuntimeHome(runtimeHome) });
     assert.deepEqual(result.written.map((w) => w.profile), [...CODEX_PROFILE_NAMES, 'agents-md']);
     for (const { path: file } of result.written) {
-      assert.ok(file.startsWith(path.join(runtimeHome, 'codex')), `profile escaped the runtime home: ${file}`);
+      assert.ok(file.startsWith(path.join(runtimeHome, 'providers', 'codex')), `profile escaped the provider home: ${file}`);
       assert.ok((await readFile(file, 'utf8')).length > 0);
     }
   });
@@ -26,15 +33,15 @@ test('all four profiles plus the AGENTS contract materialize under the Kernel ru
 
 test('AGENTS.md materialization can be opted out of', async () => {
   await withTempHome(async (runtimeHome) => {
-    const result = await materializeCodexProfiles({ runtimeHome, includeAgentsMd: false });
+    const result = await materializeCodexProfiles({ runtimeHome, env: envForRuntimeHome(runtimeHome), includeAgentsMd: false });
     assert.deepEqual(result.written.map((w) => w.profile), [...CODEX_PROFILE_NAMES]);
   });
 });
 
 test('the materialized AGENTS.md matches the packaged reference', async () => {
   await withTempHome(async (runtimeHome) => {
-    await materializeCodexProfiles({ runtimeHome });
-    const materialized = await readFile(path.join(runtimeHome, 'codex', 'AGENTS.md'), 'utf8');
+    await materializeCodexProfiles({ runtimeHome, env: envForRuntimeHome(runtimeHome) });
+    const materialized = await readFile(path.join(runtimeHome, 'providers', 'codex', 'AGENTS.md'), 'utf8');
     const packaged = await readFile('package/profile-templates/codex/AGENTS.md', 'utf8');
     assert.equal(materialized, packaged);
   });
@@ -47,10 +54,11 @@ test('each profile is a separate overlay file, not a nested [profiles.*] block',
     assert.match(toml, /^model = /m);
   }
   await withTempHome(async (runtimeHome) => {
-    assert.match(resolveCodexProfilePath('plan', { runtimeHome }), /plan\.config\.toml$/);
-    assert.match(resolveCodexProfilePath('review', { runtimeHome }), /review\.config\.toml$/);
-    assert.match(resolveCodexProfilePath('batch', { runtimeHome }), /batch\.config\.toml$/);
-    assert.match(resolveCodexProfilePath('default', { runtimeHome }), /[\\/]config\.toml$/);
+    const providerHome = path.join(runtimeHome, 'providers', 'codex');
+    assert.equal(path.dirname(resolveCodexProfilePath('plan', { runtimeHome })), providerHome);
+    assert.equal(path.dirname(resolveCodexProfilePath('review', { runtimeHome })), providerHome);
+    assert.equal(path.dirname(resolveCodexProfilePath('batch', { runtimeHome })), providerHome);
+    assert.equal(path.dirname(resolveCodexProfilePath('default', { runtimeHome })), providerHome);
   });
 });
 
@@ -84,6 +92,36 @@ test('materializing into the user global Codex home is refused', () => {
   assert.equal(assertCodexProfileIsolation(path.join(os.tmpdir(), 'kernel-home', 'codex', 'config.toml'), { userCodexHome: userHome }), true);
 });
 
+test('the materializer uses the same canonical provider home as CODEX_HOME', async () => {
+  await withTempHome(async (runtimeHome) => {
+    const providerHome = path.join(runtimeHome, 'providers', 'codex');
+    const env = { MOON_RELAY_KERNEL_HOME: runtimeHome, CODEX_HOME: providerHome };
+    assert.equal(assertCodexProviderHome(providerHome, { env }), true);
+    const result = await materializeCodexProfiles({ runtimeHome, env });
+    assert.equal(result.runtimeHome, providerHome);
+    assert.ok(result.written.every(({ path: file }) => file.startsWith(`${providerHome}${path.sep}`)));
+  });
+});
+
+test('a CODEX_HOME mismatch fails closed before materialization', async () => {
+  await withTempHome(async (runtimeHome) => {
+    const providerHome = path.join(runtimeHome, 'providers', 'codex');
+    const mismatchedHome = path.join(runtimeHome, 'other-codex');
+    const env = { MOON_RELAY_KERNEL_HOME: runtimeHome, CODEX_HOME: mismatchedHome };
+    await assert.rejects(
+      materializeCodexProfiles({ runtimeHome, env }),
+      (error) => {
+        assert.equal(error.code, CODEX_PROVIDER_HOME_MISMATCH);
+        assert.equal(error.errorCode, CODEX_PROVIDER_HOME_MISMATCH);
+        assert.deepEqual(error.details, { profileRoot: providerHome, codexHome: mismatchedHome });
+        return true;
+      },
+    );
+    const { existsSync } = await import('node:fs');
+    assert.equal(existsSync(providerHome), false, 'the mismatch must be rejected before mkdir/write');
+  });
+});
+
 test('materializeCodexProfiles itself refuses a runtimeHome inside the user global Codex home', async () => {
   // Regression: assertCodexProfileIsolation existed but was only ever called
   // by its own unit test — materializeCodexProfiles created the directory
@@ -98,7 +136,7 @@ test('materializeCodexProfiles itself refuses a runtimeHome inside the user glob
       /must not be materialized inside the user global Codex home/,
     );
     const { existsSync } = await import('node:fs');
-    assert.equal(existsSync(path.join(userCodexHome, 'codex')), false, 'no directory should have been created before the isolation check ran');
+    assert.equal(existsSync(path.join(userCodexHome, 'providers')), false, 'no directory should have been created before the isolation check ran');
   } finally {
     await rm(fakeHome, { recursive: true, force: true });
   }

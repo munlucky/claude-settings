@@ -11,8 +11,10 @@ import { fileURLToPath } from 'node:url';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { resolveKernelRuntimeHome } from '../../kernel/runtime-home.mjs';
 import { CODEX_MODELS } from './codex-model-policy.mjs';
+import { resolveKernelCodexProviderHome } from './codex-runtime.mjs';
 
 export const CODEX_PROFILE_NAMES = Object.freeze(['default', 'plan', 'review', 'batch']);
+export const CODEX_PROVIDER_HOME_MISMATCH = 'codex_provider_home_mismatch';
 
 const FILE_FOR_PROFILE = Object.freeze({
   default: 'config.toml',
@@ -88,7 +90,7 @@ export const renderCodexProfileToml = (profile) => {
 };
 
 export const resolveCodexProfileDir = ({ runtimeHome = null, env = process.env } = {}) =>
-  path.join(runtimeHome || resolveKernelRuntimeHome({ env }), 'codex');
+  resolveKernelCodexProviderHome(runtimeHome || resolveKernelRuntimeHome({ env }));
 
 export const resolveCodexProfilePath = (profile, options = {}) => {
   const file = FILE_FOR_PROFILE[profile];
@@ -98,6 +100,15 @@ export const resolveCodexProfilePath = (profile, options = {}) => {
 
 export const materializeCodexProfiles = async ({ runtimeHome = null, env = process.env, profiles = CODEX_PROFILE_NAMES, includeAgentsMd = true } = {}) => {
   const dir = resolveCodexProfileDir({ runtimeHome, env });
+  // A caller may use an isolated temporary runtimeHome while the parent
+  // process still carries the real Host's CODEX_HOME. Only enforce the pair
+  // when the environment explicitly belongs to this runtime; otherwise an
+  // ambient parent variable would make valid fixture isolation fail closed.
+  const effectiveRuntimeHome = path.resolve(runtimeHome || resolveKernelRuntimeHome({ env }));
+  const ownedRuntimeHome = env?.MOON_RELAY_KERNEL_HOME
+    ? path.resolve(env.MOON_RELAY_KERNEL_HOME)
+    : null;
+  if (ownedRuntimeHome === effectiveRuntimeHome) assertCodexProviderHome(dir, { env });
   // The isolation check exists specifically to catch a caller-supplied
   // runtimeHome that resolves inside the user's global Codex home; it must
   // run before any directory is created or file written, not just live as an
@@ -119,6 +130,24 @@ export const materializeCodexProfiles = async ({ runtimeHome = null, env = proce
 };
 
 export const readCodexProfile = async (profile, options = {}) => readFile(resolveCodexProfilePath(profile, options), 'utf8');
+
+const providerHomeMismatchError = ({ profileRoot, codexHome }) => Object.assign(
+  new Error(`Kernel Codex profile root does not match CODEX_HOME: profileRoot=${profileRoot}; CODEX_HOME=${codexHome}`),
+  {
+    code: CODEX_PROVIDER_HOME_MISMATCH,
+    errorCode: CODEX_PROVIDER_HOME_MISMATCH,
+    details: { profileRoot, codexHome },
+  },
+);
+
+export const assertCodexProviderHome = (profilePath, { env = process.env } = {}) => {
+  const explicitCodexHome = env?.CODEX_HOME;
+  if (!explicitCodexHome) return true;
+  const profileRoot = path.resolve(profilePath);
+  const codexHome = path.resolve(explicitCodexHome);
+  if (profileRoot !== codexHome) throw providerHomeMismatchError({ profileRoot, codexHome });
+  return true;
+};
 
 // A materialized profile that resolves anywhere inside the user's global Codex
 // home is an isolation failure, not a configuration choice.
