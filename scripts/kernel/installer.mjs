@@ -8,6 +8,7 @@ import { atomicWriteText } from './durable-write.mjs';
 const PRODUCT_ID = 'moon-relay-kernel';
 const TRACK_CONTENT = 'schemaVersion: 1\ntrack: kernel\nproduct: moon-relay-kernel\n';
 const PAYLOAD_ENTRIES = [
+  'scripts/switcher/app-resolver/common.mjs',
   'bin/moon-relay-kernel.mjs',
   'bin/moon-relay-kernel-host.mjs',
   'bin/moon-relay-standalone.mjs',

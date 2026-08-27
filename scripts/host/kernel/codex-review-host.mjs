@@ -110,6 +110,8 @@ export const runCodexIndependentReview = async ({
   executable = null,
   parentSessionConfig = null,
   parentSessionObserver = null,
+  parentSessionEnvironment = null,
+  parentEnvironment = null,
   env = process.env,
 } = {}) => {
   if (!controlPlane || !runId || !projectRoot || !parentSessionId) {
@@ -138,6 +140,7 @@ export const runCodexIndependentReview = async ({
     env,
     defaultParentSessionConfig: parentSessionConfig,
     parentSessionObserver,
+    parentSessionEnvironment: parentSessionEnvironment || parentEnvironment,
     capabilities: {
       supportsUsageTokens: true,
       supportsCacheReadTokens: true,
@@ -214,6 +217,8 @@ export const runCodexKernelWorker = async ({
   executable = null,
   parentSessionConfig = null,
   parentSessionObserver = null,
+  parentSessionEnvironment = null,
+  parentEnvironment = null,
   env = process.env,
 } = {}) => {
   if (!controlPlane || !runId || !projectRoot || !parentSessionId) {
@@ -229,6 +234,7 @@ export const runCodexKernelWorker = async ({
     env,
     defaultParentSessionConfig: parentSessionConfig,
     parentSessionObserver,
+    parentSessionEnvironment: parentSessionEnvironment || parentEnvironment,
   });
   const dispatched = await dispatchKernelTurn({
     controlPlane,

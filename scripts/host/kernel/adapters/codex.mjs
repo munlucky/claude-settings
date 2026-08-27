@@ -101,11 +101,14 @@ const normalizeParentObservation = (value, parentSessionId) => {
   };
 };
 
-const defaultParentSessionObserver = async ({ parentSessionId, environment = null, env = process.env, startedAt = new Date() } = {}) => {
+const defaultParentSessionObserver = async ({ parentSessionId, parentSessionEnvironment = null, parentEnvironment = null, environment = null, env = process.env, startedAt = new Date() } = {}) => {
   if (!parentSessionId) return null;
+  const observationEnvironment = parentSessionEnvironment || parentEnvironment
+    ? { ...(parentEnvironment || {}), ...(parentSessionEnvironment || {}) }
+    : { ...env, ...(environment || {}) };
   const observed = await resolveObservedCodexSessionConfigFromRollout({
     threadId: nativeSessionId(parentSessionId),
-    env: { ...env, ...(environment || {}) },
+    env: observationEnvironment,
     startedAt,
   });
   return normalizeParentObservation(observed, parentSessionId);
@@ -176,7 +179,7 @@ const isWorkerTelemetryUnavailable = ({ actualLauncher, identityRequired, observ
   && (identityRequired || Boolean(lineageReason)),
 );
 
-export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeAgentHost = globalThis, cliLaunch = null, parentSessionObserver = null, defaultParentSessionConfig = null, projectRoot = null, images = [], timeoutMs = 600_000, executable = null, spawnImpl = undefined, capabilities = {}, runtimeHome = null, env = process.env } = {}) => {
+export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeAgentHost = globalThis, cliLaunch = null, parentSessionObserver = null, defaultParentSessionConfig = null, parentSessionEnvironment = null, parentEnvironment = null, projectRoot = null, images = [], timeoutMs = 600_000, executable = null, spawnImpl = undefined, capabilities = {}, runtimeHome = null, env = process.env } = {}) => {
   const automaticNativeLaunch = nativeLaunch === null ? createCodexNativeAgentLauncher({ host: nativeAgentHost }) : null;
   const effectiveNativeLaunch = nativeLaunch || automaticNativeLaunch;
   const resolved = {
@@ -188,11 +191,12 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
     ? createCodexCliWorkerLauncher({ projectRoot, images, timeoutMs, executable: executable || undefined, env, spawnImpl })
     : null);
   const observeParentSession = parentSessionObserver || defaultParentSessionObserver;
+  const configuredParentSessionEnvironment = parentSessionEnvironment || parentEnvironment || null;
   let profilesMaterialized = null;
   return {
     surface: 'codex',
     capabilities: resolved,
-    async dispatch({ decision, resolution, strategy, executionCapsule = null, executionContract, envelope = null, workingDirectory = null, environment = null, parentSessionId = null, parentSessionConfig = defaultParentSessionConfig, concurrencyGroup = null, childSession = null }) {
+    async dispatch({ decision, resolution, strategy, executionCapsule = null, executionContract, envelope = null, workingDirectory = null, environment = null, parentSessionId = null, parentSessionConfig = defaultParentSessionConfig, parentSessionEnvironment: dispatchParentSessionEnvironment = null, parentEnvironment: dispatchParentEnvironment = null, concurrencyGroup = null, childSession = null }) {
       const invocation = buildCodexInvocation({ decision, resolution, capabilities: resolved });
       const nativeAvailable = Boolean(effectiveNativeLaunch && resolved.supportsSubagentModel === true);
       // A capability can describe how a real Host would resolve its default
@@ -215,6 +219,7 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
       }
 
       const suppliedPair = Boolean(parentSessionConfig?.before || parentSessionConfig?.after);
+      const observationEnvironment = dispatchParentSessionEnvironment || dispatchParentEnvironment || configuredParentSessionEnvironment;
       const observeParent = async (phase) => {
         if (suppliedPair) return normalizeParentObservation(parentSessionConfig[phase], parentSessionId);
         if (parentSessionConfig && phase === 'before') return normalizeParentObservation(parentSessionConfig, parentSessionId);
@@ -222,6 +227,8 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
           return normalizeParentObservation(await observeParentSession({
             parentSessionId,
             phase,
+            parentSessionEnvironment: observationEnvironment,
+            parentEnvironment: observationEnvironment,
             environment,
             env,
             startedAt: new Date(),

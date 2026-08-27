@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import process from 'node:process';
+import os from 'node:os';
 import path from 'node:path';
 import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
 import { resolveKernelRuntimeHome, resolveProjectTrack, ensureAccountRootTrack } from '../scripts/kernel/runtime-home.mjs';
@@ -54,6 +55,9 @@ try {
     source: 'kernel-host',
   });
   const codexExecutable = await resolveCodexCliExecutable({ env: trackEnv });
+  const parentEnvironment = {
+    CODEX_HOME: process.env.CODEX_HOME || path.join(os.homedir(), '.codex'),
+  };
   const env = {
     ...buildKernelCodexHostEnvironment({
       runtimeHome,
@@ -85,6 +89,7 @@ try {
         images: values('--image'),
         executable: codexExecutable.executable,
         env,
+        parentEnvironment,
       }));
     } else {
       output(await runCodexKernelWorker({
@@ -98,6 +103,7 @@ try {
         complexity: value('--complexity') || null,
         executable: codexExecutable.executable,
         env,
+        parentEnvironment,
       }));
     }
   } finally {

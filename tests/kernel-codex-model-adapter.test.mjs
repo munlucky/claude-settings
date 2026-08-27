@@ -293,31 +293,41 @@ test('a parent model change observed after child execution fails the whole dispa
 });
 
 test('the default Host observer proves the canonical parent rollout before and after a child dispatch', async () => {
-  const codexHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-parent-rollout-'));
+  const parentCodexHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-parent-rollout-'));
+  const providerCodexHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-provider-rollout-'));
   const threadId = '01234567-89ab-cdef-0123-456789abcdef';
   const now = new Date();
-  const sessionsDir = path.join(codexHome, 'sessions', String(now.getFullYear()), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0'));
+  const sessionsDir = path.join(parentCodexHome, 'sessions', String(now.getFullYear()), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0'));
   await mkdir(sessionsDir, { recursive: true });
   await writeFile(path.join(sessionsDir, `rollout-${threadId}.jsonl`), [
     JSON.stringify({ type: 'session_meta', payload: { session_id: threadId } }),
     JSON.stringify({ type: 'turn_context', model: CODEX_MAIN_SESSION_POLICY.model, reasoning_effort: CODEX_MAIN_SESSION_POLICY.effort }),
   ].join('\n'));
+  let childEnvironment = null;
   try {
     const adapter = createCodexAdapter({
-      env: { CODEX_HOME: codexHome },
-      launch: async ({ invocation }) => ({ resolvedModel: invocation.model, resolvedEffort: invocation.effort, sessionId: 'codex:worker-child' }),
+      env: { CODEX_HOME: providerCodexHome },
+      parentSessionEnvironment: { CODEX_HOME: parentCodexHome },
+      launch: async ({ invocation, environment }) => {
+        childEnvironment = environment;
+        return { resolvedModel: invocation.model, resolvedEffort: invocation.effort, sessionId: 'codex:worker-child' };
+      },
     });
     const dispatch = await adapter.dispatch({
       decision: decisionFor('implement'),
       resolution: { model: 'gpt-5.6-luna', effort: 'max', enforcementIntent: 'enforced' },
       parentSessionId: `codex:${threadId}`,
       executionContract: {},
+      environment: { CODEX_HOME: providerCodexHome },
     });
     assert.equal(dispatch.status, 'completed');
     assert.equal(dispatch.parentSessionPolicy.observationStatus, 'enforced');
     assert.equal(dispatch.parentSessionPolicy.observedSessionId, `codex:${threadId}`);
+    assert.equal(childEnvironment.CODEX_HOME, providerCodexHome);
+    assert.notEqual(childEnvironment.CODEX_HOME, parentCodexHome);
   } finally {
-    await rm(codexHome, { recursive: true, force: true });
+    await rm(parentCodexHome, { recursive: true, force: true });
+    await rm(providerCodexHome, { recursive: true, force: true });
   }
 });
 

@@ -318,12 +318,14 @@ test('kernel-host entrypoint uses the explicit provider runtime and isolates the
   const projectRoot = await setupProject();
   const fakeExecutable = path.join(runtimeHome, 'native-codex.mjs');
   const childEnvironmentPath = path.join(runtimeHome, 'child-environment.json');
+  const parentCodexHome = path.join(runtimeHome, 'parent-codex-home');
   const providerHome = path.join(runtimeHome, 'providers', 'codex');
   const parentNativeSessionId = '019f9999-9999-7999-8999-999999999999';
   const childNativeSessionId = '019f9999-9999-7999-8999-999999999998';
   const parentSessionId = `codex:${parentNativeSessionId}`;
   const runId = 'kernel-host-entrypoint-integration';
 
+  await mkdir(parentCodexHome, { recursive: true });
   await mkdir(providerHome, { recursive: true });
   await writeFile(path.join(providerHome, 'models_cache.json'), JSON.stringify({ client_version: '0.150.0', models: [] }));
   await writeFile(fakeExecutable, `#!${process.execPath}
@@ -364,7 +366,7 @@ console.log(JSON.stringify({ type: 'turn.completed', model: 'gpt-5.6-luna', reas
 
   const now = new Date();
   const dateRoot = path.join(
-    providerHome,
+    parentCodexHome,
     'sessions',
     String(now.getUTCFullYear()),
     String(now.getUTCMonth() + 1).padStart(2, '0'),
@@ -414,7 +416,7 @@ console.log(JSON.stringify({ type: 'turn.completed', model: 'gpt-5.6-luna', reas
       env: {
         ...process.env,
         CODEX_EXECUTABLE: fakeExecutable,
-        CODEX_HOME: '/tmp/incorrect-global-codex-home',
+        CODEX_HOME: parentCodexHome,
         CODEX_APP_TOOLS_PIPE_PATH: '/tmp/app-tools.pipe',
         CODEX_MCP_NODE_PATH: '/tmp/app-mcp-node',
         CODEX_THREAD_ID: parentNativeSessionId,

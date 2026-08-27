@@ -36,6 +36,7 @@ test('Kernel package materialization creates files on disk, validates mandatory 
     'scripts/kernel/run/host-session.mjs',
     'scripts/kernel/run/invocation-resolver.mjs',
     'scripts/kernel/run/successor-key.mjs',
+    'scripts/switcher/app-resolver/common.mjs',
     'bin/moon-relay-kernel-host.mjs',
     'scripts/host/kernel/codex-review-host.mjs',
     'package/profile-templates/codex/AGENTS.md',
