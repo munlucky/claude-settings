@@ -24,6 +24,7 @@ export const CODEX_CAPABILITIES = Object.freeze({
   surface: 'codex',
   supportsSubagentModel: false,
   supportsSessionModelOverride: true,
+  supportsLaunchProfile: true,
   supportsIndependentContext: true,
   supportsUsageTokens: false,
   supportsResolvedModelIdentity: true,
@@ -47,6 +48,10 @@ export const CODEX_CAPABILITIES = Object.freeze({
 
 // Support order (§11.2): per-worker model override, then a separate session
 // override, then a named launch profile; anything else can only be advisory.
+// The selected profile is carried independently of that mechanism because the
+// CLI profile also supplies non-model settings (approval, sandbox defaults,
+// network policy, and verbosity) while explicit invocation flags remain the
+// authority for model and effort.
 export const selectCodexMechanism = ({ capabilities, resolution }) => {
   if (!resolution.model) return capabilities.supportsResolvedModelIdentity ? 'host-default' : 'unsupported';
   if (capabilities.supportsSubagentModel) return 'worker-model-override';
@@ -63,6 +68,10 @@ export const buildCodexInvocation = ({ decision, resolution, capabilities }) => 
     || decision.workProfile?.independentContextRequired === true
     || decision.role === 'reviewer'
     || repeatedFailure;
+  const profile = selectCodexProfileName({
+    actionKind: decision.actionKind,
+    complexity: decision.workProfile?.complexity,
+  });
   return {
     mechanism,
     model: resolution.model,
@@ -72,7 +81,7 @@ export const buildCodexInvocation = ({ decision, resolution, capabilities }) => 
     // Named by the materialized profile (default/plan/review/batch), which a
     // Kernel model class alone cannot distinguish — a protected review and a
     // routine implementation can share `frontier_reasoning`.
-    profile: mechanism === 'launch-profile' ? selectCodexProfileName({ actionKind: decision.actionKind, complexity: decision.workProfile?.complexity }) : null,
+    profile,
     sandbox: decision.permissions === 'workspace_write' ? 'workspace-write' : 'read-only',
     approvalPolicy: decision.permissions === 'workspace_write' ? 'on-failure' : 'on-request',
     freshSessionRequired,
@@ -84,9 +93,9 @@ export const buildCodexInvocation = ({ decision, resolution, capabilities }) => 
 // overlays are (re)materialized under the Kernel runtime home before the
 // first dispatch that needs them, giving `codex-profile-materializer.mjs` an
 // actual production caller instead of only the packaging-time snapshot in
-// `package/profile-templates/codex/`. Materializing is idempotent (it just
-// rewrites the overlay files) and never touches the caller's own `.codex/`
-// config, so a Host that omits `runtimeHome` behaves exactly as before.
+// `package/profile-templates/codex/`. The CLI launcher then selects the named
+// overlay with `--profile`; materialization is idempotent (it just rewrites
+// the overlay files) and never touches the caller's own `.codex/` config.
 const nativeSessionId = (parentSessionId) => {
   const value = String(parentSessionId || '').trim();
   const separator = value.indexOf(':');

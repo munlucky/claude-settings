@@ -31,7 +31,7 @@ test('model selection happens per worker invocation, in declared capability orde
   assert.equal(selectCodexMechanism({ capabilities: CODEX_CAPABILITIES, resolution: resolution('m') }), 'session-model-override');
   const profileOnly = { ...CODEX_CAPABILITIES, supportsSessionModelOverride: false, supportsLaunchProfile: true };
   assert.equal(selectCodexMechanism({ capabilities: profileOnly, resolution: resolution('m') }), 'launch-profile');
-  const neither = { ...CODEX_CAPABILITIES, supportsSessionModelOverride: false };
+  const neither = { ...CODEX_CAPABILITIES, supportsSessionModelOverride: false, supportsLaunchProfile: false };
   assert.equal(selectCodexMechanism({ capabilities: neither, resolution: resolution('m') }), 'advisory');
   assert.equal(selectCodexMechanism({ capabilities: CODEX_CAPABILITIES, resolution: resolution(null) }), 'host-default');
 });
@@ -41,11 +41,13 @@ test('the invocation carries the sandbox and approval policy the permissions imp
   assert.equal(implement.sandbox, 'workspace-write');
   assert.equal(implement.approvalPolicy, 'on-failure');
   assert.equal(implement.freshSessionRequired, false);
+  assert.equal(implement.profile, 'default');
 
   const review = buildCodexInvocation({ decision: decisionFor('review_engineering', 'T3'), resolution: resolution('frontier-model'), capabilities: CODEX_CAPABILITIES });
   assert.equal(review.sandbox, 'read-only');
   assert.equal(review.approvalPolicy, 'on-request');
   assert.equal(review.freshSessionRequired, true);
+  assert.equal(review.profile, 'review');
 });
 
 test('a launch profile is named by the materialized overlay, never by provider model id', () => {

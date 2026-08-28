@@ -269,7 +269,7 @@ test('Codex CLI launcher enforces an explicit model, fresh session, read-only sa
   try {
     const launch = createCodexCliReviewLauncher({ projectRoot, spawnImpl, env: { ...process.env, CODEX_HOME: undefined } });
     const result = await launch({
-      invocation: { model: 'gpt-5.6-sol', effort: 'high', sandbox: 'read-only', freshSessionRequired: true },
+      invocation: { model: 'gpt-5.6-sol', effort: 'high', sandbox: 'read-only', freshSessionRequired: true, profile: 'review' },
       executionCapsule: { role: 'reviewer' },
       executionContract: { permissions: 'read_only' },
     });
@@ -280,7 +280,8 @@ test('Codex CLI launcher enforces an explicit model, fresh session, read-only sa
     assert.ok(observed.args.includes('gpt-5.6-sol'));
     assert.ok(observed.args.includes('--output-schema'));
     assert.ok(observed.args.includes('--output-last-message'));
-    assert.ok(observed.args.includes('--ignore-user-config'));
+    assert.ok(!observed.args.includes('--ignore-user-config'));
+    assert.equal(observed.args[observed.args.indexOf('--profile') + 1], 'review');
   } finally {
     await rm(projectRoot, { recursive: true, force: true });
   }
@@ -335,7 +336,7 @@ test('Codex CLI worker passes model and effort to the child process and records 
       },
     });
     const result = await launch({
-      invocation: { model: 'gpt-5.6-luna', effort: 'max', sandbox: 'workspace-write' },
+      invocation: { model: 'gpt-5.6-luna', effort: 'max', sandbox: 'workspace-write', profile: 'batch' },
       executionCapsule: { role: 'implementer' },
       executionContract: { permissions: 'workspace_write' },
       workingDirectory: workerRoot,
@@ -349,6 +350,7 @@ test('Codex CLI worker passes model and effort to the child process and records 
     assert.ok(observed.args.includes('-c'));
     assert.ok(observed.args.includes('model_reasoning_effort=max'));
     assert.ok(observed.args.includes('workspace-write'));
+    assert.equal(observed.args[observed.args.indexOf('--profile') + 1], 'batch');
     assert.equal(observed.args[observed.args.indexOf('--cd') + 1], workerRoot);
     assert.equal(observed.options.cwd, workerRoot);
     assert.equal(observed.command, '/native/codex');

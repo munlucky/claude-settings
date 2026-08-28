@@ -10,8 +10,8 @@ import { CODEX_MAIN_SESSION_POLICY } from '../scripts/host/kernel/codex-session-
 // Regression for a Codex review finding on PR #19: materializeCodexProfiles()
 // had no production caller, so an installed Codex session never received the
 // Sol/Terra/Luna overlays. The adapter now materializes them into the given
-// runtime home before it launches, giving the materializer an actual caller
-// without touching the operator's own .codex/ config.
+// runtime home before it launches, and the CLI launcher selects the requested
+// overlay without touching the operator's own .codex/ config.
 
 const withTempHome = async (fn) => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-adapter-profile-'));
@@ -26,6 +26,7 @@ const stableParentObserver = async ({ parentSessionId }) => ({
 
 test('a dispatch with a runtimeHome materializes the profile overlays before launching', async () => {
   await withTempHome(async (runtimeHome) => {
+    let seenInvocation = null;
     const adapter = createCodexAdapter({
       runtimeHome,
       env: {
@@ -34,7 +35,10 @@ test('a dispatch with a runtimeHome materializes the profile overlays before lau
         CODEX_HOME: path.join(runtimeHome, 'providers', 'codex'),
       },
       parentSessionObserver: stableParentObserver,
-      launch: async ({ invocation }) => ({ resolvedModel: invocation.model, resolvedEffort: invocation.effort, effortObserved: true, sessionId: 'codex-session-1' }),
+      launch: async ({ invocation }) => {
+        seenInvocation = invocation;
+        return { resolvedModel: invocation.model, resolvedEffort: invocation.effort, effortObserved: true, sessionId: 'codex-session-1' };
+      },
     });
     await adapter.dispatch({
       decision: { role: 'implementer', permissions: 'workspace_write', modelClass: 'value_coding' },
@@ -42,6 +46,7 @@ test('a dispatch with a runtimeHome materializes the profile overlays before lau
       parentSessionId: 'codex-parent-session',
       executionContract: {},
     });
+    assert.equal(seenInvocation.profile, 'default');
     const profileDir = resolveCodexProfileDir({ runtimeHome });
     const config = await readFile(path.join(profileDir, 'config.toml'), 'utf8');
     assert.match(config, /model = "gpt-5\.6-luna"/);

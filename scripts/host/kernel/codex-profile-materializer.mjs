@@ -24,14 +24,10 @@ const FILE_FOR_PROFILE = Object.freeze({
 });
 
 // The Codex CLI reads AGENTS.md from the project's own working-directory
-// tree, not from a Host runtime-home config location, so materializing it
-// here alongside the four TOMLs completes this module's output (all five
-// files the Kernel Codex profile names) without pretending that alone gets
-// it loaded by a real Codex session. Installing it into an actual project's
-// `.codex/`/root is a Kernel profile-packaging concern
-// (`package/kernel/profiles/codex`, referenced by profile-install.mjs) that
-// has no build step in this repository yet — a tracked follow-up, not
-// something this materializer can complete on its own.
+// tree, so this copy remains a durable profile artifact for callers that
+// explicitly project it into a workspace. The TOMLs are the active runtime
+// configuration: config.toml is loaded from the isolated CODEX_HOME, and the
+// CLI launcher selects plan/review/batch with `--profile <name>`.
 const PACKAGED_AGENTS_MD = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'package', 'profile-templates', 'codex', 'AGENTS.md');
 
 export const CODEX_PROFILE_SETTINGS = Object.freeze({

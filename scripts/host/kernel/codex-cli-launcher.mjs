@@ -13,6 +13,14 @@ import {
   preflightCodexRuntime,
 } from './codex-runtime.mjs';
 
+const CODEX_LAUNCH_PROFILES = new Set(['plan', 'review', 'batch']);
+
+const codexProfileArgs = (profile) => {
+  if (!profile || profile === 'default') return [];
+  if (!CODEX_LAUNCH_PROFILES.has(profile)) throw new Error(`codex_profile_unknown: ${profile}`);
+  return ['--profile', profile];
+};
+
 export const CODEX_REVIEW_OUTPUT_SCHEMA = Object.freeze({
   type: 'object',
   properties: {
@@ -404,7 +412,7 @@ export const createCodexCliReviewLauncher = ({
       'exec', '--json', '--model', invocation.model, '--sandbox', 'read-only',
       '-c', `model_reasoning_effort=${invocation.effort}`,
       '--cd', path.resolve(projectRoot), '--skip-git-repo-check',
-      '--ignore-user-config',
+      ...codexProfileArgs(invocation.profile),
       '--output-schema', schemaPath, '--output-last-message', outputPath,
     ];
     for (const image of images) args.push('--image', path.resolve(image));
@@ -486,7 +494,7 @@ export const createCodexCliWorkerLauncher = ({
       '-c', `model_reasoning_effort=${invocation.effort}`,
       '--sandbox', invocation.sandbox || 'workspace-write',
       '--cd', workerRoot, '--skip-git-repo-check',
-      '--ignore-user-config',
+      ...codexProfileArgs(invocation.profile),
       '--output-schema', schemaPath, '--output-last-message', outputPath,
     ];
     for (const image of images) args.push('--image', path.resolve(image));
