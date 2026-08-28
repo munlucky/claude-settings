@@ -287,6 +287,78 @@ test('Codex CLI launcher enforces an explicit model, fresh session, read-only sa
   }
 });
 
+test('Codex CLI launcher completes from turn.completed without waiting for child close and cleans the child', async () => {
+  const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-launcher-no-close-'));
+  let child = null;
+  const killSignals = [];
+  const spawnImpl = (command, args) => {
+    child = new EventEmitter();
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    child.kill = (signal) => {
+      killSignals.push(signal);
+      child.killed = true;
+      return true;
+    };
+    queueMicrotask(async () => {
+      const outputPath = args[args.indexOf('--output-last-message') + 1];
+      await writeFile(outputPath, JSON.stringify({ verdict: 'pass', findings: [], risks: [], evidenceRefs: ['src/a.mjs:1'] }));
+      child.stdout.end([
+        JSON.stringify({ type: 'thread.started', thread_id: 'no-close-reviewer' }),
+        JSON.stringify({ type: 'turn.completed', model: 'gpt-5.6-sol' }),
+      ].join('\n'));
+      child.stderr.end();
+      // The Codex CLI can emit the terminal event while its close event is
+      // withheld. The Host must terminate this child and finish from the
+      // terminal event plus the structured artifact.
+    });
+    return child;
+  };
+  try {
+    const launch = createCodexCliReviewLauncher({
+      projectRoot,
+      spawnImpl,
+      timeoutMs: 250,
+      env: { ...process.env, CODEX_HOME: undefined },
+    });
+    const startedAt = Date.now();
+    const result = await launch({
+      invocation: { model: 'gpt-5.6-sol', effort: 'high', sandbox: 'read-only', freshSessionRequired: true },
+      executionCapsule: { role: 'reviewer' },
+      executionContract: { permissions: 'read_only' },
+    });
+    assert.ok(Date.now() - startedAt < 250);
+    assert.deepEqual(killSignals, ['SIGTERM']);
+    assert.equal(child.killed, true);
+    assert.equal(result.sessionId, 'no-close-reviewer');
+    assert.equal(result.outcome.verdict, 'pass');
+  } finally {
+    await rm(projectRoot, { recursive: true, force: true });
+  }
+});
+
+test('Codex CLI timeout remains fail-closed when no terminal event arrives', async () => {
+  const child = new EventEmitter();
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  const killSignals = [];
+  child.kill = (signal) => {
+    killSignals.push(signal);
+    return true;
+  };
+  await assert.rejects(() => runCodexReviewProcess({
+    command: 'codex',
+    args: ['exec'],
+    input: 'review',
+    cwd: process.cwd(),
+    env: process.env,
+    timeoutMs: 10,
+    spawnImpl: () => child,
+    platform: 'linux',
+  }), /codex_review_timeout after 10ms/);
+  assert.deepEqual(killSignals, ['SIGTERM']);
+});
+
 test('Codex CLI worker passes model and effort to the child process and records observed values', async () => {
   const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-worker-launcher-'));
   const workerRoot = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-worker-worktree-'));

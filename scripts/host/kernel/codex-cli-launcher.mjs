@@ -318,6 +318,29 @@ const resolveWindowsCodexScript = (command, env) => {
   throw new Error('codex_review_dispatch_failed: codex.ps1 was not found on PATH');
 };
 
+const CODEX_TERMINAL_OUTPUT_WAIT_MS = 250;
+const CODEX_TERMINAL_CLEANUP_WAIT_MS = 250;
+const CODEX_TERMINAL_CLEANUP_POLL_MS = 10;
+
+const processIsAlive = (pid) => {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code !== 'ESRCH';
+  }
+};
+
+const launcherCleanupError = (message, reason = null) => {
+  const error = new Error(reason ? `${message}: ${reason}` : message);
+  // A caller must not remove the output/schema files while cleanup is
+  // unverified: the child may still be running and could retain or rewrite
+  // those paths after the launcher returns.
+  error.preserveLauncherArtifacts = true;
+  return error;
+};
+
 export const runCodexReviewProcess = ({
   command,
   args,
@@ -329,6 +352,10 @@ export const runCodexReviewProcess = ({
   platform = process.platform,
   resolveWindowsScript = resolveWindowsCodexScript,
   cleanupWindowsProcessTree = cleanupWindowsTimeoutProcessTree,
+  outputPath = null,
+  terminalOutputWaitMs = CODEX_TERMINAL_OUTPUT_WAIT_MS,
+  terminalCleanupWaitMs = CODEX_TERMINAL_CLEANUP_WAIT_MS,
+  terminalCleanupPollMs = CODEX_TERMINAL_CLEANUP_POLL_MS,
 }) => new Promise((resolve, reject) => {
   const windowsScript = platform === 'win32' ? resolveWindowsScript(command, env) : null;
   const launchCommand = windowsScript ? 'powershell.exe' : command;
@@ -348,8 +375,32 @@ export const runCodexReviewProcess = ({
   let stdout = '';
   let stderr = '';
   let settled = false;
+  let closeObserved = false;
+  let closeCode;
+  let closeSignal;
+  let threadStarted = false;
+  let terminalCompleted = false;
+  let failedTerminal = false;
+  let terminalCleanupInProgress = false;
+  let timeoutCleanupInProgress = false;
+  let pendingStdout = '';
+  let terminalCheckInFlight = false;
   const append = (current, chunk) => `${current}${chunk}`.slice(-4_000_000);
-  child.stdout?.on('data', (chunk) => { stdout = append(stdout, chunk); });
+  const numericWait = (value, fallback) => Number.isFinite(value) && value >= 0 ? value : fallback;
+  const outputWaitMs = numericWait(terminalOutputWaitMs, CODEX_TERMINAL_OUTPUT_WAIT_MS);
+  const cleanupWaitMs = numericWait(terminalCleanupWaitMs, CODEX_TERMINAL_CLEANUP_WAIT_MS);
+  const cleanupPollMs = Math.max(1, numericWait(terminalCleanupPollMs, CODEX_TERMINAL_CLEANUP_POLL_MS));
+  const outputArtifactAvailable = async () => {
+    if (!outputPath) return false;
+    try {
+      const artifact = await readFile(outputPath, 'utf8');
+      if (!artifact.trim()) return false;
+      JSON.parse(artifact);
+      return true;
+    } catch {
+      return false;
+    }
+  };
   child.stderr?.on('data', (chunk) => { stderr = append(stderr, chunk); });
   const startedAt = new Date();
   let timer = null;
@@ -359,25 +410,162 @@ export const runCodexReviewProcess = ({
     if (timer) clearTimeout(timer);
     callback(value);
   };
-  timer = setTimeout(() => {
-    if (platform === 'win32') {
+  const waitForClose = (waitMs) => new Promise((waitResolve) => {
+    if (closeObserved) {
+      waitResolve(true);
+      return;
+    }
+    let finished = false;
+    const finish = (observed) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(waitTimer);
+      child.removeListener?.('close', onClose);
+      waitResolve(observed);
+    };
+    const onClose = () => finish(true);
+    const waitTimer = setTimeout(() => finish(false), waitMs);
+    child.once('close', onClose);
+  });
+  const requestUnixCleanup = async () => {
+    if (typeof child.kill !== 'function') return { status: 'failed', reason: 'child-kill-unavailable' };
+    try {
+      const requested = child.kill('SIGTERM');
+      if (requested === false) return { status: 'completed', closeObserved, closeCode, closeSignal };
+    } catch (error) {
+      return { status: 'failed', reason: error?.message || 'child-kill-failed' };
+    }
+
+    // Test doubles without an OS pid cannot be checked through the process
+    // table. The successful kill request is the strongest cleanup proof that
+    // such a double can provide; real ChildProcess instances always have a
+    // pid and take the bounded close/aliveness checks below.
+    if (!child.pid) return { status: 'completed', closeObserved, closeCode, closeSignal };
+    if (!processIsAlive(child.pid)) return { status: 'completed', closeObserved, closeCode, closeSignal };
+    if (await waitForClose(cleanupWaitMs)) return { status: 'completed', closeObserved, closeCode, closeSignal };
+
+    try {
+      const requested = child.kill('SIGKILL');
+      if (requested === false) return { status: 'completed', closeObserved, closeCode, closeSignal };
+    } catch (error) {
+      return { status: 'failed', reason: error?.message || 'child-force-kill-failed' };
+    }
+    await waitForClose(Math.min(cleanupWaitMs, 100));
+    return processIsAlive(child.pid)
+      ? { status: 'failed', reason: 'child-survived-terminal-cleanup' }
+      : { status: 'completed', closeObserved, closeCode, closeSignal };
+  };
+  const requestWindowsCleanup = () => {
+    try {
       const cleanup = cleanupWindowsProcessTree({
         launcherPid: child.pid,
         expectedCommand: launchCommand,
         expectedArgs: windowsScript ? [windowsScript] : [],
         startedAt,
+        platform,
       });
-      if (cleanup.status !== 'completed') {
-        settle(reject, new Error(`codex_review_timeout_cleanup_failed: ${cleanup.reason || cleanup.status}`));
-        return;
-      }
-    } else {
-      child.kill();
+      return cleanup.status === 'completed'
+        ? { status: 'completed', closeObserved, closeCode, closeSignal }
+        : { status: 'failed', reason: cleanup.reason || cleanup.status };
+    } catch (error) {
+      return { status: 'failed', reason: error?.message || 'process-tree-cleanup-failed' };
+    }
+  };
+  const requestCleanup = () => platform === 'win32' ? requestWindowsCleanup() : requestUnixCleanup();
+  const terminalOutputReady = async () => {
+    const deadline = Date.now() + outputWaitMs;
+    do {
+      if (settled || closeObserved || failedTerminal) return false;
+      if (await outputArtifactAvailable()) return true;
+      if (Date.now() >= deadline) return false;
+      await new Promise((waitResolve) => setTimeout(waitResolve, Math.min(cleanupPollMs, Math.max(1, deadline - Date.now()))));
+    } while (!settled && !closeObserved && !failedTerminal);
+    return false;
+  };
+  const finishAfterTerminal = async () => {
+    if (terminalCheckInFlight || settled || !outputPath || !threadStarted || !terminalCompleted || failedTerminal) return;
+    terminalCheckInFlight = true;
+    if (!await terminalOutputReady() || settled || closeObserved || failedTerminal) return;
+    terminalCleanupInProgress = true;
+    if (timer) clearTimeout(timer);
+    timer = null;
+    const cleanup = await requestCleanup();
+    if (settled) return;
+    if (cleanup.status !== 'completed') {
+      settle(reject, launcherCleanupError('codex_review_terminal_cleanup_failed', cleanup.reason));
+      return;
+    }
+    if (failedTerminal) {
+      settle(reject, new Error('codex_review_dispatch_failed: failed terminal event'));
+      return;
+    }
+    const code = closeObserved && closeCode !== null && closeCode !== undefined ? closeCode : 0;
+    settle(resolve, { code, stdout, stderr, terminalCompleted: true, closeObserved });
+  };
+  const processEvent = (event) => {
+    if (!event || typeof event !== 'object') return;
+    if (event.type === 'thread.started') threadStarted = true;
+    if (event.type === 'turn.failed' || event.type === 'error') failedTerminal = true;
+    if (event.type === 'turn.completed') terminalCompleted = true;
+    if (terminalCompleted && threadStarted && outputPath) void finishAfterTerminal();
+  };
+  const processStdoutLine = (line) => {
+    const trimmed = String(line || '').trim();
+    if (!trimmed) return;
+    try { processEvent(JSON.parse(trimmed)); } catch { /* launcher parsing owns malformed-line handling */ }
+  };
+  const consumeStdout = (chunk) => {
+    stdout = append(stdout, chunk);
+    pendingStdout = `${pendingStdout}${chunk}`.slice(-4_000_000);
+    const lines = pendingStdout.split(/\r?\n/);
+    pendingStdout = lines.pop() || '';
+    for (const line of lines) processStdoutLine(line);
+    // Codex normally emits newline-delimited JSON. Accept a complete final
+    // object without a newline as well, while leaving partial chunks pending.
+    if (pendingStdout.trim()) {
+      try {
+        const event = JSON.parse(pendingStdout.trim());
+        pendingStdout = '';
+        processEvent(event);
+      } catch { /* wait for the rest of the JSON object */ }
+    }
+  };
+  child.stdout?.on('data', consumeStdout);
+  child.stdout?.on('end', () => {
+    if (pendingStdout.trim()) processStdoutLine(pendingStdout);
+    pendingStdout = '';
+  });
+  const handleTimeout = async () => {
+    if (settled || timeoutCleanupInProgress) return;
+    timeoutCleanupInProgress = true;
+    const cleanup = await requestCleanup();
+    if (settled) return;
+    if (cleanup.status !== 'completed') {
+      settle(reject, launcherCleanupError(`codex_review_timeout_cleanup_failed`, cleanup.reason));
+      return;
     }
     settle(reject, new Error(`codex_review_timeout after ${timeoutMs}ms`));
-  }, timeoutMs);
-  child.once('error', (error) => settle(reject, error));
-  child.once('close', (code) => settle(resolve, { code, stdout, stderr }));
+  };
+  timer = setTimeout(() => { void handleTimeout(); }, timeoutMs);
+  child.once('error', (error) => {
+    if (timeoutCleanupInProgress) return;
+    if (terminalCleanupInProgress) {
+      settle(reject, launcherCleanupError('codex_review_terminal_cleanup_failed', error?.message || 'child-error-during-cleanup'));
+      return;
+    }
+    settle(reject, error);
+  });
+  child.once('close', (code, signal) => {
+    closeObserved = true;
+    closeCode = code;
+    closeSignal = signal;
+    if (timeoutCleanupInProgress) return;
+    if (terminalCleanupInProgress && code === null) {
+      settle(resolve, { code: 0, stdout, stderr, terminalCompleted: true, closeObserved: true });
+      return;
+    }
+    settle(resolve, { code, stdout, stderr });
+  });
 });
 
 export const createCodexCliReviewLauncher = ({
@@ -406,6 +594,7 @@ export const createCodexCliReviewLauncher = ({
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-review-'));
   const schemaPath = path.join(tempRoot, 'review-output.schema.json');
   const outputPath = path.join(tempRoot, 'review-output.json');
+  let preserveTempRoot = false;
   try {
     await writeFile(schemaPath, JSON.stringify(CODEX_REVIEW_OUTPUT_SCHEMA, null, 2));
     const args = [
@@ -419,7 +608,7 @@ export const createCodexCliReviewLauncher = ({
     const input = reviewPrompt({ executionContract, executionCapsule });
 
     const started = Date.now();
-    const processResult = await runCodexReviewProcess({ command: selectedExecutable, args, input, cwd: projectRoot, env: processEnv, timeoutMs, spawnImpl });
+    const processResult = await runCodexReviewProcess({ command: selectedExecutable, args, input, cwd: projectRoot, env: processEnv, timeoutMs, spawnImpl, outputPath });
     const events = parseJsonLines(processResult.stdout);
     const threadId = events.find((event) => event.type === 'thread.started')?.thread_id || null;
     const completed = [...events].reverse().find((event) => event.type === 'turn.completed') || null;
@@ -449,8 +638,11 @@ export const createCodexCliReviewLauncher = ({
       runtimePreflight: runtimePreflightResult,
       outcome,
     };
+  } catch (error) {
+    preserveTempRoot = Boolean(error?.preserveLauncherArtifacts);
+    throw error;
   } finally {
-    await rm(tempRoot, { recursive: true, force: true });
+    if (!preserveTempRoot) await rm(tempRoot, { recursive: true, force: true });
   }
 };
 
@@ -487,6 +679,7 @@ export const createCodexCliWorkerLauncher = ({
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-worker-'));
   const schemaPath = path.join(tempRoot, 'worker-output.schema.json');
   const outputPath = path.join(tempRoot, 'worker-output.json');
+  let preserveTempRoot = false;
   try {
     await writeFile(schemaPath, JSON.stringify(CODEX_WORKER_OUTPUT_SCHEMA, null, 2));
     const args = [
@@ -507,6 +700,7 @@ export const createCodexCliWorkerLauncher = ({
       env: processEnv,
       timeoutMs,
       spawnImpl,
+      outputPath,
     });
     const events = parseJsonLines(processResult.stdout);
     const threadId = events.find((event) => event.type === 'thread.started')?.thread_id || null;
@@ -539,7 +733,10 @@ export const createCodexCliWorkerLauncher = ({
       outcome,
       report: outcome,
     };
+  } catch (error) {
+    preserveTempRoot = Boolean(error?.preserveLauncherArtifacts);
+    throw error;
   } finally {
-    await rm(tempRoot, { recursive: true, force: true });
+    if (!preserveTempRoot) await rm(tempRoot, { recursive: true, force: true });
   }
 };
