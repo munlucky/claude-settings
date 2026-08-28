@@ -3,6 +3,8 @@
 // long or complex work is decomposed, and even then the decomposition comes from
 // the contract and the route — never from a free-form plan the model narrated.
 
+import { normalizeWorkUnitAllowedPaths } from './work-unit-scope.mjs';
+
 const FILES_CHANGED_THRESHOLD = 8;
 
 export const stepLedgerApplies = ({ contract = {}, route = {}, filesChanged = 0, safeWaveRequested = false } = {}) => {
@@ -31,7 +33,7 @@ const normalizeDeclaredStep = ({ declared, index, runId, planRevision, contract,
   state: 'planned',
   planRevision,
   dependencyIds: Array.isArray(declared.dependsOn) ? declared.dependsOn.map(String) : (previousStepId ? [previousStepId] : []),
-  allowedPaths: Array.isArray(declared.allowedPaths) ? declared.allowedPaths.map(String) : (contract.allowedPaths || []),
+  allowedPaths: Array.isArray(declared.allowedPaths) ? normalizeWorkUnitAllowedPaths(declared.allowedPaths) : normalizeWorkUnitAllowedPaths(contract.allowedPaths),
   forbiddenPaths: Array.isArray(declared.forbiddenPaths) ? declared.forbiddenPaths.map(String) : (contract.forbiddenPaths || []),
   acceptanceIds: Array.isArray(declared.acceptanceIds) ? declared.acceptanceIds.map(String) : [],
   obligationIds: Array.isArray(declared.obligationIds) ? declared.obligationIds.map(String) : [],
@@ -96,7 +98,7 @@ export const buildSyntheticStep = ({ run, contract = {}, obligations = [], planR
   state: 'ready',
   planRevision,
   dependencyIds: [],
-  allowedPaths: contract.allowedPaths || [],
+  allowedPaths: normalizeWorkUnitAllowedPaths(contract.allowedPaths),
   forbiddenPaths: contract.forbiddenPaths || [],
   acceptanceIds: (contract.acceptance || []).map((item) => item.id),
   obligationIds: obligations.map((obligation) => obligation.obligationId),

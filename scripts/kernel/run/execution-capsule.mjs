@@ -11,6 +11,7 @@
 
 import { canonicalJson, digestWithout } from '../canonical-digest.mjs';
 import { applyCapsuleBudget, CAPSULE_BUDGET, findScopeViolations, isSensitivePath } from './capsule-selection.mjs';
+import { assertImplementationWorkUnitScope, resolveWorkUnitAllowedPaths } from './work-unit-scope.mjs';
 
 export const CAPSULE_SCHEMA_VERSION = 1;
 export const CAPSULE_ROLES = Object.freeze(['implementer', 'reviewer', 'planner', 'researcher']);
@@ -180,6 +181,9 @@ export const buildExecutionCapsule = ({
   createdAt = null,
 } = {}) => {
   if (!run) fail('kernel_capsule_invalid', 'buildExecutionCapsule requires the run');
+  if (decision?.permissions === 'workspace_write') {
+    assertImplementationWorkUnitScope({ step, contract, actionType: 'implement' });
+  }
   const outstanding = new Set(outstandingObligations || run.requiredObligations || []);
   const relevantObligations = obligations.filter((obligation) => outstanding.size === 0 || outstanding.has(obligation.obligationId));
 
@@ -201,7 +205,7 @@ export const buildExecutionCapsule = ({
     workUnit: {
       objective: step?.objective || objective || run.objective,
       dependencies: step?.dependencyIds || [],
-      allowedPaths: step?.allowedPaths?.length ? step.allowedPaths : (contract?.allowedPaths || []),
+      allowedPaths: resolveWorkUnitAllowedPaths({ step, contract }),
       forbiddenPaths: step?.forbiddenPaths?.length ? step.forbiddenPaths : (contract?.forbiddenPaths || []),
       expectedOutputs: step?.expectedOutputs || [],
     },

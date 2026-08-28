@@ -68,6 +68,7 @@ import { registerWorkspace } from './run/workspace-registration.mjs';
 import { resolveRunArtifactPaths } from './artifact-paths.mjs';
 import { buildStructuredRunSignals, failureFingerprint } from './knowledge/capture.mjs';
 import { buildEvidenceIdentity, buildEvidenceReuseReceipt } from './proof/evidence-reuse.mjs';
+import { assertImplementationWorkUnitScope, workUnitScopeFailure } from './run/work-unit-scope.mjs';
 
 export const computeKernelSourceIdentity = ({ projectRoot = process.cwd(), objective = '', taskContract = {} } = {}) => {
   const sourceDigest = gitTreeDigest(projectRoot) || sha256Hex({ projectRoot, objective });
@@ -331,6 +332,65 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     blockedDetail: detail,
     next: buildUnboundNextPayload(runId),
   });
+  const buildWorkUnitScopeRejection = ({ runId, modelInput, capabilities, error }) => {
+    const failure = workUnitScopeFailure(error);
+    const workUnitScope = {
+      valid: false,
+      reason: failure.scopeReason,
+      errorCode: failure.errorCode,
+      allowedPaths: failure.allowedPaths,
+      ...(failure.workspaceWide.length > 0 ? { workspaceWide: failure.workspaceWide } : {}),
+    };
+    const action = modelInput.action
+      ? {
+        ...modelInput.action,
+        workUnitScope,
+        guidance: `${failure.errorSummary} ${modelInput.action.guidance || ''}`.trim(),
+      }
+      : null;
+    return {
+      schemaVersion: 1,
+      runId,
+      status: 'scope-rejected',
+      errorCode: failure.errorCode,
+      failureCode: failure.failureCode,
+      errorSummary: failure.errorSummary,
+      nextAction: failure.nextAction,
+      workUnitScope,
+      modelInput: {
+        ...modelInput,
+        status: 'scope-rejected',
+        errorCode: failure.errorCode,
+        failureCode: failure.failureCode,
+        errorSummary: failure.errorSummary,
+        nextAction: failure.nextAction,
+        workUnitScope,
+        ...(action ? { action } : {}),
+      },
+      executionCapsule: null,
+      hostDirective: {
+        // The dispatcher treats this as a Kernel-owned rejection and returns
+        // before route admission, provider resolution, or worker dispatch.
+        modelRouteDecision: {
+          schemaVersion: 1,
+          runId,
+          actionKind: 'work-unit-scope-guard',
+          role: 'implementer',
+          modelClass: 'kernel',
+          permissions: 'workspace_write',
+          reasonCodes: [failure.errorCode],
+        },
+        actorAssignment: null,
+        hostCapabilities: capabilities,
+        enforcementStrategy: 'kernel',
+        executionCapsule: null,
+        attemptId: null,
+        attempt: null,
+        mutationLock: null,
+        rejection: failure,
+      },
+    };
+  };
 
   const persistReleaseEvidenceIfNeeded = (runId, updated) => {
     if (updated.evidenceTier !== 'E2') return;
@@ -1086,6 +1146,21 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
           timeoutMs: actionContext.baselineTimeoutMs || 120000,
         });
         modelInput = await this.next(runId, { stepId: actionContext.stepId || null });
+      }
+      const reviewerTurn = String(actionContext.actionKind || '').startsWith('review');
+      if (['implement', 'fix'].includes(modelInput.action?.type) && !reviewerTurn) {
+        const capsuleStep = actionContext.stepId
+          ? this.ensureRunStepsMigrated(runId).find((entry) => entry.stepId === actionContext.stepId)
+          : this.getCurrentStep(runId);
+        try {
+          assertImplementationWorkUnitScope({
+            step: capsuleStep,
+            contract: run.taskContract,
+            actionType: modelInput.action.type,
+          });
+        } catch (error) {
+          return buildWorkUnitScopeRejection({ runId, modelInput, capabilities, error });
+        }
       }
       let mutationLock = null;
       const workspaceIdForTurn = actionContext.workspaceId || run.workspaceId || effectiveWorkspaceId;

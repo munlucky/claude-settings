@@ -21,6 +21,7 @@ import { projectRunState } from '../state-projector.mjs';
 import { buildActiveWave, isApprovalSource, waveStatusIsActive } from './active-wave.mjs';
 import { assertAttemptLineage } from './attempt-provenance.mjs';
 import { buildActorAssignmentId, hashSessionId } from './model-route-contract.mjs';
+import { assertImplementationWorkUnitScope, resolveWorkUnitAllowedPaths } from './work-unit-scope.mjs';
 
 const isCodexOwnerBinding = (binding) => Boolean(
   binding
@@ -169,6 +170,7 @@ export const createWorkCursorApi = ({ store, projectRoot, runtimeHome }) => ({
     const wave = store.getRunWave(waveId);
     const step = store.getRunStep(runId, stepId);
     if (!wave || wave.runId !== runId || !step || step.waveId !== waveId) throw Object.assign(new Error('step-wave-mismatch'), { code: 'STEP_WAVE_MISMATCH' });
+    assertImplementationWorkUnitScope({ step, contract: store.getRun(runId)?.taskContract || null, actionType: 'implement' });
     store.updateRunStep(runId, stepId, {
       state: 'running',
       executionWorkspaceId: binding.workspaceId || null,
@@ -723,7 +725,7 @@ export const createWorkCursorApi = ({ store, projectRoot, runtimeHome }) => ({
     const outstanding = completion.unsatisfiedObligations.map((entry) => entry.obligationId);
     const knowledgeContext = await this.refreshStageKnowledge(runId);
     const contract = run.taskContract;
-    const allowedPaths = step?.allowedPaths?.length ? step.allowedPaths : (contract?.allowedPaths || []);
+    const allowedPaths = resolveWorkUnitAllowedPaths({ step, contract });
 
     const projectContext = await this.buildImplementationContext(runId, run);
     const relevantFiles = run.projectMode === 'greenfield' ? [] : rankRelevantFiles({
