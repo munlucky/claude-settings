@@ -26,7 +26,7 @@ const sandboxedEnv = (home) => ({
   ANTIGRAVITY_HOME: path.join(realpathSync(home), '.gemini', 'antigravity'),
 });
 
-test('install --json emits a single parseable JSON document on stdout (real install, chaining active)', async () => {
+test('install --json emits a single parseable JSON document on stdout (real install, Kernel chaining active)', async () => {
   const home = await mkdtemp(path.join(os.tmpdir(), 'mr-json-stdout-'));
   try {
     const result = spawnSync(process.execPath, [wrapper, 'install', '--runtime', 'all', '--json'], {
@@ -37,14 +37,14 @@ test('install --json emits a single parseable JSON document on stdout (real inst
     });
     assert.equal(result.status, 0, result.stderr);
 
-    // The whole of stdout must parse as one JSON object — the chained kernel
-    // install / switcher adopt logs must have gone to stderr, not stdout.
+    // The whole of stdout must parse as one JSON object — chained Kernel
+    // install logs must have gone to stderr, not stdout.
     let parsed;
     assert.doesNotThrow(() => { parsed = JSON.parse(result.stdout); }, `stdout was not pure JSON:\n${result.stdout.slice(0, 400)}`);
     assert.equal(parsed.dryRun, false);
     assert.ok(Array.isArray(parsed.manifests) && parsed.manifests.length > 0);
-    // The chaining did run (non-dry-run) — its human output belongs on stderr.
-    assert.match(result.stderr, /kernel|switcher|adopt|install/i);
+    // The Kernel chaining did run (non-dry-run) — its human output belongs on stderr.
+    assert.match(result.stderr, /kernel|install/i);
 
     const identity = spawnSync(process.execPath, [
       kernelCli,
@@ -88,7 +88,7 @@ test('install --dry-run --json is also pure JSON (no chaining)', async () => {
   }
 });
 
-test('setup refuses a symlinked Kernel home before the primary installer or adoption', async () => {
+test('setup refuses a symlinked Kernel home before the primary installer', async () => {
   const home = await mkdtemp(path.join(os.tmpdir(), 'mr-symlink-kernel-home-'));
   const realKernel = path.join(home, 'kernel-real');
   const aliasKernel = path.join(home, 'kernel-alias');

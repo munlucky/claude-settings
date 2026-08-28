@@ -1,11 +1,11 @@
 ---
 name: moon-relay-kernel
-description: Explicit-only entrypoint for Moon Relay Kernel task routing and adaptive workflow execution. Use only when the user explicitly names `moon-relay-kernel`, invokes `$moon-relay-kernel`, or explicitly asks to use the Kernel skill or Kernel mode for the current task. Do not infer activation from installed availability, AGENTS.md, track markers, repository context, or a task that merely concerns Kernel.
+description: Default Codex command-skill entrypoint for Moon Relay Kernel task routing and adaptive workflow execution. Selecting this skill activates Kernel workflow for that task; it does not force unselected ordinary Codex tasks into Kernel.
 ---
 
 # Moon Relay Kernel
 
-0. Run this workflow only after the current user request explicitly invokes the Kernel skill or Kernel mode. Otherwise do not call `kernel next` or `kernel report`; continue with the normal Codex workflow.
+0. Run this workflow when `moon-relay-kernel` is selected by the Codex command skillset, explicitly invoked, or the active project track resolves to `kernel`. The account command skillset defaults to Kernel, but this does not force unselected ordinary Codex tasks into Kernel. Confirm the track before calling `kernel next` or `kernel report`; for a non-kernel track return `wrong_harness` without mutating the repository.
 1. Confirm the account-root track binding for the current project/worktree is `kernel`; the binding lives under the Kernel runtime home and is scoped by canonical root plus Git worktree identity. A repository-local `.moon-relay/track.yaml` is legacy compatibility only; otherwise return `wrong_harness` without mutating the repository.
 2. Capture the objective, acceptance, constraints, and non-goals as a compact task contract. Before the first runtime call for the current user request, write that contract to a task-scoped temporary JSON file outside the target repository and call `kernel next --contract-json <file>`. This contract-first call atomically creates and binds a Run when the current Host session has none; do not bootstrap a fresh session with bare `kernel next`. The Kernel keeps the contract as the run's authority, so later calls resume through the Host binding without making the model track a run id.
 3. Drive the run with exactly two model-visible runtime commands: the contract-first `kernel next --contract-json <file>` (or bare `kernel next` only after a Host binding exists) returns the objective, acceptance, constraints, non-goals, evidence, and the one action to take now; `kernel report --report-json <file>` submits a change summary, changed paths, risks, requested verifications, and structured judgments.

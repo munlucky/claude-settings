@@ -6,6 +6,19 @@ The default mode is account-root installation into the shared Moonshot Relay hom
 
 The shared Moonshot Relay home preserves canonical `skills/**` for internal references and source parity. Claude/Codex/Qwen profile-local and Antigravity global `skills/` discovery is governed by `package/runtime-surface.json`: `product-orchestrator`, `moonshot-architecture`, `moonshot-orchestrator`, `moonshot-phase-runner`, `moonshot-plan-writer`, `commit-moonshot`, `session-logger`, and `explain-diff-html`. Reinstalling prunes canonical source skills that are no longer in the service profile payload, while unrelated user-installed skills remain preserved.
 
+## Kernel Codex command-skill default
+
+When Codex `/` command discovery should use the Kernel skillset by default, install the direct account-root profile with the official Kernel installer:
+
+```sh
+node bin/moon-relay-kernel.mjs profile-install \
+  --runtime codex --account-root \
+  --target-root "${CODEX_HOME:-$HOME/.codex}" \
+  --source-root .
+```
+
+This materializes the Kernel command skills, account guidance, project-only non-blocking track hook, and checksum manifest directly under the Codex account root. Known Moonshot Relay workflow skills are moved to a dated Kernel backup so the account discovery root exposes the Kernel surface without losing recovery data. Unselected ordinary Codex tasks are not forced through Kernel. This direct profile path does not use the Relay↔Kernel switcher.
+
 Shared runtime references must resolve through `MOONSHOT_RELAY_HOME`. In `cmd.exe` this is `%MOONSHOT_RELAY_HOME%`, in PowerShell it is `$env:MOONSHOT_RELAY_HOME`, and in bash/zsh it is `${MOONSHOT_RELAY_HOME}`. Antigravity global skill discovery resolves through `ANTIGRAVITY_SKILLS_HOME`, defaulting to `~/.gemini/config`. If the variable is unset, installers and skills use the account default `~/.moonshot-relay`.
 
 ## Compatibility Window

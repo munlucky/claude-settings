@@ -12,7 +12,9 @@ export async function doctorKernelProfile({ targetRoot, runtime = null, runtimeH
   if (result.status !== 'ready') return { status: 'drift', effective: 'unknown', targetRoot: result.targetRoot, recovery: 'rollback or reinstall manifest-owned static files', checks: result.checks };
   const commandChecks = [];
   const requiredProfileFiles = {
-    codex: ['AGENTS.override.md', '.codex/config.toml', '.codex/hooks.json', 'skills/moon-relay-kernel/SKILL.md'],
+    codex: result.manifest.layout === 'account-root-direct'
+      ? ['AGENTS.md', 'config.toml', 'hooks.json', 'skills/moon-relay-kernel/SKILL.md']
+      : ['AGENTS.override.md', '.codex/config.toml', '.codex/hooks.json', 'skills/moon-relay-kernel/SKILL.md'],
     claude: ['CLAUDE.md', 'settings.json', 'skills/moon-relay-kernel/SKILL.md'],
   };
   for (const relativePath of requiredProfileFiles[result.manifest.runtime] || ['skills/moon-relay-kernel/SKILL.md']) {

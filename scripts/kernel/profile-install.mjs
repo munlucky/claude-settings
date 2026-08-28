@@ -1,8 +1,8 @@
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { cp, lstat, mkdir, readFile, readdir, rm, stat } from 'node:fs/promises';
+import { cp, lstat, mkdir, readFile, readdir, rename, rm, stat } from 'node:fs/promises';
 import { KERNEL_PROFILE_RUNTIMES } from './profile-build.mjs';
-import { canonicalPath } from './runtime-home.mjs';
+import { canonicalPath, resolveKernelRuntimeHome } from './runtime-home.mjs';
 import { atomicWriteText } from './durable-write.mjs';
 import { loadStandaloneCatalog, standaloneDescriptors } from './standalone/catalog.mjs';
 
@@ -11,6 +11,17 @@ export const PROFILE_MANIFEST_NAME = '.moon-relay-kernel-profile-manifest.json';
 export const PROFILE_MARKER_NAME = '.moon-relay-kernel-profile.json';
 export const KERNEL_ENTRYPOINT_SKILL = 'moon-relay-kernel';
 export const KERNEL_SKILL_INSTALL_REL = `skills/${KERNEL_ENTRYPOINT_SKILL}`;
+export const ACCOUNT_ROOT_PROFILE_LAYOUT = 'account-root-direct';
+export const LEGACY_RELAY_SKILL_NAMES = Object.freeze([
+  'commit-moonshot',
+  'moonshot-architecture',
+  'moonshot-orchestrator',
+  'moonshot-phase-runner',
+  'moonshot-plan-writer',
+  'moonshot-relay-setup',
+  'product-orchestrator',
+  'session-logger',
+]);
 export const canonicalKernelSkillDir = (sourceRoot) => path.resolve(sourceRoot, 'skills', KERNEL_ENTRYPOINT_SKILL);
 export const canonicalStandaloneSkillDirs = async (sourceRoot) => {
   let catalog;
@@ -108,16 +119,214 @@ export async function inspectProfile(targetRoot) {
     const file = safeJoin(root, entry.path);
     const present = await exists(file);
     let checksum = present ? await sha256(file) : null;
-    let isOk = present && checksum === entry.checksum;
-    if (present && !isOk && entry.path.endsWith('.json')) {
+    let contentMatch = false;
+    if (present && entry.requiredContent) {
+      try { contentMatch = (await readFile(file, 'utf8')).includes(entry.requiredContent); } catch {}
+    }
+    let isOk = present && (checksum === entry.checksum || contentMatch);
+    if (present && !isOk && !entry.requiredContent && entry.path.endsWith('.json')) {
       try {
         const content = JSON.parse(await readFile(file, 'utf8'));
         if (content && typeof content === 'object') isOk = true;
       } catch {}
     }
-    checks.push({ path: entry.path, present, checksum, expected: entry.checksum, isOk });
+    checks.push({ path: entry.path, present, checksum, expected: entry.checksum, requiredContent: entry.requiredContent || null, contentMatch, isOk });
   }
   return { status: checks.every((item) => item.present && (item.checksum === item.expected || item.isOk)) ? 'ready' : 'drift', targetRoot: root, manifest, checks };
+}
+
+const extractDeveloperInstruction = (text) => {
+  const match = String(text || '').match(/^\s*developer_instructions\s*=\s*(?:"""[\s\S]*?"""|'''[\s\S]*?'''|[^\r\n]*)/m);
+  if (!match) throw new Error('profile_source_invalid: Kernel Codex profile is missing developer_instructions');
+  return match[0].trim();
+};
+
+const mergeKernelDeveloperInstructions = (existing, incoming) => {
+  const target = String(existing || '');
+  const directive = extractDeveloperInstruction(incoming);
+  const assignment = /^\s*developer_instructions\s*=\s*(?:"""[\s\S]*?"""|'''[\s\S]*?'''|[^\r\n]*)\r?\n?/m;
+  if (assignment.test(target)) return target.replace(assignment, `${directive}\n`);
+  const firstTable = target.search(/^\s*\[/m);
+  if (firstTable < 0) return `${target.trimEnd()}${target.trim() ? '\n\n' : ''}${directive}\n`;
+  const before = target.slice(0, firstTable).trimEnd();
+  const after = target.slice(firstTable);
+  return `${before}\n\n${directive}\n\n${after}`;
+};
+
+const isKernelTrackHook = (value) => Array.isArray(value?.hooks)
+  && value.hooks.some((hook) => typeof hook?.command === 'string' && /assert-track\b/.test(hook.command));
+
+const rewriteKernelTrackHook = (value, command) => {
+  if (Array.isArray(value)) return value.map((item) => rewriteKernelTrackHook(item, command));
+  if (!value || typeof value !== 'object') return value;
+  const result = { ...value };
+  if (typeof result.command === 'string' && /assert-track\b/.test(result.command)) result.command = command;
+  for (const [key, child] of Object.entries(result)) {
+    if (key !== 'command') result[key] = rewriteKernelTrackHook(child, command);
+  }
+  return result;
+};
+
+const mergeKernelHooks = (existing, incoming, command) => {
+  const merged = deepMergeJson(existing || {}, incoming || {});
+  const existingEvents = existing?.hooks && typeof existing.hooks === 'object' ? existing.hooks : {};
+  const incomingEvents = incoming?.hooks && typeof incoming.hooks === 'object' ? incoming.hooks : {};
+  merged.hooks = { ...existingEvents, ...incomingEvents };
+  for (const event of new Set([...Object.keys(existingEvents), ...Object.keys(incomingEvents)])) {
+    if (event !== 'SessionStart') continue;
+    const retained = Array.isArray(existingEvents[event]) ? existingEvents[event].filter((item) => !isKernelTrackHook(item)) : [];
+    const kernelHooks = Array.isArray(incomingEvents[event]) ? rewriteKernelTrackHook(incomingEvents[event], command) : [];
+    merged.hooks[event] = [...retained, ...kernelHooks];
+  }
+  return merged;
+};
+
+const quoteShellPath = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
+
+const moveToBackup = async (root, relativePath, backupRoot) => {
+  const source = safeJoin(root, relativePath);
+  if (!(await exists(source))) return false;
+  await rejectSymlink(source);
+  const destination = safeJoin(backupRoot, relativePath);
+  await mkdir(path.dirname(destination), { recursive: true });
+  await rename(source, destination);
+  return true;
+};
+
+const copyToBackup = async (root, relativePath, backupRoot) => {
+  const source = safeJoin(root, relativePath);
+  if (!(await exists(source))) return false;
+  await rejectSymlink(source);
+  await copyTree(source, safeJoin(backupRoot, relativePath));
+  return true;
+};
+
+const writeAccountRootManifest = async ({ root, sourceRoot, runtime, runtimeHome, backupPath, retiredRelaySkills, skillPaths }) => {
+  const entries = [];
+  const add = async (relativePath, requiredContent = null) => {
+    const entry = { path: relativePath.replaceAll('\\', '/'), checksum: await sha256(safeJoin(root, relativePath)) };
+    if (requiredContent) entry.requiredContent = requiredContent;
+    entries.push(entry);
+  };
+  await add('AGENTS.md');
+  await add('config.toml', 'This project runs under Moon Relay Kernel.');
+  await add('hooks.json', 'assert-track');
+  for (const relativePath of skillPaths) await add(path.join('skills', relativePath));
+  await add(PROFILE_MARKER_NAME);
+  return {
+    schemaVersion: 1,
+    productId: PROFILE_PRODUCT_ID,
+    track: 'kernel',
+    runtime,
+    layout: ACCOUNT_ROOT_PROFILE_LAYOUT,
+    targetRoot: root,
+    runtimeHome: canonicalPath(runtimeHome),
+    sourceRoot: path.resolve(sourceRoot),
+    installedAt: new Date().toISOString(),
+    backupPath,
+    retiredRelaySkills,
+    files: entries,
+  };
+};
+
+export async function installKernelAccountRoot({ sourceRoot = process.cwd(), runtime = 'codex', targetRoot, runtimeHome = null } = {}) {
+  if (runtime !== 'codex') throw new Error(`unsupported_account_root_profile: ${runtime}`);
+  const root = await safeProfileRoot(targetRoot);
+  const source = path.resolve(sourceRoot, 'package', 'kernel', 'profiles', runtime);
+  const canonicalSkill = canonicalKernelSkillDir(sourceRoot);
+  if (!(await exists(source))) throw new Error(`application_not_resolved: profile source missing for ${runtime}`);
+  if (!(await exists(canonicalSkill))) throw new Error(`skill_source_missing: ${canonicalSkill}`);
+  await mkdir(root, { recursive: true });
+  await rejectSymlink(root);
+
+  const manifestPath = profileManifestPath(root);
+  const markerPath = profileMarkerPath(root);
+  const prior = await exists(manifestPath) ? JSON.parse(await readFile(manifestPath, 'utf8')) : null;
+  if (prior && (prior.productId !== PROFILE_PRODUCT_ID || prior.layout !== ACCOUNT_ROOT_PROFILE_LAYOUT)) {
+    throw new Error('target_collision: foreign or non-account-root Kernel profile manifest');
+  }
+  if (await exists(markerPath) && !prior) throw new Error('target_collision: marker without trusted manifest');
+
+  const effectiveRuntimeHome = runtimeHome || resolveKernelRuntimeHome();
+  const backupPath = path.join(root, '.moon-relay-kernel-backups', `account-root-${Date.now()}-${process.pid}`);
+  const backupEntries = [];
+  const recordBackup = async (relativePath, move = false) => {
+    const preserved = move
+      ? await moveToBackup(root, relativePath, backupPath)
+      : await copyToBackup(root, relativePath, backupPath);
+    if (preserved) backupEntries.push(relativePath.replaceAll('\\', '/'));
+    return preserved;
+  };
+
+  await mkdir(root, { recursive: true });
+  await recordBackup('AGENTS.md', true);
+  await recordBackup('config.toml');
+  await recordBackup('hooks.json');
+  const retiredRelaySkills = [];
+  for (const name of LEGACY_RELAY_SKILL_NAMES) {
+    if (await recordBackup(path.join('skills', name), true)) retiredRelaySkills.push(name);
+  }
+
+  const agents = await readFile(path.join(source, 'AGENTS.override.md'), 'utf8');
+  await atomicWrite(path.join(root, 'AGENTS.md'), agents);
+
+  const configSource = await readFile(path.join(source, '.codex', 'config.toml'), 'utf8');
+  const configPath = safeJoin(root, 'config.toml');
+  const configExisting = await exists(configPath) ? await readFile(configPath, 'utf8') : '';
+  await atomicWrite(configPath, mergeKernelDeveloperInstructions(configExisting, configSource));
+
+  const hookSource = JSON.parse(await readFile(path.join(source, '.codex', 'hooks.json'), 'utf8'));
+  const hookPath = safeJoin(root, 'hooks.json');
+  const hookExisting = await exists(hookPath) ? JSON.parse(await readFile(hookPath, 'utf8')) : {};
+  const hookCommand = `${quoteShellPath(path.join(canonicalPath(effectiveRuntimeHome), 'bin', 'kernel'))} assert-track --project-only --allow-non-kernel --json`;
+  await atomicWrite(hookPath, `${JSON.stringify(mergeKernelHooks(hookExisting, hookSource, hookCommand), null, 2)}\n`);
+
+  const installedSkillPaths = [];
+  const installSkill = async (name, directory) => {
+    const installRel = path.join('skills', name);
+    await copyTree(directory, safeJoin(root, installRel));
+    for (const relativePath of await files(directory)) {
+      const target = safeJoin(root, path.join(installRel, relativePath));
+      await mkdir(path.dirname(target), { recursive: true });
+      await cp(path.join(directory, relativePath), target, { force: true });
+      installedSkillPaths.push(path.join(name, relativePath));
+    }
+  };
+  await installSkill(KERNEL_ENTRYPOINT_SKILL, canonicalSkill);
+  for (const { name, dir } of await canonicalStandaloneSkillDirs(sourceRoot)) {
+    if (await exists(dir)) await installSkill(name, dir);
+  }
+
+  const marker = {
+    schemaVersion: 1,
+    productId: PROFILE_PRODUCT_ID,
+    track: 'kernel',
+    runtime,
+    layout: ACCOUNT_ROOT_PROFILE_LAYOUT,
+  };
+  await atomicWrite(markerPath, JSON.stringify(marker, null, 2));
+  const manifest = await writeAccountRootManifest({
+    root,
+    sourceRoot,
+    runtime,
+    runtimeHome: effectiveRuntimeHome,
+    backupPath: backupEntries.length ? backupPath : null,
+    retiredRelaySkills,
+    skillPaths: installedSkillPaths,
+  });
+  await atomicWrite(manifestPath, JSON.stringify(manifest, null, 2));
+  if (!backupEntries.length) await rm(backupPath, { recursive: true, force: true });
+  else await atomicWrite(path.join(backupPath, 'account-root-backup.json'), JSON.stringify({ schemaVersion: 1, targetRoot: root, entries: backupEntries, retiredRelaySkills }, null, 2));
+  return {
+    status: prior ? 'reinstalled' : 'installed',
+    runtime,
+    layout: ACCOUNT_ROOT_PROFILE_LAYOUT,
+    targetRoot: root,
+    manifestPath,
+    backupPath: backupEntries.length ? backupPath : null,
+    retiredRelaySkills,
+    installedFilesCount: manifest.files.length,
+  };
 }
 
 export async function installKernelProfile({ sourceRoot = process.cwd(), runtime, targetRoot, skillsRoot = null, force = false } = {}) {

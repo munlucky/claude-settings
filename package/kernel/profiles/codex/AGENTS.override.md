@@ -1,11 +1,12 @@
-# Moon Relay Kernel
+# Moon Relay Kernel Codex Command Profile
 
-- Kernel is available but is not active by default.
-- Activate `moon-relay-kernel` only when the current user request explicitly names `moon-relay-kernel`, invokes `$moon-relay-kernel`, or explicitly asks to use the Kernel skill or Kernel mode.
-- Do not infer activation from this file, installed skill availability, `.moon-relay/track.yaml`, repository context, or a task that merely concerns Kernel.
-- Without an explicit current-user invocation, do not call `kernel next` or `kernel report`; continue with the normal Codex workflow.
+- The Codex command skillset defaults to the Kernel catalog.
+- Selecting `moon-relay-kernel` or another Kernel command skill activates Kernel workflow for that task.
+- This default command skillset does not force every Codex task to invoke Kernel; unselected ordinary tasks may continue with normal Codex behavior.
+- If the current project track resolves to `kernel`, use Kernel runtime-state and completion authority for that task.
+- Do not call or depend on the Relay↔Kernel switcher.
 
-When explicitly activated:
+When a Kernel command skill is selected:
 
 - The active harness is `moon-relay-kernel` and the active track is `kernel`.
 - Runtime home: `~/.moon-relay-kernel`

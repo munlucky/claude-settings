@@ -13,7 +13,6 @@ const repoRoot = path.dirname(path.dirname(binPath));
 const installer = path.join(repoRoot, 'scripts', 'install-account-root-harness.mjs');
 const bridgeInstaller = path.join(repoRoot, 'scripts', 'install-project-runtime-bridge.mjs');
 const kernelInstaller = path.join(repoRoot, 'bin', 'moon-relay-kernel.mjs');
-const switcherInstaller = path.join(repoRoot, 'bin', 'moon-harness-switcher.mjs');
 const deliverySubmit = path.join(repoRoot, 'scripts', 'delivery-submit.mjs');
 const retroCli = path.join(repoRoot, 'tools', 'retro', 'retro-cli.mjs');
 
@@ -25,7 +24,8 @@ const usage = `Usage:
   moonshot-relay delivery submit --score <json-file> --verification <json-file> --current-sha <sha> [--mode local|pr|release] [--out <submission.json>] [--json]
   moonshot-relay retro collect|import|daily|propose|issue-draft [options]
 
-Runs the Moonshot Relay account-root installer from the current package source.`;
+Runs the account-root installer from the current package source; the final Codex
+command-skill surface is synchronized to the Kernel profile without the switcher.`;
 
 const args = process.argv.slice(2).filter((arg) => arg !== '--');
 
@@ -45,7 +45,7 @@ if (!['install', 'kernel', 'bridge', 'delivery', 'retro'].includes(command)) {
 }
 
 // In --json mode the primary installer prints one JSON document to stdout.
-// The chained kernel-install and switcher-adopt steps must NOT pollute stdout
+// The chained Kernel install steps must NOT pollute stdout
 // with their human logs, or `install --json` stops being parseable. Route
 // their output to stderr in json mode; keep everything on stdout otherwise.
 const jsonMode = args.includes('--json');
@@ -142,27 +142,11 @@ if (command !== 'kernel' && !existsSync(selectedInstaller)) {
   process.exit(1);
 }
 
-if (command === 'install' && !args.includes('--dry-run')) {
-  const force = args.includes('--force') || args.includes('-f') || args.includes('--clean-overlay');
-  const { inspectAccountSkillsOverlay, restoreAccountSkillsOverlay } = await import('../scripts/switcher/account-skills-overlay.mjs');
-  for (const surface of ['codex_desktop', 'claude_cli']) {
-    let overlay = await inspectAccountSkillsOverlay({ surface });
-    if (!['inactive', 'not_required'].includes(overlay.status)) {
-      if (force) {
-        try {
-          await restoreAccountSkillsOverlay({ surface, force: true });
-          overlay = await inspectAccountSkillsOverlay({ surface });
-        } catch {}
-      }
-      if (!['inactive', 'not_required'].includes(overlay.status)) {
-        console.error(`Setup refused: ${surface} has a ${overlay.status} Kernel skills overlay. Close the app and run the matching r:codex or r:claude command before setup (or use --force).`);
-        process.exit(1);
-      }
-    }
-  }
-}
-
 const userHome = process.env.USERPROFILE || process.env.HOME || os.homedir();
+const optionValue = (flag) => {
+  const index = args.indexOf(flag);
+  return index >= 0 && index + 1 < args.length ? args[index + 1] : null;
+};
 const requestedKernelHome = process.env.MOON_RELAY_KERNEL_HOME || path.join(userHome, '.moon-relay-kernel');
 const kernelHomeIdentity = await physicalTargetIdentity(requestedKernelHome, {
   protectedRoots: [process.env.MOONSHOT_RELAY_HOME || path.join(userHome, '.moonshot-relay')],
@@ -173,6 +157,7 @@ if (!kernelHomeIdentity.safe) {
 }
 const kernelHome = kernelHomeIdentity.canonicalPath;
 const relayEnv = command === 'install' ? relaySetupEnvironment({ userHome, kernelHome }) : process.env;
+const codexHome = canonicalPath(optionValue('--codex-home') || process.env.CODEX_HOME || path.join(userHome, '.codex'));
 
 const runKernelInstall = () => {
   if (!existsSync(kernelInstaller)) {
@@ -224,13 +209,45 @@ const runKernelInstall = () => {
   }
 };
 
+const runKernelAccountRootProfileInstall = () => {
+  const profileArgs = [
+    kernelInstaller,
+    'profile-install',
+    '--runtime',
+    'codex',
+    '--account-root',
+    '--target-root',
+    codexHome,
+    '--source-root',
+    repoRoot,
+    '--runtime-home',
+    kernelHome,
+  ];
+  if (jsonMode) profileArgs.push('--json');
+  const profileInstall = spawnSync(process.execPath, profileArgs, {
+    cwd: repoRoot,
+    env: { ...process.env, MOON_RELAY_TRACK: 'kernel', MOON_RELAY_KERNEL_HOME: kernelHome },
+    stdio: chainedStdio,
+  });
+  if (profileInstall.error) {
+    console.error(`Kernel Codex account-root profile install failed: ${profileInstall.error.message}`);
+    process.exit(1);
+  }
+  if (profileInstall.status !== 0) {
+    console.error(`Kernel Codex account-root profile install failed with exit code ${profileInstall.status}`);
+    process.exit(profileInstall.status || 1);
+  }
+};
+
 if (command === 'kernel') {
   runKernelInstall();
+  runKernelAccountRootProfileInstall();
   process.exit(0);
 }
 
 // Kernel is the first installation authority. The Relay installer below only
-// materializes the compatibility profile after Kernel ownership is ready.
+// materializes compatibility profiles; the direct Codex Kernel account profile
+// is synchronized after it so `/` command discovery has the Kernel default.
 if (command === 'install' && !args.includes('--dry-run')) runKernelInstall();
 
 const installerArgs = command === 'bridge'
@@ -257,17 +274,7 @@ if (result.error) {
 }
 
 if (result.status === 0 && command === 'install' && !args.includes('--dry-run')) {
-  if (existsSync(switcherInstaller)) {
-    const adoption = spawnSync(process.execPath, [switcherInstaller, 'adopt', '--approved', '--approval-token', 'APPROVE_LIVE_HARNESS_SWITCHER', '--source-root', repoRoot, '--kernel-home', kernelHome], { cwd: repoRoot, env: relayEnv, stdio: chainedStdio });
-    if (adoption.error) {
-      console.error(`Kernel provider adoption failed: ${adoption.error.message}`);
-      process.exit(1);
-    }
-    if (adoption.status !== 0) {
-      console.error(`Kernel provider adoption failed with exit code ${adoption.status}`);
-      process.exit(adoption.status || 1);
-    }
-  }
+  runKernelAccountRootProfileInstall();
 }
 
 process.exit(result.status ?? 1);

@@ -180,6 +180,17 @@ accountRootInstall:
     - "${QWEN_HOME:-~/.qwen}/tmp/**"
     - "${QWEN_HOME:-~/.qwen}/logs/**"
 
+kernelCodexAccountRoot:
+  installer: "bin/moon-relay-kernel.mjs profile-install --runtime codex --account-root"
+  mode: account-root-direct
+  target: "${CODEX_HOME:-~/.codex}"
+  commandSkillset: kernel-default
+  ordinaryTaskPolicy: "do-not-force-unselected-tasks-into-kernel"
+  switcher: forbidden
+  manifest: .moon-relay-kernel-profile-manifest.json
+  removedRelaySkills: "known-workflow-skills-moved-to-recoverable-backup"
+  protectedStatePolicy: "preserve-auth-sessions-sqlite-logs-cache-plugins-memories-and-existing-backups"
+
 skillExposure:
   manifest: package/runtime-surface.json
   commonPayloadSkillPolicy: preserve_all_canonical_skills

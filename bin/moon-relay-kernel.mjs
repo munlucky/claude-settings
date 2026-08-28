@@ -257,11 +257,13 @@ try {
     }
   } else if (command === 'assert-track') {
     const runtimeHome = resolveKernelRuntimeHome({ env: trackEnv() });
-    const trackResolution = await resolveProjectTrack(projectRoot, { env: trackEnv(), allowAccountRootDefault: true });
+    const projectOnly = args.includes('--project-only');
+    const trackResolution = await resolveProjectTrack(projectRoot, { env: trackEnv(), allowAccountRootDefault: !projectOnly });
     const activeTrack = trackResolution.track;
     const isReady = activeTrack === 'kernel';
-    output({ productId: 'moon-relay-kernel', runtimeHome, activeTrack, trackSource: trackResolution.source, trackScope: trackResolution.scope, status: isReady ? 'ready' : 'wrong_harness' });
-    if (!isReady) {
+    const allowNonKernel = args.includes('--allow-non-kernel');
+    output({ productId: 'moon-relay-kernel', runtimeHome, activeTrack, trackSource: trackResolution.source, trackScope: trackResolution.scope, status: isReady ? 'ready' : 'wrong_harness', blocking: !isReady && !allowNonKernel });
+    if (!isReady && !allowNonKernel) {
       process.exitCode = 1;
     }
   } else if (command === 'resolve-runtime') {
@@ -290,8 +292,13 @@ try {
       trackHome: getArgValue('--track-home') || (path.resolve(targetRoot) === path.resolve(resolvedRuntimeHome) ? resolvedRuntimeHome : null),
     }));
   } else if (command === 'profile-install') {
-    const { installKernelProfile } = await import('../scripts/kernel/profile-install.mjs');
-    output(await installKernelProfile({ runtime: getArgValue('--runtime-name') || getArgValue('--runtime'), targetRoot: getArgValue('--target-root') || process.cwd(), sourceRoot: getArgValue('--source-root') || process.cwd(), skillsRoot: getArgValue('--skills-root') }));
+    const { installKernelAccountRoot, installKernelProfile } = await import('../scripts/kernel/profile-install.mjs');
+    const runtime = getArgValue('--runtime-name') || getArgValue('--runtime');
+    const targetRoot = getArgValue('--target-root') || process.cwd();
+    const sourceRoot = getArgValue('--source-root') || process.cwd();
+    output(await (args.includes('--account-root')
+      ? installKernelAccountRoot({ runtime, targetRoot, sourceRoot, runtimeHome: getArgValue('--runtime-home') || undefined })
+      : installKernelProfile({ runtime, targetRoot, sourceRoot, skillsRoot: getArgValue('--skills-root') })));
   } else if (command === 'profile-doctor') {
     const { doctorKernelProfile } = await import('../scripts/kernel/profile-doctor.mjs');
     output(await doctorKernelProfile({
