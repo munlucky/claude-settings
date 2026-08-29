@@ -9,7 +9,7 @@ export const NATIVE_PROVIDER_POLICY = Object.freeze({
   schemaVersion: 1,
   mode: 'native-provider',
   managedRuntime: 'kernel-node-only',
-  dataRoot: 'isolated-provider-home',
+  dataRoot: 'native-provider-home',
   relayRuntimeDependency: 'forbidden',
   executionLayer: 'shared-host-dispatch',
   trackIsolation: 'profile-and-data-root',

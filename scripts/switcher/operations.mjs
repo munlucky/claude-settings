@@ -22,21 +22,14 @@ const validate = (surface, track) => {
 
 const protectedRoots = ({ kernelRuntimeHome = null } = {}) => {
   const userHome = process.env.USERPROFILE || process.env.HOME || '';
-  const roots = [
-    process.env.MOONSHOT_RELAY_HOME || path.join(userHome, '.moonshot-relay'),
-    process.env.CODEX_HOME || path.join(userHome, '.codex'),
-    process.env.CLAUDE_CONFIG_DIR || path.join(userHome, '.claude'),
-    process.env.QWEN_HOME || path.join(userHome, '.qwen'),
-    process.env.ANTIGRAVITY_HOME || path.join(userHome, '.gemini', 'antigravity'),
-  ];
-  if (process.env.MOON_RELAY_TRACK !== 'kernel' || !kernelRuntimeHome) return roots;
-
-  const kernelRoot = path.resolve(kernelRuntimeHome);
-  const filtered = roots.filter((root) => {
+  const relayHome = process.env.MOONSHOT_RELAY_HOME || path.join(userHome, '.moonshot-relay');
+  const kernelRoot = kernelRuntimeHome ? path.resolve(kernelRuntimeHome) : null;
+  const roots = [relayHome];
+  if (!kernelRoot) return roots;
+  return roots.filter((root) => {
     const candidate = path.resolve(root);
     return candidate !== kernelRoot && !candidate.startsWith(`${kernelRoot}${path.sep}`);
   });
-  return filtered;
 };
 
 const exists = async (file) => { try { await stat(file); return true; } catch { return false; } };
@@ -69,11 +62,8 @@ export async function inspectKernelLaunchReadiness({ runtimeHome, providerHome, 
   if (!providerHome) {
     return { status: 'kernel_profile_not_ready', reason: 'provider_home_missing' };
   }
-  const userCodexHome = process.env.CODEX_HOME || path.join(process.env.USERPROFILE || process.env.HOME || '', '.codex');
-  const expectedKernelCodexHome = path.resolve(path.join(runtimeHome, 'providers', 'codex'));
-  const currentProcessIsKernelScoped = process.env.MOON_RELAY_TRACK === 'kernel'
-    && path.resolve(providerHome) === expectedKernelCodexHome;
-  if (path.resolve(providerHome) === path.resolve(userCodexHome) && !currentProcessIsKernelScoped) {
+  const userRelayHome = process.env.MOONSHOT_RELAY_HOME || path.join(process.env.USERPROFILE || process.env.HOME || '', '.moonshot-relay');
+  if (path.resolve(providerHome) === path.resolve(userRelayHome)) {
     return { status: 'unsafe_target', reason: 'provider_home_aliased_to_relay' };
   }
   const profileInspect = await inspectProfile(providerHome);

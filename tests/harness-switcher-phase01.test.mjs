@@ -15,8 +15,8 @@ test('phase 01 roots keep Relay and Kernel physically distinct', async () => {
   const relayRoots = resolveTrackRoots({ track: 'relay', surface: 'codex_cli', relayHome: relay, kernelHome: kernel });
   const kernelRoots = resolveTrackRoots({ track: 'kernel', surface: 'codex_cli', relayHome: relay, kernelHome: kernel });
   assert.notEqual(relayRoots.runtimeHome, kernelRoots.runtimeHome);
-  assert.notEqual(relayRoots.providerHome, kernelRoots.providerHome);
-  const identity = await physicalTargetIdentity(kernelRoots.providerHome, { protectedRoots: [relayRoots.runtimeHome, relayRoots.providerHome] });
+  assert.equal(relayRoots.providerHome, kernelRoots.providerHome);
+  const identity = await physicalTargetIdentity(kernelRoots.providerHome, { protectedRoots: [relayRoots.runtimeHome] });
   assert.equal(identity.safe, true);
   assert.equal(identity.sensitiveContentRead, undefined);
 });

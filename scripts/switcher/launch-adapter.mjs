@@ -58,19 +58,13 @@ export function buildProcessEnvironment({ surface, track, roots, workspaceRoot =
     if (sessionId) env.MOON_RELAY_KERNEL_SESSION_ID = canonicalizeHostSessionId({ provider, sessionId });
     env.MOON_RELAY_KERNEL_PROVIDER = provider;
     if (workspaceId) env.MOON_RELAY_KERNEL_WORKSPACE_ID = String(workspaceId);
+    if (surface) env.MOON_RELAY_KERNEL_SURFACE = surface;
     // Older switcher builds incorrectly exported the Kernel runtime through
     // MOONSHOT_RELAY_HOME. Do not propagate that poisoned alias into another
     // Kernel surface, while preserving a genuinely distinct custom Relay home.
     if (env.MOONSHOT_RELAY_HOME && path.resolve(env.MOONSHOT_RELAY_HOME) === path.resolve(roots.runtimeHome)) {
       delete env.MOONSHOT_RELAY_HOME;
     }
-    env.CLAUDE_HOME = activeProvider.claude || path.join(roots.runtimeHome, 'providers', 'claude');
-    env.CLAUDE_CONFIG_DIR = env.CLAUDE_HOME;
-    env.CODEX_HOME = activeProvider.codex || path.join(roots.runtimeHome, 'providers', 'codex');
-    env.QWEN_HOME = activeProvider.qwen || path.join(roots.runtimeHome, 'providers', 'qwen');
-    env.GEMINI_HOME = activeProvider.antigravity || path.join(roots.runtimeHome, 'providers', 'antigravity');
-    env.ANTIGRAVITY_HOME = env.GEMINI_HOME;
-    env.ANTIGRAVITY_SKILLS_HOME = path.join(env.GEMINI_HOME, 'skills');
   } else {
     env.MOONSHOT_RELAY_HOME = roots.runtimeHome;
     const inheritedPath = Object.entries(env).find(([key]) => key.toLowerCase() === 'path')?.[1];

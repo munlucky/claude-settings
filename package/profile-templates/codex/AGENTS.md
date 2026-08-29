@@ -33,8 +33,8 @@ node bin/moon-relay-kernel.mjs doctor
 
 ## Do Not
 
-- Do not edit the user's global Codex configuration; Kernel profiles are
-  materialized under the Kernel runtime home.
+- Do not mutate unrelated files in the user's Codex configuration; Kernel operates
+  in the native provider home without taking ownership of it.
 - Do not remove a supported fallback, compatibility wrapper, or migration path
   merely to simplify the implementation. Remove it only when its support window has ended
   and its replacement and rollback path are verified.

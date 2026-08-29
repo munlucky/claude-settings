@@ -6,7 +6,7 @@
   "providerRuntimePolicy": {
     "mode": "native-provider",
     "managedRuntime": "kernel-node-only",
-    "dataRoot": "isolated-provider-home",
+    "dataRoot": "native-provider-home",
     "relayRuntimeDependency": "forbidden",
     "executionLayer": "shared-host-dispatch",
     "trackIsolation": "profile-and-data-root",
@@ -14,7 +14,6 @@
   },
   "include": [
     "bin/moon-relay-kernel.mjs",
-    "bin/moon-relay-kernel-host.mjs",
     "bin/moon-relay-standalone.mjs",
     "bin/moon-harness-switcher.mjs",
     "kernel/",

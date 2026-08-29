@@ -720,54 +720,44 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
           nextAction: 'relaunch-through-kernel-host',
         });
       }
-      if (requireHostBinding) {
-        if (!hostSessionId) throw Object.assign(new Error('host_binding_missing'), { code: 'host_binding_missing' });
-        const binding = getHostBinding();
-        const mutable = store.listRuns({
-          projectId: currentProject.projectId,
-          worktreeId: effectiveWorktreeId,
-          statuses: ['active', 'blocked'],
-        });
-        if (mutable.length > 1) {
-          throw Object.assign(new Error('worktree_run_conflict'), {
-            code: 'worktree_run_conflict',
-            errorCode: 'worktree_run_conflict',
-            nextAction: 'resolve-conflicting-active-runs',
-          });
-        }
-        const requested = explicitRunId || envRunId || mutable[0]?.runId || binding?.runId || null;
-        if (!requested) {
-          throw Object.assign(new Error('host_binding_missing'), {
-            code: 'host_binding_missing',
-            errorCode: 'host_binding_missing',
-            nextAction: 'supply-a-task-contract',
-            details: {
-              remediation: {
-                action: 'supply-a-task-contract',
-                command: 'kernel next --contract-json <task-contract.json>',
-              },
-            },
-          });
-        }
-        if (binding && binding.runId === requested) {
-          preflight(requested, 'next');
-          return requested;
-        }
-        const envProjectId = env.MOON_RELAY_KERNEL_PROJECT_ID || currentProject.projectId;
-        if (envProjectId !== currentProject.projectId) throw Object.assign(new Error('run_project_mismatch'), { code: 'run_project_mismatch' });
-        return String(requested);
+      if (requireHostBinding && !hostSessionId) {
+        throw Object.assign(new Error('host_binding_missing'), { code: 'host_binding_missing' });
       }
-      if (explicitRunId) return String(explicitRunId);
-      if (envRunId) return String(envRunId);
-      const identity = currentProject;
+      const binding = hostSessionId ? getHostBinding() : null;
       const mutable = store.listRuns({
-        projectId: identity.projectId,
+        projectId: currentProject.projectId,
         worktreeId: effectiveWorktreeId,
         statuses: ['active', 'blocked'],
       });
-      if (mutable.length === 1) return mutable[0].runId;
-      if (mutable.length > 1) throw new Error(`ambiguous_mutable_run: ${mutable.map((run) => run.runId).join(', ')}`);
-      throw new Error('active_run_not_found: pass --run-id or launch through a Kernel host');
+      if (mutable.length > 1) {
+        throw Object.assign(new Error('worktree_run_conflict'), {
+          code: 'worktree_run_conflict',
+          errorCode: 'worktree_run_conflict',
+          nextAction: 'resolve-conflicting-active-runs',
+        });
+      }
+      const requested = explicitRunId || envRunId || mutable[0]?.runId || binding?.runId || null;
+      if (!requested) {
+        throw Object.assign(new Error('host_binding_missing'), {
+          code: 'host_binding_missing',
+          errorCode: 'host_binding_missing',
+          nextAction: 'supply-a-task-contract',
+          details: {
+            remediation: {
+              action: 'supply-a-task-contract',
+              command: 'kernel next --contract-json <task-contract.json>',
+            },
+          },
+        });
+      }
+      if (binding && binding.runId === requested) {
+        preflight(requested, 'next');
+        return requested;
+      }
+      const envProjectId = env.MOON_RELAY_KERNEL_PROJECT_ID || currentProject.projectId;
+      if (envProjectId !== currentProject.projectId) throw Object.assign(new Error('run_project_mismatch'), { code: 'run_project_mismatch' });
+      preflight(requested, 'next');
+      return String(requested);
     },
 
     // Host bootstrap (P0-1). The model only ever calls `next` and `report`, so
@@ -780,7 +770,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       const metadata = store.getRunMetadata(runId);
       if (!metadata) {
         const run = await this.startRun({ runId, objective, taskContract });
-        if (requireHostBinding) {
+        if (hostSessionId) {
           const binding = normalizeSessionBinding({
             sessionId: hostSessionId,
             runId,
@@ -795,7 +785,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         }
         return { status: 'created', run, next: await this.next(runId) };
       }
-      if (requireHostBinding && !getHostBinding({ runId })) {
+      if (hostSessionId && !getHostBinding({ runId })) {
         if (metadata.status === 'blocked' && metadata.ownerBindingId) {
           store.reactivateBlockedRunBinding(normalizeSessionBinding({
             bindingId: metadata.ownerBindingId,
@@ -908,6 +898,12 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
 
     async getRun(runId) {
       return store.getRun(runId);
+    },
+
+    async abandon(runId, { reason = 'user_requested' } = {}) {
+      if (!runId) throw new Error('abandon requires a runId');
+      const result = store.abandonRun(runId, { reason });
+      return result;
     },
 
     async buildStageContext(runId, { stage = 'EXECUTE', taskContract = {}, principles, principleExtensions = [], stageRecords = [], references = [], evidence = [] } = {}) {

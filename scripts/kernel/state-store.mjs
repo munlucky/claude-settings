@@ -1172,8 +1172,8 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
     successorRunId: row.successor_run_id,
     updatedAt: row.updated_at,
   } : null;
-  const terminalRunStatuses = new Set(['completed', 'blocked']);
-  const worktreeLeaseTerminalStatuses = new Set(['completed']);
+  const terminalRunStatuses = new Set(['completed', 'blocked', 'abandoned']);
+  const worktreeLeaseTerminalStatuses = new Set(['completed', 'abandoned']);
   const reconcileTerminalLifecycleInTransaction = ({
     projectId = null,
     runId = null,
@@ -3144,6 +3144,34 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         return { released: deleted.changes === 1, lease: current };
       });
       return release();
+    },
+
+    abandonRun(runId, { reason = 'user_requested' } = {}) {
+      if (!runId) throw new Error('abandonRun requires runId');
+      return db.transaction(() => {
+        const run = db.prepare('SELECT run_id AS runId, project_id AS projectId, worktree_id AS worktreeId, workspace_id AS workspaceId, status FROM runs WHERE run_id=?').get(runId);
+        if (!run) throw Object.assign(new Error('run_not_found'), { code: 'run_not_found' });
+        if (['completed', 'abandoned'].includes(run.status)) {
+          return { status: run.status, runId, alreadyTerminal: true };
+        }
+        const observed = now();
+        db.prepare(`UPDATE runs SET status='abandoned', updated_at=? WHERE run_id=?`).run(observed, runId);
+        // Deactivate active owner bindings
+        db.prepare(`
+          UPDATE session_bindings
+          SET status='closed', closed_at=?, close_reason=?
+          WHERE run_id=? AND status='active'
+        `).run(observed, `abandoned:${reason}`, runId);
+        // Release worktree mutation lease if held
+        if (run.worktreeId) {
+          db.prepare('DELETE FROM worktree_mutation_leases WHERE worktree_id=? AND holder_run_id=?').run(run.worktreeId, runId);
+        }
+        // Release workspace mutation lock if held
+        if (run.workspaceId) {
+          db.prepare('DELETE FROM workspace_mutation_locks_v2 WHERE workspace_id=? AND holder_run_id=?').run(run.workspaceId, runId);
+        }
+        return { status: 'abandoned', runId, alreadyTerminal: false };
+      })();
     },
 
     listRuns({ projectId = null, worktreeId = null, workspaceId = null, statuses = null } = {}) {

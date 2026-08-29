@@ -3,6 +3,12 @@
 // evidence of what actually ran. Missing observations stay null and never echo
 // a request.
 
+import { createReadStream } from 'node:fs';
+import { readdir } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import readline from 'node:readline';
+
 const MODEL_KEYS = Object.freeze(['model', 'model_id', 'modelId', 'model_slug', 'modelSlug']);
 const EFFORT_KEYS = Object.freeze(['effort', 'reasoning_effort', 'reasoningEffort', 'model_reasoning_effort']);
 const TERMINAL_EVENT_TYPES = new Set(['turn.completed', 'response.completed', 'turn_context']);
@@ -10,6 +16,32 @@ const isThreadSettingsAppliedEvent = (event) => event?.type === 'event_msg'
   && event?.payload?.type === 'thread_settings_applied'
   && event?.payload?.thread_settings
   && typeof event.payload.thread_settings === 'object';
+
+const codexSessionDateDirectories = (sessionsRoot, startedAt = new Date()) => {
+  const directories = new Set();
+  for (const offset of [-86_400_000, 0, 86_400_000]) {
+    const date = new Date(startedAt.getTime() + offset);
+    const local = [date.getFullYear(), date.getMonth() + 1, date.getDate()];
+    const utc = [date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate()];
+    for (const [year, month, day] of [local, utc]) {
+      directories.add(path.join(sessionsRoot, String(year), String(month).padStart(2, '0'), String(day).padStart(2, '0')));
+    }
+  }
+  return [...directories];
+};
+
+const findCodexSessionRollout = async ({ threadId, env = process.env, startedAt = new Date() }) => {
+  if (!/^[0-9a-f-]{16,}$/i.test(String(threadId || ''))) return null;
+  const codexHome = env.CODEX_HOME || path.join(os.homedir(), '.codex');
+  const suffix = `${threadId}.jsonl`;
+  for (const directory of codexSessionDateDirectories(path.join(codexHome, 'sessions'), startedAt)) {
+    let entries;
+    try { entries = await readdir(directory, { withFileTypes: true }); } catch { continue; }
+    const match = entries.find((entry) => entry.isFile() && entry.name.endsWith(suffix));
+    if (match) return path.join(directory, match.name);
+  }
+  return null;
+};
 
 const nestedObjects = (value) => [
   value,
@@ -187,3 +219,40 @@ export const buildCodexMainSessionPolicy = ({ parentSessionId = null, observed =
 export const isCodexCapabilityUnavailable = (policy = {}) => policy.observationStatus === 'unsupported';
 
 export const resolveObservedCodexSessionConfigFromEvents = resolveObservedCodexSessionConfig;
+
+export const resolveObservedCodexSessionConfigFromRollout = async ({ threadId, env = process.env, startedAt = new Date() } = {}) => {
+  const rolloutPath = await findCodexSessionRollout({ threadId, env, startedAt });
+  if (!rolloutPath) return null;
+  let identityMatched = false;
+  let observed = {
+    model: null,
+    effort: null,
+    approvalPolicy: null,
+    sandboxPolicy: null,
+    permissionProfile: null,
+  };
+  const lines = readline.createInterface({ input: createReadStream(rolloutPath), crlfDelay: Infinity });
+  for await (const line of lines) {
+    let event;
+    try { event = JSON.parse(line); } catch { continue; }
+    if (event?.type === 'session_meta') {
+      const sessionId = event?.payload?.session_id ?? event?.payload?.id;
+      identityMatched = sessionId === threadId;
+    }
+    const current = resolveObservedCodexSessionConfigFromEvents([event]);
+    observed = {
+      model: current.model || observed.model,
+      effort: current.effort || observed.effort,
+      approvalPolicy: event?.type === 'turn_context'
+        ? event?.payload?.approval_policy ?? observed.approvalPolicy
+        : observed.approvalPolicy,
+      sandboxPolicy: event?.type === 'turn_context'
+        ? event?.payload?.sandbox_policy ?? observed.sandboxPolicy
+        : observed.sandboxPolicy,
+      permissionProfile: event?.type === 'turn_context'
+        ? event?.payload?.permission_profile ?? observed.permissionProfile
+        : observed.permissionProfile,
+    };
+  }
+  return identityMatched ? Object.freeze(observed) : null;
+};

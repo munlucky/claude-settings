@@ -16,7 +16,7 @@ test('Kernel package dry plan contains only Kernel payload roots and includes re
   assert.ok(plan.planned.every((p) => !p.target.includes('.moonshot-relay')));
   assert.ok(plan.planned.some((p) => p.rel.includes('schemas/kernel.track.schema.json')));
   assert.ok(plan.planned.some((p) => p.rel.includes('skills/kernel-minimal-correct-change')));
-  assert.ok(plan.planned.some((p) => p.rel === 'bin/moon-relay-kernel-host.mjs'));
+  assert.ok(plan.planned.some((p) => p.rel === 'bin/moon-relay-kernel.mjs'));
   assert.ok(plan.planned.some((p) => p.rel.replace(/\/$/, '') === 'scripts/host/kernel'));
 });
 
@@ -37,8 +37,8 @@ test('Kernel package materialization creates files on disk, validates mandatory 
     'scripts/kernel/run/invocation-resolver.mjs',
     'scripts/kernel/run/successor-key.mjs',
     'scripts/switcher/app-resolver/common.mjs',
-    'bin/moon-relay-kernel-host.mjs',
-    'scripts/host/kernel/codex-review-host.mjs',
+    'bin/moon-relay-kernel.mjs',
+    'scripts/host/kernel/adapters/codex.mjs',
     'package/profile-templates/codex/AGENTS.md',
   ];
 

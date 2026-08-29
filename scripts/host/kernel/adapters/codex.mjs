@@ -2,7 +2,6 @@
 // model/model_provider unset, so a global frontier pin cannot leak into cheap
 // implementation turns. Model selection happens per worker invocation only.
 
-import { materializeCodexProfiles } from '../codex-profile-materializer.mjs';
 import { selectCodexProfileName } from '../codex-model-policy.mjs';
 import { resolveCodexActorRoute } from '../codex-actor-router.mjs';
 import {
@@ -13,13 +12,240 @@ import {
   CODEX_PARENT_SESSION_TELEMETRY_CAPABILITY,
   isCodexCapabilityUnavailable,
   resolveObservedCodexSessionConfig as resolveObservedCodexSessionConfigFromEvents,
+  resolveObservedCodexSessionConfigFromRollout,
 } from '../codex-session-observer.mjs';
-import {
-  CODEX_WORKER_TIMEOUT_MS,
-  createCodexCliWorkerLauncher,
-  createCodexNativeAgentLauncher,
-  resolveObservedCodexSessionConfig as resolveObservedCodexSessionConfigFromRollout,
-} from '../codex-cli-launcher.mjs';
+
+export const CODEX_WORKER_TIMEOUT_MS = 600000;
+
+export const CODEX_REVIEW_OUTPUT_SCHEMA = Object.freeze({
+  type: 'object',
+  properties: {
+    verdict: { type: 'string', enum: ['pass', 'fail', 'blocked'] },
+    findings: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          severity: { type: 'string', enum: ['critical', 'important', 'minor'] },
+          category: { type: 'string', enum: ['contract', 'architecture', 'implementation', 'security', 'verification'] },
+          path: { type: ['string', 'null'] },
+          summary: { type: 'string' },
+          requiredAction: { type: 'string', enum: ['fix', 'replan', 'block'] },
+        },
+        required: ['severity', 'category', 'path', 'summary', 'requiredAction'],
+        additionalProperties: false,
+      },
+    },
+    risks: { type: 'array', items: { type: 'string' } },
+    evidenceRefs: { type: 'array', items: { type: 'string' } },
+  },
+  required: ['verdict', 'findings', 'risks', 'evidenceRefs'],
+  additionalProperties: false,
+});
+
+export const CODEX_WORKER_OUTPUT_SCHEMA = Object.freeze({
+  type: 'object',
+  properties: {
+    status: { type: 'string', enum: ['completed', 'blocked', 'failed'] },
+    summary: { type: 'string' },
+    changedPaths: { type: 'array', items: { type: 'string' } },
+    risks: { type: 'array', items: { type: 'string' } },
+    verifications: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          obligationId: { type: 'string' },
+          commandRef: { type: 'string' },
+          acceptanceCoverage: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['obligationId', 'commandRef', 'acceptanceCoverage'],
+        additionalProperties: false,
+      },
+    },
+    requestedVerifications: { type: 'array', items: { type: 'string' } },
+    judgments: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          obligationId: { type: 'string' },
+          verdict: { type: 'string', enum: ['pass', 'fail'] },
+          reviewReceiptId: { type: ['string', 'null'] },
+          acceptanceCoverage: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['obligationId', 'verdict', 'reviewReceiptId', 'acceptanceCoverage'],
+        additionalProperties: false,
+      },
+    },
+    knowledgeObservations: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          proposedType: { type: 'string' },
+          statement: { type: 'string' },
+          scope: { type: 'array', items: { type: 'string' } },
+          evidenceRefs: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['proposedType', 'statement', 'scope', 'evidenceRefs'],
+        additionalProperties: false,
+      },
+    },
+    blocker: { type: ['string', 'null'] },
+  },
+  required: ['status', 'summary', 'changedPaths', 'risks', 'verifications', 'requestedVerifications', 'judgments', 'knowledgeObservations', 'blocker'],
+  additionalProperties: false,
+});
+
+const assertWorkerOutcome = (value) => {
+  if (!value || typeof value !== 'object' || !['completed', 'blocked', 'failed'].includes(value.status)) {
+    throw new Error('codex_worker_output_invalid: status must be completed, blocked, or failed');
+  }
+  for (const field of ['changedPaths', 'risks', 'requestedVerifications', 'judgments', 'knowledgeObservations']) {
+    if (!Array.isArray(value[field])) throw new Error(`codex_worker_output_invalid: ${field} must be an array`);
+  }
+  if (typeof value.summary !== 'string' || (value.blocker !== null && typeof value.blocker !== 'string')) {
+    throw new Error('codex_worker_output_invalid: summary and blocker have invalid types');
+  }
+  return value;
+};
+
+const assertReviewOutcome = (value) => {
+  if (!value || typeof value !== 'object' || !['pass', 'fail', 'blocked'].includes(value.verdict)) {
+    throw new Error('codex_review_output_invalid: verdict must be pass, fail, or blocked');
+  }
+  for (const field of ['findings', 'risks', 'evidenceRefs']) {
+    if (!Array.isArray(value[field])) throw new Error(`codex_review_output_invalid: ${field} must be an array`);
+  }
+  return value;
+};
+
+const workerPrompt = ({ executionContract, executionCapsule }) => [
+  'Perform the bounded Kernel worker action described below.',
+  'You are a child actor assigned by the Host. Do not invoke Kernel next/report commands, do not delegate to another agent, and do not claim completion authority.',
+  'Use only the supplied execution contract and capsule. Apply the requested workspace changes when the permissions allow them.',
+  'Return only the JSON object required by the supplied output schema. Include every verification, risk, judgment, and reusable knowledge observation needed by the parent orchestrator.',
+  'Report verification requests in the structured verifications array. Copy the exact obligationId, one exact commandRef from allowedCommandRefs, and exact acceptance IDs from acceptanceIds in WORKER CAPSULE.verification.obligations. Never invent, rename, infer, or substitute these IDs. When using structured verifications, set legacy requestedVerifications to [].',
+  '',
+  'EXECUTION CONTRACT',
+  JSON.stringify(executionContract || {}, null, 2),
+  '',
+  'WORKER CAPSULE',
+  JSON.stringify(executionCapsule || {}, null, 2),
+].join('\n');
+
+const reviewPrompt = ({ executionContract, executionCapsule }) => [
+  'Perform the independent Kernel review described below.',
+  'You are a read-only reviewer. Do not edit files, run mutating commands, or invoke Kernel commands.',
+  'Inspect the current workspace and return only the JSON object required by the supplied output schema.',
+  'A pass verdict requires every reviewed acceptance claim to be supported by the current files and evidence.',
+  '',
+  'EXECUTION CONTRACT',
+  JSON.stringify(executionContract || {}, null, 2),
+  '',
+  'REVIEW CAPSULE',
+  JSON.stringify(executionCapsule || {}, null, 2),
+].join('\n');
+
+const resolveNativeSpawnAgent = ({ spawnAgent = null, host = globalThis } = {}) => {
+  if (typeof spawnAgent === 'function') return spawnAgent;
+  if (typeof host?.spawn_agent === 'function') return host.spawn_agent.bind(host);
+  if (typeof host?.spawnAgent === 'function') return host.spawnAgent.bind(host);
+  if (typeof host?.codex?.spawn_agent === 'function') return host.codex.spawn_agent.bind(host.codex);
+  if (typeof host?.codex?.spawnAgent === 'function') return host.codex.spawnAgent.bind(host.codex);
+  return null;
+};
+
+const firstNativeValue = (values) => values.find((value) => value !== undefined && value !== null && String(value).trim()) ?? null;
+
+export const createCodexNativeAgentLauncher = ({ spawnAgent = null, host = globalThis } = {}) => {
+  const dispatch = resolveNativeSpawnAgent({ spawnAgent, host });
+  if (!dispatch) return null;
+  return async ({ invocation, executionCapsule, executionContract, parentSessionId = null, actorRoute = null, childSession = null, workingDirectory = null, concurrencyGroup = null }) => {
+    if (!invocation?.model || !invocation?.effort) throw new Error('codex_native_worker_requires_explicit_model_and_effort');
+    const reviewer = actorRoute?.role === 'reviewer';
+    const handle = await dispatch({
+      task_name: `kernel_${actorRoute?.role || 'worker'}`,
+      model: invocation.model,
+      reasoning_effort: invocation.effort,
+      message: reviewer
+        ? reviewPrompt({ executionContract, executionCapsule })
+        : workerPrompt({ executionContract, executionCapsule }),
+      execution_contract: executionContract || null,
+      execution_capsule: executionCapsule || null,
+      parent_session_id: parentSessionId,
+      child_session: childSession || { canDelegate: false, canCommit: false },
+      working_directory: workingDirectory,
+      concurrency_group: concurrencyGroup,
+    });
+    const completed = typeof handle?.waitForOutcome === 'function'
+      ? await handle.waitForOutcome()
+      : typeof handle?.wait === 'function'
+        ? await handle.wait()
+        : typeof handle?.result === 'function'
+          ? await handle.result()
+          : null;
+    const candidate = {
+      ...(handle && typeof handle === 'object' ? handle : {}),
+      ...(completed && typeof completed === 'object' ? completed : {}),
+      ...(completed?.result && typeof completed.result === 'object' ? completed.result : {}),
+    };
+    const outcome = candidate.outcome || candidate.report || null;
+    if (outcome) {
+      if (reviewer) assertReviewOutcome(outcome);
+      else assertWorkerOutcome(outcome);
+    }
+    const terminalEvents = Array.isArray(candidate.terminalEvents)
+      ? candidate.terminalEvents
+      : Array.isArray(candidate.events) ? candidate.events : [];
+    const terminalConfig = resolveObservedCodexSessionConfigFromEvents(terminalEvents);
+    const observedConfig = candidate.observedSessionConfig || candidate.observedConfig || terminalConfig;
+    const resolvedModel = firstNativeValue([
+      observedConfig?.model,
+    ]);
+    const resolvedEffort = firstNativeValue([
+      observedConfig?.effort,
+      observedConfig?.reasoning_effort,
+      observedConfig?.reasoningEffort,
+    ]);
+    const sessionId = firstNativeValue([
+      candidate.sessionId,
+      candidate.session_id,
+      candidate.actorSessionId,
+      candidate.actor_session_id,
+      candidate.threadId,
+      candidate.thread_id,
+    ]);
+    return {
+      ...candidate,
+      status: candidate.status || (outcome?.status === 'completed' ? 'completed' : outcome?.status || 'completed'),
+      resultStatus: candidate.resultStatus || (candidate.status === 'failed' || outcome?.status === 'failed' ? 'failed' : 'completed'),
+      resolvedModel,
+      resolvedEffort,
+      observedSessionConfig: { model: resolvedModel, effort: resolvedEffort },
+      observedModel: resolvedModel,
+      observedEffort: resolvedEffort,
+      effortObserved: Boolean(resolvedEffort),
+      sessionId,
+      outcome: outcome || null,
+      report: reviewer ? null : candidate.report || (outcome && candidate.outcome ? outcome : null),
+    };
+  };
+};
+
+const defaultParentSessionObserver = async ({ parentSessionId, parentSessionEnvironment = null, parentEnvironment = null, environment = null, env = process.env, startedAt = new Date() } = {}) => {
+  if (!parentSessionId) return null;
+  const observationEnvironment = parentSessionEnvironment || parentEnvironment
+    ? { ...(parentEnvironment || {}), ...(parentSessionEnvironment || {}) }
+    : { ...env, ...(environment || {}) };
+  const observed = await resolveObservedCodexSessionConfigFromRollout({
+    threadId: nativeSessionId(parentSessionId),
+    env: observationEnvironment,
+    startedAt,
+  });
+  return normalizeParentObservation(observed, parentSessionId);
+};
 
 export const CODEX_CAPABILITIES = Object.freeze({
   surface: 'codex',
@@ -111,19 +337,6 @@ const normalizeParentObservation = (value, parentSessionId) => {
   };
 };
 
-const defaultParentSessionObserver = async ({ parentSessionId, parentSessionEnvironment = null, parentEnvironment = null, environment = null, env = process.env, startedAt = new Date() } = {}) => {
-  if (!parentSessionId) return null;
-  const observationEnvironment = parentSessionEnvironment || parentEnvironment
-    ? { ...(parentEnvironment || {}), ...(parentSessionEnvironment || {}) }
-    : { ...env, ...(environment || {}) };
-  const observed = await resolveObservedCodexSessionConfigFromRollout({
-    threadId: nativeSessionId(parentSessionId),
-    env: observationEnvironment,
-    startedAt,
-  });
-  return normalizeParentObservation(observed, parentSessionId);
-};
-
 const buildUnsupportedCapability = ({ capability, reason, remediation = CODEX_PARENT_SESSION_REMEDIATION } = {}) => Object.freeze({
   type: 'unsupported-capability',
   code: CODEX_HOST_UNSUPPORTED_CAPABILITY,
@@ -197,12 +410,9 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
     ...capabilities,
     ...(capabilities.supportsSubagentModel === undefined && effectiveNativeLaunch ? { supportsSubagentModel: true } : {}),
   };
-  const effectiveCliLaunch = cliLaunch || (!launch && projectRoot
-    ? createCodexCliWorkerLauncher({ projectRoot, images, timeoutMs, executable: executable || undefined, env, spawnImpl })
-    : null);
+  const effectiveCliLaunch = cliLaunch || null;
   const observeParentSession = parentSessionObserver || defaultParentSessionObserver;
   const configuredParentSessionEnvironment = parentSessionEnvironment || parentEnvironment || null;
-  let profilesMaterialized = null;
   return {
     surface: 'codex',
     capabilities: resolved,
@@ -222,10 +432,6 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
           reason: 'worker-launcher-missing',
           remediation: 'Provide a native Codex Host bridge or an explicit bounded CLI worker launcher.',
         });
-      }
-      if (runtimeHome && !profilesMaterialized) {
-        profilesMaterialized = materializeCodexProfiles({ runtimeHome, env });
-        await profilesMaterialized;
       }
 
       const suppliedPair = Boolean(parentSessionConfig?.before || parentSessionConfig?.after);

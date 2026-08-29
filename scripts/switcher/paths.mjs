@@ -60,16 +60,9 @@ export function resolveTrackRoots({ track, surface, sourceRoot = process.cwd(), 
     providerRelay[item] = candidate && !pathsOverlap(kernel, candidate) ? candidate : fallback;
     if (pathsOverlap(kernel, providerRelay[item])) throw new Error(`unsafe_target: ${item} Relay provider overlaps Kernel home`);
   }
-  const providerKernel = {
-    claude_cli: path.join(kernel, 'providers', 'claude'),
-    codex_cli: path.join(kernel, 'providers', 'codex'),
-    qwen_cli: path.join(kernel, 'providers', 'qwen'),
-    codex_desktop: path.join(kernel, 'providers', 'codex'),
-    antigravity_desktop: path.join(kernel, 'providers', 'antigravity'),
-  };
   const roots = track === 'relay'
     ? { runtimeHome: relay, providerHome: providerRelay[surface] }
-    : { runtimeHome: kernel, providerHome: providerKernel[surface] };
+    : { runtimeHome: kernel, providerHome: providerRelay[surface] };
   if (surface === 'codex_desktop') {
     const appDataBase = platform === 'darwin'
       ? path.join(os.homedir(), 'Library', 'Application Support')

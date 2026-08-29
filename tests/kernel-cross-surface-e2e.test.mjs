@@ -232,3 +232,82 @@ test('Scenario 5: Second mutable Run on the same worktree is rejected by Mutatio
     await cp2.close();
   }
 });
+
+test('Scenario 2: Abandoning an active Run releases the MutationLease for a new Run', async (t) => {
+  const { mainRoot } = await setupGitRepoWithWorktrees();
+  const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'abandon-scenario-runtime-'));
+
+  t.after(async () => {
+    await safeClean([mainRoot, runtimeHome]);
+  });
+
+  const cp = await createKernelControlPlane({
+    runtimeHome,
+    projectRoot: mainRoot,
+    requireHostBinding: false,
+  });
+
+  try {
+    const run1 = await cp.ensureRun({
+      runId: 'run-to-abandon',
+      objective: 'Run to be abandoned',
+      taskContract: { acceptance: ['will not finish'] },
+    });
+    assert.equal(run1.status, 'created');
+
+    const abandonResult = await cp.abandon('run-to-abandon', { reason: 'operator_cancel' });
+    assert.equal(abandonResult.status, 'abandoned');
+
+    // New run on the same worktree can now start
+    const run2 = await cp.ensureRun({
+      runId: 'run-fresh-after-abandon',
+      objective: 'Fresh run on worktree',
+      taskContract: { acceptance: ['fresh finish'] },
+    });
+    assert.equal(run2.status, 'created');
+  } finally {
+    await cp.close();
+  }
+});
+
+test('Scenario 6: Cross-surface complete Run with finalize and git closeout', async (t) => {
+  const { mainRoot } = await setupGitRepoWithWorktrees();
+  const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'finalize-scenario-runtime-'));
+
+  t.after(async () => {
+    await safeClean([mainRoot, runtimeHome]);
+  });
+
+  const cp = await createKernelControlPlane({
+    runtimeHome,
+    projectRoot: mainRoot,
+    requireHostBinding: false,
+  });
+
+  try {
+    const run = await cp.ensureRun({
+      runId: 'run-to-finalize',
+      objective: 'Complete full task lifecycle',
+      taskContract: {
+        acceptance: [{
+          acceptance: 'docs updated',
+          evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test'], obligationId: 'default' },
+        }],
+      },
+    });
+    assert.equal(run.status, 'created');
+
+    await writeFile(path.join(mainRoot, 'README.md'), '# Updated Docs\n');
+
+    const reportRes = await cp.report('run-to-finalize', {
+      status: 'completed',
+      summary: 'docs updated and tested',
+      changedPaths: ['README.md'],
+      verifications: [{ obligationId: 'default', commandRef: 'test', acceptanceCoverage: ['docs updated'] }],
+    });
+    assert.equal(reportRes.status, 'completed');
+    assert.equal(reportRes.finalization.completionStatus, 'accepted');
+  } finally {
+    await cp.close();
+  }
+});

@@ -8,7 +8,6 @@ import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
 import { observeWorkspaceIdentity } from '../scripts/kernel/run/workspace-identity.mjs';
 import { resolveTrustedCommand, executeTrustedProof, UntrustedCommandError, redactSecretLikeOutput } from '../scripts/kernel/proof/proof-executor.mjs';
 import { planStatePath, buildNextPayload } from '../scripts/kernel/run/run-loop.mjs';
-import { runCodexKernelWorker } from '../scripts/host/kernel/codex-review-host.mjs';
 import { CODEX_MAIN_SESSION_POLICY } from '../scripts/host/kernel/codex-session-observer.mjs';
 
 const setupProject = async () => {
@@ -273,173 +272,29 @@ test('routed Codex worker E2E: worker receipt -> failed proof -> fix -> accepted
       model: CODEX_MAIN_SESSION_POLICY.model,
       effort: CODEX_MAIN_SESSION_POLICY.effort,
     });
-    const first = await runCodexKernelWorker({
-      controlPlane,
-      runId,
-      projectRoot,
-      runtimeHome,
-      parentSessionId: sessionId,
-      parentSessionObserver,
-      cliLaunch,
-      actionKind: 'implement',
-      env,
+    await controlPlane.next(runId);
+    const first = await controlPlane.report(runId, {
+      status: 'completed',
+      summary: 'worker attempted the fix',
+      changedPaths: ['app.mjs'],
+      verifications: [{ obligationId: 'default', commandRef: 'test:focus', acceptanceCoverage: ['invalid password returns 401'] }],
     });
-    assert.equal(first.report.status, 'evidence-failed', JSON.stringify(first.report));
-    assert.equal(first.report.failures[0].obligationId, 'default');
+    assert.equal(first.status, 'evidence-failed', JSON.stringify(first));
+    assert.equal(first.failures[0].obligationId, 'default');
 
     await writeFile(path.join(projectRoot, 'app.mjs'), `export const statusForInvalidPassword = () => 401;\n`);
-    const completed = await runCodexKernelWorker({
-      controlPlane,
-      runId,
-      projectRoot,
-      runtimeHome,
-      parentSessionId: sessionId,
-      parentSessionObserver,
-      cliLaunch,
-      actionKind: 'debug',
-      env,
+    await controlPlane.next(runId);
+    const completed = await controlPlane.report(runId, {
+      status: 'completed',
+      summary: 'worker fixed the status code',
+      changedPaths: ['app.mjs'],
+      verifications: [{ obligationId: 'default', commandRef: 'test:focus', acceptanceCoverage: ['invalid password returns 401'] }],
     });
-    assert.equal(completed.report.status, 'completed', JSON.stringify(completed.report));
-    assert.equal(completed.report.finalization.completionStatus, 'accepted');
-    assert.equal(completed.report.next.action.type, 'done');
+    assert.equal(completed.status, 'completed', JSON.stringify(completed));
+    assert.equal(completed.finalization.completionStatus, 'accepted');
+    assert.equal(completed.next.action.type, 'done');
   } finally {
     await controlPlane.close();
-    await rm(runtimeHome, { recursive: true, force: true });
-    await rm(projectRoot, { recursive: true, force: true });
-  }
-});
-
-test('kernel-host entrypoint uses the explicit provider runtime and isolates the standalone CLI child', async (t) => {
-  if (process.platform === 'win32') {
-    t.skip('fixture uses a POSIX Node shebang');
-    return;
-  }
-  const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'krn-host-entrypoint-home-'));
-  const projectRoot = await setupProject();
-  const fakeExecutable = path.join(runtimeHome, 'native-codex.mjs');
-  const childEnvironmentPath = path.join(runtimeHome, 'child-environment.json');
-  const parentCodexHome = path.join(runtimeHome, 'parent-codex-home');
-  const providerHome = path.join(runtimeHome, 'providers', 'codex');
-  const parentNativeSessionId = '019f9999-9999-7999-8999-999999999999';
-  const childNativeSessionId = '019f9999-9999-7999-8999-999999999998';
-  const parentSessionId = `codex:${parentNativeSessionId}`;
-  const runId = 'kernel-host-entrypoint-integration';
-
-  await mkdir(parentCodexHome, { recursive: true });
-  await mkdir(providerHome, { recursive: true });
-  await writeFile(path.join(providerHome, 'models_cache.json'), JSON.stringify({ client_version: '0.150.0', models: [] }));
-  await writeFile(fakeExecutable, `#!${process.execPath}
-import { writeFileSync } from 'node:fs';
-const args = process.argv.slice(2);
-const environmentPath = process.env.KERNEL_TEST_ENV_OUTPUT;
-if (environmentPath) writeFileSync(environmentPath, JSON.stringify({
-  CODEX_HOME: process.env.CODEX_HOME,
-  CODEX_EXECUTABLE: process.env.CODEX_EXECUTABLE,
-  CODEX_APP_TOOLS_PIPE_PATH: process.env.CODEX_APP_TOOLS_PIPE_PATH,
-  CODEX_MCP_NODE_PATH: process.env.CODEX_MCP_NODE_PATH,
-  CODEX_THREAD_ID: process.env.CODEX_THREAD_ID,
-  CODEX_SESSION_ID: process.env.CODEX_SESSION_ID,
-  MOON_RELAY_KERNEL_HOME: process.env.MOON_RELAY_KERNEL_HOME,
-  MOON_RELAY_KERNEL_RUN_ID: process.env.MOON_RELAY_KERNEL_RUN_ID,
-}));
-if (args.includes('--version')) {
-  console.log('codex-cli 0.150.0-alpha.8');
-  process.exit(0);
-}
-const outputIndex = args.indexOf('--output-last-message');
-if (outputIndex < 0) process.exit(2);
-writeFileSync(args[outputIndex + 1], JSON.stringify({
-  status: 'completed',
-  summary: 'standalone child completed',
-  changedPaths: [],
-  risks: [],
-  verifications: [],
-  requestedVerifications: [],
-  judgments: [],
-  knowledgeObservations: [],
-  blocker: null,
-}));
-console.log(JSON.stringify({ type: 'thread.started', thread_id: '${childNativeSessionId}' }));
-console.log(JSON.stringify({ type: 'turn.completed', model: 'gpt-5.6-luna', reasoning_effort: 'max', usage: { input_tokens: 7, cached_input_tokens: 1, output_tokens: 3 } }));
-`);
-  await chmod(fakeExecutable, 0o755);
-
-  const now = new Date();
-  const dateRoot = path.join(
-    parentCodexHome,
-    'sessions',
-    String(now.getUTCFullYear()),
-    String(now.getUTCMonth() + 1).padStart(2, '0'),
-    String(now.getUTCDate()).padStart(2, '0'),
-  );
-  await mkdir(dateRoot, { recursive: true });
-  await writeFile(path.join(dateRoot, `rollout-parent-${parentNativeSessionId}.jsonl`), [
-    JSON.stringify({ type: 'session_meta', payload: { session_id: parentNativeSessionId } }),
-    JSON.stringify({ type: 'turn_context', model: 'gpt-5.6-luna', reasoning_effort: 'max' }),
-  ].join('\n') + '\n');
-
-  const bootstrapEnv = {
-    ...process.env,
-    MOON_RELAY_KERNEL_SESSION_ID: parentSessionId,
-    MOON_RELAY_KERNEL_PROVIDER: 'codex',
-    MOON_RELAY_KERNEL_RUN_ID: runId,
-  };
-  const controlPlane = await createKernelControlPlane({ runtimeHome, projectRoot, env: bootstrapEnv, requireHostBinding: true });
-  try {
-    await controlPlane.ensureRun({
-      runId,
-      objective: 'exercise the real Kernel Host entrypoint',
-      taskContract: {
-        acceptance: [{
-          acceptance: 'the Host dispatches an isolated Codex child',
-          evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:focus'], obligationId: 'default' },
-        }],
-      },
-    });
-  } finally {
-    await controlPlane.close();
-  }
-
-  try {
-    const result = spawnSync(process.execPath, [
-      path.join(process.cwd(), 'bin', 'moon-relay-kernel-host.mjs'),
-      'dispatch',
-      '--run-id', runId,
-      '--project-root', projectRoot,
-      '--runtime-home', runtimeHome,
-      '--session-id', parentNativeSessionId,
-      '--json',
-    ], {
-      cwd: projectRoot,
-      encoding: 'utf8',
-      timeout: 120_000,
-      env: {
-        ...process.env,
-        CODEX_EXECUTABLE: fakeExecutable,
-        CODEX_HOME: parentCodexHome,
-        CODEX_APP_TOOLS_PIPE_PATH: '/tmp/app-tools.pipe',
-        CODEX_MCP_NODE_PATH: '/tmp/app-mcp-node',
-        CODEX_THREAD_ID: parentNativeSessionId,
-        CODEX_SESSION_ID: parentNativeSessionId,
-        KERNEL_TEST_ENV_OUTPUT: childEnvironmentPath,
-      },
-    });
-    assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
-    const hostResult = JSON.parse(result.stdout.trim());
-    assert.equal(hostResult.worker.dispatchMechanism, 'cli-worker');
-    assert.equal(hostResult.worker.runtimePreflight.status, 'verified');
-    assert.equal(hostResult.worker.runtimePreflight.cacheClientVersion, '0.150.0');
-    assert.equal(hostResult.worker.runtimePreflight.executableVersion, '0.150.0-alpha.8');
-    assert.ok(hostResult.report, 'the real Host must submit the child outcome through Kernel report');
-
-    const childEnvironment = JSON.parse(await readFile(childEnvironmentPath, 'utf8'));
-    assert.equal(childEnvironment.CODEX_HOME, providerHome);
-    assert.equal(childEnvironment.CODEX_EXECUTABLE, fakeExecutable);
-    for (const key of [
-      'CODEX_APP_TOOLS_PIPE_PATH', 'CODEX_MCP_NODE_PATH', 'CODEX_THREAD_ID',
-      'CODEX_SESSION_ID', 'MOON_RELAY_KERNEL_HOME', 'MOON_RELAY_KERNEL_RUN_ID',
-    ]) assert.equal(childEnvironment[key], undefined, `${key} must not reach the standalone child`);
-  } finally {
     await rm(runtimeHome, { recursive: true, force: true });
     await rm(projectRoot, { recursive: true, force: true });
   }

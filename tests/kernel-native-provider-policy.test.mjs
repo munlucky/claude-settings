@@ -12,7 +12,7 @@ test('Kernel launch delegates to the native provider and keeps managed runtime N
     surface: 'codex_cli',
     track: 'kernel',
     sourceRoot: process.cwd(),
-    roots: { runtimeHome, providerHome: path.join(runtimeHome, 'providers', 'codex') },
+    roots: { runtimeHome, providerHome: path.join(os.homedir(), '.codex') },
   });
   assert.equal(spec.command, 'codex');
   assert.equal(spec.providerRuntime.mode, 'native-provider');

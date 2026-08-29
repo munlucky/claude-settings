@@ -20,7 +20,13 @@ test('phase 06 adoption refuses a symlinked custom Kernel home before any instal
   const aliasHome = path.join(root, 'kernel-alias');
   await mkdir(realHome, { recursive: true });
   try {
-    await symlink(realHome, aliasHome, 'dir');
+    await symlink(realHome, aliasHome, process.platform === 'win32' ? 'junction' : 'dir');
+  } catch (error) {
+    await rm(root, { recursive: true, force: true });
+    if (process.platform === 'win32' && error.code === 'EPERM') return;
+    throw error;
+  }
+  try {
     const preflight = await buildLivePreflight({ sourceRoot: process.cwd(), kernelHome: aliasHome, processProvider: async () => [] });
     assert.equal(preflight.kernelHomeIdentity.safe, false);
     const result = await adoptLive({ sourceRoot: process.cwd(), kernelHome: aliasHome, approved: true, approvalToken: LIVE_APPROVAL_TOKEN, processProvider: async () => [] });

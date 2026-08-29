@@ -118,7 +118,7 @@ const sessionId = resolvedHostSession.sessionId;
 const legacySessionId = nativeSessionId && sessionId !== nativeSessionId && !nativeSessionId.includes(':')
   ? nativeSessionId
   : null;
-const positionalRunId = ['next', 'report', 'resume'].includes(command)
+const positionalRunId = ['next', 'report', 'resume', 'abandon'].includes(command)
   && args[1]
   && !args[1].startsWith('--')
   ? args[1]
@@ -151,7 +151,7 @@ const openControlPlane = async () => {
     runtimeHome: runtimeHomeArg || undefined,
     projectRoot,
     env: kernelEnv,
-    requireHostBinding: true,
+    requireHostBinding: false,
   });
 };
 
@@ -161,7 +161,6 @@ const output = (value) =>
   );
 
 try {
-  if (hostSessionResolutionError) throw hostSessionResolutionError;
   if (hostRunResolutionError) throw hostRunResolutionError;
   if (command === '--version' || command === 'version') {
     output({ productId: 'moon-relay-kernel', version: '0.1.0' });
@@ -441,6 +440,14 @@ try {
     output(res);
   } else if (command === 'close') {
     throw new Error('DEPRECATED_COMMAND: close cannot finalize a Kernel run. Use finalize.');
+  } else if (command === 'abandon') {
+    const cp = await openControlPlane();
+    const positionalRunId = args[1] && !args[1].startsWith('--') ? args[1] : null;
+    const runId = getArgValue('--run-id') || positionalRunId || await cp.resolveRunId();
+    const reason = getArgValue('--reason') || 'user_requested';
+    const res = await cp.abandon(runId, { reason });
+    await cp.close();
+    output(res);
   } else if (command === 'resume') {
     const cp = await openControlPlane();
     const runId = getArgValue('--run-id') || args[1];

@@ -12,15 +12,14 @@ import { buildProcessEnvironment } from '../scripts/switcher/launch-adapter.mjs'
 import { resolveTrackRoots } from '../scripts/switcher/paths.mjs';
 test('Kernel launch exports the Kernel home without poisoning the Relay home', () => {
   const runtimeHome = path.join(os.tmpdir(), 'kernel-env');
-  const providerHome = path.join(runtimeHome, 'providers', 'claude');
   const env = buildProcessEnvironment({
     surface: 'claude_cli',
     track: 'kernel',
-    roots: { runtimeHome, providerHome },
+    roots: { runtimeHome },
     baseEnv: { MOONSHOT_RELAY_HOME: runtimeHome },
   });
   assert.equal(env.MOON_RELAY_KERNEL_HOME, runtimeHome);
-  assert.equal(env.CLAUDE_CONFIG_DIR, providerHome);
+  assert.equal(env.CLAUDE_CONFIG_DIR, undefined);
   assert.equal(env.MOON_RELAY_TRACK, 'kernel');
   assert.equal(env.MOONSHOT_RELAY_HOME, undefined);
 });
@@ -30,21 +29,27 @@ test('Kernel launch preserves a distinct custom Relay home', () => {
   const env = buildProcessEnvironment({
     surface: 'claude_cli',
     track: 'kernel',
-    roots: { runtimeHome, providerHome: path.join(runtimeHome, 'providers', 'claude') },
+    roots: { runtimeHome },
     baseEnv: { MOONSHOT_RELAY_HOME: relayHome },
   });
   assert.equal(env.MOONSHOT_RELAY_HOME, relayHome);
 });
 test('phase 04 Codex launch carries process-specific home and disposable app data', () => {
   const roots = { runtimeHome: path.join(os.tmpdir(), 'kernel'), providerHome: path.join(os.tmpdir(), 'kernel', 'codex'), appDataRoot: path.join(os.tmpdir(), 'codex-app') };
-  const spec = buildCodexDesktopLaunch({ track: 'kernel', roots, executable: 'ChatGPT.exe' });
+  const spec = buildCodexDesktopLaunch({ track: 'relay', roots, executable: 'ChatGPT.exe' });
   assert.equal(spec.env.CODEX_HOME, roots.providerHome); assert.ok(spec.args.includes(roots.appDataRoot));
   assert.equal(verifyCodexChild({ expectedProviderHome: roots.providerHome, childEnvironment: spec.env, childExecutable: 'ChatGPT.exe', expectedExecutable: 'ChatGPT.exe' }).status, 'verified');
+  const kernelSpec = buildCodexDesktopLaunch({ track: 'kernel', roots, executable: 'ChatGPT.exe' });
+  assert.equal(kernelSpec.env.CODEX_HOME, undefined);
+  assert.equal(kernelSpec.env.MOON_RELAY_KERNEL_HOME, roots.runtimeHome);
 });
 test('phase 05 Antigravity launch carries Gemini home and user data dir', () => {
   const roots = { runtimeHome: path.join(os.tmpdir(), 'kernel'), providerHome: path.join(os.tmpdir(), 'kernel', 'antigravity'), appDataRoot: path.join(os.tmpdir(), 'ag-app') };
-  const spec = buildAntigravityLaunch({ track: 'kernel', roots, executable: 'Antigravity.exe' });
+  const spec = buildAntigravityLaunch({ track: 'relay', roots, executable: 'Antigravity.exe' });
   assert.equal(spec.env.GEMINI_HOME, roots.providerHome); assert.equal(verifyAntigravityChild({ expectedProviderHome: roots.providerHome, childEnvironment: spec.env, childArgs: spec.args, expectedAppDataRoot: roots.appDataRoot }).status, 'verified');
+  const kernelSpec = buildAntigravityLaunch({ track: 'kernel', roots, executable: 'Antigravity.exe' });
+  assert.equal(kernelSpec.env.GEMINI_HOME, undefined);
+  assert.equal(kernelSpec.env.MOON_RELAY_KERNEL_HOME, roots.runtimeHome);
 });
 test('phase 05 provider parity matrix keeps all surfaces disjoint', () => {
   const result = providerParityMatrix({ relayHome: path.join(os.tmpdir(), 'relay'), kernelHome: path.join(os.tmpdir(), 'kernel') });

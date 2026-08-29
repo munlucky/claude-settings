@@ -17,7 +17,7 @@ test('process-scoped kernel shim executes without changing the parent PATH', asy
   const env = buildProcessEnvironment({
     surface: 'codex_cli',
     track: 'kernel',
-    roots: { runtimeHome, providerHome: path.join(runtimeHome, 'providers', 'codex') },
+    roots: { runtimeHome, providerHome: path.join(os.homedir(), '.codex') },
     runId: 'run-1',
     projectId: 'project-1',
     sessionId: 'session-1',

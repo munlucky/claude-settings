@@ -114,7 +114,7 @@ export async function runUnificationAudit({ repoRoot = repoRootDefault } = {}) {
     if (kernelBins.has(entry.cli.binName) && entry.cli.binName !== 'moon-relay-standalone') findings.push(finding('individual-kernel-standalone-bin', `Kernel package exposes ${entry.cli.binName} outside catalog materialization.`));
   }
 
-  for (const relative of ['bin/moon-relay-kernel.mjs', 'bin/moon-relay-kernel-host.mjs', 'scripts/kernel/control-plane.mjs']) {
+  for (const relative of ['bin/moon-relay-kernel.mjs', 'scripts/kernel/control-plane.mjs']) {
     findings.push(...await auditKernelPath(repoRoot, relative));
   }
   findings.push(...await auditStandaloneAuthority(repoRoot, standalone));
