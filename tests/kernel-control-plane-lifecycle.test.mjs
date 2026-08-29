@@ -77,6 +77,12 @@ test('public Kernel control-plane bootstrap reconciles terminal bindings from pr
       sourceIdentity: `sha256:${'e'.repeat(64)}`,
       projectId,
     });
+    first.stateStore.persistCompletionDecision('cp-terminal-binding', {
+      decision: 'accepted',
+      digest: `sha256:${'f'.repeat(64)}`,
+      run: first.stateStore.getRun('cp-terminal-binding'),
+      decisionPayload: { decision: 'accepted' },
+    });
     first.stateStore.createSessionBinding(normalizeSessionBinding({
       bindingId: 'cp-terminal-binding-owner',
       provider: 'codex',
@@ -85,12 +91,6 @@ test('public Kernel control-plane bootstrap reconciles terminal bindings from pr
       projectId,
       accessMode: 'owner',
     }));
-    first.stateStore.persistCompletionDecision('cp-terminal-binding', {
-      decision: 'accepted',
-      digest: `sha256:${'f'.repeat(64)}`,
-      run: first.stateStore.getRun('cp-terminal-binding'),
-      decisionPayload: { decision: 'accepted' },
-    });
     assert.equal(
       first.stateStore.getActiveOwnerBinding({ projectId, sessionId: 'codex:old-cp-session' }).bindingId,
       'cp-terminal-binding-owner',

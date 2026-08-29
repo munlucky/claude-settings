@@ -52,7 +52,7 @@ test('Kernel account-root profile replaces Relay command skills and preserves us
   const hooks = JSON.parse(await readFile(path.join(targetRoot, 'hooks.json'), 'utf8'));
   assert.equal(hooks.hooks.SessionStart.length, 2);
   assert.ok(hooks.hooks.SessionStart.some((entry) => entry.hooks?.some((hook) => hook.command === 'user-hook')));
-  assert.ok(hooks.hooks.SessionStart.some((entry) => entry.hooks?.some((hook) => hook.command.endsWith("/bin/kernel' assert-track --project-only --allow-non-kernel --json"))));
+  assert.ok(hooks.hooks.SessionStart.some((entry) => entry.hooks?.some((hook) => hook.command.replaceAll('\\', '/').match(/\/bin\/kernel['"]?\s+assert-track\s+--project-only\s+--allow-non-kernel\s+--json/))));
   assert.equal(await readFile(path.join(result.backupPath, 'AGENTS.md'), 'utf8'), '# Relay account guidance\n');
 
   const doctor = await doctorKernelProfile({ targetRoot, runtime: 'codex' });

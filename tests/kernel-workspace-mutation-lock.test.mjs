@@ -33,12 +33,15 @@ test('workspace mutation locks allow different worktrees and fence the same chec
     register(store, 'project-1', 'workspace-b');
     createRun(store, 'run-1', 'project-1', 'workspace-a');
     createRun(store, 'run-2', 'project-1', 'workspace-b');
-    createRun(store, 'run-3', 'project-1', 'workspace-a');
+    assert.throws(
+      () => createRun(store, 'run-3', 'project-1', 'workspace-a'),
+      (error) => error.code === 'worktree_run_conflict',
+    );
     const first = store.acquireWorkspaceMutationLockV2({ workspaceId: 'workspace-a', projectId: 'project-1', runId: 'run-1', sessionToken: 'session-1', ttlMs: 60000 });
     assert.equal(first.acquired, true);
     const parallel = store.acquireWorkspaceMutationLockV2({ workspaceId: 'workspace-b', projectId: 'project-1', runId: 'run-2', sessionToken: 'session-2', ttlMs: 60000 });
     assert.equal(parallel.acquired, true);
-    const blocked = store.acquireWorkspaceMutationLockV2({ workspaceId: 'workspace-a', projectId: 'project-1', runId: 'run-3', sessionToken: 'session-3', ttlMs: 60000 });
+    const blocked = store.acquireWorkspaceMutationLockV2({ workspaceId: 'workspace-a', projectId: 'project-1', runId: 'run-1', sessionToken: 'session-3', ttlMs: 60000 });
     assert.equal(blocked.acquired, false);
     assert.equal(blocked.lock.holderRunId, 'run-1');
     assert.throws(

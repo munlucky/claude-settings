@@ -82,7 +82,7 @@ test('active owner lookup is scoped by project and session', async () => {
   }
 });
 
-test('partial unique indexes reject a second active owner for a project/session or Run', async () => {
+test('owner bindings allow one session across worktrees but still reject a second owner for one Run', async () => {
   const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-binding-unique-'));
   const store = await openKernelStateStore({ runtimeHome });
   try {
@@ -96,16 +96,14 @@ test('partial unique indexes reject a second active owner for a project/session 
       workspaceId: 'workspace-one',
     }));
 
-    assert.throws(
-      () => store.createSessionBinding(owner({
+    const independent = store.createSessionBinding(owner({
         bindingId: 'binding-two',
         sessionId: 'codex:session-one',
         runId: 'run-two',
         projectId: 'project-one',
         workspaceId: 'workspace-two',
-      })),
-      (error) => error.code === 'successor_binding_conflict',
-    );
+      }));
+    assert.equal(independent.runId, 'run-two');
     assert.throws(
       () => store.createSessionBinding(owner({
         bindingId: 'binding-three',
@@ -167,7 +165,7 @@ test('binding deactivation records closure and successor lineage without changin
   }
 });
 
-test('terminal lifecycle cleanup deactivates completed or blocked owners, releases stale locks, and preserves the current completed successor handoff', async () => {
+test('terminal lifecycle cleanup deactivates owners and releases stale locks without session preservation authority', async () => {
   const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-binding-terminal-cleanup-'));
   const store = await openKernelStateStore({ runtimeHome });
   const projectId = 'cleanup-project';
@@ -246,11 +244,11 @@ test('terminal lifecycle cleanup deactivates completed or blocked owners, releas
       projectId,
       preserveSessionId: 'codex:current-host',
     });
-    assert.deepEqual(first.deactivatedBindings.map((binding) => binding.bindingId), ['binding-completed']);
+    assert.deepEqual(first.deactivatedBindings, []);
     assert.equal(store.getActiveOwnerBinding({ projectId, sessionId: 'codex:old-completed' }), null);
     assert.equal(store.getWorkspaceMutationLockV2('workspace-completed'), null);
-    assert.equal(store.getActiveOwnerBinding({ projectId, sessionId: 'codex:current-host' }).runId, 'run-current-completed');
-    assert.equal(store.getWorkspaceMutationLockV2('workspace-current').holderRunId, 'run-current-completed');
+    assert.equal(store.getActiveOwnerBinding({ projectId, sessionId: 'codex:current-host' }), null);
+    assert.equal(store.getWorkspaceMutationLockV2('workspace-current'), null);
 
     const second = store.reconcileTerminalLifecycle({
       projectId,
@@ -401,7 +399,7 @@ test('legacy binding migration is additive and idempotent across repeated databa
   }
 });
 
-test('legacy duplicate active owners fail closed without rewriting preserved records', async () => {
+test('legacy active owners for one session remain valid when they belong to different worktrees', async () => {
   const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-binding-legacy-duplicate-'));
   let dbPath;
   try {
@@ -464,10 +462,8 @@ test('legacy duplicate active owners fail closed without rewriting preserved rec
       legacyDb.close();
     }
 
-    await assert.rejects(
-      openKernelStateStore({ runtimeHome }),
-      /UNIQUE constraint failed/,
-    );
+    const migrated = await openKernelStateStore({ runtimeHome });
+    migrated.close();
 
     const preserved = await openSqliteDb(dbPath);
     try {
@@ -506,6 +502,7 @@ const successorSpec = ({
   projectId = 'successor-project',
   sessionId = 'codex:successor-session',
   workspaceId = 'successor-workspace',
+  worktreeId = null,
 }) => {
   const taskContractDigest = `sha256:${'d'.repeat(64)}`;
   return {
@@ -515,6 +512,7 @@ const successorSpec = ({
     sourceIdentity,
     projectId,
     workspaceId,
+    ...(worktreeId ? { worktreeId } : {}),
     taskContract: {
       schemaVersion: 1,
       objective: 'successor objective',
@@ -530,8 +528,8 @@ const successorSpec = ({
   }),
   successorKey: buildSuccessorKey({
     projectId,
-    sessionId,
     predecessorRunId: 'run-predecessor',
+    worktreeId,
     workspaceId,
     taskContractDigest,
   }),
@@ -558,7 +556,7 @@ test('successor handoff is atomic, idempotent, preserves predecessor lineage, an
   const predecessorRunId = 'run-predecessor';
   const predecessorBindingId = 'binding-predecessor';
   try {
-    registerWorkspace(store, { projectId, workspaceId });
+    const workspace = registerWorkspace(store, { projectId, workspaceId });
     createRun(store, { runId: predecessorRunId, projectId, workspaceId });
     store.createSessionBinding(owner({
       bindingId: predecessorBindingId,
@@ -585,6 +583,7 @@ test('successor handoff is atomic, idempotent, preserves predecessor lineage, an
       ...successorSpec({
         runId: 'run-successor-first-attempt',
         bindingId: 'binding-successor-first-attempt',
+        worktreeId: workspace.worktreeId,
       }),
     };
 
@@ -594,6 +593,7 @@ test('successor handoff is atomic, idempotent, preserves predecessor lineage, an
       ...successorSpec({
         runId: 'run-successor-retry-nonce',
         bindingId: 'binding-successor-retry-nonce',
+        worktreeId: workspace.worktreeId,
       }),
     });
 
@@ -619,8 +619,8 @@ test('successor handoff is atomic, idempotent, preserves predecessor lineage, an
       },
     );
     assert.equal(first.predecessorBinding.status, 'inactive');
-    assert.equal(first.predecessorBinding.closeReason, 'successor_started');
-    assert.equal(first.predecessorBinding.successorRunId, first.run.runId);
+    assert.equal(first.predecessorBinding.closeReason, 'terminal_completed_cleanup');
+    assert.equal(first.predecessorBinding.successorRunId, null);
     assert.equal(
       store.getActiveOwnerBinding({ projectId, sessionId }).runId,
       first.run.runId,
@@ -640,7 +640,7 @@ test('successor handoff rejects incomplete finalization and rolls back a mid-tra
   const predecessorRunId = 'run-predecessor';
   const predecessorBindingId = 'binding-predecessor';
   try {
-    registerWorkspace(store, { projectId, workspaceId });
+    const workspace = registerWorkspace(store, { projectId, workspaceId });
     createRun(store, { runId: predecessorRunId, projectId, workspaceId });
     store.createSessionBinding(owner({
       bindingId: predecessorBindingId,
@@ -658,6 +658,7 @@ test('successor handoff rejects incomplete finalization and rolls back a mid-tra
       ...successorSpec({
         runId: 'run-successor',
         bindingId: 'binding-successor',
+        worktreeId: workspace.worktreeId,
       }),
     };
 
@@ -667,7 +668,7 @@ test('successor handoff rejects incomplete finalization and rolls back a mid-tra
         && error.nextAction === 'retry-finalization',
     );
     assert.equal(store.getRun('run-successor'), null);
-    assert.equal(store.getActiveOwnerBinding({ projectId, sessionId }).runId, predecessorRunId);
+    assert.equal(store.getActiveOwnerBinding({ projectId, sessionId }), null);
 
     store.setFinalizationStatus(predecessorRunId, 'completed');
     const crossWorkspace = successorSpec({
@@ -685,14 +686,15 @@ test('successor handoff rejects incomplete finalization and rolls back a mid-tra
         predecessorBindingId,
         ...crossWorkspace,
       }),
-      (error) => error.code === 'successor_creation_conflict',
+      (error) => error.code === 'successor_not_allowed',
     );
     assert.equal(store.getRun('run-successor-unregistered-workspace'), null);
-    assert.equal(store.getActiveOwnerBinding({ projectId, sessionId }).runId, predecessorRunId);
+    assert.equal(store.getActiveOwnerBinding({ projectId, sessionId }), null);
 
     const conflicting = successorSpec({
       runId: 'run-successor-conflict',
       bindingId: predecessorBindingId,
+      worktreeId: workspace.worktreeId,
     });
     assert.throws(
       () => store.createSuccessorRunAtomic({
@@ -705,7 +707,7 @@ test('successor handoff rejects incomplete finalization and rolls back a mid-tra
       (error) => error.code === 'successor_binding_conflict',
     );
     assert.equal(store.getRun('run-successor-conflict'), null);
-    assert.equal(store.getActiveOwnerBinding({ projectId, sessionId }).runId, predecessorRunId);
+    assert.equal(store.getActiveOwnerBinding({ projectId, sessionId }), null);
     assert.equal(store.getWorkspaceMutationLockV2(workspaceId), null);
   } finally {
     store.close();
@@ -722,7 +724,7 @@ test('successor handoff fails closed on a missing, stale, or changed-owner works
   const predecessorRunId = 'run-predecessor';
   const predecessorBindingId = 'binding-predecessor';
   try {
-    registerWorkspace(store, { projectId, workspaceId });
+    const workspace = registerWorkspace(store, { projectId, workspaceId });
     createRun(store, { runId: predecessorRunId, projectId, workspaceId });
     store.createSessionBinding(owner({
       bindingId: predecessorBindingId,
@@ -740,6 +742,7 @@ test('successor handoff fails closed on a missing, stale, or changed-owner works
       ...successorSpec({
         runId: 'run-successor-lock-check',
         bindingId: 'binding-successor-lock-check',
+        worktreeId: workspace.worktreeId,
       }),
     };
     const missingLock = {
@@ -777,14 +780,14 @@ test('successor handoff fails closed on a missing, stale, or changed-owner works
     assert.notEqual(changedOwner.lock.fencingToken, stale.fencingToken);
     assert.throws(
       () => store.createSuccessorRunAtomic({ ...request, predecessorLock: stale }),
-      (error) => error.code === 'workspace_lock_handoff_failed',
+      (error) => error.code === 'worktree_run_conflict',
     );
     assert.throws(
       () => store.createSuccessorRunAtomic(request),
-      (error) => error.code === 'workspace_lock_handoff_failed',
+      (error) => error.code === 'worktree_run_conflict',
     );
     assert.equal(store.getRun(request.successorRun.runId), null);
-    assert.equal(store.getActiveOwnerBinding({ projectId, sessionId }).runId, predecessorRunId);
+    assert.equal(store.getActiveOwnerBinding({ projectId, sessionId }), null);
     assert.equal(store.getWorkspaceMutationLockV2(workspaceId).holderRunId, 'run-other-owner');
   } finally {
     store.close();

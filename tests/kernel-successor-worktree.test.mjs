@@ -173,4 +173,4 @@ const successorAcrossWorktreesSpec = async () => {
     await rm(runtimeHome, { recursive: true, force: true });
   }
 };
-test('a finalized predecessor can hand the same session to a successor in a different worktree', successorAcrossWorktreesSpec);
+test('a different worktree starts an independent Run even when the Host session is reused', successorAcrossWorktreesSpec);

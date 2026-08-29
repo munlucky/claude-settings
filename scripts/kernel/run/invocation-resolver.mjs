@@ -23,109 +23,150 @@ export const resolveBoundInvocation = ({
   provider,
   sessionId,
   workspaceId,
+  worktreeId = null,
   explicitRunId = null,
   envRunId = null,
   taskContract = null,
 } = {}) => {
-  if (!stateStore || !projectId || !workspaceId) {
+  if (!stateStore || !projectId || (!worktreeId && !workspaceId)) {
     throw codedError('host_binding_missing', 'relaunch-through-kernel-host');
   }
-  const canonicalSessionId = canonicalizeHostSessionId({ provider, sessionId });
-  if (canonicalSessionId !== sessionId) {
+  const canonicalSessionId = sessionId
+    ? canonicalizeHostSessionId({ provider, sessionId })
+    : null;
+  if (sessionId && canonicalSessionId !== sessionId) {
     throw codedError('provider_session_invalid', 'relaunch-through-kernel-host');
   }
   const contract = normalizedContract(taskContract);
-  const binding = stateStore.getActiveOwnerBinding({
-    projectId,
-    sessionId: canonicalSessionId,
-  });
   const requestedRunId = explicitRunId || envRunId || null;
+  const registeredWorkspace = workspaceId
+    ? stateStore.getProjectWorkspace?.(workspaceId) || null
+    : null;
+  const effectiveWorktreeId = worktreeId || registeredWorkspace?.worktreeId || null;
+  const binding = canonicalSessionId
+    ? stateStore.getActiveOwnerBinding({
+        projectId,
+        sessionId: canonicalSessionId,
+        workspaceId,
+      })
+    : null;
 
-  if (binding && requestedRunId && binding.runId !== requestedRunId) {
-    throw codedError('run_session_mismatch', 'resume-the-bound-run');
+  const assertRunBinding = (run) => {
+    if (run.projectId !== projectId) {
+      throw codedError('run_project_mismatch', 'relaunch-from-bound-project');
+    }
+    if (run.worktreeId) {
+      if (!effectiveWorktreeId || run.worktreeId !== effectiveWorktreeId) {
+        throw codedError('run_worktree_mismatch', 'return-to-bound-worktree');
+      }
+    } else if (run.workspaceId && run.workspaceId !== workspaceId) {
+      // Legacy Runs remain addressable through workspaceId, but a workspace-*
+      // compatibility id is never compared directly with a worktree-* id.
+      throw codedError('run_workspace_mismatch', 'return-to-bound-workspace');
+    }
+    return run;
+  };
+
+  const candidateRuns = typeof stateStore.listRuns === 'function'
+    ? stateStore.listRuns({
+        projectId,
+        ...(effectiveWorktreeId ? { worktreeId: effectiveWorktreeId } : { workspaceId }),
+        statuses: ['active', 'blocked'],
+      })
+    : typeof stateStore.listActiveRuns === 'function'
+      ? stateStore.listActiveRuns({
+          projectId,
+          ...(effectiveWorktreeId ? { worktreeId: effectiveWorktreeId } : { workspaceId }),
+        })
+      : [];
+  const worktreeLease = effectiveWorktreeId && typeof stateStore.getWorktreeMutationLease === 'function'
+    ? stateStore.getWorktreeMutationLease(effectiveWorktreeId)
+    : null;
+  const mutableRuns = candidateRuns.filter((run) => run.status === 'active'
+    || (run.status === 'blocked'
+      && worktreeLease?.projectId === projectId
+      && worktreeLease?.holderRunId === run.runId));
+  if (mutableRuns.length > 1) {
+    throw codedError('worktree_run_conflict', 'resolve-conflicting-active-runs');
+  }
+  const mutableRun = mutableRuns[0] || null;
+  const requestedRun = requestedRunId ? stateStore.getRun(requestedRunId) : null;
+  if (requestedRun) assertRunBinding(requestedRun);
+
+  if (requestedRunId && mutableRun && requestedRunId !== mutableRun.runId) {
+    throw codedError('worktree_run_conflict', 'resume-the-worktree-bound-run');
   }
 
-  if (!binding) {
-    if (!contract && !requestedRunId) {
-      throw codedError('host_binding_missing', 'supply-a-task-contract');
-    }
-    if (requestedRunId) {
-      const requestedRun = stateStore.getRun(requestedRunId);
-      if (requestedRun) {
-        if (requestedRun.projectId !== projectId) {
-          throw codedError('run_project_mismatch', 'relaunch-from-bound-project');
-        }
-        if (requestedRun.workspaceId && requestedRun.workspaceId !== workspaceId) {
-          throw codedError('run_workspace_mismatch', 'return-to-bound-workspace');
-        }
-        return {
-          mode: contract && requestedRun.taskContract?.digest !== contract.digest
-            ? 'revise'
-            : 'resume',
-          runId: requestedRunId,
-          predecessorRunId: null,
-          binding: null,
-          reason: 'explicit-unbound-run',
-          taskContract: contract,
-          changeClass: contract ? classifyContractChange({ previous: requestedRun.taskContract, next: contract }) : null,
-        };
-      }
-    }
-    if (!contract) {
-      throw codedError('host_binding_missing', 'supply-a-task-contract');
-    }
+  const latestRun = typeof stateStore.getLatestRunForWorktree === 'function'
+    ? stateStore.getLatestRunForWorktree({
+        projectId,
+        ...(effectiveWorktreeId ? { worktreeId: effectiveWorktreeId } : { workspaceId }),
+      })
+    : null;
+  const boundRun = binding?.runId ? stateStore.getRun(binding.runId) : null;
+  const compatibleBoundRun = boundRun
+    ? (() => {
+        try { return assertRunBinding(boundRun); } catch { return null; }
+      })()
+    : null;
+  if (
+    requestedRunId
+    && !requestedRun
+    && compatibleBoundRun?.status === 'active'
+    && compatibleBoundRun.runId !== requestedRunId
+  ) {
+    throw codedError('worktree_run_conflict', 'resume-the-worktree-bound-run');
+  }
+  const cursorRun = requestedRun || mutableRun || latestRun || compatibleBoundRun;
+
+  if (!cursorRun) {
+    if (!contract) throw codedError('host_binding_missing', 'supply-a-task-contract');
     return {
       mode: 'create',
       runId: requestedRunId || createOpaqueRunId(),
       predecessorRunId: null,
       binding: null,
-      reason: 'no-active-owner-binding',
+      reason: 'no-worktree-cursor',
       taskContract: contract,
       changeClass: null,
     };
   }
+  assertRunBinding(cursorRun);
+  const cursorBinding = binding?.runId === cursorRun.runId ? binding : null;
 
-  const run = stateStore.getRun(binding.runId);
-  if (!run) throw codedError('run_access_denied', 'inspect-active-owner-binding');
-  if (run.projectId !== projectId) {
-    throw codedError('run_project_mismatch', 'relaunch-from-bound-project');
-  }
-  const workspaceChanged = (
-    (binding.workspaceId && binding.workspaceId !== workspaceId)
-    || (run.workspaceId && run.workspaceId !== workspaceId)
-  );
-  const finalizedSuccessorRequested = run.status === 'completed'
-    && run.finalizationStatus === 'completed'
-    && contract
-    && run.taskContract?.digest !== contract.digest;
-  if (workspaceChanged && !finalizedSuccessorRequested) {
-    throw codedError('run_workspace_mismatch', 'return-to-bound-workspace');
-  }
-  if (workspaceChanged) {
-    const successorWorkspace = stateStore.getProjectWorkspace?.(workspaceId);
-    if (!successorWorkspace || successorWorkspace.projectId !== projectId) {
-      throw codedError('run_workspace_mismatch', 'register-a-project-worktree');
-    }
+  if (cursorRun.status === 'active' || cursorRun.status === 'blocked') {
+    const revised = Boolean(contract && cursorRun.taskContract?.digest !== contract.digest);
+    return {
+      mode: revised ? 'revise' : 'resume',
+      runId: cursorRun.runId,
+      predecessorRunId: null,
+      binding: cursorBinding,
+      reason: revised
+        ? 'worktree-run-contract-changed'
+        : cursorRun.status === 'blocked' ? 'blocked-worktree-run' : 'active-worktree-run',
+      taskContract: contract,
+      changeClass: contract ? classifyContractChange({ previous: cursorRun.taskContract, next: contract }) : null,
+    };
   }
 
-  if (run.status === 'completed') {
-    if (run.finalizationStatus !== 'completed') {
+  if (cursorRun.status === 'completed') {
+    if (cursorRun.finalizationStatus !== 'completed') {
       return {
         mode: 'finalization-retry',
-        runId: run.runId,
+        runId: cursorRun.runId,
         predecessorRunId: null,
-        binding,
+        binding: cursorBinding,
         reason: 'completed-run-finalization-incomplete',
         taskContract: contract,
-        changeClass: contract ? classifyContractChange({ previous: run.taskContract, next: contract }) : null,
+        changeClass: contract ? classifyContractChange({ previous: cursorRun.taskContract, next: contract }) : null,
       };
     }
-    if (!contract || run.taskContract?.digest === contract.digest) {
+    if (!contract || cursorRun.taskContract?.digest === contract.digest) {
       return {
         mode: 'done',
-        runId: run.runId,
+        runId: cursorRun.runId,
         predecessorRunId: null,
-        binding,
+        binding: cursorBinding,
         reason: contract ? 'same-contract-already-complete' : 'no-new-task-contract',
         taskContract: contract,
         changeClass: null,
@@ -134,23 +175,13 @@ export const resolveBoundInvocation = ({
     return {
       mode: 'successor',
       runId: createOpaqueRunId(),
-      predecessorRunId: run.runId,
-      binding,
+      predecessorRunId: cursorRun.runId,
+      binding: cursorBinding,
       reason: 'new-contract-after-completed-finalization',
       taskContract: contract,
-      changeClass: classifyContractChange({ previous: run.taskContract, next: contract }),
+      changeClass: classifyContractChange({ previous: cursorRun.taskContract, next: contract }),
     };
   }
 
-  return {
-    mode: contract && run.taskContract?.digest !== contract.digest ? 'revise' : 'resume',
-    runId: run.runId,
-    predecessorRunId: null,
-    binding,
-    reason: contract && run.taskContract?.digest !== contract.digest
-      ? 'active-run-contract-changed'
-      : 'active-owner-binding',
-    taskContract: contract,
-    changeClass: contract ? classifyContractChange({ previous: run.taskContract, next: contract }) : null,
-  };
+  throw codedError('run_access_denied', 'inspect-worktree-cursor');
 };

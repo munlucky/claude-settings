@@ -80,7 +80,11 @@ test('lifecycle diagnostics report ambiguous owners, terminal bindings, orphaned
     try {
       raw.exec(`
         DROP INDEX IF EXISTS uq_project_session_active_owner;
+        DROP INDEX IF EXISTS uq_project_session_workspace_active_owner;
         DROP INDEX IF EXISTS uq_run_active_owner;
+        UPDATE session_bindings
+        SET status = 'active'
+        WHERE binding_id = 'binding-terminal';
       `);
       const timestamp = new Date().toISOString();
       raw.prepare(`

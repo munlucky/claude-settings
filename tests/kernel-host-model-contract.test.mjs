@@ -174,7 +174,12 @@ test('a completed run refuses a late usage receipt unless it is declared late', 
     await cp.recordModelUsage('r-late', receipt);
     assert.equal(cp.modelRoutingSummary('r-late').advisoryTurns, 1);
 
-    const report = await cp.report('r-late', { summary: 'done', verifications: [{ obligationId: 'default', commandRef: 'test:ok' }] });
+    const report = await cp.report('r-late', {
+      summary: 'done',
+      capsuleId: host.hostDirective.executionCapsule?.capsuleId,
+      attemptId: host.hostDirective.attemptId,
+      verifications: [{ obligationId: 'default', commandRef: 'test:ok' }],
+    });
     assert.equal((await cp.getRun('r-late')).status, 'completed', JSON.stringify(report.failures));
     await assert.rejects(() => cp.recordModelUsage('r-late', { ...receipt, actorSessionId: `sha256:${'b'.repeat(64)}` }), /late-observation flag/);
     const late = await cp.recordModelUsage('r-late', { ...receipt, actorSessionId: `sha256:${'b'.repeat(64)}` }, { lateObservation: true });

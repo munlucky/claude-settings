@@ -921,12 +921,14 @@ test('P1-1: the route is fixed at start and includes SHAPE for boundary work', a
   try {
     const plain = await cp.startRun({ runId: 'r-plain', objective: 'x' });
     assert.deepEqual(plain.route.stages, ['FRAME', 'EXECUTE', 'PROVE', 'CLOSE']);
+    await cp.abandonRun('r-plain');
 
     const boundary = await cp.startRun({ runId: 'r-shape', objective: 'x', taskContract: { publicContract: true } });
     assert.deepEqual(boundary.route.stages, ['FRAME', 'SHAPE', 'EXECUTE', 'PROVE', 'CLOSE']);
     assert.equal(boundary.route.shapeRequired, true);
     // A public-contract surface also raises the proof tier floor.
     assert.equal(boundary.proofTier, 'T2');
+    await cp.abandonRun('r-shape');
 
     // Declared behaviour change reaches the tier resolver.
     const behaviour = await cp.startRun({ runId: 'r-behaviour', objective: 'x', taskContract: { behaviorChanging: true } });

@@ -69,6 +69,8 @@ test('a full routed turn implements on value coding and finishes on kernel evide
     await writeFile(path.join(projectRoot, 'app.mjs'), 'export const v = 1;\n');
     const report = await cp.report('r-e2e', {
       summary: 'implemented',
+      capsuleId: turn.hostDirective.executionCapsule?.capsuleId,
+      attemptId: turn.hostDirective.attemptId,
       changedPaths: ['app.mjs'],
       verifications: [{ obligationId: 'default', commandRef: 'test:ok', acceptanceCoverage: ['works'] }],
     });

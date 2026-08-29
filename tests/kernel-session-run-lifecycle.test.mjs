@@ -77,7 +77,7 @@ test('contract-first invocation resolver deterministically selects every lifecyc
   assert.equal(successor.mode, 'successor');
   assert.equal(successor.predecessorRunId, 'run-a');
   assert.match(successor.runId, /^run-[0-9a-f-]{36}$/i);
-  assert.equal(resolve(contractB, { workspaceId: 'workspace-next' }).mode, 'successor');
+  assert.equal(resolve(contractB, { workspaceId: 'workspace-next' }).mode, 'create');
 });
 
 test('contract-first invocation resolver fails closed on explicit, provider, and workspace mismatches', () => {
@@ -89,14 +89,14 @@ test('contract-first invocation resolver fails closed on explicit, provider, and
       sessionId: 'codex:resolver-session',
       workspaceId: 'resolver-workspace',
     }),
-    getRun: () => ({
-      runId: 'run-a',
-      projectId: 'resolver-project',
-      workspaceId: 'resolver-workspace',
-      status: 'active',
-      finalizationStatus: 'pending',
-      taskContract: null,
-    }),
+    getRun: (runId) => runId === 'run-a' ? ({
+        runId: 'run-a',
+        projectId: 'resolver-project',
+        workspaceId: 'resolver-workspace',
+        status: 'active',
+        finalizationStatus: 'pending',
+        taskContract: null,
+      }) : null,
   };
   const base = {
     stateStore,
@@ -107,14 +107,14 @@ test('contract-first invocation resolver fails closed on explicit, provider, and
   };
   assert.throws(
     () => resolveBoundInvocation({ ...base, explicitRunId: 'run-other' }),
-    (error) => error.code === 'run_session_mismatch',
+    (error) => error.code === 'worktree_run_conflict',
   );
   assert.throws(
     () => resolveBoundInvocation({ ...base, provider: 'claude' }),
     (error) => error.code === 'provider_session_invalid',
   );
   assert.throws(
-    () => resolveBoundInvocation({ ...base, workspaceId: 'workspace-other' }),
+    () => resolveBoundInvocation({ ...base, workspaceId: 'workspace-other', explicitRunId: 'run-a' }),
     (error) => error.code === 'run_workspace_mismatch',
   );
 });

@@ -35,7 +35,10 @@ export const resolveStableWorkspaceIdentity = ({ projectId, workspaceRoot, platf
   return { workspaceId, canonicalRoot, gitCommonDir, gitWorktreeDir, identity };
 };
 
-export const registerWorkspace = ({ stateStore, projectId, workspaceRoot }) => {
+export const registerWorkspace = ({ stateStore, projectId, workspaceRoot, worktreeId = null }) => {
   const workspace = resolveStableWorkspaceIdentity({ projectId, workspaceRoot });
-  return stateStore.registerProjectWorkspace(workspace);
+  return stateStore.registerProjectWorkspace({
+    ...workspace,
+    ...(worktreeId ? { worktreeId: String(worktreeId) } : {}),
+  });
 };

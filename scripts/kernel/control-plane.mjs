@@ -64,7 +64,7 @@ import { normalizeSessionBinding } from './run/session-binding.mjs';
 import { canonicalizeHostSessionId } from './run/host-session.mjs';
 import { resolveBoundInvocation as resolveInvocation } from './run/invocation-resolver.mjs';
 import { buildSuccessorKey } from './run/successor-key.mjs';
-import { registerWorkspace } from './run/workspace-registration.mjs';
+import { registerKernelWorktreeBinding, assertRunWorktreeMutationAuthority } from './run/worktree-binding.mjs';
 import { resolveRunArtifactPaths } from './artifact-paths.mjs';
 import { buildStructuredRunSignals, failureFingerprint } from './knowledge/capture.mjs';
 import { buildEvidenceIdentity, buildEvidenceReuseReceipt } from './proof/evidence-reuse.mjs';
@@ -268,11 +268,18 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     projectRoot,
   });
   const hostWorkspaceId = env.MOON_RELAY_KERNEL_WORKSPACE_ID || null;
-  const registeredWorkspace = registerWorkspace({ stateStore: store, projectId: currentProject.projectId, workspaceRoot: projectRoot });
+  const currentWorktree = registerKernelWorktreeBinding({
+    stateStore: store,
+    cwd: projectRoot,
+    env: { ...env, MOON_RELAY_KERNEL_HOME: runtimeHome },
+    projectIdentity: currentProject,
+  });
+  const registeredWorkspace = currentWorktree.registeredWorkspace;
   if (hostWorkspaceId && hostWorkspaceId !== registeredWorkspace.workspaceId) {
     throw Object.assign(new Error('run_workspace_mismatch'), { code: 'run_workspace_mismatch' });
   }
   const effectiveWorkspaceId = registeredWorkspace.workspaceId;
+  const effectiveWorktreeId = currentWorktree.worktreeId;
   // Reconcile terminal bindings and stale mutation locks at the public Kernel
   // lifecycle boundary. Preserve only a completed binding owned by this host
   // so a successor contract can perform its atomic handoff; blocked bindings
@@ -284,7 +291,11 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
   const getHostBinding = ({ runId = null } = {}) => {
     const canonical = runId
       ? store.getActiveRunBinding({ projectId: currentProject.projectId, sessionId: hostSessionId, runId })
-      : store.getActiveOwnerBinding({ projectId: currentProject.projectId, sessionId: hostSessionId });
+      : store.getActiveOwnerBinding({
+          projectId: currentProject.projectId,
+          sessionId: hostSessionId,
+          workspaceId: effectiveWorkspaceId,
+        });
     if (canonical || !legacyHostSessionId || !hostSessionId) return canonical;
     const migrated = store.migrateLegacySessionBinding({
       projectId: currentProject.projectId,
@@ -296,8 +307,12 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     return migrated;
   };
   const preflight = (runId, command) => {
-    if (!requireHostBinding) return null;
+    const run = store.getRun(runId);
+    if (!run) throw Object.assign(new Error('run_access_denied'), { code: 'run_access_denied' });
+    assertRunWorktreeMutationAuthority({ stateStore: store, run, worktree: currentWorktree });
+    if (!requireHostBinding || !hostSessionId) return { run, worktree: currentWorktree };
     const binding = getHostBinding({ runId });
+    if (!binding) return { run, worktree: currentWorktree };
     return assertBoundRunAccess({
       stateStore: store,
       requestedRunId: runId,
@@ -415,26 +430,20 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     discoverProjectCommands: () => discoverProjectCommands({ projectRoot }),
     // K1 + K2 live in one module: the current work unit and the bounded context
     // it is executed with. Spread as methods so `this` stays the control plane.
-    ...createWorkCursorApi({ store, projectRoot, runtimeHome }),
+    ...createWorkCursorApi({ store, projectRoot, runtimeHome, worktree: currentWorktree }),
 
     resolveBoundInvocation({
       explicitRunId = null,
       envRunId = null,
       taskContract = null,
     } = {}) {
-      if (!hostSessionId) {
-        throw Object.assign(new Error('host_binding_missing'), {
-          code: 'host_binding_missing',
-          errorCode: 'host_binding_missing',
-          nextAction: 'relaunch-through-kernel-host',
-        });
-      }
       return resolveInvocation({
         stateStore: store,
         projectId: currentProject.projectId,
         provider: hostProvider,
         sessionId: hostSessionId,
         workspaceId: effectiveWorkspaceId,
+        worktreeId: effectiveWorktreeId,
         explicitRunId,
         envRunId,
         taskContract,
@@ -514,6 +523,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         route: { stages: route, riskTier: proofRoute.proofTier, shapeRequired: route.includes('SHAPE') },
         implementationContext,
         workspaceId: effectiveWorkspaceId,
+        worktreeId: effectiveWorktreeId,
       });
       store.declareRunObligations(runId, obligations);
 
@@ -552,7 +562,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     },
 
     async startSuccessor({ invocation, objective, taskContract = {}, hostCapabilities = null } = {}) {
-      if (invocation?.mode !== 'successor' || !invocation.predecessorRunId || !invocation.binding) {
+      if (invocation?.mode !== 'successor' || !invocation.predecessorRunId) {
         throw Object.assign(new Error('successor_not_allowed'), {
           code: 'successor_not_allowed',
           errorCode: 'successor_not_allowed',
@@ -634,6 +644,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         },
         implementationContext,
         workspaceId: effectiveWorkspaceId,
+        worktreeId: effectiveWorktreeId,
       };
       const planned = planRunSteps({
         run: successorRun,
@@ -642,16 +653,16 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         route: { stages: route },
         planRevision: 1,
       });
-      const successorBinding = normalizeSessionBinding({
-        sessionId: hostSessionId,
-        runId,
-        projectId,
-        workspaceId: effectiveWorkspaceId,
-        workspaceRoot: path.resolve(projectRoot),
-        provider: hostProvider,
-        surface: env.MOON_RELAY_KERNEL_SURFACE || null,
-        accessMode: 'owner',
-      });
+      const successorBinding = hostSessionId ? normalizeSessionBinding({
+          sessionId: hostSessionId,
+          runId,
+          projectId,
+          workspaceId: effectiveWorkspaceId,
+          workspaceRoot: path.resolve(projectRoot),
+          provider: hostProvider,
+          surface: env.MOON_RELAY_KERNEL_SURFACE || null,
+          accessMode: 'owner',
+        }) : null;
       const predecessor = store.getRun(invocation.predecessorRunId);
       const currentLock = predecessor?.workspaceId
         ? store.getWorkspaceMutationLockV2(predecessor.workspaceId)
@@ -660,16 +671,15 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         projectId,
         sessionId: hostSessionId,
         predecessorRunId: invocation.predecessorRunId,
-        predecessorBindingId: invocation.binding.bindingId,
+        predecessorBindingId: invocation.binding?.bindingId || null,
         successorRun,
         successorBinding,
         obligations,
         steps: planned.steps,
         successorKey: buildSuccessorKey({
           projectId,
-          sessionId: hostSessionId,
           predecessorRunId: invocation.predecessorRunId,
-          workspaceId: effectiveWorkspaceId,
+          worktreeId: effectiveWorktreeId,
           taskContractDigest: contract.digest,
         }),
         predecessorLock: currentLock?.holderRunId === invocation.predecessorRunId
@@ -713,7 +723,19 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       if (requireHostBinding) {
         if (!hostSessionId) throw Object.assign(new Error('host_binding_missing'), { code: 'host_binding_missing' });
         const binding = getHostBinding();
-        const requested = explicitRunId || envRunId || binding?.runId || null;
+        const mutable = store.listRuns({
+          projectId: currentProject.projectId,
+          worktreeId: effectiveWorktreeId,
+          statuses: ['active', 'blocked'],
+        });
+        if (mutable.length > 1) {
+          throw Object.assign(new Error('worktree_run_conflict'), {
+            code: 'worktree_run_conflict',
+            errorCode: 'worktree_run_conflict',
+            nextAction: 'resolve-conflicting-active-runs',
+          });
+        }
+        const requested = explicitRunId || envRunId || mutable[0]?.runId || binding?.runId || null;
         if (!requested) {
           throw Object.assign(new Error('host_binding_missing'), {
             code: 'host_binding_missing',
@@ -727,11 +749,9 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
             },
           });
         }
-        if (binding) {
-          if (explicitRunId && String(explicitRunId) !== binding.runId) throw Object.assign(new Error('run_session_mismatch'), { code: 'run_session_mismatch' });
-          if (envRunId && String(envRunId) !== binding.runId) throw Object.assign(new Error('run_session_mismatch'), { code: 'run_session_mismatch' });
-          preflight(binding.runId, 'next');
-          return binding.runId;
+        if (binding && binding.runId === requested) {
+          preflight(requested, 'next');
+          return requested;
         }
         const envProjectId = env.MOON_RELAY_KERNEL_PROJECT_ID || currentProject.projectId;
         if (envProjectId !== currentProject.projectId) throw Object.assign(new Error('run_project_mismatch'), { code: 'run_project_mismatch' });
@@ -740,9 +760,13 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       if (explicitRunId) return String(explicitRunId);
       if (envRunId) return String(envRunId);
       const identity = currentProject;
-      const active = store.listActiveRuns({ projectId: identity.projectId });
-      if (active.length === 1) return active[0].runId;
-      if (active.length > 1) throw new Error(`ambiguous_active_run: ${active.map((run) => run.runId).join(', ')}`);
+      const mutable = store.listRuns({
+        projectId: identity.projectId,
+        worktreeId: effectiveWorktreeId,
+        statuses: ['active', 'blocked'],
+      });
+      if (mutable.length === 1) return mutable[0].runId;
+      if (mutable.length > 1) throw new Error(`ambiguous_mutable_run: ${mutable.map((run) => run.runId).join(', ')}`);
       throw new Error('active_run_not_found: pass --run-id or launch through a Kernel host');
     },
 
@@ -977,6 +1001,12 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       });
 
       const updated = store.transition(runId, nextState, options);
+      await projectRunState(updated, { runtimeHome });
+      return updated;
+    },
+
+    async abandonRun(runId) {
+      const updated = store.abandonRun(runId);
       await projectRunState(updated, { runtimeHome });
       return updated;
     },

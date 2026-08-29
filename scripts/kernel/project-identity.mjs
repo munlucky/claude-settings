@@ -226,7 +226,10 @@ export function resolveKernelProjectIdentity({ cwd = process.cwd(), env = proces
   // prior persisted/path identities as explicit lineage candidates when a
   // local identity file supersedes them, otherwise their namespaces can be
   // orphaned without ever reaching the ownership checks in state-store.
-  const pathDerivedProjectId = pathHashId(projectRoot);
+  const primaryRepoRoot = gitCommonDir
+    ? (path.basename(gitCommonDir).toLowerCase() === '.git' ? path.dirname(gitCommonDir) : gitCommonDir)
+    : projectRoot;
+  const pathDerivedProjectId = pathHashId(primaryRepoRoot);
   const projectId = localProjectId || persisted?.projectId || pathDerivedProjectId;
   const identitySource = localProjectId
     ? 'local_identity_file'

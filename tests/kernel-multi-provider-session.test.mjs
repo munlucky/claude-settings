@@ -7,6 +7,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
 import { normalizeSessionBinding } from '../scripts/kernel/run/session-binding.mjs';
+import { registerKernelWorktreeBinding } from '../scripts/kernel/run/worktree-binding.mjs';
 import { openKernelStateStore } from '../scripts/kernel/state-store.mjs';
 
 const makeWorkspace = async ({ prefix, projectId }) => {
@@ -26,6 +27,13 @@ const runGit = (cwd, args) => {
   assert.equal(result.status, 0, result.stderr || result.stdout);
   return result.stdout.trim();
 };
+
+const registerCurrentWorktree = (store, { projectRoot, runtimeHome }) =>
+  registerKernelWorktreeBinding({
+    stateStore: store,
+    cwd: projectRoot,
+    env: { ...process.env, MOON_RELAY_KERNEL_HOME: runtimeHome },
+  });
 
 const providerScopedIdentitySpec = async () => {
   const {
@@ -131,11 +139,14 @@ const legacyProviderCollisionSpec = async () => {
   try {
     const legacy = await openKernelStateStore({ runtimeHome });
     try {
+      const worktree = registerCurrentWorktree(legacy, { projectRoot, runtimeHome });
       legacy.createRun({
         runId: 'codex-legacy-run',
         objective: 'legacy Codex work',
         sourceIdentity: `sha256:${'d'.repeat(64)}`,
         projectId,
+        worktreeId: worktree.worktreeId,
+        workspaceId: worktree.workspaceId,
       });
       legacy.createSessionBinding(normalizeSessionBinding({
         bindingId: 'binding-legacy-codex',
@@ -143,6 +154,7 @@ const legacyProviderCollisionSpec = async () => {
         provider: 'codex',
         runId: 'codex-legacy-run',
         projectId,
+        workspaceId: worktree.workspaceId,
         accessMode: 'owner',
       }));
     } finally {
@@ -181,11 +193,14 @@ test('matching legacy provider ownership migrates once to the canonical session 
   try {
     const store = await openKernelStateStore({ runtimeHome });
     try {
+      const worktree = registerCurrentWorktree(store, { projectRoot, runtimeHome });
       store.createRun({
         runId: 'codex-legacy-run',
         objective: 'legacy Codex work',
         sourceIdentity: `sha256:${'e'.repeat(64)}`,
         projectId,
+        worktreeId: worktree.worktreeId,
+        workspaceId: worktree.workspaceId,
       });
       store.createSessionBinding(normalizeSessionBinding({
         bindingId: 'binding-legacy-codex',
@@ -193,6 +208,7 @@ test('matching legacy provider ownership migrates once to the canonical session 
         provider: 'codex',
         runId: 'codex-legacy-run',
         projectId,
+        workspaceId: worktree.workspaceId,
         accessMode: 'owner',
       }));
     } finally {
@@ -250,11 +266,14 @@ test('legacy codex-* ownership with unknown provider is inferred only for Codex'
   try {
     const store = await openKernelStateStore({ runtimeHome });
     try {
+      const worktree = registerCurrentWorktree(store, { projectRoot, runtimeHome });
       store.createRun({
         runId: `codex-${nativeSessionId}`,
         objective: 'legacy Codex work',
         sourceIdentity: `sha256:${'f'.repeat(64)}`,
         projectId,
+        worktreeId: worktree.worktreeId,
+        workspaceId: worktree.workspaceId,
       });
       store.createSessionBinding(normalizeSessionBinding({
         bindingId: 'binding-unknown-codex',
@@ -262,6 +281,7 @@ test('legacy codex-* ownership with unknown provider is inferred only for Codex'
         provider: 'unknown',
         runId: `codex-${nativeSessionId}`,
         projectId,
+        workspaceId: worktree.workspaceId,
         accessMode: 'owner',
       }));
     } finally {

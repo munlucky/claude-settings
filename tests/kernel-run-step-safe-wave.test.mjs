@@ -119,11 +119,13 @@ test('K2: a wave is refused without an explicit approval, an approver, and an in
     const requested = cp.getExecutableSteps('r-req');
     assert.equal(requested.mode, 'sequential');
     assert.equal(requested.reason, 'safe-wave-not-approved');
+    await cp.abandonRun('r-req');
 
     // Approved but with nobody on record.
     await cp.startRun({ runId: 'r-anon', objective: 'x', taskContract: contractWith({ approved: true, integrationVerification: 'test:integration' }) });
     assert.equal((await cp.getRun('r-anon')).taskContract.safeWave.approved, false, 'an approval needs an approver');
     assert.equal(cp.getExecutableSteps('r-anon').mode, 'sequential');
+    await cp.abandonRun('r-anon');
 
     // Approved by someone, but with no integration check to catch what per-step
     // evidence cannot.
@@ -194,6 +196,7 @@ test('K2-10: overlapping write sets and a stagnant plan both collapse the wave',
     const overlapping = cp.getExecutableSteps('r-overlap');
     assert.equal(overlapping.mode, 'sequential');
     assert.equal(overlapping.reason, 'safe-wave-write-set-conflict');
+    await cp.abandonRun('r-overlap');
 
     // A stuck plan returns to one step at a time (§7.9).
     await cp.startRun({ runId: 'r-stuckwave', objective: 'x', taskContract: contractWith(approved) });

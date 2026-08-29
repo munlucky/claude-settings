@@ -255,7 +255,7 @@ test('an attempt or capsule mismatch is rejected before proof execution', async 
     });
     assert.equal(missingLineage.status, 'step-rejected');
     assert.equal(missingLineage.executed.length, 0);
-    assert.match(missingLineage.failures[0].errorSummary, /attemptId/);
+    assert.match(missingLineage.failures[0].errorSummary, /capsuleId/);
 
     cp.stateStore.updateStepAttempt(attempt.id, { mutationRevision: 1 });
     const stale = await cp.report(runId, {
@@ -300,7 +300,7 @@ test('a direct report enters and closes the canonical attempt before legacy proj
   }
 });
 
-test('a Codex owner report cannot mutate an ordinary step without a routed actor assignment', async () => {
+test('a Codex owner report is admitted by generic Run and worktree authority', async () => {
   const fixture = await setup('r-codex-direct-attempt', DIRECT_CONTRACT, {
     hostProvider: 'codex',
     hostSessionId: 'codex-owner-session',
@@ -309,21 +309,23 @@ test('a Codex owner report cannot mutate an ordinary step without a routed actor
   try {
     const { controlPlane: cp, runId } = fixture;
     const step = cp.getCurrentStep(runId);
-    const rejected = await cp.report(runId, {
+    const accepted = await cp.report(runId, {
       stepId: step.stepId,
-      summary: 'parent attempted implementation',
+      summary: 'implementation completed in the Run worktree',
       changedPaths: ['app.mjs'],
-      verifications: [{ obligationId: 'default', commandRef: 'test:ok', acceptanceCoverage: ['AC-1'] }],
+      verifications: [
+        { obligationId: 'default', commandRef: 'test:ok', acceptanceCoverage: ['AC-1'] },
+        { obligationId: 'static-analysis', commandRef: 'lint' },
+      ],
     });
-    assert.equal(rejected.status, 'step-rejected');
-    assert.equal(rejected.executed.length, 0);
-    assert.equal(rejected.failures[0].errorCode, 'actor-assignment-missing');
+    assert.equal(accepted.status, 'completed', JSON.stringify(accepted.failures));
+    assert.ok(accepted.executed.length > 0);
   } finally {
     await cleanup(fixture);
   }
 });
 
-test('a Codex parent cannot reuse a hostNext capsule before a worker receipt exists', async () => {
+test('a Codex report may use its bound capsule without actor receipt or parent lineage gates', async () => {
   const fixture = await setup('r-codex-capsule-reuse', DIRECT_CONTRACT, {
     hostProvider: 'codex',
     hostSessionId: 'codex-owner-session',
@@ -346,19 +348,9 @@ test('a Codex parent cannot reuse a hostNext capsule before a worker receipt exi
       changedPaths: ['app.mjs'],
       verifications: [{ obligationId: 'default', commandRef: 'test:ok', acceptanceCoverage: ['the direct path is durable'] }],
     };
-    const noAssignment = await cp.report(runId, reportBase);
-    assert.equal(noAssignment.status, 'step-rejected');
-    assert.equal(noAssignment.executed.length, 0);
-    assert.equal(noAssignment.failures[0].errorCode, 'actor-assignment-mismatch');
-
-    const assignmentOnly = await cp.report(runId, {
-      ...reportBase,
-      assignmentId: host.hostDirective.actorAssignment.assignmentId,
-      actorSessionId: 'codex-owner-session',
-    });
-    assert.equal(assignmentOnly.status, 'step-rejected');
-    assert.equal(assignmentOnly.executed.length, 0);
-    assert.equal(assignmentOnly.failures[0].errorCode, 'actor-lineage-incomplete');
+    const accepted = await cp.report(runId, reportBase);
+    assert.equal(accepted.status, 'completed', JSON.stringify(accepted.failures));
+    assert.ok(accepted.executed.length > 0);
   } finally {
     await cleanup(fixture);
   }

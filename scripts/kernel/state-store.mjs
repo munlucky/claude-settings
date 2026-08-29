@@ -18,6 +18,7 @@ import { emptyKnowledgeDoctorFinding } from './knowledge/capture.mjs';
 import { exactEvidenceIdentityMatch } from './proof/evidence-reuse.mjs';
 import { assertWaveTransition } from './run/active-wave.mjs';
 import { normalizeAcceptanceCoverage } from './task/task-contract.mjs';
+import { deriveKernelWorktreeId } from './run/worktree-binding.mjs';
 import {
   prepareProjectKnowledgeNamespaceMigration,
   projectKnowledgeNamespaceHasData,
@@ -183,6 +184,13 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       fencing_token INTEGER NOT NULL,
       acquired_at TEXT NOT NULL,
       expires_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS worktree_mutation_leases (
+      worktree_id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      holder_run_id TEXT NOT NULL,
+      acquired_at TEXT NOT NULL,
+      FOREIGN KEY(holder_run_id) REFERENCES runs(run_id)
     );
     CREATE TABLE IF NOT EXISTS attempts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -641,8 +649,13 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
   // touching the task contract's revision.
   addCol('runs', 'plan_revision', 'INTEGER DEFAULT 1');
   addCol('runs', 'workspace_id', 'TEXT');
+  addCol('runs', 'worktree_id', 'TEXT');
+  // project_id was introduced after the original runs table. Worktree
+  // backfill joins through it, so legacy databases must gain it first.
+  addCol('runs', 'project_id', 'TEXT');
   addCol('runs', 'owner_binding_id', 'TEXT');
   addCol('runs', 'successor_key', 'TEXT');
+  addCol('project_workspaces', 'worktree_id', 'TEXT');
   // Obligation binding authority (P0-2/P0-3).
   addCol('run_obligations', 'evidence_class', "TEXT DEFAULT 'hard'");
   addCol('run_obligations', 'metadata_json', "TEXT DEFAULT '{}'");
@@ -725,6 +738,61 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
   addCol('review_receipts', 'reviewer_binding_id', 'TEXT');
   addCol('review_receipts', 'implementer_attempt_id', 'TEXT');
 
+  // Worktree identity is a deterministic projection of the existing project
+  // workspace registry. Backfill it in place so legacy workspaceId-bound Runs
+  // gain the new authority without inventing a second registry or database.
+  const persistedWorkspaces = db.prepare(`
+    SELECT workspace_id AS workspaceId, project_id AS projectId,
+           canonical_root AS canonicalRoot, git_worktree_dir AS gitWorktreeDir
+    FROM project_workspaces
+  `).all();
+  for (const workspace of persistedWorkspaces) {
+    const worktreeId = deriveKernelWorktreeId({
+      projectId: workspace.projectId,
+      canonicalWorktreeRoot: workspace.canonicalRoot,
+      canonicalGitDir: workspace.gitWorktreeDir || null,
+    });
+    db.prepare(`UPDATE project_workspaces SET worktree_id=? WHERE workspace_id=?`)
+      .run(worktreeId, workspace.workspaceId);
+  }
+  db.prepare(`
+    UPDATE runs
+    SET worktree_id=(
+      SELECT w.worktree_id FROM project_workspaces w
+      WHERE w.workspace_id=runs.workspace_id AND w.project_id=runs.project_id
+    )
+    WHERE worktree_id IS NULL AND workspace_id IS NOT NULL
+  `).run();
+  // The worktree lease never expires. Opening a migrated database removes
+  // only leases whose Run is already terminal (or whose binding is corrupt),
+  // then adopts an unambiguous legacy mutable Run for each worktree. Multiple
+  // mutable Runs on one worktree remain unleased and fail closed at invocation.
+  db.prepare(`
+    DELETE FROM worktree_mutation_leases
+    WHERE holder_run_id NOT IN (
+      SELECT run_id FROM runs
+      WHERE status IN ('active', 'blocked')
+        AND runs.project_id=worktree_mutation_leases.project_id
+        AND runs.worktree_id=worktree_mutation_leases.worktree_id
+    )
+  `).run();
+  db.prepare(`
+    INSERT OR IGNORE INTO worktree_mutation_leases(
+      worktree_id, project_id, holder_run_id, acquired_at
+    )
+    SELECT r.worktree_id, r.project_id, r.run_id, r.updated_at
+    FROM runs r
+    WHERE r.status IN ('active', 'blocked')
+      AND r.worktree_id IS NOT NULL
+      AND r.project_id IS NOT NULL
+      AND (
+        SELECT COUNT(*) FROM runs peer
+        WHERE peer.status IN ('active', 'blocked')
+          AND peer.project_id=r.project_id
+          AND peer.worktree_id=r.worktree_id
+      )=1
+  `).run();
+
   // Existing rows have no trustworthy provenance. Preserve them as
   // legacy-unattributed rather than inferring an execution mode from defaults.
   db.prepare(`UPDATE run_step_attempts SET provenance_kind='legacy-unattributed' WHERE attempt_id IS NULL`).run();
@@ -768,8 +836,10 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
   // the store fails closed instead of silently selecting one.
   try {
     db.exec(`
-      CREATE UNIQUE INDEX IF NOT EXISTS uq_project_session_active_owner
-      ON session_bindings(project_id, session_id)
+      DROP INDEX IF EXISTS uq_project_session_active_owner;
+      DROP INDEX IF EXISTS uq_project_worktree_identity;
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_project_session_workspace_active_owner
+      ON session_bindings(project_id, session_id, workspace_id)
       WHERE status='active' AND access_mode='owner';
       CREATE UNIQUE INDEX IF NOT EXISTS uq_run_active_owner
       ON session_bindings(run_id)
@@ -786,6 +856,8 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       ON model_usage_receipts(run_id, attempt_id);
       CREATE INDEX IF NOT EXISTS idx_route_admissions_attempt
       ON route_admissions(run_id, attempt_id);
+      CREATE INDEX IF NOT EXISTS idx_runs_project_worktree_status
+      ON runs(project_id, worktree_id, status);
     `);
   } catch (error) {
     db.close();
@@ -1101,6 +1173,7 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
     updatedAt: row.updated_at,
   } : null;
   const terminalRunStatuses = new Set(['completed', 'blocked']);
+  const worktreeLeaseTerminalStatuses = new Set(['completed']);
   const reconcileTerminalLifecycleInTransaction = ({
     projectId = null,
     runId = null,
@@ -1158,6 +1231,29 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
 
     const observedMs = Date.parse(observedAt);
     const releasedLocks = [];
+    const worktreeLeases = db.prepare(`
+      SELECT l.worktree_id AS worktreeId, l.project_id AS projectId,
+             l.holder_run_id AS holderRunId, r.status AS runStatus
+      FROM worktree_mutation_leases l
+      JOIN runs r ON r.run_id=l.holder_run_id
+      WHERE 1=1
+        ${projectId ? ' AND l.project_id=?' : ''}
+        ${runId ? ' AND l.holder_run_id=?' : ''}
+    `).all(...scopeArgs);
+    for (const lease of worktreeLeases) {
+      if (!worktreeLeaseTerminalStatuses.has(lease.runStatus)) continue;
+      const released = db.prepare(`
+        DELETE FROM worktree_mutation_leases
+        WHERE worktree_id=? AND project_id=? AND holder_run_id=?
+      `).run(lease.worktreeId, lease.projectId, lease.holderRunId);
+      if (released.changes === 1) releasedLocks.push({
+        version: 3,
+        worktreeId: lease.worktreeId,
+        projectId: lease.projectId,
+        holderRunId: lease.holderRunId,
+        reason: `terminal_${lease.runStatus}`,
+      });
+    }
     const v2Locks = db.prepare(`
       SELECT workspace_id AS workspaceId, project_id AS projectId,
              holder_run_id AS holderRunId, session_token AS sessionToken,
@@ -1259,6 +1355,46 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
     throw error;
   };
 
+  const claimWorktreeLeaseInTransaction = ({ worktreeId, projectId, runId }) => {
+    let current = db.prepare(`
+      SELECT worktree_id AS worktreeId, project_id AS projectId,
+             holder_run_id AS holderRunId, acquired_at AS acquiredAt
+      FROM worktree_mutation_leases WHERE worktree_id=?
+    `).get(worktreeId);
+    if (current?.holderRunId === runId && current.projectId === projectId) {
+      return { acquired: true, created: false, lease: current };
+    }
+    if (current) {
+      const holder = db.prepare(`SELECT status FROM runs WHERE run_id=?`).get(current.holderRunId);
+      if (!holder || worktreeLeaseTerminalStatuses.has(holder.status)) {
+        db.prepare(`DELETE FROM worktree_mutation_leases WHERE worktree_id=? AND holder_run_id=?`)
+          .run(worktreeId, current.holderRunId);
+        current = null;
+      }
+    }
+    if (current) return { acquired: false, created: false, lease: current };
+
+    const acquiredAt = now();
+    db.prepare(`
+      INSERT INTO worktree_mutation_leases(worktree_id, project_id, holder_run_id, acquired_at)
+      VALUES(?, ?, ?, ?)
+    `).run(worktreeId, projectId, runId, acquiredAt);
+    return {
+      acquired: true,
+      created: true,
+      lease: { worktreeId, projectId, holderRunId: runId, acquiredAt },
+    };
+  };
+
+  const throwWorktreeRunConflict = (lease = null) => {
+    throw Object.assign(new Error('worktree_run_conflict'), {
+      code: 'worktree_run_conflict',
+      errorCode: 'worktree_run_conflict',
+      nextAction: 'resume-the-worktree-bound-run',
+      details: lease ? { holderRunId: lease.holderRunId, worktreeId: lease.worktreeId } : {},
+    });
+  };
+
   return {
     dbPath,
     createRun({
@@ -1279,8 +1415,10 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       route = null,
       implementationContext = null,
       workspaceId = null,
+      worktreeId = null,
       ownerBindingId = null,
       successorKey = null,
+      withinTransaction = false,
     }) {
       if (!sourceIdentity || typeof sourceIdentity !== 'string' || !sourceIdentityRegex.test(sourceIdentity)) {
         throw new Error('sourceIdentity is required and must be a valid candidate identity string for Kernel run');
@@ -1288,32 +1426,67 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       if (workspaceIdentity !== null && !sha256Regex.test(workspaceIdentity)) {
         throw new Error('workspaceIdentity must be a sha256:<hex> digest when provided');
       }
-      db.prepare(`
-        INSERT INTO runs(run_id, objective, state, status, revision, mutation_revision, source_identity, run_start_workspace_identity, current_workspace_identity, project_mode, proof_tier, evidence_tier, required_obligations, acceptance_criteria, release_evidence_required, project_id, knowledge_revision_start, knowledge_status, task_contract_json, contract_revision, finalization_status, route_json, implementation_context_json, workspace_id, owner_binding_id, successor_key, updated_at)
-        VALUES(?, ?, 'FRAME', 'active', 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, 'pending', ?, ?, ?, ?, ?, ?)
-      `).run(
-        runId,
-        objective,
-        sourceIdentity,
-        workspaceIdentity,
-        workspaceIdentity,
-        projectMode || null,
-        proofTier,
-        evidenceTier,
-        JSON.stringify(requiredObligations),
-        JSON.stringify(acceptanceCriteria),
-        requireReleaseEvidence ? 1 : 0,
-        projectId || null,
-        knowledgeRevisionStart !== undefined && knowledgeRevisionStart !== null ? String(knowledgeRevisionStart) : null,
-        taskContract ? persistentJson(taskContract) : null,
-        Number(contractRevision) || 1,
-        route ? JSON.stringify(route) : null,
-        implementationContext ? persistentJson(implementationContext) : null,
-        workspaceId,
-        ownerBindingId,
-        successorKey,
-        now()
-      );
+      const registeredWorkspace = workspaceId ? this.getProjectWorkspace(workspaceId) : null;
+      if (registeredWorkspace && projectId && registeredWorkspace.projectId !== projectId) {
+        throw Object.assign(new Error('run_project_mismatch'), { code: 'run_project_mismatch' });
+      }
+      if (worktreeId && registeredWorkspace?.worktreeId && worktreeId !== registeredWorkspace.worktreeId) {
+        throw Object.assign(new Error('run_worktree_mismatch'), { code: 'run_worktree_mismatch' });
+      }
+      const effectiveWorktreeId = worktreeId || registeredWorkspace?.worktreeId || null;
+      const persistRun = () => {
+        db.prepare(`
+          INSERT INTO runs(run_id, objective, state, status, revision, mutation_revision, source_identity, run_start_workspace_identity, current_workspace_identity, project_mode, proof_tier, evidence_tier, required_obligations, acceptance_criteria, release_evidence_required, project_id, knowledge_revision_start, knowledge_status, task_contract_json, contract_revision, finalization_status, route_json, implementation_context_json, workspace_id, worktree_id, owner_binding_id, successor_key, updated_at)
+          VALUES(?, ?, 'FRAME', 'active', 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          runId,
+          objective,
+          sourceIdentity,
+          workspaceIdentity,
+          workspaceIdentity,
+          projectMode || null,
+          proofTier,
+          evidenceTier,
+          JSON.stringify(requiredObligations),
+          JSON.stringify(acceptanceCriteria),
+          requireReleaseEvidence ? 1 : 0,
+          projectId || null,
+          knowledgeRevisionStart !== undefined && knowledgeRevisionStart !== null ? String(knowledgeRevisionStart) : null,
+          taskContract ? persistentJson(taskContract) : null,
+          Number(contractRevision) || 1,
+          route ? JSON.stringify(route) : null,
+          implementationContext ? persistentJson(implementationContext) : null,
+          workspaceId,
+          effectiveWorktreeId,
+          ownerBindingId,
+          successorKey,
+          now()
+        );
+        if (effectiveWorktreeId && projectId) {
+          const lease = claimWorktreeLeaseInTransaction({
+            worktreeId: effectiveWorktreeId,
+            projectId,
+            runId,
+          });
+          if (!lease.acquired) throwWorktreeRunConflict(lease.lease);
+        }
+      };
+      if (withinTransaction) persistRun();
+      else db.transaction(persistRun)();
+      return this.getRun(runId);
+    },
+
+    abandonRun(runId) {
+      const run = this.getRun(runId);
+      if (!run) throw new Error(`Run ${runId} not found`);
+      const abandon = db.transaction(() => {
+        db.prepare(`UPDATE runs SET status='abandoned', updated_at=? WHERE run_id=?`).run(now(), runId);
+        if (run.worktreeId) {
+          db.prepare(`DELETE FROM worktree_mutation_leases WHERE worktree_id=? AND holder_run_id=?`)
+            .run(run.worktreeId, runId);
+        }
+      });
+      abandon();
       return this.getRun(runId);
     },
 
@@ -1568,7 +1741,17 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       const run = this.getRun(runId);
       if (!run) throw new Error(`Run ${runId} not found`);
       if (run.status !== 'blocked') return run;
-      db.prepare(`UPDATE runs SET status='active', blocked_reason=NULL, intervention_count=intervention_count+1, revision=revision+1, updated_at=? WHERE run_id=?`).run(now(), runId);
+      db.transaction(() => {
+        if (run.worktreeId && run.projectId) {
+          const lease = claimWorktreeLeaseInTransaction({
+            worktreeId: run.worktreeId,
+            projectId: run.projectId,
+            runId,
+          });
+          if (!lease.acquired) throwWorktreeRunConflict(lease.lease);
+        }
+        db.prepare(`UPDATE runs SET status='active', blocked_reason=NULL, intervention_count=intervention_count+1, revision=revision+1, updated_at=? WHERE run_id=?`).run(now(), runId);
+      })();
       return this.getRun(runId);
     },
 
@@ -1594,10 +1777,11 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         const conflict = db.prepare(`
           SELECT binding_id AS bindingId
           FROM session_bindings
-          WHERE project_id=? AND session_id=? AND status='active' AND access_mode='owner'
+          WHERE project_id=? AND session_id=? AND workspace_id=?
+            AND status='active' AND access_mode='owner'
             AND binding_id<>?
           LIMIT 1
-        `).get(binding.projectId, binding.sessionId, binding.bindingId);
+        `).get(binding.projectId, binding.sessionId, binding.workspaceId || null, binding.bindingId);
         if (conflict) {
           throw Object.assign(new Error('successor_binding_conflict'), {
             code: 'successor_binding_conflict',
@@ -1718,6 +1902,7 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
                implementation_context_json as implementationContextJson,
                plan_revision as planRevision,
                workspace_id as workspaceId,
+               worktree_id as worktreeId,
                owner_binding_id as ownerBindingId,
                successor_key as successorKey,
                run_signals_json as runSignalsJson,
@@ -1762,6 +1947,7 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         implementationContext: row.implementationContextJson ? safeJsonParse(row.implementationContextJson, null) : null,
         planRevision: Number(row.planRevision || 1),
         workspaceId: row.workspaceId || null,
+        worktreeId: row.worktreeId || null,
         ownerBindingId: row.ownerBindingId || null,
         successorKey: row.successorKey || null,
         runSignals: row.runSignalsJson ? safeJsonParse(row.runSignalsJson, {}) : {},
@@ -1770,7 +1956,7 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
     },
 
     getRunMetadata(runId) {
-      const row = db.prepare(`SELECT run_id as runId, project_id as projectId, workspace_id as workspaceId, owner_binding_id as ownerBindingId, status FROM runs WHERE run_id=?`).get(runId);
+      const row = db.prepare(`SELECT run_id as runId, project_id as projectId, workspace_id as workspaceId, worktree_id as worktreeId, owner_binding_id as ownerBindingId, status FROM runs WHERE run_id=?`).get(runId);
       return row || null;
     },
 
@@ -1878,18 +2064,15 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       const taskContractDigest = successorRun?.taskContract?.digest;
       const expectedSuccessorKey = buildSuccessorKey({
         projectId,
-        sessionId,
         predecessorRunId,
+        worktreeId: successorRun?.worktreeId,
         workspaceId: successorRun?.workspaceId,
         taskContractDigest,
       });
       if (
         !projectId
-        || !sessionId
         || !predecessorRunId
-        || !predecessorBindingId
         || !successorRun?.runId
-        || !successorBinding?.bindingId
         || successorKey !== expectedSuccessorKey
       ) {
         throw Object.assign(new Error('successor_creation_conflict'), {
@@ -1901,36 +2084,18 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       const create = db.transaction(() => {
         const existing = db.prepare(`
           SELECT run_id as runId, project_id as projectId,
-                 workspace_id as workspaceId, task_contract_json as taskContractJson
+                 workspace_id as workspaceId, worktree_id as worktreeId,
+                 task_contract_json as taskContractJson
           FROM runs WHERE successor_key=?
         `).get(successorKey);
         if (existing) {
           const existingContract = safeJsonParse(existing.taskContractJson, null);
-          const existingBinding = db.prepare(`
-            SELECT binding_id
-            FROM session_bindings
-            WHERE run_id=? AND project_id=? AND session_id=?
-              AND status='active' AND access_mode='owner'
-          `).get(existing.runId, projectId, sessionId);
-          const priorLineage = db.prepare(`
-            SELECT binding_id
-            FROM session_bindings
-            WHERE binding_id=? AND run_id=? AND project_id=? AND session_id=?
-              AND status='inactive' AND close_reason='successor_started'
-              AND successor_run_id=?
-          `).get(
-            predecessorBindingId,
-            predecessorRunId,
-            projectId,
-            sessionId,
-            existing.runId,
-          );
           if (
             existing.projectId !== projectId
-            || existing.workspaceId !== successorRun.workspaceId
+            || (successorRun.worktreeId
+              ? existing.worktreeId !== successorRun.worktreeId
+              : existing.workspaceId !== successorRun.workspaceId)
             || existingContract?.digest !== taskContractDigest
-            || !existingBinding
-            || !priorLineage
           ) {
             throw Object.assign(new Error('successor_creation_conflict'), {
               code: 'successor_creation_conflict',
@@ -1943,31 +2108,30 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
 
         const predecessor = db.prepare(`
           SELECT run_id as runId, project_id as projectId,
-                 workspace_id as workspaceId, owner_binding_id as ownerBindingId,
+                 workspace_id as workspaceId, worktree_id as worktreeId,
+                 owner_binding_id as ownerBindingId,
                  status, finalization_status as finalizationStatus
           FROM runs WHERE run_id=?
         `).get(predecessorRunId);
-        const predecessorBinding = db.prepare(`
-          SELECT * FROM session_bindings
-          WHERE binding_id=? AND run_id=? AND project_id=? AND session_id=?
-            AND status='active' AND access_mode='owner'
-        `).get(
-          predecessorBindingId,
-          predecessorRunId,
-          projectId,
-          sessionId,
-        );
+        const predecessorBinding = predecessorBindingId && sessionId
+          ? db.prepare(`
+              SELECT * FROM session_bindings
+              WHERE binding_id=? AND run_id=? AND project_id=? AND session_id=?
+                AND status='active' AND access_mode='owner'
+            `).get(predecessorBindingId, predecessorRunId, projectId, sessionId)
+          : null;
         const successorWorkspace = db.prepare(`
-          SELECT project_id as projectId
+          SELECT project_id as projectId, worktree_id as worktreeId
           FROM project_workspaces
           WHERE workspace_id=?
         `).get(successorRun.workspaceId);
         const validPredecessor = predecessor
           && predecessor.projectId === projectId
-          && predecessor.ownerBindingId === predecessorBindingId
+          && (successorRun.worktreeId
+            ? predecessor.worktreeId === successorRun.worktreeId
+            : predecessor.workspaceId === successorRun.workspaceId)
           && predecessor.status === 'completed'
-          && predecessor.finalizationStatus === 'completed'
-          && predecessorBinding;
+          && predecessor.finalizationStatus === 'completed';
         if (!validPredecessor) {
           throw Object.assign(new Error('successor_not_allowed'), {
             code: 'successor_not_allowed',
@@ -1980,12 +2144,15 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         }
         if (
           successorRun.projectId !== projectId
-          || successorBinding.projectId !== projectId
-          || successorBinding.sessionId !== sessionId
-          || successorBinding.runId !== successorRun.runId
-          || successorRun.workspaceId !== successorBinding.workspaceId
+          || (successorRun.worktreeId && successorRun.worktreeId !== successorWorkspace?.worktreeId)
           || successorWorkspace?.projectId !== projectId
-          || successorBinding.provider !== predecessorBinding.provider
+          || (successorBinding && (
+            successorBinding.projectId !== projectId
+            || successorBinding.sessionId !== sessionId
+            || successorBinding.runId !== successorRun.runId
+            || successorRun.workspaceId !== successorBinding.workspaceId
+          ))
+          || (successorBinding && predecessorBinding && successorBinding.provider !== predecessorBinding.provider)
           || successorRun.taskContract?.digest !== taskContractDigest
         ) {
           throw Object.assign(new Error('successor_creation_conflict'), {
@@ -1999,70 +2166,75 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
           ...successorRun,
           ownerBindingId: null,
           successorKey,
+          withinTransaction: true,
         });
         this.declareRunObligations(successorRun.runId, obligations);
         this.createRunSteps(successorRun.runId, steps);
 
         const closedAt = now();
-        const closed = db.prepare(`
-          UPDATE session_bindings
-          SET status='inactive', closed_at=?, close_reason='successor_started',
-              successor_run_id=?, updated_at=?
-          WHERE binding_id=? AND run_id=? AND project_id=? AND session_id=?
-            AND status='active' AND access_mode='owner'
-        `).run(
-          closedAt,
-          successorRun.runId,
-          closedAt,
-          predecessorBindingId,
-          predecessorRunId,
-          projectId,
-          sessionId,
-        );
-        if (closed.changes !== 1) {
-          throw Object.assign(new Error('successor_binding_conflict'), {
-            code: 'successor_binding_conflict',
-            errorCode: 'successor_binding_conflict',
-            nextAction: 'inspect-active-owner-binding',
-          });
+        if (predecessorBinding) {
+          const closed = db.prepare(`
+            UPDATE session_bindings
+            SET status='inactive', closed_at=?, close_reason='successor_started',
+                successor_run_id=?, updated_at=?
+            WHERE binding_id=? AND run_id=? AND project_id=? AND session_id=?
+              AND status='active' AND access_mode='owner'
+          `).run(
+            closedAt,
+            successorRun.runId,
+            closedAt,
+            predecessorBindingId,
+            predecessorRunId,
+            projectId,
+            sessionId,
+          );
+          if (closed.changes !== 1) {
+            throw Object.assign(new Error('successor_binding_conflict'), {
+              code: 'successor_binding_conflict',
+              errorCode: 'successor_binding_conflict',
+              nextAction: 'inspect-active-owner-binding',
+            });
+          }
         }
 
-        db.prepare(`
-          INSERT INTO session_bindings(
-            binding_id, session_id, provider, surface, run_id, project_id,
-            workspace_id, workspace_root, access_mode, status, created_at,
-            expires_at, updated_at
-          ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, 'owner', 'active', ?, ?, ?)
-        `).run(
-          successorBinding.bindingId,
-          successorBinding.sessionId,
-          successorBinding.provider,
-          successorBinding.surface,
-          successorBinding.runId,
-          successorBinding.projectId,
-          successorBinding.workspaceId,
-          successorBinding.workspaceRoot,
-          closedAt,
-          successorBinding.expiresAt,
-          closedAt,
-        );
-        const owned = db.prepare(`
-          UPDATE runs SET owner_binding_id=?, updated_at=?
-          WHERE run_id=? AND project_id=? AND owner_binding_id IS NULL
-            AND workspace_id=?
-        `).run(
-          successorBinding.bindingId,
-          closedAt,
-          successorRun.runId,
-          projectId,
-          successorBinding.workspaceId,
-        );
-        if (owned.changes !== 1) {
-          throw Object.assign(new Error('successor_creation_conflict'), {
-            code: 'successor_creation_conflict',
-            errorCode: 'successor_creation_conflict',
-            nextAction: 'retry-successor-resolution',
-          });
+        if (successorBinding) {
+          db.prepare(`
+            INSERT INTO session_bindings(
+              binding_id, session_id, provider, surface, run_id, project_id,
+              workspace_id, workspace_root, access_mode, status, created_at,
+              expires_at, updated_at
+            ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, 'owner', 'active', ?, ?, ?)
+          `).run(
+            successorBinding.bindingId,
+            successorBinding.sessionId,
+            successorBinding.provider,
+            successorBinding.surface,
+            successorBinding.runId,
+            successorBinding.projectId,
+            successorBinding.workspaceId,
+            successorBinding.workspaceRoot,
+            closedAt,
+            successorBinding.expiresAt,
+            closedAt,
+          );
+          const owned = db.prepare(`
+            UPDATE runs SET owner_binding_id=?, updated_at=?
+            WHERE run_id=? AND project_id=? AND owner_binding_id IS NULL
+              AND workspace_id=?
+          `).run(
+            successorBinding.bindingId,
+            closedAt,
+            successorRun.runId,
+            projectId,
+            successorBinding.workspaceId,
+          );
+          if (owned.changes !== 1) {
+            throw Object.assign(new Error('successor_creation_conflict'), {
+              code: 'successor_creation_conflict',
+              errorCode: 'successor_creation_conflict',
+              nextAction: 'retry-successor-resolution',
+            });
+          }
         }
 
         if (predecessor.workspaceId) {
@@ -2128,12 +2300,12 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         bindingConflict(error);
       }
       const run = this.getRun(result.runId);
-      const binding = this.getActiveRunBinding({
-        projectId,
-        sessionId,
-        runId: result.runId,
-      });
-      if (!run || !binding) {
+      const binding = sessionId ? this.getActiveRunBinding({
+          projectId,
+          sessionId,
+          runId: result.runId,
+        }) : null;
+      if (!run || (successorBinding && !binding)) {
         throw Object.assign(new Error('successor_creation_conflict'), {
           code: 'successor_creation_conflict',
           errorCode: 'successor_creation_conflict',
@@ -2144,9 +2316,9 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         created: result.created,
         run,
         binding,
-        predecessorBinding: mapSessionBinding(db.prepare(`
+        predecessorBinding: predecessorBindingId ? mapSessionBinding(db.prepare(`
           SELECT * FROM session_bindings WHERE binding_id=?
-        `).get(predecessorBindingId)),
+        `).get(predecessorBindingId)) : null,
       };
     },
 
@@ -2190,14 +2362,15 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       };
     },
 
-    getActiveOwnerBinding({ projectId, sessionId } = {}) {
+    getActiveOwnerBinding({ projectId, sessionId, workspaceId = null } = {}) {
       if (!projectId || !sessionId) return null;
       return mapSessionBinding(db.prepare(`
         SELECT * FROM session_bindings
         WHERE project_id=? AND session_id=? AND status='active' AND access_mode='owner'
+          ${workspaceId ? 'AND workspace_id=?' : ''}
         ORDER BY updated_at DESC
         LIMIT 1
-      `).get(projectId, sessionId));
+      `).get(projectId, sessionId, ...(workspaceId ? [workspaceId] : [])));
     },
 
     getActiveRunBinding({ projectId, sessionId, runId } = {}) {
@@ -2603,11 +2776,12 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
           row = compatibleProjectMatches[0] || null;
         }
 
-        // An explicit local identity is a logical project namespace that may
-        // be checked out in more than one worktree. Reuse that immutable
-        // project row instead of attempting a second row with the same
-        // project_id; project_workspaces remains the per-root registry.
-        if (!row && identitySource !== 'workspace_root') {
+        // An explicit local identity or linked worktree sharing git_common_dir
+        // is a logical project namespace that may be checked out in more than
+        // one worktree. Reuse that immutable project row instead of attempting
+        // a second row with the same project_id; project_workspaces remains
+        // the per-root registry.
+        if (!row) {
           const projectIdRow = db.prepare(`SELECT * FROM project_identities WHERE project_id=?`).get(projectId) || null;
           if (projectIdRow) {
             const sameRoot = canonicalIdentityRoot(projectIdRow.canonical_root) === canonicalRoot;
@@ -2615,7 +2789,7 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
               SELECT 1 FROM project_workspaces
               WHERE project_id=? AND git_common_dir=? LIMIT 1
             `).get(projectIdRow.project_id, incomingGitCommonDir));
-            if (!sameRoot && !commonDirProof) {
+            if (!sameRoot && !commonDirProof && identitySource !== 'workspace_root') {
               throw Object.assign(new Error('project_identity_alias_ownership_unproven'), {
                 code: 'project_identity_alias_ownership_unproven',
                 nextAction: 'inspect-project-identity-candidates',
@@ -2624,8 +2798,10 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
                 gitCommonDir: incomingGitCommonDir,
               });
             }
+            if (sameRoot || commonDirProof) {
+              row = projectIdRow;
+            }
           }
-          row = projectIdRow;
         }
 
         let canonicalProjectId = row?.project_id || projectId;
@@ -2826,12 +3002,22 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         throw Object.assign(new Error('project_workspace_git_common_dir_unverified'), { code: 'project_workspace_git_common_dir_unverified' });
       }
       const gitCommonDir = derivedGitCommonDir;
+      const gitWorktreeDir = workspace.gitWorktreeDir ? canonicalIdentityRoot(workspace.gitWorktreeDir) : null;
       const identity = {
         ...(workspace.identity || {}),
         projectId: workspace.identity?.projectId || workspace.projectId,
         canonicalRoot,
       };
-      const equivalentRows = db.prepare(`SELECT workspace_id as workspaceId, canonical_root as canonicalRoot FROM project_workspaces WHERE project_id=?`)
+      const derivedWorktreeId = deriveKernelWorktreeId({
+        projectId: identity.projectId,
+        canonicalWorktreeRoot: canonicalRoot,
+        canonicalGitDir: gitWorktreeDir,
+      });
+      if (workspace.worktreeId && String(workspace.worktreeId) !== derivedWorktreeId) {
+        throw Object.assign(new Error('project_worktree_identity_mismatch'), { code: 'project_worktree_identity_mismatch' });
+      }
+      identity.worktreeId = derivedWorktreeId;
+      const equivalentRows = db.prepare(`SELECT workspace_id as workspaceId, canonical_root as canonicalRoot, worktree_id as worktreeId FROM project_workspaces WHERE project_id=?`)
         .all(identity.projectId)
         .filter((candidate) => canonicalIdentityRoot(candidate.canonicalRoot) === canonicalRoot);
       const referencedWorkspaceIds = new Set([
@@ -2855,33 +3041,117 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
           db.prepare(`UPDATE session_bindings SET workspace_root=? WHERE workspace_id=?`).run(canonicalRoot, duplicate.workspaceId);
           db.prepare(`DELETE FROM project_workspaces WHERE workspace_id=?`).run(duplicate.workspaceId);
         }
-        db.prepare(`UPDATE project_workspaces SET canonical_root=?, git_common_dir=?, git_worktree_dir=?, last_seen_at=?, identity_json=? WHERE workspace_id=?`)
-          .run(canonicalRoot, gitCommonDir, workspace.gitWorktreeDir ? canonicalIdentityRoot(workspace.gitWorktreeDir) : null, now(), persistentJson(identity), existing.workspaceId);
+        db.prepare(`UPDATE project_workspaces SET canonical_root=?, git_common_dir=?, git_worktree_dir=?, worktree_id=?, last_seen_at=?, identity_json=? WHERE workspace_id=?`)
+          .run(canonicalRoot, gitCommonDir, gitWorktreeDir, derivedWorktreeId, now(), persistentJson(identity), existing.workspaceId);
+        db.prepare(`UPDATE runs SET worktree_id=? WHERE project_id=? AND workspace_id=? AND worktree_id IS NULL`)
+          .run(derivedWorktreeId, identity.projectId, existing.workspaceId);
         return this.getProjectWorkspace(existing.workspaceId);
       }
-      db.prepare(`INSERT INTO project_workspaces(workspace_id, project_id, canonical_root, git_common_dir, git_worktree_dir, identity_json, created_at, last_seen_at)
-        VALUES(?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(workspace_id) DO UPDATE SET last_seen_at=excluded.last_seen_at, identity_json=excluded.identity_json`)
-        .run(workspace.workspaceId, identity.projectId, canonicalRoot, gitCommonDir, workspace.gitWorktreeDir ? canonicalIdentityRoot(workspace.gitWorktreeDir) : null, persistentJson(identity), now(), now());
+      db.prepare(`INSERT INTO project_workspaces(workspace_id, project_id, canonical_root, git_common_dir, git_worktree_dir, worktree_id, identity_json, created_at, last_seen_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(workspace_id) DO UPDATE SET worktree_id=excluded.worktree_id, last_seen_at=excluded.last_seen_at, identity_json=excluded.identity_json`)
+        .run(workspace.workspaceId, identity.projectId, canonicalRoot, gitCommonDir, gitWorktreeDir, derivedWorktreeId, persistentJson(identity), now(), now());
       return this.getProjectWorkspace(workspace.workspaceId);
     },
 
     getProjectWorkspace(workspaceId) {
-      const row = db.prepare(`SELECT workspace_id as workspaceId, project_id as projectId, canonical_root as canonicalRoot, git_common_dir as gitCommonDir, git_worktree_dir as gitWorktreeDir, identity_json as identityJson, created_at as createdAt, last_seen_at as lastSeenAt FROM project_workspaces WHERE workspace_id=?`).get(workspaceId);
+      const row = db.prepare(`SELECT workspace_id as workspaceId, project_id as projectId, canonical_root as canonicalRoot, git_common_dir as gitCommonDir, git_worktree_dir as gitWorktreeDir, worktree_id as worktreeId, identity_json as identityJson, created_at as createdAt, last_seen_at as lastSeenAt FROM project_workspaces WHERE workspace_id=?`).get(workspaceId);
       return row ? { ...row, identity: safeJsonParse(row.identityJson, null) } : null;
     },
 
-    listActiveRuns({ projectId = null } = {}) {
-      const rows = projectId
-        ? db.prepare(`SELECT run_id as runId FROM runs WHERE project_id=? AND status='active' ORDER BY updated_at DESC`).all(projectId)
-        : db.prepare(`SELECT run_id as runId FROM runs WHERE status='active' ORDER BY updated_at DESC`).all();
+    listActiveRuns({ projectId = null, worktreeId = null, workspaceId = null } = {}) {
+      const values = [];
+      const clauses = ["status='active'"];
+      if (projectId) { clauses.push('project_id=?'); values.push(projectId); }
+      if (worktreeId) { clauses.push('worktree_id=?'); values.push(worktreeId); }
+      else if (workspaceId) { clauses.push('workspace_id=?'); values.push(workspaceId); }
+      const rows = db.prepare(`SELECT run_id as runId FROM runs WHERE ${clauses.join(' AND ')} ORDER BY updated_at DESC`).all(...values);
       return rows.map((row) => this.getRun(row.runId)).filter(Boolean);
     },
 
-    listRuns({ projectId = null, statuses = null } = {}) {
+    acquireWorktreeMutationLease({ worktreeId, projectId, runId } = {}) {
+      if (!worktreeId || !projectId || !runId) {
+        throw Object.assign(new Error('worktree_mutation_lease_identity_missing'), {
+          code: 'worktree_mutation_lease_identity_missing',
+          errorCode: 'worktree_mutation_lease_identity_missing',
+          nextAction: 'resolve-run-worktree-binding',
+        });
+      }
+      return db.transaction(() => {
+        const run = db.prepare(`
+          SELECT run_id AS runId, project_id AS projectId,
+                 worktree_id AS worktreeId, status
+          FROM runs WHERE run_id=?
+        `).get(runId);
+        if (!run || run.projectId !== projectId || run.worktreeId !== worktreeId) {
+          throw Object.assign(new Error('run_worktree_mismatch'), {
+            code: 'run_worktree_mismatch',
+            errorCode: 'run_worktree_mismatch',
+            nextAction: 'return-to-bound-worktree',
+          });
+        }
+        if (run.status !== 'active') {
+          throw Object.assign(new Error('terminal_run_cannot_acquire_worktree_lease'), {
+            code: 'terminal_run_cannot_acquire_worktree_lease',
+            errorCode: 'terminal_run_cannot_acquire_worktree_lease',
+            nextAction: 'start-a-successor-run',
+          });
+        }
+        return claimWorktreeLeaseInTransaction({ worktreeId, projectId, runId });
+      })();
+    },
+
+    getWorktreeMutationLease(worktreeId) {
+      if (!worktreeId) return null;
+      return db.prepare(`
+        SELECT worktree_id AS worktreeId, project_id AS projectId,
+               holder_run_id AS holderRunId, acquired_at AS acquiredAt
+        FROM worktree_mutation_leases WHERE worktree_id=?
+      `).get(worktreeId) || null;
+    },
+
+    releaseWorktreeMutationLease({ worktreeId, runId } = {}) {
+      if (!worktreeId || !runId) {
+        throw Object.assign(new Error('worktree_mutation_lease_identity_missing'), {
+          code: 'worktree_mutation_lease_identity_missing',
+          errorCode: 'worktree_mutation_lease_identity_missing',
+        });
+      }
+      const release = db.transaction(() => {
+        const current = db.prepare(`
+          SELECT worktree_id AS worktreeId, project_id AS projectId,
+                 holder_run_id AS holderRunId, acquired_at AS acquiredAt
+          FROM worktree_mutation_leases WHERE worktree_id=?
+        `).get(worktreeId);
+        if (!current) return { released: false, lease: null };
+        if (current.holderRunId !== runId) {
+          throw Object.assign(new Error('worktree_mutation_lease_conflict'), {
+            code: 'worktree_mutation_lease_conflict',
+            errorCode: 'worktree_mutation_lease_conflict',
+            nextAction: 'resume-the-lease-holder-run',
+          });
+        }
+        const holder = db.prepare(`SELECT status FROM runs WHERE run_id=?`).get(runId);
+        if (!holder || !worktreeLeaseTerminalStatuses.has(holder.status)) {
+          throw Object.assign(new Error('worktree_mutation_lease_release_requires_terminal_run'), {
+            code: 'worktree_mutation_lease_release_requires_terminal_run',
+            errorCode: 'worktree_mutation_lease_release_requires_terminal_run',
+            nextAction: 'complete-the-run',
+          });
+        }
+        const deleted = db.prepare(`DELETE FROM worktree_mutation_leases WHERE worktree_id=? AND holder_run_id=?`)
+          .run(worktreeId, runId);
+        return { released: deleted.changes === 1, lease: current };
+      });
+      return release();
+    },
+
+    listRuns({ projectId = null, worktreeId = null, workspaceId = null, statuses = null } = {}) {
       const values = [];
       const clauses = [];
       if (projectId) { clauses.push('project_id=?'); values.push(projectId); }
+      if (worktreeId) { clauses.push('worktree_id=?'); values.push(worktreeId); }
+      else if (workspaceId) { clauses.push('workspace_id=?'); values.push(workspaceId); }
       if (Array.isArray(statuses) && statuses.length > 0) {
         clauses.push(`status IN (${statuses.map(() => '?').join(',')})`);
         values.push(...statuses.map(String));
@@ -2889,6 +3159,11 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
       return db.prepare(`SELECT run_id as runId FROM runs ${where} ORDER BY updated_at DESC`).all(...values)
         .map((row) => this.getRun(row.runId)).filter(Boolean);
+    },
+
+    getLatestRunForWorktree({ projectId, worktreeId, workspaceId = null } = {}) {
+      if (!projectId || (!worktreeId && !workspaceId)) return null;
+      return this.listRuns({ projectId, worktreeId, workspaceId })[0] || null;
     },
 
     acquireWorkspaceMutationLock({ projectId, runId, sessionToken, ttlMs = 60000 } = {}) {
@@ -4994,7 +5269,9 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
 
         db.prepare('UPDATE runs SET status=?, revision=revision+1, updated_at=? WHERE run_id=?')
           .run(decision === 'accepted' ? 'completed' : 'blocked', now(), runId);
-        
+
+        reconcileTerminalLifecycleInTransaction({ projectId: run.projectId, runId });
+
         db.exec('COMMIT');
         return this.getRun(runId);
       } catch (err) {

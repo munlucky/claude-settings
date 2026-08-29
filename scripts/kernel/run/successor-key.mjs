@@ -13,16 +13,15 @@ const required = (value, field) => {
 
 export const buildSuccessorKey = ({
   projectId,
-  sessionId,
   predecessorRunId,
+  worktreeId,
   workspaceId,
   taskContractDigest,
 } = {}) => {
   const identity = {
     projectId: required(projectId, 'project-id'),
-    sessionId: required(sessionId, 'session-id'),
     predecessorRunId: required(predecessorRunId, 'predecessor-run-id'),
-    workspaceId: required(workspaceId, 'workspace-id'),
+    worktreeId: required(worktreeId || workspaceId, 'worktree-id'),
     taskContractDigest: required(taskContractDigest, 'task-contract-digest'),
   };
   return `successor-${createHash('sha256').update(JSON.stringify(identity)).digest('hex')}`;

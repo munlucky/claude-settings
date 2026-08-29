@@ -271,6 +271,7 @@ test('K0-7: advisory or unsupported routing is never independent-review evidence
 
     // An unrouted review — one the Host never dispatched — is recorded honestly
     // and can never stand as independent-review evidence.
+    await cp.abandonRun('r-rr');
     await cp.startRun({ runId: 'r-t1', objective: 'x', taskContract: { behaviorChanging: true } });
     await cp.transition('r-t1', 'EXECUTE');
     await cp.transition('r-t1', 'PROVE');

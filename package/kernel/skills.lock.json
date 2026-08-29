@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-19T11:12:13.591Z",
-  "sourceCommit": "0915d978d65d507cc001d07f8d4bc903babbdada",
+  "generatedAt": "2026-08-29T11:10:18.234Z",
+  "sourceCommit": "23e702a86f3fb52c696ebdca7e54aaefaf53ee03",
   "scope": "kernel",
   "skills": [
     {
@@ -204,7 +204,7 @@
       "name": "moon-relay-kernel",
       "path": "skills/moon-relay-kernel",
       "source": "canonical",
-      "contentHash": "1a6e6b9cedb8370654cce42bb5294f7b0082e4cd24c78ba2b49ed3138f02e13f",
+      "contentHash": "2c8fe8e0dd0e2ef955c5b6cc375821120489b72987209395382d9d9b0965b5a6",
       "license": "MIT",
       "stages": [],
       "permissions": [

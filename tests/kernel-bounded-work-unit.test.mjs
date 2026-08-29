@@ -64,11 +64,12 @@ test('control-plane rejects an unbounded implementation before any dispatch stat
     const cases = [
       { runId: 'r-missing', taskContract: broadContract(), errorCode: 'work-unit-scope-missing' },
       { runId: 'r-empty', taskContract: broadContract([]), errorCode: 'work-unit-scope-missing' },
-      { runId: 'r-star', taskContract: broadContract(['*']), errorCode: 'work-unit-scope-unbounded' },
       { runId: 'r-globstar', taskContract: broadContract(['**']), errorCode: 'work-unit-scope-unbounded' },
+      { runId: 'r-star', taskContract: broadContract(['*']), errorCode: 'work-unit-scope-unbounded' },
     ];
 
     for (const entry of cases) {
+      if (cases.indexOf(entry) > 0) await cp.abandonRun(cases[cases.indexOf(entry) - 1].runId);
       await cp.startRun({ runId: entry.runId, objective: 'bounded implementation', taskContract: entry.taskContract });
       const run = await cp.getRun(entry.runId);
       const host = await cp.hostNext(entry.runId, { hostCapabilities: HOST });

@@ -282,6 +282,8 @@ test('K4 scenario D: every link of the chain refuses to be forged', async () => 
     await edit(fixture, 'src/auth/service.mjs', 1);
     const forgedCommand = await cp.report('r-d', {
       summary: 'claiming coverage',
+      capsuleId,
+      attemptId: turn.attemptId,
       stepId: first.stepId,
       changedPaths: ['src/auth/service.mjs'],
       verifications: [{ obligationId: 'unit-test', commandRef: 'lint' }],
@@ -305,17 +307,22 @@ test('K4 scenario D: every link of the chain refuses to be forged', async () => 
     // 1/3. Changing files the step never claimed.
     const outOfScope = await cp.report('r-d', {
       summary: 'also billing',
+      capsuleId,
+      attemptId: turn.attemptId,
       stepId: first.stepId,
       changedPaths: ['src/auth/service.mjs', 'src/billing/invoice.mjs'],
     });
     assert.equal(outOfScope.status, 'scope-rejected');
 
     // The honest path still works.
+    const freshTurn = await dispatch(cp, 'r-d', 'implementer-session');
     const honest = await cp.report('r-d', {
       summary: 'auth only',
+      capsuleId: freshTurn.executionCapsule.capsuleId,
+      attemptId: freshTurn.attemptId,
       stepId: first.stepId,
       changedPaths: ['src/auth/service.mjs'],
-      verifications: [{ obligationId: 'unit-test', commandRef: 'test:ok', acceptanceCoverage: ['AC-1'] }],
+      verifications: [{ obligationId: 'unit-test', commandRef: 'test:ok', acceptanceCoverage: ['auth rejects expired tokens'] }],
     });
     assert.equal(honest.step.state, 'passed');
   } finally {
