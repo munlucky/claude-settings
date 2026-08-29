@@ -16,3 +16,4 @@ When a Kernel command skill is selected:
 - Use the current Kernel work unit directly and stay inside its allowed paths.
 - Add no reviewer, subagent, or extra verification unless the Kernel action requires it.
 - Report concrete changes, evidence, and blockers; only Kernel decides completion.
+- If work is interrupted or cannot continue, analyze in detail whether the cause is a harness bug or a problem in the current local environment, and report the evidence, affected boundary, and remaining uncertainty.
