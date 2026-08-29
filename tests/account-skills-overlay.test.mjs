@@ -171,7 +171,7 @@ test('executed desktop switches apply/restore the overlay and a failed spawn rol
     const kernel = await launchSwitch({ ...base, track: 'kernel', spawnImpl: () => child, launchSpec: spec('kernel') }); assert.equal(kernel.effective.accountSkillsOverlay.status, 'applied');
     const relay = await launchSwitch({ ...base, track: 'relay', spawnImpl: () => child, launchSpec: spec('relay') }); assert.equal(relay.effective.accountSkillsOverlay.status, 'restored');
     const unresolved = await launchSwitch({
-      ...base, track: 'kernel', applicationResolver: async () => ({ executable: null, warnings: ['fixture'] }),
+      ...base, track: 'kernel', roots: spec('kernel').roots, applicationResolver: async () => ({ executable: null, warnings: ['fixture'] }),
     });
     assert.equal(unresolved.errorCode, 'application_not_resolved');
     assert.equal((await inspectAccountSkillsOverlay(overlayArgs(value))).status, 'inactive');

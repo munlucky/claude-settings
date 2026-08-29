@@ -53,7 +53,7 @@ test('phase 05 Antigravity launch carries Gemini home and user data dir', () => 
 });
 test('phase 05 provider parity matrix keeps all surfaces disjoint', () => {
   const result = providerParityMatrix({ relayHome: path.join(os.tmpdir(), 'relay'), kernelHome: path.join(os.tmpdir(), 'kernel') });
-  assert.equal(result.status, 'passed'); assert.equal(result.rows.length, 5); assert.ok(result.rows.every((row) => row.sensitiveContentRead === false));
+  assert.equal(result.status, 'passed'); assert.equal(result.rows.length, 6); assert.ok(result.rows.every((row) => row.sensitiveContentRead === false));
 });
 test('Codex Desktop uses macOS Application Support roots for Relay and Kernel', () => {
   const relayHome = path.join(os.tmpdir(), 'relay-macos');

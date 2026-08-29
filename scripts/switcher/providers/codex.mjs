@@ -7,6 +7,9 @@ export async function characterizeCodexDesktop(options = {}) {
 }
 
 export function buildCodexDesktopLaunch({ track, sourceRoot, workspaceRoot = null, roots, executable, extraArgs = [] } = {}) {
+  const args = track === 'kernel'
+    ? [...extraArgs]
+    : (roots?.appDataRoot ? ['--user-data-dir', roots.appDataRoot, ...extraArgs] : [...extraArgs]);
   return buildLaunchSpec({
     surface: 'codex_desktop',
     track,
@@ -14,7 +17,7 @@ export function buildCodexDesktopLaunch({ track, sourceRoot, workspaceRoot = nul
     workspaceRoot: workspaceRoot || (track === 'kernel' ? sourceRoot : null),
     roots,
     command: executable || 'ChatGPT.exe',
-    args: ['--user-data-dir', roots.appDataRoot, ...extraArgs],
+    args,
   });
 }
 
@@ -40,11 +43,12 @@ export function verifyCodexAppDiscovery({ expectedProviderHome, expectedWorkspac
   if (childVerify.status !== 'verified') {
     return childVerify;
   }
-  const hasKernelSkill = discoveredSkills.includes('moon-relay-kernel');
-  const hasRelaySkills = discoveredSkills.some((s) => s !== 'moon-relay-kernel');
-  if (hasRelaySkills) {
-    return { status: 'shared_mutable_surface', discoveredSkills, sensitiveContentRead: false };
+  const CONFLICTING_RELAY_WORKFLOW_SKILLS = new Set(['moonshot-orchestrator', 'moonshot-phase-runner', 'moonshot-relay-setup']);
+  const hasConflict = discoveredSkills.some((s) => CONFLICTING_RELAY_WORKFLOW_SKILLS.has(s));
+  if (hasConflict) {
+    return { status: 'conflicting_workflow_surface', discoveredSkills, sensitiveContentRead: false };
   }
+  const hasKernelSkill = discoveredSkills.includes('moon-relay-kernel');
   if (!hasKernelSkill) {
     return { status: 'skill_discovery_missing', discoveredSkills, sensitiveContentRead: false };
   }

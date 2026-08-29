@@ -2393,7 +2393,7 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         throw Object.assign(new Error('provider_session_invalid'), {
           code: 'provider_session_invalid',
           errorCode: 'provider_session_invalid',
-          nextAction: 'relaunch-through-kernel-host',
+          nextAction: 'reopen-from-correct-worktree',
         });
       }
       const migrate = db.transaction(() => {
@@ -2417,7 +2417,7 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
           throw Object.assign(new Error('provider_session_invalid'), {
             code: 'provider_session_invalid',
             errorCode: 'provider_session_invalid',
-            nextAction: 'relaunch-through-kernel-host',
+            nextAction: 'reopen-from-correct-worktree',
           });
         }
         try {
@@ -3159,7 +3159,7 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         // Deactivate active owner bindings
         db.prepare(`
           UPDATE session_bindings
-          SET status='closed', closed_at=?, close_reason=?
+          SET status='inactive', closed_at=?, close_reason=?
           WHERE run_id=? AND status='active'
         `).run(observed, `abandoned:${reason}`, runId);
         // Release worktree mutation lease if held

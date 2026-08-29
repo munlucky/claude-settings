@@ -93,10 +93,9 @@ test('the Codex actor route keeps the parent as an orchestrator and escalates re
     decision: { role: 'implementer', actionKind: 'debug', workProfile: { repeatedFailure: true } },
     invocation: { model: 'gpt-5.6-sol', effort: 'xhigh', freshSessionRequired: true, mechanism: 'session-model-override' },
     capabilities: CODEX_CAPABILITIES,
-    hasCliLauncher: true,
   });
   assert.equal(route.role, 'debugger');
-  assert.equal(route.dispatchMechanism, 'cli-worker');
+  assert.equal(route.dispatchMechanism, 'session-model-override');
   assert.equal(route.sessionPolicy, 'fresh');
   assert.equal(route.parentMayImplement, false);
   assert.equal(route.nestedDelegationAllowed, false);
@@ -376,7 +375,7 @@ test('a Codex launcher failure stays a dispatch failure instead of becoming tele
   assert.match(dispatch.errorSummary, /invalid_json_schema/);
 });
 
-test('a native model mismatch fails a mutating dispatch before CLI can inherit its workspace', async () => {
+test('a native model mismatch fails a mutating dispatch directly without CLI fallback', async () => {
   const calls = [];
   const workerRoot = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-native-mismatch-'));
   const marker = path.join(workerRoot, 'native-marker');
@@ -388,11 +387,6 @@ test('a native model mismatch fails a mutating dispatch before CLI can inherit i
         calls.push('native');
         await writeFile(path.join(workingDirectory, 'native-marker'), 'native touched the workspace');
         return { resolvedModel: 'gpt-5.6-sol', resolvedEffort: 'high', observedSessionConfig: { model: 'gpt-5.6-sol', effort: 'high' }, effortObserved: true, sessionId: 'native-session' };
-      },
-      cliLaunch: async ({ invocation }) => {
-        calls.push(invocation.dispatchMechanism);
-        const inheritedMarker = await readFile(marker, 'utf8');
-        return { resolvedModel: invocation.model, resolvedEffort: invocation.effort, observedSessionConfig: { model: invocation.model, effort: invocation.effort }, effortObserved: true, sessionId: 'cli-session', inheritedMarker };
       },
     });
     const dispatch = await adapter.dispatch({
@@ -406,19 +400,17 @@ test('a native model mismatch fails a mutating dispatch before CLI can inherit i
     assert.equal(dispatch.status, 'failed');
     assert.equal(dispatch.dispatchMechanism, 'native-subagent');
     assert.equal(dispatch.errorCode, 'model-enforcement-failed');
-    assert.match(dispatch.fallbackReason, /native-model-mismatch-mutating-fallback-disabled/);
     assert.equal(await readFile(marker, 'utf8'), 'native touched the workspace');
   } finally {
     await rm(workerRoot, { recursive: true, force: true });
   }
 });
 
-test('when native and CLI observations both mismatch the dispatch fails closed', async () => {
+test('when native observation mismatches the dispatch fails closed', async () => {
   const adapter = createCodexAdapter({
     parentSessionObserver: stableParentObserver,
     capabilities: { supportsSubagentModel: true },
     nativeLaunch: async () => ({ resolvedModel: 'wrong-model', resolvedEffort: 'low', observedSessionConfig: { model: 'wrong-model', effort: 'low' }, effortObserved: true, sessionId: 'native-session' }),
-    cliLaunch: async () => ({ resolvedModel: 'wrong-model', resolvedEffort: 'low', observedSessionConfig: { model: 'wrong-model', effort: 'low' }, effortObserved: true, sessionId: 'cli-session' }),
   });
   const dispatch = await adapter.dispatch({
     decision: resolveModelRoute({ runId: 'r-codex-failed', actionKind: 'implement' }),

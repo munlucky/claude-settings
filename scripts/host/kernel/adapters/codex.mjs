@@ -316,13 +316,6 @@ export const buildCodexInvocation = ({ decision, resolution, capabilities }) => 
   };
 };
 
-// `runtimeHome` is optional: when a caller supplies it, the four profile
-// overlays are (re)materialized under the Kernel runtime home before the
-// first dispatch that needs them, giving `codex-profile-materializer.mjs` an
-// actual production caller instead of only the packaging-time snapshot in
-// `package/profile-templates/codex/`. The CLI launcher then selects the named
-// overlay with `--profile`; materialization is idempotent (it just rewrites
-// the overlay files) and never touches the caller's own `.codex/` config.
 const nativeSessionId = (parentSessionId) => {
   const value = String(parentSessionId || '').trim();
   const separator = value.indexOf(':');
@@ -402,7 +395,7 @@ const isWorkerTelemetryUnavailable = ({ actualLauncher, identityRequired, observ
   && (identityRequired || Boolean(lineageReason)),
 );
 
-export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeAgentHost = globalThis, cliLaunch = null, parentSessionObserver = null, defaultParentSessionConfig = null, parentSessionEnvironment = null, parentEnvironment = null, projectRoot = null, images = [], timeoutMs = CODEX_WORKER_TIMEOUT_MS, executable = null, spawnImpl = undefined, capabilities = {}, runtimeHome = null, env = process.env } = {}) => {
+export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeAgentHost = globalThis, parentSessionObserver = null, defaultParentSessionConfig = null, parentSessionEnvironment = null, parentEnvironment = null, projectRoot = null, images = [], timeoutMs = CODEX_WORKER_TIMEOUT_MS, capabilities = {}, runtimeHome = null, env = process.env } = {}) => {
   const automaticNativeLaunch = nativeLaunch === null ? createCodexNativeAgentLauncher({ host: nativeAgentHost }) : null;
   const effectiveNativeLaunch = nativeLaunch || automaticNativeLaunch;
   const resolved = {
@@ -410,7 +403,6 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
     ...capabilities,
     ...(capabilities.supportsSubagentModel === undefined && effectiveNativeLaunch ? { supportsSubagentModel: true } : {}),
   };
-  const effectiveCliLaunch = cliLaunch || null;
   const observeParentSession = parentSessionObserver || defaultParentSessionObserver;
   const configuredParentSessionEnvironment = parentSessionEnvironment || parentEnvironment || null;
   return {
@@ -423,14 +415,14 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
       // session, but it cannot make an adapter without a launcher execute.
       // Keep the no-launcher surface honest instead of returning a synthetic
       // completed result for `host-default`.
-      if (!nativeAvailable && !effectiveCliLaunch && !launch) {
+      if (!nativeAvailable && !launch) {
         return buildUnsupportedDispatch({
           invocation,
           parentSessionId,
           dispatchMechanism: 'capability-guard',
           capability: 'bounded-child-worker-launcher',
           reason: 'worker-launcher-missing',
-          remediation: 'Provide a native Codex Host bridge or an explicit bounded CLI worker launcher.',
+          remediation: 'Provide a native Codex Host bridge.',
         });
       }
 
@@ -460,7 +452,6 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
         invocation,
         capabilities: resolved,
         hasNativeLauncher: Boolean(effectiveNativeLaunch),
-        hasCliLauncher: Boolean(effectiveCliLaunch),
         parentSessionId,
         parentSessionConfig,
       });
@@ -529,8 +520,8 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
       };
 
       const nativeSelected = nativeAvailable;
-      let selectedLaunch = nativeSelected ? effectiveNativeLaunch : effectiveCliLaunch || launch;
-      let dispatchMechanism = nativeSelected ? 'native-subagent' : effectiveCliLaunch ? 'cli-worker' : launch ? 'legacy-launch' : invocation.mechanism;
+      let selectedLaunch = nativeSelected ? effectiveNativeLaunch : launch;
+      let dispatchMechanism = nativeSelected ? 'native-subagent' : (launch ? 'legacy-launch' : invocation.mechanism);
       let fallbackReason = null;
       let invocationResult;
       try {
@@ -585,7 +576,7 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
         const observedConfig = candidate?.observedSessionConfig
           || candidate?.observedConfig
           || (terminalEvents.length > 0 ? resolveObservedCodexSessionConfigFromEvents(terminalEvents) : null);
-        const requiresTerminalTelemetry = mechanism === 'native-subagent' || mechanism === 'cli-worker';
+        const requiresTerminalTelemetry = mechanism === 'native-subagent';
         const observedModel = requiresTerminalTelemetry
           ? observedConfig?.model ?? null
           : candidate.resolvedModel ?? candidate.observedModel ?? null;
@@ -612,64 +603,6 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
       let resolvedEffort = observedResult.observedEffort;
       let observation = observedResult.observation;
       const dispatchMismatch = () => actualLauncher && (identityRequired ? !observation.exact : Boolean(observedResult.lineageReason));
-      const mutatingDispatch = decision?.permissions === 'workspace_write'
-        || invocation.sandbox === 'workspace-write';
-      if (dispatchMismatch() && nativeSelected && effectiveCliLaunch && !mutatingDispatch) {
-        // Native capability is disabled for the remainder of this dispatch;
-        // the bounded CLI worker is a safe fallback only for read-only work.
-        fallbackReason = `native-${observation.reason || 'route-mismatch'}`;
-        dispatchMechanism = 'cli-worker';
-        selectedLaunch = effectiveCliLaunch;
-        try {
-          invocationResult = await invoke(effectiveCliLaunch, dispatchMechanism, fallbackReason);
-        } catch (error) {
-          invocationResult = {
-            result: {
-              status: 'failed',
-              resultStatus: 'failed',
-              errorCode: error?.code || 'codex-launch-failed',
-              errorSummary: error?.message || String(error),
-              failureCategory: error?.failureCategory || error?.details?.failureCategory || 'provider/infrastructure',
-              failureStage: error?.failureStage || error?.details?.failureStage || 'launch',
-              remediation: error?.details?.remediation || null,
-              runtimePreflight: error?.details && (error?.failureStage || error?.details?.failureStage) === 'pre-spawn' ? {
-                status: 'failed',
-                errorCode: error?.code || 'codex-launch-failed',
-                failureCategory: error?.details?.failureCategory || 'provider/infrastructure',
-                failureStage: error?.details?.failureStage || 'pre-spawn',
-                remediation: error?.details?.remediation || null,
-                credentialContentsInspected: error?.details?.credentialContentsInspected ?? null,
-                userHomeAuthAvailable: error?.details?.userHomeAuthAvailable ?? null,
-                cacheStatus: error?.details?.cacheStatus || null,
-                cacheClientVersion: error?.details?.cacheClientVersion || null,
-                executableVersion: error?.details?.executableVersion || null,
-              } : null,
-              launcherFailure: error?.details && (error?.failureStage || error?.details?.failureStage) !== 'pre-spawn' ? {
-                status: 'failed',
-                errorCode: error?.code || 'codex-launch-failed',
-                failureStage: error?.failureStage || error?.details?.failureStage || 'launch',
-                cleanupStatus: error?.details?.cleanupStatus || null,
-                cleanupClassification: error?.details?.cleanupClassification || null,
-                lineageSource: error?.details?.lineageSource || null,
-                survivorCount: error?.details?.survivors ?? null,
-              } : null,
-            },
-            dispatchMechanism,
-            fallbackReason,
-          };
-        }
-        result = invocationResult.result;
-        observedResult = observeResult(result, dispatchMechanism);
-        resolvedModel = observedResult.observedModel;
-        resolvedEffort = observedResult.observedEffort;
-        observation = observedResult.observation;
-      } else if (dispatchMismatch() && nativeSelected && mutatingDispatch) {
-        // A mismatched native worker may already have touched the caller's
-        // workspace before its telemetry was available. Reusing that same
-        // directory for a CLI fallback would let the fallback inherit an
-        // unverified partial mutation, so mutating roles fail closed.
-        fallbackReason = `native-${observation.reason || 'route-mismatch'}-mutating-fallback-disabled`;
-      }
       const parentAfter = await observeParent('after');
       const parentSessionPolicy = buildCodexMainSessionPolicy({
         parentSessionId,

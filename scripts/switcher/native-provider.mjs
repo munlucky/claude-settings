@@ -11,12 +11,13 @@ export const NATIVE_PROVIDER_POLICY = Object.freeze({
   managedRuntime: 'kernel-node-only',
   dataRoot: 'native-provider-home',
   relayRuntimeDependency: 'forbidden',
-  executionLayer: 'shared-host-dispatch',
-  trackIsolation: 'profile-and-data-root',
+  executionLayer: 'native-surface',
+  trackIsolation: 'kernel-state-only',
   completionAuthority: 'track-owned',
 });
 
 const PROVIDERS = Object.freeze({
+  claude_desktop: { command: process.platform === 'darwin' ? 'Claude' : 'Claude.exe', envKey: 'CLAUDE_DESKTOP_EXECUTABLE' },
   claude_cli: { command: 'claude', envKey: 'CLAUDE_EXECUTABLE' },
   codex_cli: { command: 'codex', envKey: 'CODEX_EXECUTABLE' },
   codex_desktop: { command: 'ChatGPT.exe', envKey: 'CODEX_DESKTOP_EXECUTABLE' },

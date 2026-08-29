@@ -7,7 +7,7 @@ export class ProviderSessionError extends Error {
     this.name = 'ProviderSessionError';
     this.code = 'provider_session_invalid';
     this.errorCode = 'provider_session_invalid';
-    this.nextAction = 'relaunch-through-kernel-host';
+    this.nextAction = 'reopen-from-correct-worktree';
     this.details = details;
   }
 }
@@ -18,7 +18,7 @@ export class HostBindingConflictError extends Error {
     this.name = 'HostBindingConflictError';
     this.code = 'host_binding_conflict';
     this.errorCode = 'host_binding_conflict';
-    this.nextAction = 'relaunch-through-kernel-host';
+    this.nextAction = 'reopen-from-correct-worktree';
     this.details = { bindings };
   }
 }

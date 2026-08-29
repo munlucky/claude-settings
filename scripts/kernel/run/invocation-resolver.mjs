@@ -29,13 +29,13 @@ export const resolveBoundInvocation = ({
   taskContract = null,
 } = {}) => {
   if (!stateStore || !projectId || (!worktreeId && !workspaceId)) {
-    throw codedError('host_binding_missing', 'relaunch-through-kernel-host');
+    throw codedError('host_binding_missing', 'reopen-from-correct-worktree');
   }
   const canonicalSessionId = sessionId
     ? canonicalizeHostSessionId({ provider, sessionId })
     : null;
   if (sessionId && canonicalSessionId !== sessionId) {
-    throw codedError('provider_session_invalid', 'relaunch-through-kernel-host');
+    throw codedError('provider_session_invalid', 'reopen-from-correct-worktree');
   }
   const contract = normalizedContract(taskContract);
   const requestedRunId = explicitRunId || envRunId || null;
@@ -180,6 +180,21 @@ export const resolveBoundInvocation = ({
       reason: 'new-contract-after-completed-finalization',
       taskContract: contract,
       changeClass: classifyContractChange({ previous: cursorRun.taskContract, next: contract }),
+    };
+  }
+
+  if (cursorRun.status === 'abandoned') {
+    if (!contract) {
+      throw codedError('no_active_run', 'supply-a-task-contract');
+    }
+    return {
+      mode: 'create',
+      runId: requestedRunId || createOpaqueRunId(),
+      predecessorRunId: null,
+      binding: null,
+      reason: 'new-run-after-abandon',
+      taskContract: contract,
+      changeClass: null,
     };
   }
 

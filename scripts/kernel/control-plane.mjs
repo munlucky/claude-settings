@@ -717,7 +717,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         throw Object.assign(new Error('run_binding_conflict'), {
           code: 'run_binding_conflict',
           errorCode: 'run_binding_conflict',
-          nextAction: 'relaunch-through-kernel-host',
+          nextAction: 'reopen-from-correct-worktree',
         });
       }
       if (requireHostBinding && !hostSessionId) {

@@ -110,6 +110,7 @@ export function buildProcessEnvironment({ surface, track, roots, workspaceRoot =
 }
 
 const defaultCommand = (surface) => {
+  if (surface === 'claude_desktop') return process.platform === 'darwin' ? 'Claude' : 'Claude.exe';
   if (surface === 'claude_cli') return 'claude';
   if (surface === 'qwen_cli') return 'qwen';
   if (surface === 'codex_cli') return 'codex';
@@ -143,7 +144,7 @@ export function buildLaunchSpec({ surface, track, sourceRoot = process.cwd(), wo
 }
 
 export function spawnTrack(spec, { spawnImpl = spawn } = {}) {
-  if (process.platform === 'win32' && (spec.surface === 'claude_cli' || spec.surface === 'claude')) {
+  if (process.platform === 'win32' && (spec.surface === 'claude_desktop' || spec.surface === 'claude-app')) {
     const cmdExecutable = process.env.ComSpec || path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'cmd.exe');
     const aumid = resolveClaudeDesktopAumid();
     if (aumid) {
@@ -160,7 +161,7 @@ export function spawnTrack(spec, { spawnImpl = spawn } = {}) {
       return { pid: child.pid || null, status: 'launch_requested', child, launcher: 'cmd_shell_activation' };
     }
   }
-  if (process.platform === 'darwin' && (spec.surface === 'claude_cli' || spec.surface === 'claude')) {
+  if (process.platform === 'darwin' && (spec.surface === 'claude_desktop' || spec.surface === 'claude-app')) {
     const openArgs = ['-a', 'Claude'];
     if (spec.args.length) openArgs.push('--args', ...spec.args);
     const child = spawnImpl('open', openArgs, {

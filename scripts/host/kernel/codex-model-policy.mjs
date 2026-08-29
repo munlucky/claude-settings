@@ -20,8 +20,7 @@ const REVIEW_ACTIONS = new Set(['review_contract', 'review_engineering']);
 const HIGH_RISK_SHAPES = Object.freeze(['security', 'migration', 'authentication', 'authorization', 'payment', 'data-loss', 'irreversible']);
 
 // The Codex "launch-profile" dispatch mechanism selects one of the
-// four profiles codex-profile-materializer.mjs actually writes
-// (default/plan/review/batch), not a Kernel model class name — a model class
+// four standard profiles (default/plan/review/batch), not a Kernel model class name — a model class
 // alone cannot distinguish a protected review from a routine one, and the
 // profile choice needs exactly that distinction. No `complexity`/`shapes`
 export const selectCodexProfileName = ({ actionKind = 'implement', complexity = 'standard' } = {}) => {

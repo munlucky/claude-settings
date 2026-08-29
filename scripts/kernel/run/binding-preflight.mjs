@@ -41,7 +41,7 @@ export const recoveryForKernelError = ({ code, projectRoot, provider = 'codex' }
     'run_workspace_mismatch',
   ].includes(code)) {
     return {
-      action: 'relaunch-through-kernel-host',
+      action: 'reopen-from-correct-worktree',
       command: `moon-harness-switcher launch --track kernel --surface ${surface} --project-root ${shellQuote(projectRoot)} --execute`,
     };
   }

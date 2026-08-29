@@ -14,7 +14,6 @@ export const resolveCodexActorRoute = ({
   invocation = {},
   capabilities = {},
   hasNativeLauncher = false,
-  hasCliLauncher = false,
   parentSessionId = null,
   parentSessionConfig = null,
 } = {}) => {
@@ -30,9 +29,7 @@ export const resolveCodexActorRoute = ({
   const nativeAvailable = hasNativeLauncher && capabilities.supportsSubagentModel === true;
   const dispatchMechanism = nativeAvailable
     ? 'native-subagent'
-    : hasCliLauncher
-      ? 'cli-worker'
-      : invocation.mechanism || 'session-model-override';
+    : invocation.mechanism || 'session-model-override';
   const parentSessionPolicy = buildCodexMainSessionPolicy({
     parentSessionId,
     observed: parentSessionConfig,
@@ -44,7 +41,7 @@ export const resolveCodexActorRoute = ({
     dispatchMechanism,
     sessionPolicy: freshSessionRequired ? 'fresh' : 'reusable',
     freshSessionRequired,
-    fallbackAllowed: nativeAvailable && hasCliLauncher,
+    fallbackAllowed: false,
     parentMayImplement: false,
     nestedDelegationAllowed: false,
     parentSessionPolicy,

@@ -21,6 +21,7 @@ const isWithin = (root, target) => {
 export const pathsOverlap = (left, right) => isWithin(left, right) || isWithin(right, left);
 
 const providerEnvNames = Object.freeze({
+  claude_desktop: 'CLAUDE_CONFIG_DIR',
   claude_cli: 'CLAUDE_CONFIG_DIR',
   codex_cli: 'CODEX_HOME',
   codex_desktop: 'CODEX_HOME',
@@ -40,6 +41,7 @@ export function resolveTrackRoots({ track, surface, sourceRoot = process.cwd(), 
     : defaultRelay;
   if (pathsOverlap(kernel, relay)) throw new Error('unsafe_target: Kernel and Relay runtime homes overlap');
   const defaultProvider = {
+    claude_desktop: path.join(userHome, '.claude'),
     claude_cli: path.join(userHome, '.claude'),
     codex_cli: path.join(userHome, '.codex'),
     qwen_cli: path.join(userHome, '.qwen'),
@@ -47,6 +49,7 @@ export function resolveTrackRoots({ track, surface, sourceRoot = process.cwd(), 
     antigravity_desktop: path.join(userHome, '.gemini', 'antigravity'),
   };
   const providerRelay = {
+    claude_desktop: null,
     claude_cli: null,
     codex_cli: null,
     qwen_cli: null,

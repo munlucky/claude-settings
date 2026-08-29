@@ -127,10 +127,10 @@ export async function runUnificationAudit({ repoRoot = repoRootDefault } = {}) {
   if (providerPolicy.mode !== 'native-provider'
     || providerPolicy.managedRuntime !== 'kernel-node-only'
     || providerPolicy.relayRuntimeDependency !== 'forbidden'
-    || providerPolicy.executionLayer !== 'shared-host-dispatch'
-    || providerPolicy.trackIsolation !== 'profile-and-data-root'
+    || providerPolicy.executionLayer !== 'native-surface'
+    || providerPolicy.trackIsolation !== 'kernel-state-only'
     || providerPolicy.completionAuthority !== 'kernel') {
-    findings.push(finding('kernel-native-provider-policy-missing', 'Kernel package must declare shared Host dispatch with isolated provider data and Kernel completion authority.'));
+    findings.push(finding('kernel-native-provider-policy-missing', 'Kernel package must declare native surface dispatch with isolated Kernel state and Kernel completion authority.'));
   }
   const managedProviderPayload = (manifest.include || []).filter((entry) => /(?:providers[\\/](?:claude|codex|qwen|antigravity)|(?:claude|codex|qwen|antigravity)\\.(?:exe|app|bin))$/i.test(entry));
   if (managedProviderPayload.length > 0) findings.push(finding('kernel-managed-provider-payload', 'Kernel package must not ship provider binaries or provider application bundles.', { entries: managedProviderPayload }));

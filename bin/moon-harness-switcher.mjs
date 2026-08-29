@@ -17,10 +17,12 @@ const normalizeSurface = async (s) => {
     const desktop = await resolveCodexDesktop();
     return desktop.executable ? 'codex_desktop' : 'codex_cli';
   }
-  if (s === 'codex_desktop') return 'codex_desktop';
-  if (s === 'claude' || s === 'claude_cli') return 'claude_cli';
-  if (s === 'qwen' || s === 'qwen_cli') return 'qwen_cli';
-  if (s === 'antigravity' || s === 'antigravity_desktop' || s === 'agy') return 'antigravity_desktop';
+  if (s === 'codex_desktop' || s === 'codex-desktop' || s === 'codex-app') return 'codex_desktop';
+  if (s === 'codex_cli' || s === 'codex-cli') return 'codex_cli';
+  if (s === 'claude_desktop' || s === 'claude-desktop' || s === 'claude-app') return 'claude_desktop';
+  if (s === 'claude' || s === 'claude_cli' || s === 'claude-cli' || s === 'claude-code') return 'claude_cli';
+  if (s === 'qwen' || s === 'qwen_cli' || s === 'qwen-cli') return 'qwen_cli';
+  if (s === 'antigravity' || s === 'antigravity_desktop' || s === 'antigravity-desktop' || s === 'agy') return 'antigravity_desktop';
   return s;
 };
 
@@ -40,7 +42,7 @@ try {
     });
   }
   else if (command === 'launch') {
-    const targets = surface === 'all' ? ['codex_desktop', 'claude_cli', 'qwen_cli', 'antigravity_desktop'] : [surface];
+    const targets = surface === 'all' ? ['codex_desktop', 'claude_desktop', 'claude_cli', 'qwen_cli', 'antigravity_desktop'] : [surface];
     const results = [];
     const taskBinding = {
       runId: get('--run-id'),

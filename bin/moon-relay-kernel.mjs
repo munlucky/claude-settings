@@ -63,7 +63,7 @@ const wrongHarnessError = (resolution, root) => Object.assign(
   {
     code: 'wrong_harness',
     errorCode: 'wrong_harness',
-    nextAction: 'relaunch-through-kernel-host',
+    nextAction: 'reopen-from-correct-worktree',
     details: {
       activeTrack: resolution.track || null,
       source: resolution.source,
@@ -129,7 +129,7 @@ const hostRunResolutionError = explicitRunId && envRunId && String(explicitRunId
   ? Object.assign(new Error('run_binding_conflict'), {
       code: 'run_binding_conflict',
       errorCode: 'run_binding_conflict',
-      nextAction: 'relaunch-through-kernel-host',
+      nextAction: 'reopen-from-correct-worktree',
       details: { bindings: [{ source: 'cli', runId: explicitRunId }, { source: 'environment', runId: envRunId }] },
     })
   : null;

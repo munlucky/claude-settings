@@ -1,1 +1,10 @@
-{}
+{
+  "mcpServers": {
+    "moon-relay-kernel": {
+      "command": "node",
+      "args": [
+        "scripts/kernel/bridge/mcp.mjs"
+      ]
+    }
+  }
+}

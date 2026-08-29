@@ -18,8 +18,8 @@ test('Kernel launch delegates to the native provider and keeps managed runtime N
   assert.equal(spec.providerRuntime.mode, 'native-provider');
   assert.equal(spec.providerRuntime.managedRuntime, 'kernel-node-only');
   assert.equal(spec.providerRuntime.relayRuntimeDependency, 'forbidden');
-  assert.equal(spec.providerRuntime.executionLayer, 'shared-host-dispatch');
-  assert.equal(spec.providerRuntime.trackIsolation, 'profile-and-data-root');
+  assert.equal(spec.providerRuntime.executionLayer, 'native-surface');
+  assert.equal(spec.providerRuntime.trackIsolation, 'kernel-state-only');
   assert.equal(spec.providerRuntime.completionAuthority, 'kernel');
   const relaySpec = buildLaunchSpec({
     surface: 'codex_cli',
@@ -27,7 +27,7 @@ test('Kernel launch delegates to the native provider and keeps managed runtime N
     sourceRoot: process.cwd(),
     roots: { runtimeHome: path.join(os.tmpdir(), 'relay-native-provider'), providerHome: path.join(os.tmpdir(), '.codex') },
   });
-  assert.equal(relaySpec.providerRuntime.executionLayer, 'shared-host-dispatch');
+  assert.equal(relaySpec.providerRuntime.executionLayer, 'native-surface');
   assert.equal(relaySpec.providerRuntime.completionAuthority, 'relay');
   const resolved = await resolveNativeProvider({ surface: 'codex_cli', commandResolver: async (name) => `C:/native/${name}.exe` });
   assert.equal(resolved.status, 'resolved');

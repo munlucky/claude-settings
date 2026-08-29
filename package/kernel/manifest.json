@@ -8,8 +8,8 @@
     "managedRuntime": "kernel-node-only",
     "dataRoot": "native-provider-home",
     "relayRuntimeDependency": "forbidden",
-    "executionLayer": "shared-host-dispatch",
-    "trackIsolation": "profile-and-data-root",
+    "executionLayer": "native-surface",
+    "trackIsolation": "kernel-state-only",
     "completionAuthority": "kernel"
   },
   "include": [

@@ -90,9 +90,14 @@ export async function inspectKernelLaunchReadiness({ runtimeHome, providerHome, 
   if (!workflowSkills.includes(KERNEL_ENTRYPOINT_SKILL)) {
     return { status: 'kernel_profile_not_ready', reason: 'skill_discovery_missing', discoveredSkills: workflowSkills };
   }
-  const foreignSkills = workflowSkills.filter((name) => name !== KERNEL_ENTRYPOINT_SKILL);
-  if (foreignSkills.length) {
-    return { status: 'shared_mutable_surface', reason: 'shared_mutable_surface', discoveredSkills: workflowSkills, foreignSkills };
+  const CONFLICTING_RELAY_WORKFLOW_SKILLS = new Set([
+    'moonshot-orchestrator',
+    'moonshot-phase-runner',
+    'moonshot-relay-setup',
+  ]);
+  const conflictingSkills = workflowSkills.filter((name) => CONFLICTING_RELAY_WORKFLOW_SKILLS.has(name));
+  if (conflictingSkills.length) {
+    return { status: 'shared_mutable_surface', reason: 'shared_mutable_surface', discoveredSkills: workflowSkills, conflictingSkills };
   }
 
   let projectIdentity = null;
@@ -141,11 +146,11 @@ export async function cleanupLegacyProject({ projectRoot, providerHome } = {}) {
   return cleanupLegacyKernelHydration({ projectRoot, profileReady: profile.status === 'ready' });
 }
 
-export async function launchSwitch({ surface, track, sourceRoot = process.cwd(), projectRoot = null, workspaceRoot = null, taskBinding = null, processProvider, closeApproval = false, closeHandler = null, launchSpec = null, spawnImpl = null, dryRun = true, platform = process.platform, accountHome = null, applicationResolver = resolveApplication, force = false } = {}) {
+export async function launchSwitch({ surface, track, sourceRoot = process.cwd(), projectRoot = null, workspaceRoot = null, taskBinding = null, processProvider, closeApproval = false, closeHandler = null, launchSpec = null, spawnImpl = null, dryRun = true, platform = process.platform, accountHome = null, applicationResolver = resolveApplication, force = false, roots: explicitRoots = null } = {}) {
   validate(surface, track);
   const targetProjectRoot = projectRoot || workspaceRoot || (track === 'kernel' ? sourceRoot : null);
   const defaultRoots = resolveTrackRoots({ track, surface, sourceRoot });
-  const roots = launchSpec?.roots || defaultRoots;
+  const roots = explicitRoots || launchSpec?.roots || defaultRoots;
 
   const state = await readState();
   const previous = state.surfaces[surface];
@@ -213,7 +218,7 @@ export async function launchSwitch({ surface, track, sourceRoot = process.cwd(),
   if (!spec && GUI_SURFACES.has(surface) && surface !== 'claude_cli') {
     const application = await applicationResolver(surface);
     if (!application.executable) return createReceipt({ operation: 'launch', status: 'error', surface, track, errorCode: 'application_not_resolved', effective: { warnings: application.warnings || [] } });
-    const args = (roots.appDataRoot && surface !== 'codex_desktop') ? [`--user-data-dir=${roots.appDataRoot}`] : [];
+    const args = (roots.appDataRoot && surface !== 'codex_desktop' && track !== 'kernel') ? [`--user-data-dir=${roots.appDataRoot}`] : [];
     spec = { ...buildLaunchSpec({ surface, track, sourceRoot, workspaceRoot: targetProjectRoot, roots, command: application.executable, args, ...taskBinding }), aumid: application.aumid || null };
   }
   spec ||= buildLaunchSpec({ surface, track, sourceRoot, workspaceRoot: targetProjectRoot, roots, ...taskBinding });
