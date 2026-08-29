@@ -183,6 +183,8 @@ export const cleanupWindowsTimeoutProcessTree = ({
   expectedArgs = [],
   startedAt,
   processTable = null,
+  launchProcessTable = null,
+  launcherEvidence = null,
   killProcess = defaultKillProcess,
   readProcessTable = readWindowsProcessTable,
   currentPid = process.pid,
@@ -191,16 +193,73 @@ export const cleanupWindowsTimeoutProcessTree = ({
   if (platform !== 'win32') return { status: 'not-applicable', platform, targetPids: [] };
   const snapshot = processTable || readProcessTable();
   if (snapshot.status !== 'ready') return { status: 'blocked', platform, reason: snapshot.reason || 'process-table-unavailable', targetPids: [] };
-  const tree = resolveVerifiedProcessTree({
-    processes: snapshot.processes,
+  const current = snapshot.processes.map(normalizeProcessRecord).filter((record) => record.pid !== null);
+  const currentPids = new Set(current.map((record) => record.pid));
+  let tree = resolveVerifiedProcessTree({
+    processes: current,
     launcherPid,
     expectedCommand,
     expectedArgs,
     startedAt,
     currentPid,
   });
+  let lineageSource = 'cleanup-snapshot';
+
+  // The Windows process table can lose CommandLine/CreationDate fields, or the
+  // launcher can exit between the timeout signal and the cleanup snapshot.
+  // Retain the Host-owned spawn identity plus an immediate post-spawn snapshot
+  // so timeout cleanup can still prove descendants without guessing a PID.
+  // A current, conflicting row is never overwritten: possible PID reuse stays
+  // fail-closed.
+  if (tree.status !== 'ready'
+    && ['launcher-not-observed', 'launcher-lineage-incomplete'].includes(tree.reason)
+    && Number(launcherEvidence?.pid) === Number(launcherPid)
+    && normalizeText(launcherEvidence?.command) === normalizeText(expectedCommand)
+    && (launcherEvidence?.args || []).length === expectedArgs.length
+    && (launcherEvidence?.args || []).every((arg, index) => normalizeText(arg) === normalizeText(expectedArgs[index]))) {
+    const launchRows = launchProcessTable?.status === 'ready'
+      ? launchProcessTable.processes.map(normalizeProcessRecord).filter((record) => record.pid !== null)
+      : [];
+    const retainedRoot = launchRows.find((record) => record.pid === Number(launcherPid)) || null;
+    const currentRoot = current.find((record) => record.pid === Number(launcherPid)) || null;
+    if (currentRoot?.creationDate && retainedRoot?.creationDate
+      && Math.abs(currentRoot.creationDate.getTime() - retainedRoot.creationDate.getTime()) > CREATION_TOLERANCE_MS) {
+      return { status: 'blocked', platform, reason: 'launcher-pid-reused', launcherPid: Number(launcherPid), targetPids: [] };
+    }
+    const root = {
+      pid: Number(launcherPid),
+      parentPid: currentRoot?.parentPid || retainedRoot?.parentPid || Number(launcherEvidence.parentPid) || null,
+      commandLine: currentRoot?.commandLine || retainedRoot?.commandLine
+        || [launcherEvidence.command, ...(launcherEvidence.args || [])].join(' '),
+      creationDate: currentRoot?.creationDate || retainedRoot?.creationDate
+        || parseCreationDate(launcherEvidence.startedAt || startedAt),
+    };
+    tree = resolveVerifiedProcessTree({
+      processes: [...current.filter((record) => record.pid !== root.pid), root],
+      launcherPid,
+      expectedCommand,
+      expectedArgs,
+      startedAt,
+      currentPid,
+    });
+    lineageSource = retainedRoot ? 'launch-snapshot' : 'host-spawn-evidence';
+  }
   if (tree.status !== 'ready') return { ...tree, platform, targetPids: [] };
-  const cleanup = teardownVerifiedProcessTree({ tree, killProcess });
+  const liveTargets = tree.targets.filter((pid) => currentPids.has(pid));
+  if (liveTargets.length === 0) {
+    return {
+      status: 'completed',
+      platform,
+      launcherPid: tree.launcherPid,
+      targetPids: [],
+      results: [],
+      survivors: [],
+      reason: null,
+      classification: 'launcher-exited-no-observed-descendants',
+      lineageSource,
+    };
+  }
+  const cleanup = teardownVerifiedProcessTree({ tree: { ...tree, targets: liveTargets }, killProcess });
   // Survivor accounting is meaningful only after taskkill has run. A snapshot
   // taken before this point merely repeats the pre-kill target list.
   const postSnapshot = readProcessTable();
@@ -210,13 +269,13 @@ export const cleanupWindowsTimeoutProcessTree = ({
       status: 'blocked',
       platform,
       launcherPid: tree.launcherPid,
-      targetPids: tree.targets,
+      targetPids: liveTargets,
       survivors: [],
       reason: 'post-cleanup-process-table-unavailable',
     };
   }
   const remainingPids = postSnapshot.processes.map((record) => normalizeProcessRecord(record).pid).filter(Boolean);
-  const survivors = remainingPids.filter((pid) => tree.targets.includes(pid));
+  const survivors = remainingPids.filter((pid) => liveTargets.includes(pid));
   const failed = cleanup.results.filter((result) => !['killed', 'already-exited'].includes(result?.status));
   return {
     ...cleanup,
@@ -224,5 +283,6 @@ export const cleanupWindowsTimeoutProcessTree = ({
     survivors,
     reason: failed.length > 0 ? 'process-tree-kill-failed' : survivors.length > 0 ? 'descendants-survived' : null,
     platform,
+    lineageSource,
   };
 };

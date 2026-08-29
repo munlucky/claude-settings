@@ -175,6 +175,78 @@ test('Windows timeout cleanup ignores a supplied stale post table and blocks an 
   assert.equal(cleanup.reason, 'post-cleanup-process-table-unavailable');
 });
 
+test('Windows timeout cleanup uses retained spawn lineage when the timeout snapshot omits launcher metadata', () => {
+  const incomplete = [
+    { ProcessId: 410, ParentProcessId: 350, CommandLine: null, CreationDate: null },
+    record(411, 410, 'codex.exe exec --json', 2),
+  ];
+  const completeAtLaunch = [
+    record(410, 350, 'powershell.exe -File C:\\tools\\codex.ps1', 1),
+  ];
+  const snapshots = [
+    { status: 'ready', processes: incomplete },
+    { status: 'ready', processes: [] },
+  ];
+  const killed = [];
+  const cleanup = cleanupWindowsTimeoutProcessTree({
+    launcherPid: 410,
+    expectedCommand: 'powershell.exe',
+    expectedArgs: ['C:\\tools\\codex.ps1'],
+    startedAt,
+    platform: 'win32',
+    currentPid: 999,
+    launchProcessTable: { status: 'ready', processes: completeAtLaunch },
+    launcherEvidence: {
+      pid: 410,
+      parentPid: 350,
+      command: 'powershell.exe',
+      args: ['C:\\tools\\codex.ps1'],
+      startedAt: startedAt.toISOString(),
+    },
+    readProcessTable: () => snapshots.shift(),
+    killProcess: (pid) => {
+      killed.push(pid);
+      return { pid, status: 'killed' };
+    },
+  });
+  assert.equal(cleanup.status, 'completed');
+  assert.equal(cleanup.lineageSource, 'launch-snapshot');
+  assert.deepEqual(killed, [411, 410]);
+  assert.notEqual(cleanup.reason, 'launcher-lineage-incomplete');
+});
+
+test('Windows timeout cleanup classifies an exited launcher and kills its still-observed descendant from Host spawn evidence', () => {
+  const snapshots = [
+    { status: 'ready', processes: [record(421, 420, 'codex.exe exec --json', 2)] },
+    { status: 'ready', processes: [] },
+  ];
+  const killed = [];
+  const cleanup = cleanupWindowsTimeoutProcessTree({
+    launcherPid: 420,
+    expectedCommand: 'powershell.exe',
+    expectedArgs: ['C:\\tools\\codex.ps1'],
+    startedAt,
+    platform: 'win32',
+    currentPid: 999,
+    launcherEvidence: {
+      pid: 420,
+      parentPid: 350,
+      command: 'powershell.exe',
+      args: ['C:\\tools\\codex.ps1'],
+      startedAt: startedAt.toISOString(),
+    },
+    readProcessTable: () => snapshots.shift(),
+    killProcess: (pid) => {
+      killed.push(pid);
+      return { pid, status: 'killed' };
+    },
+  });
+  assert.equal(cleanup.status, 'completed');
+  assert.equal(cleanup.lineageSource, 'host-spawn-evidence');
+  assert.deepEqual(killed, [421]);
+  assert.deepEqual(cleanup.survivors, []);
+});
+
 test('Windows proof timeout returns a timeout cleanup receipt without targeting the host process', { skip: process.platform !== 'win32' }, async () => {
   const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'kernel-timeout-tree-project-'));
   try {

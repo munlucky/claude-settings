@@ -26,8 +26,66 @@ const isKernelBindingKey = (key) => key === 'MOON_RELAY_TRACK' || key.startsWith
 const runtimeError = (code, message, details = {}) => Object.assign(new Error(message), {
   code,
   errorCode: code,
-  details,
+  failureCategory: 'provider/infrastructure',
+  failureStage: 'pre-spawn',
+  details: {
+    failureCategory: 'provider/infrastructure',
+    failureStage: 'pre-spawn',
+    ...details,
+  },
 });
+
+const credentialPresent = (value) => typeof value === 'string' && value.trim().length > 0;
+
+const canAccess = async (candidate, accessImpl = access) => {
+  try {
+    await accessImpl(candidate);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const defaultUserCodexHome = (env = process.env) => {
+  const userRoot = env?.USERPROFILE || env?.HOME || os.homedir();
+  return userRoot ? path.resolve(userRoot, '.codex') : null;
+};
+
+export const inspectCodexAuthentication = async ({
+  codexHome,
+  env = process.env,
+  accessImpl = access,
+  userCodexHome = defaultUserCodexHome(env),
+} = {}) => {
+  if (!codexHome) return Object.freeze({ status: 'unavailable', reason: 'codex-home-not-specified' });
+  const providerHome = path.resolve(codexHome);
+  if (credentialPresent(env?.OPENAI_API_KEY)) {
+    return Object.freeze({ status: 'available', source: 'environment', providerHome });
+  }
+  const authPath = path.join(providerHome, 'auth.json');
+  if (await canAccess(authPath, accessImpl)) {
+    return Object.freeze({ status: 'available', source: 'provider-home', providerHome });
+  }
+  const resolvedUserHome = userCodexHome ? path.resolve(userCodexHome) : null;
+  const userHomeAuthAvailable = Boolean(
+    resolvedUserHome
+    && resolvedUserHome !== providerHome
+    && await canAccess(path.join(resolvedUserHome, 'auth.json'), accessImpl)
+  );
+  return Object.freeze({
+    status: 'unavailable',
+    reason: 'isolated-provider-auth-missing',
+    providerHome,
+    userHomeAuthAvailable,
+  });
+};
+
+const isolatedLoginRemediation = (providerHome, userHomeAuthAvailable) => [
+  `Authenticate the isolated Codex provider home by running Codex login with CODEX_HOME=${providerHome}.`,
+  userHomeAuthAvailable
+    ? 'A signed-in user Codex home was detected, but Kernel will not copy, link, or read its credentials.'
+    : 'Kernel will not copy, link, or log credentials from another Codex home.',
+].join(' ');
 
 export const sanitizeCodexChildEnvironment = (env = process.env) => Object.fromEntries(
   Object.entries(env || {}).filter(([key]) => (
@@ -107,6 +165,37 @@ export const probeCodexExecutableVersion = async ({ executable, env = process.en
   }
 };
 
+export const probeCodexAuthenticationStatus = async ({ executable, env = process.env, timeoutMs = 5000 } = {}) => {
+  if (!executable) throw runtimeError('codex_executable_missing', 'Codex executable is required for authentication probing');
+  const childEnv = buildCodexChildEnvironment({ env, executable });
+  const windowsScript = process.platform === 'win32' && path.extname(executable).toLowerCase() === '.ps1';
+  const command = windowsScript ? 'powershell.exe' : executable;
+  const args = windowsScript
+    ? ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', executable, 'login', 'status']
+    : ['login', 'status'];
+  try {
+    await execFileAsync(command, args, {
+      env: childEnv,
+      windowsHide: true,
+      timeout: timeoutMs,
+      maxBuffer: 64 * 1024,
+    });
+    return Object.freeze({ status: 'authenticated' });
+  } catch (error) {
+    throw runtimeError(
+      'codex_auth_status_probe_failed',
+      'Codex login status failed for the selected executable and provider home. Re-authenticate that isolated CODEX_HOME before dispatch.',
+      {
+        executable,
+        exitCode: Number.isInteger(error?.code) ? error.code : null,
+        signal: error?.signal || null,
+        credentialContentsInspected: false,
+        remediation: 'Run Codex login with the isolated provider CODEX_HOME, then retry Kernel Host dispatch.',
+      },
+    );
+  }
+};
+
 const cachePathFor = (codexHome) => path.join(path.resolve(codexHome), 'models_cache.json');
 
 const readModelsCacheVersion = async ({ codexHome, readFileImpl = readFile } = {}) => {
@@ -151,7 +240,10 @@ export const preflightCodexRuntime = async ({
   codexHome,
   env = process.env,
   versionProbe = probeCodexExecutableVersion,
+  authProbe = probeCodexAuthenticationStatus,
   readFileImpl = readFile,
+  accessImpl = access,
+  userCodexHome = defaultUserCodexHome(env),
 } = {}) => {
   if (!codexHome) {
     return Object.freeze({
@@ -162,16 +254,8 @@ export const preflightCodexRuntime = async ({
   }
   if (!executable) throw runtimeError('codex_executable_missing', 'Codex executable is required for runtime preflight');
   const providerHome = path.resolve(codexHome);
+  const authentication = await inspectCodexAuthentication({ codexHome: providerHome, env, accessImpl, userCodexHome });
   const cache = await readModelsCacheVersion({ codexHome: providerHome, readFileImpl });
-  if (cache.status === 'skipped') {
-    return Object.freeze({
-      status: 'skipped',
-      reason: cache.reason,
-      executable,
-      providerHome,
-      cachePath: cache.cachePath,
-    });
-  }
   let executableOutput;
   try {
     executableOutput = await versionProbe({ executable, env, codexHome: providerHome });
@@ -191,8 +275,10 @@ export const preflightCodexRuntime = async ({
       { executable, providerHome, output: versionProbeOutput(executableOutput).slice(0, 256) },
     );
   }
-  const compatible = cache.cacheVersion.release.every((part, index) => part === executableVersion.release[index]);
-  if (!compatible) {
+  const compatible = cache.status === 'available'
+    ? cache.cacheVersion.release.every((part, index) => part === executableVersion.release[index])
+    : null;
+  if (compatible === false) {
     throw runtimeError(
       'codex_runtime_version_mismatch',
       `Codex CLI ${executableVersion.version} is incompatible with models cache ${cache.clientVersion} in ${providerHome}`,
@@ -205,15 +291,48 @@ export const preflightCodexRuntime = async ({
       },
     );
   }
+  if (authentication.status !== 'available') {
+    const remediation = isolatedLoginRemediation(providerHome, authentication.userHomeAuthAvailable);
+    throw runtimeError(
+      'codex_isolated_auth_missing',
+      `Codex authentication is unavailable in the isolated provider home ${providerHome}. ${remediation}`,
+      {
+        providerHome,
+        executable,
+        executableVersion: executableVersion.version,
+        cacheStatus: cache.status,
+        cacheClientVersion: cache.status === 'available' ? cache.clientVersion : null,
+        userHomeAuthAvailable: authentication.userHomeAuthAvailable === true,
+        credentialContentsInspected: false,
+        remediation,
+      },
+    );
+  }
+  try {
+    await authProbe({ executable, env: buildCodexChildEnvironment({ env, executable, codexHome: providerHome }), codexHome: providerHome });
+  } catch (error) {
+    if (error?.code) throw error;
+    throw runtimeError(
+      'codex_auth_status_probe_failed',
+      'Codex login status could not be verified for the isolated provider home.',
+      {
+        executable,
+        providerHome,
+        credentialContentsInspected: false,
+        remediation: 'Run Codex login with the isolated provider CODEX_HOME, then retry Kernel Host dispatch.',
+      },
+    );
+  }
   return Object.freeze({
     status: 'verified',
-    compatibility: 'release-line',
+    compatibility: compatible === true ? 'release-line' : 'models-cache-missing',
     executable,
     providerHome,
     cachePath: cache.cachePath,
-    cacheClientVersion: cache.clientVersion,
+    cacheClientVersion: cache.status === 'available' ? cache.clientVersion : null,
     executableVersion: executableVersion.version,
-    modelCount: cache.modelCount,
+    modelCount: cache.status === 'available' ? cache.modelCount : null,
+    authentication: Object.freeze({ status: 'available', source: authentication.source }),
   });
 };
 

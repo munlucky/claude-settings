@@ -15,6 +15,7 @@ import {
   resolveObservedCodexSessionConfig as resolveObservedCodexSessionConfigFromEvents,
 } from '../codex-session-observer.mjs';
 import {
+  CODEX_WORKER_TIMEOUT_MS,
   createCodexCliWorkerLauncher,
   createCodexNativeAgentLauncher,
   resolveObservedCodexSessionConfig as resolveObservedCodexSessionConfigFromRollout,
@@ -188,7 +189,7 @@ const isWorkerTelemetryUnavailable = ({ actualLauncher, identityRequired, observ
   && (identityRequired || Boolean(lineageReason)),
 );
 
-export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeAgentHost = globalThis, cliLaunch = null, parentSessionObserver = null, defaultParentSessionConfig = null, parentSessionEnvironment = null, parentEnvironment = null, projectRoot = null, images = [], timeoutMs = 600_000, executable = null, spawnImpl = undefined, capabilities = {}, runtimeHome = null, env = process.env } = {}) => {
+export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeAgentHost = globalThis, cliLaunch = null, parentSessionObserver = null, defaultParentSessionConfig = null, parentSessionEnvironment = null, parentEnvironment = null, projectRoot = null, images = [], timeoutMs = CODEX_WORKER_TIMEOUT_MS, executable = null, spawnImpl = undefined, capabilities = {}, runtimeHome = null, env = process.env } = {}) => {
   const automaticNativeLaunch = nativeLaunch === null ? createCodexNativeAgentLauncher({ host: nativeAgentHost }) : null;
   const effectiveNativeLaunch = nativeLaunch || automaticNativeLaunch;
   const resolved = {
@@ -335,6 +336,34 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
             resultStatus: 'failed',
             errorCode: error?.code || 'codex-launch-failed',
             errorSummary: error?.message || String(error),
+            failureCategory: error?.failureCategory || error?.details?.failureCategory || 'provider/infrastructure',
+            failureStage: error?.failureStage || error?.details?.failureStage || 'launch',
+            remediation: error?.details?.remediation || null,
+            runtimePreflight: error?.details && (error?.failureStage || error?.details?.failureStage) === 'pre-spawn' ? {
+              status: 'failed',
+              errorCode: error?.code || 'codex-launch-failed',
+              failureCategory: error?.details?.failureCategory || 'provider/infrastructure',
+              failureStage: error?.details?.failureStage || 'pre-spawn',
+              remediation: error?.details?.remediation || null,
+              credentialContentsInspected: error?.details?.credentialContentsInspected ?? null,
+              userHomeAuthAvailable: error?.details?.userHomeAuthAvailable ?? null,
+              cacheStatus: error?.details?.cacheStatus || null,
+              cacheClientVersion: error?.details?.cacheClientVersion || null,
+              executableVersion: error?.details?.executableVersion || null,
+              probeTimeoutMs: error?.details?.probeTimeoutMs ?? null,
+              effectiveSandbox: error?.details?.effectiveSandbox || null,
+              effectiveApprovalPolicy: error?.details?.effectiveApprovalPolicy || null,
+              effectivePermissionProfile: error?.details?.effectivePermissionProfile || null,
+            } : null,
+            launcherFailure: error?.details && (error?.failureStage || error?.details?.failureStage) !== 'pre-spawn' ? {
+              status: 'failed',
+              errorCode: error?.code || 'codex-launch-failed',
+              failureStage: error?.failureStage || error?.details?.failureStage || 'launch',
+              cleanupStatus: error?.details?.cleanupStatus || null,
+              cleanupClassification: error?.details?.cleanupClassification || null,
+              lineageSource: error?.details?.lineageSource || null,
+              survivorCount: error?.details?.survivors ?? null,
+            } : null,
           },
           dispatchMechanism,
           fallbackReason,
@@ -394,6 +423,30 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
               resultStatus: 'failed',
               errorCode: error?.code || 'codex-launch-failed',
               errorSummary: error?.message || String(error),
+              failureCategory: error?.failureCategory || error?.details?.failureCategory || 'provider/infrastructure',
+              failureStage: error?.failureStage || error?.details?.failureStage || 'launch',
+              remediation: error?.details?.remediation || null,
+              runtimePreflight: error?.details && (error?.failureStage || error?.details?.failureStage) === 'pre-spawn' ? {
+                status: 'failed',
+                errorCode: error?.code || 'codex-launch-failed',
+                failureCategory: error?.details?.failureCategory || 'provider/infrastructure',
+                failureStage: error?.details?.failureStage || 'pre-spawn',
+                remediation: error?.details?.remediation || null,
+                credentialContentsInspected: error?.details?.credentialContentsInspected ?? null,
+                userHomeAuthAvailable: error?.details?.userHomeAuthAvailable ?? null,
+                cacheStatus: error?.details?.cacheStatus || null,
+                cacheClientVersion: error?.details?.cacheClientVersion || null,
+                executableVersion: error?.details?.executableVersion || null,
+              } : null,
+              launcherFailure: error?.details && (error?.failureStage || error?.details?.failureStage) !== 'pre-spawn' ? {
+                status: 'failed',
+                errorCode: error?.code || 'codex-launch-failed',
+                failureStage: error?.failureStage || error?.details?.failureStage || 'launch',
+                cleanupStatus: error?.details?.cleanupStatus || null,
+                cleanupClassification: error?.details?.cleanupClassification || null,
+                lineageSource: error?.details?.lineageSource || null,
+                survivorCount: error?.details?.survivors ?? null,
+              } : null,
             },
             dispatchMechanism,
             fallbackReason,
@@ -478,6 +531,10 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
         errorSummary: capabilityUnavailable
           ? `${unsupportedCapability} is unavailable: ${unsupportedReason}. ${parentSessionPolicy.capability?.remediation || CODEX_PARENT_SESSION_REMEDIATION}`
           : result.errorSummary ?? null,
+        failureCategory: result.failureCategory ?? null,
+        failureStage: result.failureStage ?? null,
+        remediation: result.remediation ?? null,
+        launcherFailure: result.launcherFailure ?? null,
         capability: capabilityUnavailable
           ? buildUnsupportedCapability({
             capability: unsupportedCapability,

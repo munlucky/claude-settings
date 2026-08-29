@@ -4,7 +4,7 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
-import { cleanupWindowsTimeoutProcessTree } from '../../kernel/proof/process-tree.mjs';
+import { cleanupWindowsTimeoutProcessTree, readWindowsProcessTable } from '../../kernel/proof/process-tree.mjs';
 import {
   resolveObservedCodexSessionConfig as resolveObservedCodexSessionConfigFromEvents,
 } from './codex-session-observer.mjs';
@@ -89,7 +89,13 @@ export const resolveObservedCodexSessionConfig = async ({ threadId, env = proces
   const rolloutPath = await findCodexSessionRollout({ threadId, env, startedAt });
   if (!rolloutPath) return null;
   let identityMatched = false;
-  let observed = { model: null, effort: null };
+  let observed = {
+    model: null,
+    effort: null,
+    approvalPolicy: null,
+    sandboxPolicy: null,
+    permissionProfile: null,
+  };
   const lines = readline.createInterface({ input: createReadStream(rolloutPath), crlfDelay: Infinity });
   for await (const line of lines) {
     let event;
@@ -102,6 +108,15 @@ export const resolveObservedCodexSessionConfig = async ({ threadId, env = proces
     observed = {
       model: current.model || observed.model,
       effort: current.effort || observed.effort,
+      approvalPolicy: event?.type === 'turn_context'
+        ? event?.payload?.approval_policy ?? observed.approvalPolicy
+        : observed.approvalPolicy,
+      sandboxPolicy: event?.type === 'turn_context'
+        ? event?.payload?.sandbox_policy ?? observed.sandboxPolicy
+        : observed.sandboxPolicy,
+      permissionProfile: event?.type === 'turn_context'
+        ? event?.payload?.permission_profile ?? observed.permissionProfile
+        : observed.permissionProfile,
     };
   }
   return identityMatched ? Object.freeze(observed) : null;
@@ -321,6 +336,9 @@ const resolveWindowsCodexScript = (command, env) => {
 const CODEX_TERMINAL_OUTPUT_WAIT_MS = 250;
 const CODEX_TERMINAL_CLEANUP_WAIT_MS = 250;
 const CODEX_TERMINAL_CLEANUP_POLL_MS = 10;
+export const CODEX_REVIEW_TIMEOUT_MS = 600_000;
+export const CODEX_WORKER_TIMEOUT_MS = 600_000;
+export const CODEX_WORKSPACE_WRITE_PROBE_TIMEOUT_MS = 15_000;
 
 const processIsAlive = (pid) => {
   if (!Number.isInteger(pid) || pid <= 0) return false;
@@ -338,8 +356,29 @@ const launcherCleanupError = (message, reason = null) => {
   // unverified: the child may still be running and could retain or rewrite
   // those paths after the launcher returns.
   error.preserveLauncherArtifacts = true;
+  error.code = 'codex_launcher_cleanup_failed';
+  error.errorCode = error.code;
+  error.failureCategory = 'provider/infrastructure';
+  error.failureStage = 'launcher-cleanup';
   return error;
 };
+
+const launcherTimeoutError = (timeoutMs, cleanup) => Object.assign(
+  new Error(`codex_review_timeout after ${timeoutMs}ms; cleanup=${cleanup.status}; lineage=${cleanup.lineageSource || 'cleanup-snapshot'}`),
+  {
+    code: 'codex_cli_timeout',
+    errorCode: 'codex_cli_timeout',
+    failureCategory: 'provider/infrastructure',
+    failureStage: 'worker-timeout',
+    details: {
+      timeoutMs,
+      cleanupStatus: cleanup.status,
+      cleanupClassification: cleanup.classification || null,
+      lineageSource: cleanup.lineageSource || 'cleanup-snapshot',
+      survivors: Array.isArray(cleanup.survivors) ? cleanup.survivors.length : null,
+    },
+  },
+);
 
 export const runCodexReviewProcess = ({
   command,
@@ -352,12 +391,17 @@ export const runCodexReviewProcess = ({
   platform = process.platform,
   resolveWindowsScript = resolveWindowsCodexScript,
   cleanupWindowsProcessTree = cleanupWindowsTimeoutProcessTree,
+  captureWindowsProcessTable = readWindowsProcessTable,
   outputPath = null,
   terminalOutputWaitMs = CODEX_TERMINAL_OUTPUT_WAIT_MS,
   terminalCleanupWaitMs = CODEX_TERMINAL_CLEANUP_WAIT_MS,
   terminalCleanupPollMs = CODEX_TERMINAL_CLEANUP_POLL_MS,
 }) => new Promise((resolve, reject) => {
-  const windowsScript = platform === 'win32' ? resolveWindowsScript(command, env) : null;
+  const startedAt = new Date();
+  const commandExtension = path.extname(command).toLowerCase();
+  const windowsScript = platform === 'win32' && (commandExtension === '.ps1' || (!path.isAbsolute(command) && !commandExtension))
+    ? resolveWindowsScript(command, env)
+    : null;
   const launchCommand = windowsScript ? 'powershell.exe' : command;
   const launchArgs = windowsScript
     ? ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', windowsScript, ...args]
@@ -367,6 +411,21 @@ export const runCodexReviewProcess = ({
     env,
     windowsHide: true,
     shell: false,
+  });
+  let launchProcessTable = null;
+  if (platform === 'win32' && child.pid) {
+    try {
+      launchProcessTable = captureWindowsProcessTable();
+    } catch (error) {
+      launchProcessTable = { status: 'unavailable', processes: [], reason: error?.message || 'launch-process-table-capture-failed' };
+    }
+  }
+  const launcherEvidence = Object.freeze({
+    pid: child.pid || null,
+    parentPid: process.pid,
+    command: launchCommand,
+    args: windowsScript ? [windowsScript] : [],
+    startedAt: startedAt.toISOString(),
   });
   // Passing the review prompt over stdin avoids Windows PowerShell's script
   // argument re-tokenization and gives codex.ps1 the EOF it requires.
@@ -402,7 +461,6 @@ export const runCodexReviewProcess = ({
     }
   };
   child.stderr?.on('data', (chunk) => { stderr = append(stderr, chunk); });
-  const startedAt = new Date();
   let timer = null;
   const settle = (callback, value) => {
     if (settled) return;
@@ -463,15 +521,17 @@ export const runCodexReviewProcess = ({
         expectedArgs: windowsScript ? [windowsScript] : [],
         startedAt,
         platform,
+        launchProcessTable,
+        launcherEvidence,
       });
       return cleanup.status === 'completed'
-        ? { status: 'completed', closeObserved, closeCode, closeSignal }
-        : { status: 'failed', reason: cleanup.reason || cleanup.status };
+        ? { ...cleanup, status: 'completed', closeObserved, closeCode, closeSignal }
+        : { ...cleanup, status: 'failed', reason: cleanup.reason || cleanup.status };
     } catch (error) {
       return { status: 'failed', reason: error?.message || 'process-tree-cleanup-failed' };
     }
   };
-  const requestCleanup = () => platform === 'win32' ? requestWindowsCleanup() : requestUnixCleanup();
+  const requestCleanup = () => platform === 'win32' && child.pid ? requestWindowsCleanup() : requestUnixCleanup();
   const terminalOutputReady = async () => {
     const deadline = Date.now() + outputWaitMs;
     do {
@@ -544,7 +604,7 @@ export const runCodexReviewProcess = ({
       settle(reject, launcherCleanupError(`codex_review_timeout_cleanup_failed`, cleanup.reason));
       return;
     }
-    settle(reject, new Error(`codex_review_timeout after ${timeoutMs}ms`));
+    settle(reject, launcherTimeoutError(timeoutMs, cleanup));
   };
   timer = setTimeout(() => { void handleTimeout(); }, timeoutMs);
   child.once('error', (error) => {
@@ -568,11 +628,128 @@ export const runCodexReviewProcess = ({
   });
 });
 
+const permissionPreflightError = (code, message, details = {}) => Object.assign(new Error(message), {
+  code,
+  errorCode: code,
+  failureCategory: 'provider/infrastructure',
+  failureStage: 'pre-spawn',
+  details: {
+    failureCategory: 'provider/infrastructure',
+    failureStage: 'pre-spawn',
+    remediation: 'Run this mutating work through a Codex Host that exposes the native spawn_agent bridge, or configure a separately authenticated standalone Codex CLI whose fresh capability probe reports workspace-write. Do not use dangerous sandbox bypass flags.',
+    ...details,
+  },
+});
+
+const summarizePermissionProfile = (profile) => {
+  if (!profile || typeof profile !== 'object') return null;
+  const fileSystem = profile.file_system && typeof profile.file_system === 'object'
+    ? profile.file_system
+    : null;
+  const accesses = Array.isArray(fileSystem?.entries)
+    ? [...new Set(fileSystem.entries.map((entry) => String(entry?.access || '').trim()).filter(Boolean))]
+    : [];
+  return Object.freeze({
+    type: typeof profile.type === 'string' ? profile.type : null,
+    fileSystemType: typeof fileSystem?.type === 'string' ? fileSystem.type : null,
+    accesses,
+  });
+};
+
+const permissionProfileExplicitlyReadOnly = (summary) => summary?.fileSystemType === 'restricted'
+  && summary.accesses.length > 0
+  && summary.accesses.every((access) => ['read', 'read-only'].includes(access.toLowerCase()));
+
+export const probeCodexWorkspaceWriteCapability = async ({
+  executable,
+  invocation,
+  workingDirectory,
+  env,
+  timeoutMs = CODEX_WORKSPACE_WRITE_PROBE_TIMEOUT_MS,
+  spawnImpl = spawn,
+  runProcess = runCodexReviewProcess,
+  resolveSessionConfig = resolveObservedCodexSessionConfig,
+} = {}) => {
+  const started = Date.now();
+  const args = [
+    'exec', '--json', '--model', invocation.model,
+    '-c', `model_reasoning_effort=${invocation.effort}`,
+    '--sandbox', 'workspace-write',
+    '--cd', workingDirectory, '--skip-git-repo-check',
+    ...codexProfileArgs(invocation.profile),
+  ];
+  let processResult;
+  try {
+    processResult = await runProcess({
+      command: executable,
+      args,
+      input: 'Kernel capability probe only. Do not call tools, inspect files, or modify anything. Reply with exactly KERNEL_WORKSPACE_WRITE_PROBE_OK.',
+      cwd: workingDirectory,
+      env,
+      timeoutMs,
+      spawnImpl,
+    });
+  } catch (error) {
+    const probeFailureCode = error?.code === 'codex_cli_timeout'
+      ? 'codex_worker_permission_probe_timeout'
+      : 'codex_worker_permission_probe_failed';
+    throw permissionPreflightError(
+      probeFailureCode,
+      `Codex workspace-write capability probe failed before worker dispatch (${probeFailureCode})`,
+      {
+        probeTimeoutMs: timeoutMs,
+        cleanupStatus: error?.details?.cleanupStatus || null,
+        cleanupClassification: error?.details?.cleanupClassification || null,
+        lineageSource: error?.details?.lineageSource || null,
+      },
+    );
+  }
+  const events = parseJsonLines(processResult.stdout);
+  const threadId = events.find((event) => event.type === 'thread.started')?.thread_id || null;
+  const completed = [...events].reverse().find((event) => event.type === 'turn.completed') || null;
+  const failed = [...events].reverse().find((event) => event.type === 'turn.failed' || event.type === 'error') || null;
+  if (processResult.code !== 0 || failed || !threadId || !completed) {
+    throw permissionPreflightError(
+      'codex_worker_permission_probe_failed',
+      `Codex workspace-write capability probe did not complete: exit=${processResult.code}; terminal=${failed?.type || 'missing'}`,
+      { probeTimeoutMs: timeoutMs },
+    );
+  }
+  const observed = await resolveSessionConfig({
+    threadId,
+    env,
+    startedAt: new Date(started),
+  });
+  const effectiveSandbox = observed?.sandboxPolicy?.type || null;
+  const effectivePermissionProfile = summarizePermissionProfile(observed?.permissionProfile);
+  if (effectiveSandbox !== 'workspace-write' || permissionProfileExplicitlyReadOnly(effectivePermissionProfile)) {
+    throw permissionPreflightError(
+      'codex_worker_effective_permission_mismatch',
+      `Codex worker requested workspace-write but the fresh capability probe observed sandbox=${effectiveSandbox || 'unobserved'}`,
+      {
+        probeTimeoutMs: timeoutMs,
+        effectiveSandbox,
+        effectiveApprovalPolicy: observed?.approvalPolicy || null,
+        effectivePermissionProfile,
+        probeSessionId: threadId,
+      },
+    );
+  }
+  return Object.freeze({
+    status: 'verified',
+    probeTimeoutMs: timeoutMs,
+    effectiveSandbox,
+    effectiveApprovalPolicy: observed?.approvalPolicy || null,
+    effectivePermissionProfile,
+    probeSessionId: threadId,
+  });
+};
+
 export const createCodexCliReviewLauncher = ({
   executable = null,
   projectRoot,
   images = [],
-  timeoutMs = 600_000,
+  timeoutMs = CODEX_REVIEW_TIMEOUT_MS,
   env = process.env,
   spawnImpl = spawn,
   runtimePreflight = preflightCodexRuntime,
@@ -653,10 +830,12 @@ export const createCodexCliWorkerLauncher = ({
   executable = null,
   projectRoot,
   images = [],
-  timeoutMs = 600_000,
+  timeoutMs = CODEX_WORKER_TIMEOUT_MS,
   env = process.env,
   spawnImpl = spawn,
   runtimePreflight = preflightCodexRuntime,
+  workspaceWritePreflight = probeCodexWorkspaceWriteCapability,
+  workspaceWriteProbeTimeoutMs = CODEX_WORKSPACE_WRITE_PROBE_TIMEOUT_MS,
 } = {}) => async ({ invocation, executionCapsule, executionContract, parentSessionId = null, environment = null, workingDirectory = null }) => {
   if (!projectRoot) throw new Error('Codex CLI worker launcher requires projectRoot');
   if (!invocation?.model || !invocation?.effort) throw new Error('codex_worker_requires_explicit_model_and_effort');
@@ -675,6 +854,17 @@ export const createCodexCliWorkerLauncher = ({
     codexHome: processEnv.CODEX_HOME,
     env: processEnv,
   });
+  const requestedSandbox = invocation.sandbox || 'workspace-write';
+  const permissionPreflightResult = requestedSandbox === 'workspace-write'
+    ? await workspaceWritePreflight({
+      executable: selectedExecutable,
+      invocation: { ...invocation, sandbox: requestedSandbox },
+      workingDirectory: workerRoot,
+      env: processEnv,
+      timeoutMs: workspaceWriteProbeTimeoutMs,
+      spawnImpl,
+    })
+    : null;
 
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-worker-'));
   const schemaPath = path.join(tempRoot, 'worker-output.schema.json');
@@ -685,7 +875,7 @@ export const createCodexCliWorkerLauncher = ({
     const args = [
       'exec', '--json', '--model', invocation.model,
       '-c', `model_reasoning_effort=${invocation.effort}`,
-      '--sandbox', invocation.sandbox || 'workspace-write',
+      '--sandbox', requestedSandbox,
       '--cd', workerRoot, '--skip-git-repo-check',
       ...codexProfileArgs(invocation.profile),
       '--output-schema', schemaPath, '--output-last-message', outputPath,
@@ -730,6 +920,7 @@ export const createCodexCliWorkerLauncher = ({
       cachedInputTokens: completed.usage?.cached_input_tokens ?? null,
       outputTokens: completed.usage?.output_tokens ?? null,
       runtimePreflight: runtimePreflightResult,
+      permissionPreflight: permissionPreflightResult,
       outcome,
       report: outcome,
     };

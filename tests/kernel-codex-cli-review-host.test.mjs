@@ -6,11 +6,24 @@ import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
-import { CODEX_WORKER_OUTPUT_SCHEMA, createCodexCliReviewLauncher, createCodexCliWorkerLauncher, resolveObservedCodexModel, resolveObservedCodexSessionModel, runCodexReviewProcess } from '../scripts/host/kernel/codex-cli-launcher.mjs';
+import {
+  CODEX_WORKER_OUTPUT_SCHEMA,
+  CODEX_WORKER_TIMEOUT_MS,
+  CODEX_WORKSPACE_WRITE_PROBE_TIMEOUT_MS,
+  createCodexCliReviewLauncher,
+  createCodexCliWorkerLauncher,
+  probeCodexWorkspaceWriteCapability,
+  resolveObservedCodexModel,
+  resolveObservedCodexSessionConfig,
+  resolveObservedCodexSessionModel,
+  runCodexReviewProcess,
+} from '../scripts/host/kernel/codex-cli-launcher.mjs';
 import { normalizeCodexWorkerReport, runCodexIndependentReview, runCodexKernelWorker } from '../scripts/host/kernel/codex-review-host.mjs';
 import { CODEX_MAIN_SESSION_POLICY } from '../scripts/host/kernel/codex-session-observer.mjs';
+import { createCodexAdapter } from '../scripts/host/kernel/adapters/codex.mjs';
 import {
   buildCodexChildEnvironment,
+  inspectCodexAuthentication,
   preflightCodexRuntime,
   resolveCodexCliExecutable,
 } from '../scripts/host/kernel/codex-runtime.mjs';
@@ -406,6 +419,8 @@ test('Codex CLI worker passes model and effort to the child process and records 
         MOON_RELAY_KERNEL_HOME: '/tmp/kernel-home',
         MOON_RELAY_KERNEL_RUN_ID: 'run-id',
       },
+      runtimePreflight: async () => ({ status: 'verified', authentication: { status: 'available', source: 'fixture' } }),
+      workspaceWritePreflight: async () => ({ status: 'verified', effectiveSandbox: 'workspace-write' }),
     });
     const result = await launch({
       invocation: { model: 'gpt-5.6-luna', effort: 'max', sandbox: 'workspace-write', profile: 'batch' },
@@ -448,6 +463,7 @@ test('Kernel Codex runtime selects the bundled CLI and rejects cache/executable 
     await mkdir(path.dirname(appExecutable), { recursive: true });
     await mkdir(providerHome, { recursive: true });
     await writeFile(appExecutable, 'bundled codex fixture');
+    await writeFile(path.join(providerHome, 'auth.json'), '{}');
     await writeFile(path.join(providerHome, 'models_cache.json'), JSON.stringify({ client_version: '0.150.0', models: [] }));
 
     const resolved = await resolveCodexCliExecutable({
@@ -463,6 +479,7 @@ test('Kernel Codex runtime selects the bundled CLI and rejects cache/executable 
       executable: appExecutable,
       codexHome: providerHome,
       versionProbe: async () => 'codex-cli 0.150.0-alpha.8',
+      authProbe: async () => ({ status: 'authenticated' }),
     });
     assert.equal(verified.status, 'verified');
     assert.equal(verified.cacheClientVersion, '0.150.0');
@@ -487,6 +504,309 @@ test('Kernel Codex runtime selects the bundled CLI and rejects cache/executable 
   }
 });
 
+test('Codex runtime fails before spawn when isolated auth is missing and never reads or copies user credentials', async () => {
+  const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-auth-preflight-'));
+  const projectRoot = path.join(fixtureRoot, 'project');
+  const providerHome = path.join(fixtureRoot, 'providers', 'codex');
+  const userHome = path.join(fixtureRoot, 'user-codex');
+  const accessed = [];
+  let spawned = false;
+  try {
+    await mkdir(projectRoot, { recursive: true });
+    await mkdir(providerHome, { recursive: true });
+    await mkdir(userHome, { recursive: true });
+    await writeFile(path.join(providerHome, 'models_cache.json'), JSON.stringify({ client_version: '0.150.0', models: [] }));
+    await writeFile(path.join(userHome, 'auth.json'), '{"access_token":"must-never-be-read"}');
+    const accessImpl = async (candidate) => {
+      accessed.push(candidate);
+      if (path.resolve(candidate) === path.resolve(path.join(userHome, 'auth.json'))) return;
+      const error = new Error('missing');
+      error.code = 'ENOENT';
+      throw error;
+    };
+    const auth = await inspectCodexAuthentication({ codexHome: providerHome, userCodexHome: userHome, accessImpl });
+    assert.equal(auth.status, 'unavailable');
+    assert.equal(auth.userHomeAuthAvailable, true);
+    const launch = createCodexCliWorkerLauncher({
+      projectRoot,
+      executable: '/native/codex',
+      env: { CODEX_HOME: providerHome },
+      spawnImpl: () => { spawned = true; throw new Error('must not spawn'); },
+      runtimePreflight: (options) => preflightCodexRuntime({
+        ...options,
+        userCodexHome: userHome,
+        accessImpl,
+        versionProbe: async () => 'codex-cli 0.150.0',
+      }),
+    });
+    await assert.rejects(() => launch({
+      invocation: { model: 'gpt-5.6-luna', effort: 'max', sandbox: 'workspace-write' },
+      executionCapsule: {},
+      executionContract: {},
+    }), (error) => {
+      assert.equal(error.code, 'codex_isolated_auth_missing');
+      assert.equal(error.failureCategory, 'provider/infrastructure');
+      assert.equal(error.failureStage, 'pre-spawn');
+      assert.equal(error.details.userHomeAuthAvailable, true);
+      assert.equal(error.details.credentialContentsInspected, false);
+      assert.match(error.details.remediation, /CODEX_HOME=/);
+      assert.doesNotMatch(JSON.stringify(error), /must-never-be-read/);
+      return true;
+    });
+    assert.equal(spawned, false);
+    assert.deepEqual(accessed.map((candidate) => path.basename(candidate)), ['auth.json', 'auth.json', 'auth.json', 'auth.json']);
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test('Codex runtime accepts an environment credential without exposing its value and still checks executable/cache compatibility', async () => {
+  const providerHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-env-auth-'));
+  try {
+    await writeFile(path.join(providerHome, 'models_cache.json'), JSON.stringify({ client_version: '0.150.0', models: [] }));
+    const result = await preflightCodexRuntime({
+      executable: '/native/codex',
+      codexHome: providerHome,
+      env: { OPENAI_API_KEY: 'secret-value-must-not-leak' },
+      versionProbe: async () => 'codex-cli 0.150.0',
+      authProbe: async () => ({ status: 'authenticated' }),
+    });
+    assert.equal(result.status, 'verified');
+    assert.equal(result.authentication.source, 'environment');
+    assert.equal(result.compatibility, 'release-line');
+    assert.doesNotMatch(JSON.stringify(result), /secret-value-must-not-leak/);
+  } finally {
+    await rm(providerHome, { recursive: true, force: true });
+  }
+});
+
+test('Codex runtime treats an unusable auth artifact as a redacted pre-spawn failure', async () => {
+  const providerHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-invalid-auth-'));
+  try {
+    await writeFile(path.join(providerHome, 'auth.json'), '{}');
+    await writeFile(path.join(providerHome, 'models_cache.json'), JSON.stringify({ client_version: '0.150.0', models: [] }));
+    await assert.rejects(() => preflightCodexRuntime({
+      executable: '/native/codex',
+      codexHome: providerHome,
+      versionProbe: async () => 'codex-cli 0.150.0',
+      authProbe: async () => { throw new Error('refresh_token=must-not-leak'); },
+    }), (error) => {
+      assert.equal(error.code, 'codex_auth_status_probe_failed');
+      assert.equal(error.failureCategory, 'provider/infrastructure');
+      assert.equal(error.details.credentialContentsInspected, false);
+      assert.doesNotMatch(JSON.stringify(error), /must-not-leak/);
+      return true;
+    });
+  } finally {
+    await rm(providerHome, { recursive: true, force: true });
+  }
+});
+
+test('Codex Host classifies pre-spawn authentication refusal as provider infrastructure with redacted remediation', async () => {
+  const providerHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-host-classification-'));
+  try {
+    await writeFile(path.join(providerHome, 'models_cache.json'), JSON.stringify({ client_version: '0.150.0', models: [] }));
+    const adapter = createCodexAdapter({
+      nativeLaunch: false,
+      parentSessionObserver: stableParentObserver,
+      cliLaunch: async () => preflightCodexRuntime({
+        executable: '/native/codex',
+        codexHome: providerHome,
+        userCodexHome: path.join(providerHome, 'different-user-home'),
+        versionProbe: async () => 'codex-cli 0.150.0',
+      }),
+    });
+    const result = await adapter.dispatch({
+      decision: { role: 'implementer', actionKind: 'implement', permissions: 'workspace_write', workProfile: {} },
+      resolution: { model: 'gpt-5.6-luna', effort: 'max' },
+      strategy: 'enforced',
+      executionContract: {},
+      parentSessionId: 'codex:parent',
+    });
+    assert.equal(result.status, 'failed');
+    assert.equal(result.errorCode, 'codex_isolated_auth_missing');
+    assert.equal(result.failureCategory, 'provider/infrastructure');
+    assert.equal(result.failureStage, 'pre-spawn');
+    assert.equal(result.runtimePreflight.status, 'failed');
+    assert.match(result.remediation, /Authenticate the isolated Codex provider home/);
+  } finally {
+    await rm(providerHome, { recursive: true, force: true });
+  }
+});
+
+test('implementation workers preserve the bounded 10 minute production timeout and use a short permission probe', () => {
+  assert.equal(CODEX_WORKER_TIMEOUT_MS, 10 * 60 * 1000);
+  assert.equal(CODEX_WORKSPACE_WRITE_PROBE_TIMEOUT_MS, 15 * 1000);
+});
+
+test('workspace-write capability probe fails closed on a managed read-only turn_context before worker dispatch', async () => {
+  let observedInvocation = null;
+  await assert.rejects(() => probeCodexWorkspaceWriteCapability({
+    executable: '/native/codex',
+    invocation: { model: 'gpt-5.6-luna', effort: 'low', profile: 'batch' },
+    workingDirectory: '/workspace/project',
+    env: { CODEX_HOME: '/isolated/provider-home', SAFE_MARKER: 'preserved' },
+    timeoutMs: 37,
+    runProcess: async (options) => {
+      observedInvocation = options;
+      return {
+        code: 0,
+        stdout: [
+          JSON.stringify({ type: 'thread.started', thread_id: '019fe611-87bd-7d83-b920-87d03a4e5a78' }),
+          JSON.stringify({ type: 'turn.completed' }),
+        ].join('\n'),
+        stderr: '',
+      };
+    },
+    resolveSessionConfig: async () => ({
+      approvalPolicy: 'never',
+      sandboxPolicy: { type: 'read-only' },
+      permissionProfile: {
+        type: 'managed',
+        file_system: { type: 'restricted', entries: [{ path: { type: 'special', value: { kind: 'root' } }, access: 'read' }] },
+      },
+    }),
+  }), (error) => {
+    assert.equal(error.code, 'codex_worker_effective_permission_mismatch');
+    assert.equal(error.failureStage, 'pre-spawn');
+    assert.equal(error.failureCategory, 'provider/infrastructure');
+    assert.equal(error.details.effectiveSandbox, 'read-only');
+    assert.equal(error.details.effectiveApprovalPolicy, 'never');
+    assert.deepEqual(error.details.effectivePermissionProfile, {
+      type: 'managed', fileSystemType: 'restricted', accesses: ['read'],
+    });
+    assert.equal(error.details.probeTimeoutMs, 37);
+    assert.match(error.details.remediation, /native spawn_agent/);
+    assert.match(error.details.remediation, /standalone Codex CLI/);
+    assert.doesNotMatch(JSON.stringify(error), /access_token|refresh_token/);
+    return true;
+  });
+  assert.equal(observedInvocation.command, '/native/codex');
+  assert.equal(observedInvocation.cwd, '/workspace/project');
+  assert.equal(observedInvocation.env.SAFE_MARKER, 'preserved');
+  assert.equal(observedInvocation.timeoutMs, 37);
+  assert.deepEqual(observedInvocation.args.slice(0, 2), ['exec', '--json']);
+  assert.equal(observedInvocation.args[observedInvocation.args.indexOf('--sandbox') + 1], 'workspace-write');
+  assert.equal(observedInvocation.args[observedInvocation.args.indexOf('--profile') + 1], 'batch');
+  assert.match(observedInvocation.input, /Do not call tools/);
+});
+
+test('CLI worker does not spawn the real implementation after permission preflight mismatch', async () => {
+  const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-permission-preflight-'));
+  let workerSpawned = false;
+  try {
+    const launch = createCodexCliWorkerLauncher({
+      projectRoot,
+      executable: '/native/codex',
+      env: { CODEX_HOME: projectRoot },
+      runtimePreflight: async () => ({ status: 'verified' }),
+      workspaceWritePreflight: async () => {
+        throw Object.assign(new Error('effective permission mismatch'), {
+          code: 'codex_worker_effective_permission_mismatch',
+          failureStage: 'pre-spawn',
+          failureCategory: 'provider/infrastructure',
+        });
+      },
+      spawnImpl: () => {
+        workerSpawned = true;
+        throw new Error('real worker must not spawn');
+      },
+    });
+    await assert.rejects(() => launch({
+      invocation: { model: 'gpt-5.6-luna', effort: 'low', sandbox: 'workspace-write' },
+      executionCapsule: {},
+      executionContract: {},
+    }), (error) => error.code === 'codex_worker_effective_permission_mismatch');
+    assert.equal(workerSpawned, false);
+  } finally {
+    await rm(projectRoot, { recursive: true, force: true });
+  }
+});
+
+test('workspace-write capability probe wraps its short timeout as typed pre-spawn infrastructure failure', async () => {
+  const started = Date.now();
+  await assert.rejects(() => probeCodexWorkspaceWriteCapability({
+    executable: '/native/codex',
+    invocation: { model: 'gpt-5.6-luna', effort: 'low' },
+    workingDirectory: '/workspace/project',
+    env: {},
+    timeoutMs: 5,
+    runProcess: async ({ timeoutMs }) => {
+      assert.equal(timeoutMs, 5);
+      throw Object.assign(new Error('bounded probe timeout'), {
+        code: 'codex_cli_timeout',
+        details: { cleanupStatus: 'completed', cleanupClassification: 'terminated', lineageSource: 'launch-snapshot' },
+      });
+    },
+  }), (error) => {
+    assert.equal(error.code, 'codex_worker_permission_probe_timeout');
+    assert.equal(error.failureStage, 'pre-spawn');
+    assert.equal(error.details.probeTimeoutMs, 5);
+    assert.equal(error.details.cleanupStatus, 'completed');
+    return true;
+  });
+  assert.ok(Date.now() - started < 1_000, 'injected timeout regression must finish in under one second');
+});
+
+test('workspace-write capability probe preserves the worker path when effective permission is verified', async () => {
+  const result = await probeCodexWorkspaceWriteCapability({
+    executable: '/native/codex',
+    invocation: { model: 'gpt-5.6-luna', effort: 'low' },
+    workingDirectory: '/workspace/project',
+    env: {},
+    runProcess: async () => ({
+      code: 0,
+      stdout: [
+        JSON.stringify({ type: 'thread.started', thread_id: '019fe611-87bd-7d83-b920-87d03a4e5a78' }),
+        JSON.stringify({ type: 'turn.completed' }),
+      ].join('\n'),
+      stderr: '',
+    }),
+    resolveSessionConfig: async () => ({
+      approvalPolicy: 'on-request',
+      sandboxPolicy: { type: 'workspace-write' },
+      permissionProfile: { type: 'managed', file_system: { type: 'restricted', entries: [{ access: 'write' }] } },
+    }),
+  });
+  assert.equal(result.status, 'verified');
+  assert.equal(result.effectiveSandbox, 'workspace-write');
+  assert.deepEqual(result.effectivePermissionProfile.accesses, ['write']);
+});
+
+test('Codex Host safely exposes effective permission mismatch diagnostics from CLI preflight', async () => {
+  const mismatch = Object.assign(new Error('managed provider forced read-only'), {
+    code: 'codex_worker_effective_permission_mismatch',
+    failureCategory: 'provider/infrastructure',
+    failureStage: 'pre-spawn',
+    details: {
+      failureCategory: 'provider/infrastructure',
+      failureStage: 'pre-spawn',
+      remediation: 'Use native spawn_agent or a verified standalone Codex CLI.',
+      probeTimeoutMs: 15_000,
+      effectiveSandbox: 'read-only',
+      effectiveApprovalPolicy: 'never',
+      effectivePermissionProfile: { type: 'managed', fileSystemType: 'restricted', accesses: ['read'] },
+    },
+  });
+  const adapter = createCodexAdapter({
+    nativeLaunch: false,
+    parentSessionObserver: stableParentObserver,
+    cliLaunch: async () => { throw mismatch; },
+  });
+  const result = await adapter.dispatch({
+    decision: { role: 'implementer', actionKind: 'implement', permissions: 'workspace_write', workProfile: {} },
+    resolution: { model: 'gpt-5.6-luna', effort: 'low' },
+    strategy: 'enforced',
+    executionContract: {},
+    parentSessionId: 'codex:parent',
+  });
+  assert.equal(result.errorCode, 'codex_worker_effective_permission_mismatch');
+  assert.equal(result.failureStage, 'pre-spawn');
+  assert.equal(result.runtimePreflight.probeTimeoutMs, 15_000);
+  assert.equal(result.runtimePreflight.effectiveSandbox, 'read-only');
+  assert.deepEqual(result.runtimePreflight.effectivePermissionProfile.accesses, ['read']);
+});
+
 test('Codex child environment strips app-host and Kernel binding capabilities while preserving provider scope', () => {
   const childEnv = buildCodexChildEnvironment({
     env: {
@@ -506,7 +826,7 @@ test('Codex child environment strips app-host and Kernel binding capabilities wh
     executable: '/native/codex',
     codexHome: '/tmp/kernel-home/providers/codex',
   });
-  assert.equal(childEnv.CODEX_HOME, '/tmp/kernel-home/providers/codex');
+  assert.equal(childEnv.CODEX_HOME, path.resolve('/tmp/kernel-home/providers/codex'));
   assert.equal(childEnv.CODEX_EXECUTABLE, '/native/codex');
   assert.equal(childEnv.PRESERVE_ME, 'yes');
   for (const key of [
@@ -538,7 +858,12 @@ test('Codex CLI worker leaves effort null when the provider omits effort telemet
     return child;
   };
   try {
-    const result = await createCodexCliWorkerLauncher({ projectRoot, spawnImpl, env: { ...process.env, CODEX_HOME: undefined } })({
+    const result = await createCodexCliWorkerLauncher({
+      projectRoot,
+      spawnImpl,
+      env: { ...process.env, CODEX_HOME: undefined },
+      workspaceWritePreflight: async () => ({ status: 'verified', effectiveSandbox: 'workspace-write' }),
+    })({
       invocation: { model: 'gpt-5.6-luna', effort: 'max', sandbox: 'workspace-write' },
       executionContract: {},
       executionCapsule: {},
@@ -570,13 +895,29 @@ test('Codex launcher resolves missing stdout model identity from the matching CL
   try {
     await writeFile(path.join(dateRoot, `rollout-2026-08-09T19-28-56-${threadId}.jsonl`), [
       JSON.stringify({ type: 'session_meta', payload: { id: threadId, session_id: threadId, source: 'exec' } }),
-      JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-5.6-sol' } }),
+      JSON.stringify({
+        type: 'turn_context',
+        payload: {
+          model: 'gpt-5.6-sol',
+          approval_policy: 'never',
+          sandbox_policy: { type: 'read-only' },
+          permission_profile: { type: 'managed', file_system: { type: 'restricted', entries: [{ access: 'read' }] } },
+        },
+      }),
     ].join('\n'));
     assert.equal(await resolveObservedCodexSessionModel({
       threadId,
       env: { CODEX_HOME: codexHome },
       startedAt,
     }), 'gpt-5.6-sol');
+    const observed = await resolveObservedCodexSessionConfig({
+      threadId,
+      env: { CODEX_HOME: codexHome },
+      startedAt,
+    });
+    assert.equal(observed.approvalPolicy, 'never');
+    assert.equal(observed.sandboxPolicy.type, 'read-only');
+    assert.equal(observed.permissionProfile.type, 'managed');
   } finally {
     await rm(codexHome, { recursive: true, force: true });
   }
@@ -611,7 +952,12 @@ test('Codex CLI launcher uses the matching session rollout when terminal events 
     return child;
   };
   try {
-    const launch = createCodexCliReviewLauncher({ projectRoot, spawnImpl, env: { ...process.env, CODEX_HOME: codexHome } });
+    const launch = createCodexCliReviewLauncher({
+      projectRoot,
+      spawnImpl,
+      env: { ...process.env, CODEX_HOME: codexHome },
+      runtimePreflight: async () => ({ status: 'verified', authentication: { status: 'available', source: 'fixture' } }),
+    });
     const result = await launch({
       invocation: { model: 'gpt-5.6-sol', effort: 'high', sandbox: 'read-only', freshSessionRequired: true },
       executionCapsule: { role: 'reviewer' },
@@ -668,9 +1014,17 @@ test('Windows review timeout waits for verified process-tree cleanup and fails c
     ...base,
     cleanupWindowsProcessTree: (request) => {
       observed.push(request);
-      return { status: 'completed', survivors: [] };
+      return { status: 'completed', survivors: [], lineageSource: 'launch-snapshot' };
     },
-  }), /codex_review_timeout after 5ms/);
+  }), (error) => {
+    assert.equal(error.code, 'codex_cli_timeout');
+    assert.equal(error.failureCategory, 'provider/infrastructure');
+    assert.equal(error.failureStage, 'worker-timeout');
+    assert.equal(error.details.cleanupStatus, 'completed');
+    assert.equal(error.details.lineageSource, 'launch-snapshot');
+    assert.equal(error.details.survivors, 0);
+    return true;
+  });
   assert.equal(observed.length, 1);
   assert.equal(observed[0].launcherPid, 4321);
   assert.deepEqual(observed[0].expectedArgs, ['C:\\tools\\codex.ps1']);
