@@ -242,7 +242,7 @@ test('Invariant 9: claude_cli and claude_desktop are distinct surfaces', async (
   assert.equal(SURFACE_ENV.claude_cli, 'CLAUDE_CONFIG_DIR');
 });
 
-test('Invariant 10: Kernel Codex adapter contains no automatic provider CLI fallback', async () => {
+test('Invariant 10: Kernel Codex adapter uses owner-direct when optional delegation is unavailable', async () => {
   const { createCodexAdapter } = await import('../scripts/host/kernel/adapters/codex.mjs');
   const { resolveCodexActorRoute } = await import('../scripts/host/kernel/codex-actor-router.mjs');
 
@@ -263,7 +263,9 @@ test('Invariant 10: Kernel Codex adapter contains no automatic provider CLI fall
     resolution: { model: 'gpt-5.6-luna' },
     executionContract: {},
   });
-  assert.equal(dispatch.status, 'unsupported');
+  assert.equal(dispatch.status, 'owner-direct');
+  assert.equal(dispatch.executionMode, 'owner-direct');
+  assert.equal(dispatch.resultStatus, 'interrupted');
   assert.notEqual(dispatch.dispatchMechanism, 'cli-worker');
 });
 
@@ -333,4 +335,3 @@ test('Invariant 12: Kernel session metadata absence never prevents Run creation 
     await cp.close();
   }
 });
-

@@ -40,9 +40,11 @@ test('the model-visible next payload is unchanged and carries no routing vocabul
     assert.deepEqual(plain.action.actorAssignment, {
       required: true,
       role: 'implementer',
-      parentRole: 'orchestrator',
-      parentMayImplement: false,
+      parentRole: 'owner',
+      parentMayImplement: true,
       nestedDelegationAllowed: false,
+      executionMode: 'owner-direct',
+      delegation: { mode: 'optional' },
     });
     const serialized = JSON.stringify(host.modelInput);
     for (const term of ['modelClass', 'frontier_reasoning', 'value_coding', 'modelRouteDecision', 'enforcementStrategy', 'hostDirective']) {
@@ -60,7 +62,9 @@ test('hostNext derives the action kind from the action the model was handed', as
     assert.equal(host.hostDirective.modelRouteDecision.modelClass, 'value_coding');
     assert.equal(host.hostDirective.enforcementStrategy, 'subagent');
     assert.equal(host.hostDirective.actorAssignment.role, 'implementer');
-    assert.equal(host.hostDirective.actorAssignment.parentMayImplement, false);
+    assert.equal(host.hostDirective.actorAssignment.parentMayImplement, true);
+    assert.equal(host.hostDirective.actorAssignment.executionMode, 'owner-direct');
+    assert.deepEqual(host.hostDirective.actorAssignment.delegation, { mode: 'optional' });
     assert.equal(host.hostDirective.actorAssignment.nestedDelegationAllowed, false);
     const review = await cp.hostNext(runId, { hostCapabilities: CLAUDE, actionContext: { actionKind: 'review_engineering' } });
     assert.equal(review.hostDirective.modelRouteDecision.modelClass, 'frontier_reasoning');

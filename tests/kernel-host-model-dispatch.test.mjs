@@ -90,6 +90,26 @@ test('a Host that cannot report tokens leaves them unavailable rather than zero'
   });
 });
 
+test('Codex without an optional native launcher returns the bounded unit to the owner without worker state', async () => {
+  await withRun(async (cp, runId) => {
+    const result = await dispatchKernelTurn({
+      controlPlane: cp,
+      runId,
+      adapter: createCodexAdapter(),
+      registry: registryFor('codex', FRONTIER_ENV),
+      env: { MOON_RELAY_KERNEL_WAYFINDER_MODE: 'off' },
+    });
+    assert.equal(result.dispatched, false);
+    assert.equal(result.executionMode, 'owner-direct');
+    assert.equal(result.reason, 'owner-session-execution-required');
+    assert.equal(result.modelInput.action.type, 'implement');
+    assert.equal(result.receipt, null);
+    assert.equal(result.hostDirective, null);
+    assert.equal(cp.stateStore.listModelRouteDecisions(runId).length, 0);
+    assert.equal(cp.stateStore.getWorkspaceMutationLockV2((await cp.getRun(runId)).workspaceId), null);
+  });
+});
+
 test('a failing dispatch is recorded as failed and never as an enforced success', async () => {
   await withRun(async (cp, runId) => {
     const adapter = createClaudeAdapter({ launch: async () => { throw new Error('worker crashed'); } });

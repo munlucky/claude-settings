@@ -1296,20 +1296,24 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         }
       }
 
-      // The model-visible `next` action carries the provider-neutral
-      // requirement. Host callers also receive the concrete assignment handle
-      // that must be echoed by the worker report. Provider model names stay in
-      // the Host-only route decision; the assignment itself is role- and
-      // lineage-shaped so Claude and other providers retain the same boundary.
+      // The model-visible `next` action carries the provider-neutral execution
+      // mode. Host callers also receive the concrete assignment handle that a
+      // delegated worker report may echo. The owner session is allowed to
+      // execute ordinary work directly; only an explicitly independent review
+      // keeps the orchestrator/worker boundary mandatory.
+      const independentReviewRequired = decision.role === 'reviewer' && decision.independentContextRequired === true;
+      const ownerDirectAllowed = !independentReviewRequired;
       const actorAssignment = decision.modelClass === 'kernel'
         ? null
         : {
           assignmentId: buildActorAssignmentId(decision.decisionId),
           role: decision.role,
-          parentRole: 'orchestrator',
+          parentRole: ownerDirectAllowed ? 'owner' : 'orchestrator',
           workProfile: decision.workProfile,
-          parentMayImplement: false,
+          parentMayImplement: ownerDirectAllowed,
           nestedDelegationAllowed: false,
+          executionMode: ownerDirectAllowed ? 'owner-direct' : 'independent-review',
+          delegation: { mode: ownerDirectAllowed ? 'optional' : 'required' },
           freshSessionRequired: decision.independentContextRequired === true
             || decision.workProfile?.independentContextRequired === true
             || decision.role === 'reviewer',

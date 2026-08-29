@@ -88,16 +88,19 @@ test('an unresolvable model is advisory and never reported as enforced', async (
   assert.equal(receipt.enforcementStatus, 'advisory');
 });
 
-test('the Codex actor route keeps the parent as an orchestrator and escalates repeated failure to a fresh actor', () => {
+test('the Codex actor route keeps owner-direct as the default while preserving fresh-session intent', () => {
   const route = resolveCodexActorRoute({
     decision: { role: 'implementer', actionKind: 'debug', workProfile: { repeatedFailure: true } },
     invocation: { model: 'gpt-5.6-sol', effort: 'xhigh', freshSessionRequired: true, mechanism: 'session-model-override' },
     capabilities: CODEX_CAPABILITIES,
   });
   assert.equal(route.role, 'debugger');
-  assert.equal(route.dispatchMechanism, 'session-model-override');
+  assert.equal(route.dispatchMechanism, 'owner-direct');
   assert.equal(route.sessionPolicy, 'fresh');
-  assert.equal(route.parentMayImplement, false);
+  assert.equal(route.parentMayImplement, true);
+  assert.equal(route.ownerDirectAllowed, true);
+  assert.equal(route.executionMode, 'owner-direct');
+  assert.deepEqual(route.delegation, { mode: 'optional', available: false });
   assert.equal(route.nestedDelegationAllowed, false);
 });
 
@@ -421,4 +424,49 @@ test('when native observation mismatches the dispatch fails closed', async () =>
   assert.equal(dispatch.status, 'failed');
   assert.equal(dispatch.errorCode, 'model-enforcement-failed');
   assert.equal(dispatch.enforcementReason, 'model-mismatch');
+});
+
+test('a Codex adapter without a native launcher returns owner-direct intent, not a worker blocker', async () => {
+  let parentObserved = false;
+  const adapter = createCodexAdapter({
+    parentSessionObserver: async () => {
+      parentObserved = true;
+      return null;
+    },
+  });
+  const dispatch = await adapter.dispatch({
+    decision: decisionFor('implement'),
+    resolution: resolution('gpt-5.6-luna'),
+    parentSessionId: 'owner-session',
+    executionCapsule: { capsuleId: 'capsule-test' },
+    executionContract: { role: 'implementer', permissions: 'workspace_write' },
+  });
+  assert.equal(parentObserved, false, 'owner-direct must not require parent telemetry');
+  assert.equal(dispatch.status, 'owner-direct');
+  assert.equal(dispatch.resultStatus, 'interrupted');
+  assert.equal(dispatch.dispatchMechanism, 'owner-direct');
+  assert.equal(dispatch.executionMode, 'owner-direct');
+  assert.deepEqual(dispatch.delegation, { mode: 'optional', available: false, actorRole: 'implementer' });
+  assert.equal(dispatch.outcome, null);
+  assert.equal(dispatch.report, null);
+  assert.equal(dispatch.errorCode, null);
+});
+
+test('a Codex adapter without a native launcher blocks only a required independent review', async () => {
+  const dispatch = await createCodexAdapter().dispatch({
+    decision: {
+      ...decisionFor('review_engineering', 'T3'),
+      role: 'reviewer',
+      independentContextRequired: true,
+    },
+    resolution: { model: 'gpt-5.6-sol', effort: 'xhigh', enforcementIntent: 'enforced' },
+    executionContract: { role: 'reviewer', independentReviewRequired: true },
+  });
+  assert.equal(dispatch.status, 'unsupported');
+  assert.equal(dispatch.resultStatus, 'failed');
+  assert.equal(dispatch.errorCode, 'codex-host-capability-unsupported');
+  assert.equal(dispatch.capability.capability, 'independent-reviewer');
+  assert.equal(dispatch.capability.reason, 'independent-review-unavailable');
+  assert.equal(dispatch.executionMode, 'independent-review');
+  assert.deepEqual(dispatch.delegation, { mode: 'required', available: false, actorRole: 'reviewer' });
 });

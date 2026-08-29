@@ -69,13 +69,17 @@ const normalizeEffort = (value) => {
 };
 
 // The main Codex session is a Host invariant, not a Kernel model enum. The
-// parent is the Luna/Max orchestrator for the whole run; concrete model and
-// effort choices belong only to child worker invocations.
+// owner is the Luna/Max orchestrator and default executor for the whole run;
+// concrete model and effort choices for a delegated child belong only to that
+// optional invocation.
 export const CODEX_MAIN_SESSION_POLICY = Object.freeze({
   role: 'orchestrator',
   model: 'gpt-5.6-luna',
   effort: 'max',
-  parentMayImplement: false,
+  // The Codex owner is also the default executor for an ordinary bounded
+  // work unit. A native child is an optional delegation surface, not a
+  // prerequisite for implementation.
+  parentMayImplement: true,
   nestedDelegationAllowed: false,
 });
 

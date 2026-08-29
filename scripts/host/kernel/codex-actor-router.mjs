@@ -26,10 +26,13 @@ export const resolveCodexActorRoute = ({
     || role === 'reviewer'
     || repeatedFailure(decision)
     || invocation.freshSessionRequired === true;
+  const independentReviewRequired = role === 'reviewer' && decision.independentContextRequired === true;
   const nativeAvailable = hasNativeLauncher && capabilities.supportsSubagentModel === true;
   const dispatchMechanism = nativeAvailable
     ? 'native-subagent'
-    : invocation.mechanism || 'session-model-override';
+    : independentReviewRequired
+      ? 'independent-review'
+      : 'owner-direct';
   const parentSessionPolicy = buildCodexMainSessionPolicy({
     parentSessionId,
     observed: parentSessionConfig,
@@ -42,7 +45,13 @@ export const resolveCodexActorRoute = ({
     sessionPolicy: freshSessionRequired ? 'fresh' : 'reusable',
     freshSessionRequired,
     fallbackAllowed: false,
-    parentMayImplement: false,
+    parentMayImplement: !independentReviewRequired,
+    ownerDirectAllowed: !independentReviewRequired,
+    executionMode: independentReviewRequired ? 'independent-review' : 'owner-direct',
+    delegation: Object.freeze({
+      mode: independentReviewRequired ? 'required' : 'optional',
+      available: nativeAvailable,
+    }),
     nestedDelegationAllowed: false,
     parentSessionPolicy,
   });

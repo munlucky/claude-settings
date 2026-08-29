@@ -338,6 +338,16 @@ const buildUnsupportedCapability = ({ capability, reason, remediation = CODEX_PA
   remediation,
 });
 
+const isIndependentReviewRequired = ({ decision = {}, actorRoute = null, executionContract = null } = {}) => Boolean(
+  (actorRoute?.role === 'reviewer' || decision.role === 'reviewer')
+  && (
+    decision.independentContextRequired === true
+    || executionContract?.independentReviewRequired === true
+    || executionContract?.independentReview === true
+    || executionContract?.reviewMode === 'independent'
+  ),
+);
+
 const buildUnsupportedDispatch = ({
   invocation,
   parentSessionId = null,
@@ -345,6 +355,8 @@ const buildUnsupportedDispatch = ({
   actorRole = null,
   sessionPolicy = null,
   dispatchMechanism = 'capability-guard',
+  executionMode = null,
+  delegation = null,
   capability,
   reason,
   remediation = CODEX_PARENT_SESSION_REMEDIATION,
@@ -364,6 +376,8 @@ const buildUnsupportedDispatch = ({
     observedModel: null,
     observedEffort: null,
     dispatchMechanism,
+    executionMode,
+    delegation,
     actorRole,
     sessionPolicy,
     parentSessionPolicy,
@@ -381,6 +395,43 @@ const buildUnsupportedDispatch = ({
     invocation,
   };
 };
+
+// A missing optional worker launcher is not a failed implementation. The
+// current native Codex owner can execute the already-issued bounded work unit
+// and later call Kernel report. This intent deliberately has no outcome or
+// report: returning either would fabricate completion before the owner acts.
+const buildOwnerDirectDispatch = ({ invocation, parentSessionId = null, actorRole = null, sessionPolicy = null } = {}) => ({
+  status: 'owner-direct',
+  resultStatus: 'interrupted',
+  resolvedModel: null,
+  resolvedEffort: null,
+  requestedModel: invocation?.model || null,
+  requestedEffort: invocation?.effort || null,
+  observedModel: null,
+  observedEffort: null,
+  dispatchMechanism: 'owner-direct',
+  executionMode: 'owner-direct',
+  delegation: {
+    mode: 'optional',
+    available: false,
+    actorRole,
+  },
+  actorRole,
+  sessionPolicy,
+  parentSessionPolicy: null,
+  enforcementStatus: 'advisory',
+  enforcementReason: 'owner-session-execution',
+  fallbackReason: null,
+  errorCode: null,
+  errorSummary: null,
+  capability: null,
+  unsupportedCapability: null,
+  actorSessionId: parentSessionId || null,
+  outcome: null,
+  report: null,
+  parentSessionId: parentSessionId || null,
+  invocation,
+});
 
 const WORKER_TELEMETRY_MISSING_REASONS = new Set([
   'model-observation-missing',
@@ -408,21 +459,43 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
   return {
     surface: 'codex',
     capabilities: resolved,
+    ownerDirectAvailable: true,
+    ownerDirectDefault: Boolean(!effectiveNativeLaunch && !launch),
     async dispatch({ decision, resolution, strategy, executionCapsule = null, executionContract, envelope = null, workingDirectory = null, environment = null, parentSessionId = null, parentSessionConfig = defaultParentSessionConfig, parentSessionEnvironment: dispatchParentSessionEnvironment = null, parentEnvironment: dispatchParentEnvironment = null, concurrencyGroup = null, childSession = null }) {
       const invocation = buildCodexInvocation({ decision, resolution, capabilities: resolved });
       const nativeAvailable = Boolean(effectiveNativeLaunch && resolved.supportsSubagentModel === true);
-      // A capability can describe how a real Host would resolve its default
-      // session, but it cannot make an adapter without a launcher execute.
-      // Keep the no-launcher surface honest instead of returning a synthetic
-      // completed result for `host-default`.
+      const actorRoute = resolveCodexActorRoute({
+        decision,
+        invocation,
+        capabilities: resolved,
+        hasNativeLauncher: Boolean(effectiveNativeLaunch),
+        parentSessionId,
+        parentSessionConfig,
+      });
+      // A missing native launcher only removes optional delegation. The
+      // owner-direct path is the normal interactive Codex execution surface;
+      // it must not require parent/child telemetry or invent a worker result.
       if (!nativeAvailable && !launch) {
+        const independentReviewRequired = isIndependentReviewRequired({ decision, actorRoute, executionContract });
+        if (!independentReviewRequired) {
+          return buildOwnerDirectDispatch({
+            invocation,
+            parentSessionId,
+            actorRole: actorRoute.role,
+            sessionPolicy: actorRoute.sessionPolicy,
+          });
+        }
         return buildUnsupportedDispatch({
           invocation,
           parentSessionId,
+          actorRole: actorRoute.role,
+          sessionPolicy: actorRoute.sessionPolicy,
           dispatchMechanism: 'capability-guard',
-          capability: 'bounded-child-worker-launcher',
-          reason: 'worker-launcher-missing',
-          remediation: 'Provide a native Codex Host bridge.',
+          executionMode: 'independent-review',
+          delegation: { mode: 'required', available: false, actorRole: actorRoute.role },
+          capability: 'independent-reviewer',
+          reason: 'independent-review-unavailable',
+          remediation: 'Provide an independent native Codex review context.',
         });
       }
 
@@ -447,14 +520,6 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
       };
       const parentBefore = await observeParent('before');
       const parentBeforePolicy = buildCodexMainSessionPolicy({ parentSessionId, observed: parentBefore || {} });
-      const actorRoute = resolveCodexActorRoute({
-        decision,
-        invocation,
-        capabilities: resolved,
-        hasNativeLauncher: Boolean(effectiveNativeLaunch),
-        parentSessionId,
-        parentSessionConfig,
-      });
       const routeParentCapabilityUnavailable = isCodexCapabilityUnavailable(actorRoute.parentSessionPolicy);
       const parentBeforeCapabilityUnavailable = isCodexCapabilityUnavailable(parentBeforePolicy);
       if (routeParentCapabilityUnavailable || parentBeforeCapabilityUnavailable || actorRoute.parentSessionPolicy.observationStatus === 'failed' || !['observed', 'enforced'].includes(parentBeforePolicy.observationStatus)) {

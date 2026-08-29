@@ -72,9 +72,9 @@ const describeObligations = (obligations = [], obligationIds = []) => obligation
   };
 });
 
-// An ordinary work unit is assigned to a bounded actor before the model can
-// report implementation work.  This is deliberately provider-neutral: the
-// Host maps the role onto its own worker mechanism and model policy.
+// An ordinary work unit is assigned a bounded execution role before the model
+// can report implementation work. The current native owner is the default
+// executor; a Host may still map the role onto an optional worker mechanism.
 const actorRoleForAction = (actionType) => {
   if (actionType === 'review') return 'reviewer';
   if (actionType === 'debug') return 'debugger';
@@ -86,14 +86,17 @@ const actorRoleForAction = (actionType) => {
 const withActorAssignment = (action) => {
   const role = actorRoleForAction(action?.type);
   if (!role) return action;
+  const independentReviewRequired = role === 'reviewer' && action?.independentReviewRequired === true;
   return {
     ...action,
     actorAssignment: {
       required: true,
       role,
-      parentRole: 'orchestrator',
-      parentMayImplement: false,
+      parentRole: independentReviewRequired ? 'orchestrator' : 'owner',
+      parentMayImplement: !independentReviewRequired,
       nestedDelegationAllowed: false,
+      executionMode: independentReviewRequired ? 'independent-review' : 'owner-direct',
+      delegation: { mode: independentReviewRequired ? 'required' : 'optional' },
     },
   };
 };

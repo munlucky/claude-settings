@@ -38,12 +38,15 @@ test('Pro mode requires capability, intent, an eval result, and an explicit requ
   }
 });
 
-test('an adapter with no launcher reports unsupported instead of pretending to run', async () => {
+test('an adapter with no launcher returns owner-direct intent instead of pretending to run', async () => {
   const adapter = createCodexAdapter({});
   const result = await adapter.dispatch({
     decision: { role: 'implementer', permissions: 'workspace_write', modelClass: 'value_coding' },
     resolution: { model: null, effort: null },
     executionContract: {},
   });
-  assert.equal(result.status, 'unsupported');
+  assert.equal(result.status, 'owner-direct');
+  assert.equal(result.executionMode, 'owner-direct');
+  assert.equal(result.resultStatus, 'interrupted');
+  assert.equal(result.outcome, null);
 });

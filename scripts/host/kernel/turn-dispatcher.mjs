@@ -284,6 +284,56 @@ export const dispatchKernelTurn = async ({
   now = () => new Date().toISOString(),
 } = {}) => {
   if (!adapter) throw new Error('dispatchKernelTurn requires a Host adapter');
+  const hostCapabilities = adapter.capabilities || {};
+  // Codex Desktop is already the native owner session. When it has no
+  // optional native worker launcher, return the Kernel work unit to that
+  // owner instead of entering the child-worker dispatcher and manufacturing a
+  // missing-worker failure. `next()` is deliberately used here rather than
+  // `hostNext()`: the latter acquires a worker mutation lock and opens a
+  // delegated attempt that an owner-direct turn cannot close.
+  const ownerDirectRequested = hostCapabilities.surface === 'codex'
+    && adapter.ownerDirectDefault === true
+    && actionContext.executionMode !== 'native-subagent'
+    && actionContext.delegationRequired !== true;
+  if (ownerDirectRequested) {
+    const modelInput = await controlPlane.next(runId);
+    if (modelInput.status === 'not_found') return modelInput;
+    const independentReviewRequired = modelInput.action?.type === 'review'
+      && modelInput.action?.independentReviewRequired === true;
+    if (independentReviewRequired) {
+      return {
+        schemaVersion: 1,
+        runId,
+        dispatched: false,
+        executionMode: 'independent-review',
+        reason: 'independent-review-unavailable',
+        blocker: {
+          reason: 'external-dependency',
+          detail: 'This Codex owner surface has no independent native review context.',
+        },
+        modelInput,
+        hostDirective: null,
+        receipt: null,
+        report: null,
+      };
+    }
+    return {
+      schemaVersion: 1,
+      runId,
+      dispatched: false,
+      executionMode: 'owner-direct',
+      reason: 'owner-session-execution-required',
+      ownerExecution: {
+        mode: 'owner-direct',
+        delegation: { mode: 'optional', available: false },
+        report: 'kernel report',
+      },
+      modelInput,
+      hostDirective: null,
+      receipt: null,
+      report: null,
+    };
+  }
   const wayfinderMode = String(env.MOON_RELAY_KERNEL_WAYFINDER_MODE || 'shadow').toLowerCase();
   if (wayfinderMode === 'on' && actionContext.skipWayfinder !== true && controlPlane?.getExecutableSteps) {
     return dispatchKernelRun({
@@ -329,7 +379,6 @@ export const dispatchKernelTurn = async ({
       }),
     });
   }
-  const hostCapabilities = adapter.capabilities;
   const turn = await controlPlane.hostNext(runId, { hostCapabilities, actionContext });
   if (turn.status === 'not_found') return turn;
 
