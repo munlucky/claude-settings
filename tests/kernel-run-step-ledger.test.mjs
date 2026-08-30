@@ -160,7 +160,7 @@ test('K2: the ledger only decomposes when the work actually calls for it', () =>
   assert.equal(stepLedgerApplies({ contract: { flags: { complex: true } } }).applies, true);
   assert.equal(stepLedgerApplies({ contract: {}, filesChanged: 12 }).applies, true);
   assert.equal(stepLedgerApplies({ contract: {}, route: { stages: ['FRAME', 'SLICE', 'EXECUTE'] } }).applies, true);
-  assert.equal(stepLedgerApplies({ contract: {}, safeWaveRequested: true }).applies, true);
+  assert.equal(stepLedgerApplies({ contract: {}, safeParallelSplit: true }).applies, false);
 });
 
 test('K2: a step is only complete with current-revision evidence for what it owns', () => {

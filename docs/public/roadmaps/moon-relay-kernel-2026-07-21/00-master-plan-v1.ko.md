@@ -1,5 +1,10 @@
 # Moon Relay Kernel 구현 마스터 플랜 v1
 
+> **Current implementation note (2026-08-30):** This roadmap remains the
+> historical phase plan. The delivered runtime uses the existing Step Ledger
+> as its only planning authority; parallel selection is derived and Host
+> dispatch is transient, with no persistent Wave replacement lifecycle.
+
 ## Scope Status
 
 Status: implementation-ready-design-plan
@@ -18,7 +23,7 @@ Moonshot Relay의 검증된 저수준 런타임 자산을 선별 재사용하면
 - E0~E2 Evidence Pack
 - pinned upstream skill registry
 - Relay/Kernel 동시 설치 및 Codex 앱 프로젝트 격리
-- 순차 기본, Safe Wave는 dry-run부터 도입
+- 순차 기본, 병렬 선택은 Step Ledger에서 파생하고 Host dispatch는 transient
 
 ## Non-Goals
 

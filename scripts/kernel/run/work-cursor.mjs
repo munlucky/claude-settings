@@ -9,21 +9,18 @@
 
 import { buildExecutionCapsule, buildReviewCapsule, capsuleStaleness, findScopeViolations } from './execution-capsule.mjs';
 import { digestOfChangedFiles, extractRelevantSymbols, rankRelevantFiles, selectKnowledgeRecords } from './capsule-selection.mjs';
-import { resolveWorkerBound } from './bounded-wave.mjs';
-import { discoverProjectCommands } from '../proof/command-catalog.mjs';
-import { currentStep as selectCurrentStep, dependenciesSatisfied, detectStepStagnation, evaluateStepCompletion, selectExecutableSteps } from './run-step-ledger.mjs';
+import { currentStep as selectCurrentStep, dependenciesSatisfied, deriveParallelBatch, detectStepStagnation, evaluateStepCompletion } from './run-step-ledger.mjs';
 import { planReplacementSteps, planRunSteps } from './step-planner.mjs';
 import { scanRepositoryEvidence } from '../task/evidence-scan.mjs';
 import { canonicalDigest } from '../canonical-digest.mjs';
 import { gitLsFiles } from '../../lib/git-safe.mjs';
 import { observeWorkspaceIdentity } from './workspace-identity.mjs';
 import { projectRunState } from '../state-projector.mjs';
-import { buildActiveWave, isApprovalSource, waveStatusIsActive } from './active-wave.mjs';
 import { assertAttemptLineage } from './attempt-provenance.mjs';
 import { assertImplementationWorkUnitScope, resolveWorkUnitAllowedPaths } from './work-unit-scope.mjs';
 import { assertRunWorktreeMutationAuthority } from './worktree-binding.mjs';
 
-const rejectGenericRunAuthority = ({ store, run, worktree, report, activeWave = null }) => {
+const rejectGenericRunAuthority = ({ store, run, worktree, report, stepWorkspaceId = null }) => {
   const reject = (errorCode, errorSummary, obligationId = 'worktree') => ({
     rejection: [{
       obligationId,
@@ -40,75 +37,38 @@ const rejectGenericRunAuthority = ({ store, run, worktree, report, activeWave = 
       `Report does not hold the current Run worktree authority: ${error.message}`,
     );
   }
-  if (report.workspaceId && !activeWave) {
+  if (report.workspaceId) {
     const reportedWorkspace = store.getProjectWorkspace?.(report.workspaceId) || null;
     if (!reportedWorkspace || reportedWorkspace.projectId !== run.projectId) {
       return reject('report_workspace_invalid', 'Report workspace is not registered for this Run project', 'workspace');
     }
-    if (run.worktreeId) {
+    if (run.worktreeId && report.workspaceId !== stepWorkspaceId) {
       if (reportedWorkspace.worktreeId !== run.worktreeId) {
         return reject('run_worktree_mismatch', 'Report workspace is not the Run worktree', 'workspace');
       }
-    } else if (reportedWorkspace.workspaceId !== run.workspaceId) {
+    } else if (!run.worktreeId && report.workspaceId !== stepWorkspaceId && reportedWorkspace.workspaceId !== run.workspaceId) {
       return reject('run_workspace_mismatch', 'Report workspace is not the legacy Run workspace', 'workspace');
     }
   }
   return null;
 };
 
+const parallelWorkerLimit = (run) => (
+  run?.proofTier === 'T3'
+    && (run?.independentReviewRequired === true || run?.taskContract?.flags?.independentReviewRequired === true || run?.taskContract?.independentReview === true)
+    ? 3
+    : 2
+);
+
 export const createWorkCursorApi = ({ store, projectRoot, runtimeHome, worktree = null }) => ({
-  getActiveWave(runId) {
-    return store.getActiveWave ? store.getActiveWave(runId) : null;
-  },
-
-  async beginWave(runId, steps = [], options = {}) {
-    const run = store.getRun(runId);
-    if (!run) throw new Error(`Run ${runId} not found`);
-    if (steps.length < 2) throw Object.assign(new Error('Wayfinder requires at least two executable steps'), { code: 'WAVE_TOO_SMALL' });
-    if (run.taskContract?.safeWave?.approved !== true || !run.taskContract.safeWave.approvedBy || !run.taskContract.safeWave.integrationVerification?.commandRef) {
-      throw Object.assign(new Error('Safe Wave approval is not persisted for this run'), { code: 'WAVE_NOT_APPROVED' });
-    }
-    if (!isApprovalSource(options.approvalSource)) {
-      throw Object.assign(new Error('Wayfinder approval source is not a permitted Kernel source'), { code: 'WAVE_APPROVAL_SOURCE_INVALID' });
-    }
-    const wave = buildActiveWave({
-      run,
-      steps,
-      baseCommitSha: options.baseCommitSha,
-      baseMutationRevision: options.baseMutationRevision ?? run.mutationRevision,
-      baseWorkspaceIdentity: options.baseWorkspaceIdentity,
-      integrationCommandRef: options.integrationCommandRef || run.taskContract.safeWave.integrationVerification.commandRef,
-      approvalSource: options.approvalSource,
-      workerLimit: options.workerLimit,
-      waveId: options.waveId,
-    });
-    const created = store.createRunWave(wave, { stepIds: steps.map((step) => step.stepId) });
-    for (const step of steps) {
-      store.updateRunStep(runId, step.stepId, {
-        state: 'running',
-        startedAt: step.startedAt || new Date().toISOString(),
-        baseWorkspaceIdentity: options.baseWorkspaceIdentity,
-        integrationState: 'pending',
-      });
-    }
-    return store.updateRunWave(created.waveId, { status: 'preparing' });
-  },
-
-  updateWave(runId, waveId, patch = {}) {
-    const wave = store.getRunWave(waveId);
-    if (!wave || wave.runId !== runId) throw new Error('wave-run-mismatch');
-    return store.updateRunWave(waveId, patch);
-  },
-
-  bindStepAttempt(runId, waveId, stepId, binding = {}) {
-    const wave = store.getRunWave(waveId);
+  bindStepAttempt(runId, stepId, binding = {}) {
     const step = store.getRunStep(runId, stepId);
-    if (!wave || wave.runId !== runId || !step || step.waveId !== waveId) throw Object.assign(new Error('step-wave-mismatch'), { code: 'STEP_WAVE_MISMATCH' });
+    if (!step) throw Object.assign(new Error('step-not-found'), { code: 'STEP_NOT_FOUND' });
     assertImplementationWorkUnitScope({ step, contract: store.getRun(runId)?.taskContract || null, actionType: 'implement' });
     store.updateRunStep(runId, stepId, {
       state: 'running',
       executionWorkspaceId: binding.workspaceId || null,
-      baseWorkspaceIdentity: binding.baseWorkspaceIdentity || wave.baseWorkspaceIdentity,
+      baseWorkspaceIdentity: binding.baseWorkspaceIdentity || null,
       capsuleDigest: binding.capsuleDigest || null,
     });
     return store.recordStepAttempt(runId, {
@@ -118,14 +78,13 @@ export const createWorkCursorApi = ({ store, projectRoot, runtimeHome, worktree 
       capsuleId: binding.capsuleId,
       capsuleDigest: binding.capsuleDigest,
       admissionId: binding.admissionId,
-      waveId,
       provenanceKind: 'routed',
       planRevision: step.planRevision,
       mutationRevision: store.getRun(runId)?.mutationRevision || 0,
       workspaceId: binding.workspaceId,
       workspaceRootHash: binding.workspaceRootHash,
-      baseWorkspaceIdentity: binding.baseWorkspaceIdentity || wave.baseWorkspaceIdentity,
-      workspaceIdentityStart: binding.workspaceIdentity || binding.baseWorkspaceIdentity || wave.baseWorkspaceIdentity,
+      baseWorkspaceIdentity: binding.baseWorkspaceIdentity || null,
+      workspaceIdentityStart: binding.workspaceIdentity || binding.baseWorkspaceIdentity || null,
       verificationRefs: binding.verificationRefs || [],
       knowledgeObservationRefs: binding.knowledgeObservationRefs || [],
     });
@@ -157,7 +116,6 @@ export const createWorkCursorApi = ({ store, projectRoot, runtimeHome, worktree 
     workspaceIdentityStart = null,
     summary = null,
     changedPaths = [],
-    waveId = null,
     workspaceId = null,
     workspaceRootHash = null,
     baseWorkspaceIdentity = null,
@@ -191,7 +149,6 @@ export const createWorkCursorApi = ({ store, projectRoot, runtimeHome, worktree 
       workspaceIdentityStart,
       summary,
       changedPaths,
-      waveId,
       workspaceId,
       workspaceRootHash,
       baseWorkspaceIdentity,
@@ -212,14 +169,15 @@ export const createWorkCursorApi = ({ store, projectRoot, runtimeHome, worktree 
     return assertAttemptLineage(attempt, expected);
   },
 
-  recordStepResult(runId, waveId, stepId, result) {
-    return store.recordStepResult(runId, waveId, stepId, result);
+  recordStepResult(runId, stepId, result) {
+    return store.recordStepResult(runId, stepId, result);
   },
 
-  failStepAttempt(runId, waveId, stepId, failure) {
+  failStepAttempt(runId, stepId, failure) {
     const step = store.getRunStep(runId, stepId);
-    if (!step || step.waveId !== waveId) throw Object.assign(new Error('step-wave-mismatch'), { code: 'STEP_WAVE_MISMATCH' });
-    const attempt = store.getStepAttempts(runId, { stepId }).filter((entry) => entry.waveId === waveId).at(-1);
+    if (!step) throw Object.assign(new Error('step-not-found'), { code: 'STEP_NOT_FOUND' });
+    const attempt = store.getActiveStepAttempt(runId, { stepId })
+      || store.getStepAttempts(runId, { stepId }).at(-1);
     if (attempt) {
       const reason = failure?.code || failure?.message || String(failure || 'worker-failed');
       const interrupted = attempt.status === 'interrupted';
@@ -230,39 +188,6 @@ export const createWorkCursorApi = ({ store, projectRoot, runtimeHome, worktree 
       });
     }
     return this.failStep(runId, stepId, { reason: failure?.code || failure?.message || 'worker-failed' });
-  },
-
-  beginIntegration(runId, waveId) {
-    const wave = store.getRunWave(waveId);
-    if (!wave || wave.runId !== runId) throw new Error('wave-run-mismatch');
-    if (wave.status === 'dispatching') store.updateRunWave(waveId, { status: 'collecting' });
-    if (store.getRunWave(waveId).status === 'collecting') return store.updateRunWave(waveId, { status: 'integrating' });
-    return store.getRunWave(waveId);
-  },
-
-  recordIntegrationReceipt(runId, waveId, receipt) {
-    const wave = store.getRunWave(waveId);
-    if (!wave || wave.runId !== runId) throw new Error('wave-run-mismatch');
-    return store.recordWaveIntegrationReceipt(receipt);
-  },
-
-  completeWave(runId, waveId, receipt = null) {
-    const wave = store.getRunWave(waveId);
-    if (!wave || wave.runId !== runId) throw new Error('wave-run-mismatch');
-    if (wave.status === 'integrating') store.updateRunWave(waveId, { status: 'verifying' });
-    return store.completeRunWave(runId, waveId, receipt);
-  },
-
-  abortWave(runId, waveId, reason) {
-    return store.failRunWave(runId, waveId, reason, 'aborted');
-  },
-
-  failWave(runId, waveId, reason) {
-    return store.failRunWave(runId, waveId, reason, 'failed');
-  },
-
-  markStepIntegrated(runId, stepId, receiptId) {
-    return store.markStepIntegrated(runId, stepId, { receiptId });
   },
 
   // --- Run Step Ledger (K2) -------------------------------------------
@@ -369,56 +294,27 @@ export const createWorkCursorApi = ({ store, projectRoot, runtimeHome, worktree 
     return { planRevision: nextRevision, steps: replaced.steps };
   },
 
-  // The wave the Host may dispatch right now (§7.6). Sequential is the answer
-  // unless the contract carries an approved Safe Wave whose integration command
-  // the project actually declares, the write sets are disjoint, and nothing in
-  // the current plan is stagnant — a stuck plan returns to one step at a time.
+  // The Host may ask for a derived parallel selection. The ledger remains the
+  // only progress authority; selection is recomputed from current Step rows,
+  // disjoint scopes, and a transient host worker bound.
   getExecutableSteps(runId) {
     const run = store.getRun(runId);
     if (!run) return { steps: [], reason: 'run-not-found', mode: 'sequential' };
     const steps = this.ensureRunStepsMigrated(runId);
-    const activeWave = store.getActiveWave ? store.getActiveWave(runId) : null;
-    if (activeWave && waveStatusIsActive(activeWave.status)) {
-      const activeSteps = steps.filter((step) => step.waveId === activeWave.waveId && step.planRevision === activeWave.planRevision);
-      return {
-        steps: activeSteps,
-        reason: 'active-wave',
-        mode: activeSteps.length > 1 ? 'parallel' : 'sequential',
-        activeWave,
-        integrationVerification: { commandRef: activeWave.integrationCommandRef },
-      };
-    }
-    const safeWave = run.taskContract?.safeWave || null;
-
-    let integrationVerification = null;
-    let blockedReason = null;
-    if (safeWave?.approved) {
-      const declared = discoverProjectCommands({ projectRoot })
-        .some((command) => command.commandRef === safeWave.integrationVerification.commandRef);
-      if (!declared) blockedReason = 'safe-wave-integration-command-not-declared';
-      else if (this.planIsStagnant(runId)) blockedReason = 'safe-wave-suspended-by-stagnation';
-      else integrationVerification = safeWave.integrationVerification;
-    } else if (safeWave?.requested) {
-      blockedReason = 'safe-wave-not-approved';
-    }
-
-    const selection = selectExecutableSteps(steps, {
+    const selection = deriveParallelBatch(steps, {
       planRevision: run.planRevision,
-      safeWave: Boolean(integrationVerification),
-      integrationVerification,
-      maxWorkers: resolveWorkerBound({ riskTier: run.proofTier, includeIndependentReview: run.proofTier === 'T3' }),
+      maxWorkers: parallelWorkerLimit(run),
     });
     return {
       steps: selection.steps,
-      reason: blockedReason || selection.reason,
+      reason: selection.reason,
       mode: selection.steps.length > 1 ? 'parallel' : 'sequential',
-      integrationVerification,
-      activeWave: null,
+      parallelEligible: selection.steps.length > 1,
     };
   },
 
-  // True when any live step of the current plan is stuck. Used to collapse a
-  // parallel wave back to sequential execution.
+  // True when any live step of the current plan is stuck. A later selection
+  // naturally narrows to the retryable Step; no lifecycle state is suspended.
   planIsStagnant(runId) {
     const run = store.getRun(runId);
     return this.ensureRunStepsMigrated(runId)
@@ -440,8 +336,14 @@ export const createWorkCursorApi = ({ store, projectRoot, runtimeHome, worktree 
     const steps = this.ensureRunStepsMigrated(runId);
     if (steps.length === 0) return { step: null };
     const scoped = steps.filter((step) => step.planRevision === run.planRevision);
-    const activeWave = store.getActiveWave ? store.getActiveWave(runId) : null;
-    const authority = rejectGenericRunAuthority({ store, run, worktree, report, activeWave });
+    const reportedStep = report.stepId ? scoped.find((step) => step.stepId === report.stepId) : null;
+    const authority = rejectGenericRunAuthority({
+      store,
+      run,
+      worktree,
+      report,
+      stepWorkspaceId: reportedStep?.executionWorkspaceId || null,
+    });
     if (authority) return authority;
     const rejectStaleAttempt = (attempt, stepId) => {
       if (!attempt) return null;
@@ -477,43 +379,6 @@ export const createWorkCursorApi = ({ store, projectRoot, runtimeHome, worktree 
       return null;
     };
 
-    if (activeWave) {
-      if (!report.stepId) {
-        return { rejection: [{ obligationId: 'step', command: 'kernel report', errorSummary: 'An Active Wave report must name its stepId' }] };
-      }
-      const named = scoped.find((step) => step.stepId === report.stepId);
-      if (!named || named.waveId !== activeWave.waveId || !activeWave.stepIds.includes(named.stepId)) {
-        return { rejection: [{ obligationId: 'step', command: 'kernel report', errorSummary: `Step "${report.stepId}" is not a member of the Active Wave` }] };
-      }
-      if (report.waveId && report.waveId !== activeWave.waveId) {
-        return { rejection: [{ obligationId: 'wave', command: 'kernel report', errorSummary: 'Report waveId does not match the Active Wave' }] };
-      }
-      if (report.planRevision !== undefined && Number(report.planRevision) !== Number(activeWave.planRevision)) {
-        return { rejection: [{ obligationId: 'step', command: 'kernel report', errorSummary: 'Report planRevision does not match the Active Wave' }] };
-      }
-      if (!['running', 'reported', 'verifying'].includes(named.state)) {
-        return { rejection: [{ obligationId: 'step', command: 'kernel report', errorSummary: `Step "${named.stepId}" is ${named.state} and cannot be reported in this Wave` }] };
-      }
-      const attempt = store.getStepAttempts(runId, { stepId: named.stepId }).filter((entry) => entry.waveId === activeWave.waveId).at(-1);
-      if (!attempt) return { rejection: [{ obligationId: 'step', command: 'kernel report', errorSummary: `Step "${named.stepId}" has no active Wave attempt binding` }] };
-      const boundCapsuleId = attempt.capsuleId || (attempt.capsuleDigest && !String(attempt.capsuleDigest).startsWith('sha256:') ? attempt.capsuleDigest : null);
-      if (boundCapsuleId && report.capsuleId !== boundCapsuleId) {
-        return { rejection: [{ obligationId: 'capsule', command: 'kernel report', errorSummary: 'Report capsule does not match the bound Wave attempt' }] };
-      }
-      const incompleteCredentials = rejectIncompleteAttemptCredentials(attempt, report);
-      if (incompleteCredentials) return incompleteCredentials;
-      if (report.attemptId && report.attemptId !== attempt.attemptId) {
-        return { rejection: [{ obligationId: 'attempt', command: 'kernel report', errorSummary: 'Report attempt does not match the bound Wave attempt' }] };
-      }
-      if (report.bindingId && report.bindingId !== attempt.bindingId) {
-        return { rejection: [{ obligationId: 'binding', command: 'kernel report', errorSummary: 'Report binding does not match the bound Wave attempt' }] };
-      }
-      if (attempt.workspaceId && report.workspaceId !== attempt.workspaceId) {
-        return { rejection: [{ obligationId: 'workspace', command: 'kernel report', errorSummary: 'Report workspace does not match the bound Step Worktree' }] };
-      }
-      return { step: named, activeWave, attempt };
-    }
-
     if (report.stepId) {
       const named = scoped.find((step) => step.stepId === report.stepId);
       if (!named) {
@@ -546,10 +411,6 @@ export const createWorkCursorApi = ({ store, projectRoot, runtimeHome, worktree 
       if (['superseded', 'cancelled'].includes(named.state)) {
         return { rejection: [{ obligationId: 'step', command: 'kernel report', errorSummary: `Step "${named.stepId}" is already ${named.state} and cannot be reported again` }] };
       }
-      const active = selectCurrentStep(steps, { planRevision: run.planRevision });
-      if (active && active.stepId !== named.stepId) {
-        return { rejection: [{ obligationId: 'step', command: 'kernel report', errorSummary: `Step "${named.stepId}" is not the current work unit; "${active.stepId}" is` }] };
-      }
       const attempt = store.getActiveStepAttempt(runId, {
         stepId: named.stepId,
         attemptId: report.attemptId,
@@ -567,6 +428,13 @@ export const createWorkCursorApi = ({ store, projectRoot, runtimeHome, worktree 
       if (report.bindingId && (!attempt || attempt.bindingId !== report.bindingId)) {
         return { rejection: [{ obligationId: 'binding', command: 'kernel report', errorSummary: 'Report binding does not match the active step attempt' }] };
       }
+      const active = selectCurrentStep(steps, { planRevision: run.planRevision });
+      // A derived parallel selection may have more than one running Step. An
+      // explicitly identified Step with its own active attempt is authoritative
+      // for that report; only an unbound competing Step is rejected.
+      if (active && active.stepId !== named.stepId && !attempt) {
+        return { rejection: [{ obligationId: 'step', command: 'kernel report', errorSummary: `Step "${named.stepId}" is not the current work unit and has no active attempt` }] };
+      }
       const incompleteCredentials = rejectIncompleteAttemptCredentials(attempt, report);
       if (incompleteCredentials) return incompleteCredentials;
       const staleAttempt = rejectStaleAttempt(attempt, named.stepId);
@@ -574,7 +442,7 @@ export const createWorkCursorApi = ({ store, projectRoot, runtimeHome, worktree 
       return { step: named, attempt };
     }
 
-    const runnable = selectExecutableSteps(steps, { planRevision: run.planRevision }).steps;
+    const runnable = deriveParallelBatch(steps, { planRevision: run.planRevision }).steps;
     const active = selectCurrentStep(steps, { planRevision: run.planRevision });
     const liveCount = scoped.filter((step) => !['passed', 'superseded', 'cancelled'].includes(step.state)).length;
     if (!active) return { step: null };

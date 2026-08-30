@@ -6,7 +6,7 @@
   "handoffTarget": "moonshot-phase-runner",
   "status": "ready",
   "blocking": false,
-  "promptBlock": "Implement Moon Relay Kernel as an isolated product track on branch kernel/moon-relay-kernel. Reuse Relay managed runtime, project identity, sandbox, verification and runtime-state primitives only through explicit adapters. Keep Relay and Kernel runtime homes, DBs, profiles, skills, hooks and completion authority isolated. Implement a single public entrypoint, adaptive workflow, stage-scoped context compiler, file-intent/SQLite-execution authority, T0-T3 proof routing, E0-E2 evidence packs, pinned upstream skill registry, sequential-default Safe Wave dry-run, and controlled profile adoption. Do not migrate Relay DB, auto-update upstream skills, enable default fanout, or mutate live account-root profiles before Phase 07 gates pass.",
+  "promptBlock": "Implement Moon Relay Kernel as an isolated product track on branch kernel/moon-relay-kernel. Reuse Relay managed runtime, project identity, sandbox, verification and runtime-state primitives only through explicit adapters. Keep Relay and Kernel runtime homes, DBs, profiles, skills, hooks and completion authority isolated. Implement a single public entrypoint, adaptive workflow, stage-scoped context compiler, file-intent/SQLite-execution authority, T0-T3 proof routing, E0-E2 evidence packs, pinned upstream skill registry, sequential-default with derived Step Ledger parallel selection, and controlled profile adoption. Do not migrate Relay DB, auto-update upstream skills, enable default fanout, or mutate live account-root profiles before Phase 07 gates pass.",
   "metadata": {
     "selectedDecisionIds": [
       "ADR-0001",
@@ -30,7 +30,7 @@
       "VS-kernel-workflow-context",
       "VS-kernel-state-authority",
       "VS-kernel-skill-eval",
-      "VS-kernel-proof-wave",
+      "VS-kernel-proof-step-selection",
       "VS-kernel-profile-dogfood",
       "VS-full-regression"
     ],
@@ -84,8 +84,8 @@
       "severity": "warning"
     },
     {
-      "code": "safe_wave_execution_deferred",
-      "message": "Kernel v1 requires Wave planning and conflict analysis; actual parallel worker execution remains behind a later maxWorkers=2 feature gate.",
+      "code": "parallel_execution_projection",
+      "message": "Parallel admission is a transient projection of existing Step Ledger facts; no durable batch, group, or integration lifecycle is created.",
       "severity": "warning"
     }
   ],

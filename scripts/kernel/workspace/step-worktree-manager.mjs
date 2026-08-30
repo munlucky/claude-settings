@@ -1,12 +1,14 @@
 import path from 'node:path';
 import { mkdir, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { runGit } from '../../lib/git-safe.mjs';
 import { stageSelectedPaths } from '../git/staging-policy.mjs';
 import { resolveKernelRuntimeHome } from '../runtime-home.mjs';
 import { registerWorkspace } from '../run/workspace-registration.mjs';
 import { observeWorkspaceIdentity } from '../run/workspace-identity.mjs';
-import { shortWorktreeToken } from '../run/active-wave.mjs';
+
+const shortExecutionToken = (value, length = 8) => createHash('sha256').update(String(value)).digest('hex').slice(0, length);
 
 const commandError = (operation, result) => Object.assign(new Error(`${operation}: ${String(result?.stderr || '').trim() || 'git command failed'}`), {
   code: `WORKTREE_${operation.toUpperCase().replaceAll('-', '_')}_FAILED`,
@@ -19,9 +21,9 @@ const assertInside = (root, target) => {
     throw Object.assign(new Error('worktree path escaped runtime worktree root'), { code: 'WORKTREE_PATH_ESCAPE' });
   }
 };
-export const worktreeRoot = ({ runtimeHome = resolveKernelRuntimeHome(), projectId, runId, waveId } = {}) => {
-  if (!projectId || !runId || !waveId) throw new Error('projectId, runId, and waveId are required for worktrees');
-  return path.join(runtimeHome, 'worktrees', `p-${shortWorktreeToken(projectId, 8)}`, `r-${shortWorktreeToken(runId, 8)}`, `w-${shortWorktreeToken(waveId, 8)}`);
+export const executionRoot = ({ runtimeHome = resolveKernelRuntimeHome(), projectId, runId } = {}) => {
+  if (!projectId || !runId) throw new Error('projectId and runId are required for execution workspaces');
+  return path.join(runtimeHome, 'worktrees', `p-${shortExecutionToken(projectId, 8)}`, `r-${shortExecutionToken(runId, 8)}`);
 };
 
 const gitOutput = (repoRoot, args) => {
@@ -50,14 +52,38 @@ export const inspectGitWorkspace = (workspaceRoot) => {
   };
 };
 
-export const canUseWayfinderWorkspace = (workspaceRoot) => inspectGitWorkspace(workspaceRoot);
+export const canUseExecutionWorkspace = (workspaceRoot) => inspectGitWorkspace(workspaceRoot);
 
-const addWorktree = async ({ repoRoot, target, baseCommit }) => {
+const addWorktree = async ({ repoRoot, target, baseCommit, containmentRoot }) => {
   await mkdir(path.dirname(target), { recursive: true });
-  assertInside(path.dirname(path.dirname(path.dirname(target))), target);
+  assertInside(containmentRoot || path.dirname(target), target);
   const result = runGit(repoRoot, ['worktree', 'add', '--detach', target, baseCommit], { maxBuffer: 32 * 1024 * 1024 });
   if (result.error || result.status !== 0) throw commandError('add', result);
-  return target;
+  return { target, reused: false };
+};
+
+const reuseWorktree = ({ target, baseCommit }) => {
+  const inspected = inspectGitWorkspace(target);
+  if (!inspected.ready) {
+    throw commandError('reuse', {
+      stderr: `existing execution workspace is not reusable: ${inspected.reason}`,
+      status: 1,
+    });
+  }
+  if (inspected.headCommitSha !== baseCommit) {
+    throw commandError('reuse', {
+      stderr: `existing execution workspace is based on ${inspected.headCommitSha}, expected ${baseCommit}`,
+      status: 1,
+    });
+  }
+  return { target, reused: true };
+};
+
+const addOrReuseWorktree = async ({ repoRoot, target, baseCommit, containmentRoot }) => {
+  assertInside(containmentRoot || path.dirname(target), target);
+  return existsSync(target)
+    ? reuseWorktree({ target, baseCommit })
+    : addWorktree({ repoRoot, target, baseCommit, containmentRoot });
 };
 
 const workspaceRecord = ({ stateStore, projectId, workspaceRoot }) => {
@@ -69,21 +95,21 @@ export const prepareStepWorktree = async ({
   repoRoot,
   baseCommit,
   runId,
-  waveId,
   stepId,
   projectId,
   runtimeHome = resolveKernelRuntimeHome(),
   stateStore = null,
 } = {}) => {
-  const root = worktreeRoot({ runtimeHome, projectId, runId, waveId });
-  const target = path.join(root, `s-${shortWorktreeToken(stepId, 4)}`);
-  await addWorktree({ repoRoot, target, baseCommit });
+  const root = executionRoot({ runtimeHome, projectId, runId });
+  const target = path.join(root, `s-${shortExecutionToken(stepId, 4)}`);
+  const prepared = await addOrReuseWorktree({ repoRoot, target, baseCommit, containmentRoot: root });
   const workspace = workspaceRecord({ stateStore, projectId, workspaceRoot: target });
   const identity = observeWorkspaceIdentity({ projectRoot: target });
   return {
     kind: 'step',
     stepId,
     workspaceRoot: target,
+    reused: prepared.reused,
     workspaceId: workspace?.workspaceId || null,
     baseCommitSha: baseCommit,
     baseWorkspaceIdentity: identity.identity,
@@ -95,18 +121,18 @@ export const prepareIntegrationWorktree = async ({
   repoRoot,
   baseCommit,
   runId,
-  waveId,
   projectId,
   runtimeHome = resolveKernelRuntimeHome(),
   stateStore = null,
 } = {}) => {
-  const root = worktreeRoot({ runtimeHome, projectId, runId, waveId });
+  const root = executionRoot({ runtimeHome, projectId, runId });
   const target = path.join(root, 'integration');
-  await addWorktree({ repoRoot, target, baseCommit });
+  const prepared = await addOrReuseWorktree({ repoRoot, target, baseCommit, containmentRoot: root });
   const workspace = workspaceRecord({ stateStore, projectId, workspaceRoot: target });
   const identity = observeWorkspaceIdentity({ projectRoot: target });
   return {
     kind: 'integration',
+    reused: prepared.reused,
     workspaceRoot: target,
     workspaceId: workspace?.workspaceId || null,
     baseCommitSha: baseCommit,
@@ -115,17 +141,21 @@ export const prepareIntegrationWorktree = async ({
   };
 };
 
-export const prepareWaveWorkspaces = async ({ repoRoot, baseCommit, runId, waveId, projectId, steps = [], runtimeHome, stateStore } = {}) => {
-  const integration = await prepareIntegrationWorktree({ repoRoot, baseCommit, runId, waveId, projectId, runtimeHome, stateStore });
+export const prepareExecutionWorkspaces = async ({ repoRoot, baseCommit, runId, projectId, steps = [], runtimeHome, stateStore } = {}) => {
+  const integration = await prepareIntegrationWorktree({ repoRoot, baseCommit, runId, projectId, runtimeHome, stateStore });
+  const createdPaths = integration.reused ? [] : [integration.workspaceRoot];
   const stepWorkspaces = [];
   try {
     for (const step of steps) {
-      stepWorkspaces.push(await prepareStepWorktree({ repoRoot, baseCommit, runId, waveId, stepId: step.stepId, projectId, runtimeHome, stateStore }));
+      const workspace = await prepareStepWorktree({ repoRoot, baseCommit, runId, stepId: step.stepId, projectId, runtimeHome, stateStore });
+      stepWorkspaces.push(workspace);
+      if (!workspace.reused) createdPaths.push(workspace.workspaceRoot);
     }
   } catch (error) {
-    // Only generated worktrees are cleaned here. A delivery workspace is never
-    // touched by preparation failure.
-    await cleanupWaveWorkspaces({ runtimeHome, projectId, runId, waveId, retain: false }).catch(() => {});
+    // Only worktrees created by this preparation attempt are cleaned here. A
+    // reusable workspace from an interrupted run is evidence for recovery and
+    // must never be deleted as a side effect of a later preparation failure.
+    await cleanupExecutionWorkspaces({ runtimeHome, projectId, runId, repoRoot, retain: false, paths: createdPaths }).catch(() => {});
     throw error;
   }
   return { integration, steps: stepWorkspaces };
@@ -137,7 +167,7 @@ export const listChangedPaths = (workspaceRoot) => {
   return [...new Set(String(result.stdout || '').split(/\r?\n/u).filter(Boolean).map((line) => line.slice(3).replaceAll('\\', '/')))].sort();
 };
 
-export const createStepResultCommit = ({ workspaceRoot, runId, waveId, stepId, attemptNumber = 1, changedPaths = [] } = {}) => {
+export const createStepResultCommit = ({ workspaceRoot, runId, stepId, attemptNumber = 1, changedPaths = [] } = {}) => {
   const measured = listChangedPaths(workspaceRoot);
   const selected = changedPaths.length > 0 ? changedPaths : measured;
   if (measured.length === 0) return { commitSha: null, changedPaths: [], patch: '' };
@@ -146,27 +176,41 @@ export const createStepResultCommit = ({ workspaceRoot, runId, waveId, stepId, a
   } catch (error) {
     throw commandError('stage-step-result', { stderr: error.message, status: 1 });
   }
-  const commit = runGit(workspaceRoot, ['commit', '--no-verify', '-m', `kernel-step ${shortWorktreeToken(runId, 8)}/${shortWorktreeToken(waveId, 8)}/${stepId}/${attemptNumber}`]);
+  const commit = runGit(workspaceRoot, ['commit', '--no-verify', '-m', `kernel-step ${shortExecutionToken(runId, 8)}/${stepId}/${attemptNumber}`]);
   if (commit.error || commit.status !== 0) throw commandError('commit-step-result', commit);
   const commitSha = gitOutput(workspaceRoot, ['rev-parse', 'HEAD']);
   const patch = String(runGit(workspaceRoot, ['show', '--format=', '--binary', commitSha]).stdout || '');
   return { commitSha, changedPaths: measured, patch };
 };
 
-export const cleanupWaveWorkspaces = async ({ runtimeHome = resolveKernelRuntimeHome(), projectId, runId, waveId, repoRoot = null, retain = true } = {}) => {
-  const root = worktreeRoot({ runtimeHome, projectId, runId, waveId });
+export const cleanupExecutionWorkspaces = async ({ runtimeHome = resolveKernelRuntimeHome(), projectId, runId, repoRoot = null, retain = true, paths = null } = {}) => {
+  const root = executionRoot({ runtimeHome, projectId, runId });
   if (retain) return { retained: true, root };
-  if (repoRoot) {
+  if (repoRoot && paths === null) {
     const listed = runGit(repoRoot, ['worktree', 'list', '--porcelain']);
     if (listed.error || listed.status !== 0) throw commandError('list-worktrees', listed);
     const paths = String(listed.stdout || '').split(/\r?\n/u).filter((line) => line.startsWith('worktree ')).map((line) => line.slice(9));
-    for (const candidate of paths.filter((candidate) => candidate.startsWith(root))) {
+    for (const candidate of paths.filter((candidate) => {
+      const relative = path.relative(path.resolve(root), path.resolve(candidate));
+      return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+    })) {
+      assertInside(root, candidate);
+      const result = runGit(repoRoot, ['worktree', 'remove', '--force', candidate]);
+      if (result.error || result.status !== 0) throw commandError('remove-worktree', result);
+    }
+    runGit(repoRoot, ['worktree', 'prune']);
+  } else if (repoRoot && Array.isArray(paths)) {
+    for (const candidate of [...new Set(paths.map((entry) => path.resolve(entry)))]) {
       assertInside(root, candidate);
       const result = runGit(repoRoot, ['worktree', 'remove', '--force', candidate]);
       if (result.error || result.status !== 0) throw commandError('remove-worktree', result);
     }
     runGit(repoRoot, ['worktree', 'prune']);
   }
-  await rm(root, { recursive: true, force: true });
+  if (paths === null) await rm(root, { recursive: true, force: true });
+  else for (const candidate of [...new Set(paths.map((entry) => path.resolve(entry)))]) {
+    assertInside(root, candidate);
+    await rm(candidate, { recursive: true, force: true });
+  }
   return { retained: false, root };
 };

@@ -1,2 +1,0 @@
-import assert from 'node:assert/strict'; import {test} from 'node:test'; import {planSafeWaves} from '../scripts/kernel/wave-plan.mjs';
-test('shared schema conflict defers a slice to the next wave',()=>{const p=planSafeWaves([{id:'a',blockedBy:[],predictedWriteSet:['schemas/user.json'],sharedSurfaces:['user-schema']},{id:'b',blockedBy:[],predictedWriteSet:['schemas/user.json'],sharedSurfaces:['user-schema']}]); assert.deepEqual(p.waves[0].slices,['a']); assert.ok(p.waves[0].deferred.includes('b')); assert.deepEqual(p.waves[1].slices,['b']);});

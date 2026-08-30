@@ -7,7 +7,7 @@ import { normalizeWorkUnitAllowedPaths } from './work-unit-scope.mjs';
 
 const FILES_CHANGED_THRESHOLD = 8;
 
-export const stepLedgerApplies = ({ contract = {}, route = {}, filesChanged = 0, safeWaveRequested = false } = {}) => {
+export const stepLedgerApplies = ({ contract = {}, route = {}, filesChanged = 0 } = {}) => {
   const stages = route?.stages || [];
   const signals = {
     longRunning: contract.taskClass === 'long-running',
@@ -15,7 +15,6 @@ export const stepLedgerApplies = ({ contract = {}, route = {}, filesChanged = 0,
     manyFiles: Number(filesChanged || contract.filesChanged || 0) > FILES_CHANGED_THRESHOLD,
     slicedRoute: stages.includes('SLICE') || stages.includes('SCHEDULE'),
     declaredDecomposition: Array.isArray(contract.steps) && contract.steps.length > 0,
-    safeWaveRequested: safeWaveRequested === true,
   };
   return { applies: Object.values(signals).some(Boolean), signals };
 };
@@ -116,9 +115,8 @@ export const planRunSteps = ({
   obligations = [],
   route = {},
   planRevision = 1,
-  safeWaveRequested = false,
 } = {}) => {
-  const decision = stepLedgerApplies({ contract, route, filesChanged: contract.filesChanged, safeWaveRequested });
+  const decision = stepLedgerApplies({ contract, route, filesChanged: contract.filesChanged });
   const declared = Array.isArray(contract.steps) ? contract.steps : [];
 
   if (!decision.applies || declared.length === 0) {

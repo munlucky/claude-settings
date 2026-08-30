@@ -12,7 +12,7 @@
 | KRN-REQ-008 minimal-correct-change derived skill | ADR-0004 | PH-05 | kernel-skills | failure baseline and skill A/B eval | `node --test tests/kernel-minimal-change-skill.test.mjs` | partial |
 | KRN-REQ-009 domain modeling, tracer slicing, TDD, debugging, completion skills | Final Design §15 | PH-05 | kernel-skills | skill manifests, scenario evals | `node --test tests/kernel-core-skills.test.mjs` | partial |
 | KRN-REQ-010 pinned upstream registry and no auto-apply | ADR-0004 | PH-05 | upstream-registry | registry, update proposal, checksum/eval receipt | `node --test tests/kernel-upstream-registry.test.mjs` | partial |
-| KRN-REQ-011 sequential default and Safe Wave dry-run/limited parallelism | ADR-0004 | PH-06 | kernel-scheduler | DAG, conflict report, Wave receipt | `node --test tests/kernel-wave-planner.test.mjs tests/kernel-wave-conflict.test.mjs` | partial |
+| KRN-REQ-011 sequential default and derived Step Ledger parallel selection | ADR-0004 | PH-06 | kernel-scheduler | dependency/write-scope admission and Step execution receipts | `node --test tests/kernel-parallel-selection.test.mjs tests/kernel-parallel-scope.test.mjs tests/kernel-parallel-admission.test.mjs` | partial |
 | KRN-REQ-012 Codex app Relay/Kernel project isolation | ADR-0001 | PH-07 | profile-builder | generated worktree profile fixtures | `npm run test:routing`; Kernel profile isolation tests | partial |
 | KRN-REQ-013 Claude/Codex/Qwen profile parity without global mixed catalog | ADR-0001 | PH-07 | profile-builder | profile manifests and discovery reports | `npm run test:routing`; `npm run test:package` | partial |
 | KRN-REQ-014 managed Node runtime and offline package reuse | Final Design §21 | PH-02 | package-runtime | runtime manifest, checksum, offline install fixtures | `npm run test:package`; managed runtime tests | partial |
@@ -32,8 +32,8 @@
 | KRN-SCN-003 Relay 트랙에서 Kernel entrypoint 호출 | 001, 002 | PH-03 | `wrong_harness`로 실행 거부 |
 | KRN-SCN-004 문서 오타 수정 | 006, 007 | PH-06 | T0/E0, 에이전트 리뷰 없음 |
 | KRN-SCN-005 인증·DB schema 변경 | 006, 007, 016 | PH-06 | T3/E2, 조건부 security/architecture review |
-| KRN-SCN-006 독립 write-set 두 슬라이스 | 011 | PH-06 | Wave eligible; v1에서는 dry-run, 이후 maxWorkers=2 |
-| KRN-SCN-007 shared schema가 겹치는 슬라이스 | 011 | PH-06 | 순차 fallback |
+| KRN-SCN-006 독립 write-set 두 슬라이스 | 011 | PH-06 | transient Step projection eligible; deterministic Host admission |
+| KRN-SCN-007 shared schema가 겹치는 슬라이스 | 011 | PH-06 | existing Step selection falls back to sequential |
 | KRN-SCN-008 upstream skill update 발견 | 010 | PH-05 | proposal 생성, 자동 적용 없음 |
 | KRN-SCN-009 세션 crash 후 재개 | 005, 020 | PH-04 | DB authority와 projection revision으로 resume |
 | KRN-SCN-010 projection 수동 수정 | 005 | PH-04 | tamper/stale 경고, DB 역갱신 없음 |

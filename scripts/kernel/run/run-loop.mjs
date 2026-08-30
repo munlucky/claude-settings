@@ -262,7 +262,6 @@ export const normalizeReport = (payload = {}) => {
     // for it.
     assignmentId: payload.assignmentId ? String(payload.assignmentId) : null,
     stepId: payload.stepId ? String(payload.stepId) : null,
-    waveId: payload.waveId ? String(payload.waveId) : null,
     planRevision: payload.planRevision === undefined || payload.planRevision === null ? undefined : Number(payload.planRevision),
     actorSessionId: payload.actorSessionId || payload.sessionId || payload.workerSessionId ? String(payload.actorSessionId || payload.sessionId || payload.workerSessionId) : null,
     workspaceId: payload.workspaceId ? String(payload.workspaceId) : null,

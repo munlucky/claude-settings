@@ -14,7 +14,7 @@
 | KRN-REQ-008 | skill | component | hermetic | tdd_red_green | minimality RED/GREEN eval | 05 |
 | KRN-REQ-009 | skill | component | hermetic | tdd_red_green | core skill scenario eval | 05 |
 | KRN-REQ-010 | cli/data | integration | local | tdd_red_green | pin/diff/proposal/no-auto-apply tests | 05 |
-| KRN-REQ-011 | workflow | integration | local | tdd_red_green | DAG/write-set/conflict receipts | 06 |
+| KRN-REQ-011 | workflow | integration | local | tdd_red_green | derived Step Ledger selection, write-scope admission, and execution receipts | 06 |
 | KRN-REQ-012 | ui/config | ui_integration | local | evidence_mandatory | Codex app project discovery report | 07 |
 | KRN-REQ-013 | profile | integration | local | evidence_mandatory | provider profile parity matrix | 07 |
 | KRN-REQ-014 | package/cli | broad_stack | local | characterization_first | Node 20/22/24 and offline package matrix | 02 |
@@ -34,8 +34,8 @@
 | KRN-SCN-003 wrong-harness 호출 | entrypoint contract test | `artifacts/kernel/phase-03/router-fixtures.json` | 실행·상태 변경 없이 거부 |
 | KRN-SCN-004 문서 오타 | proof tier test | `artifacts/kernel/phase-06/risk-tier-matrix.json` | T0/E0 |
 | KRN-SCN-005 인증·schema 변경 | proof tier test | `artifacts/kernel/phase-06/risk-tier-matrix.json` | T3/E2 |
-| KRN-SCN-006 독립 write-set | wave planner test | `artifacts/kernel/phase-06/wave-dry-run.json` | eligible, v1 실행은 순차 |
-| KRN-SCN-007 shared schema 충돌 | wave conflict test | `artifacts/kernel/phase-06/conflict-fixtures.json` | sequential fallback |
+| KRN-SCN-006 독립 write-set | parallel selection/admission tests | `artifacts/kernel/phase-06/parallel-selection.json` | transient Step projection admitted with deterministic Host dispatch |
+| KRN-SCN-007 shared schema 충돌 | parallel scope test | `artifacts/kernel/phase-06/parallel-scope.json` | existing Step selection falls back to sequential |
 | KRN-SCN-008 upstream update | registry test | `artifacts/kernel/phase-05/upstream-registry-audit.json` | proposal만 생성 |
 | KRN-SCN-009 crash resume | state authority test | `artifacts/kernel/phase-04/resume-report.json` | DB revision 기반 복구 |
 | KRN-SCN-010 projection tamper | projection test | `artifacts/kernel/phase-04/projection-tamper-report.json` | DB 역갱신 없음 |

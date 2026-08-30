@@ -1,5 +1,12 @@
 # Moon Relay Kernel 최종 설계
 
+> **Current implementation addendum (2026-08-30):** This document preserves
+> the original architecture decisions for roadmap provenance. The current
+> implementation supersedes its Wave lifecycle sections: the Step Ledger is
+> the only planning authority, parallel selection is derived, Host dispatch is
+> transient, and no persistent batch, group, parallel-plan, or integration
+> lifecycle exists. The model-visible surface remains `next` and `report`.
+
 Date: 2026-07-21  
 Version: 1.0  
 Target branch: `kernel/moon-relay-kernel`  
@@ -266,7 +273,7 @@ FRAME → SHAPE → SLICE → SCHEDULE → EXECUTE → PROVE → CLOSE
     ↓                    ↓                  ↓
 Context Compiler      Task DAG          Proof Pipeline
     ↓                    ↓                  ↓
-Repository Knowledge  Sequential/Safe Wave Evidence Authority
+Repository Knowledge  Sequential/Derived Parallel Selection Evidence Authority
     ↘                    ↓                  ↙
           Runtime State + Sandbox
                      ↓
@@ -281,8 +288,8 @@ Repository Knowledge  Sequential/Safe Wave Evidence Authority
 | Workflow Kernel | 상태 전이, skip 조건, retry/replan |
 | Context Compiler | 단계별 관련 정보 선택, redaction, budget, receipt |
 | Task Contract | objective, acceptance, scope, non-goals, risk, permissions |
-| Task DAG | slice dependency, predicted write-set, frontier |
-| Scheduler | 기본 순차 실행, 안전한 Wave만 병렬 허용 |
+| Step Ledger projection | dependency, predicted write-set, executable frontier |
+| Step selection | 기본 순차 실행, disjoint Step만 transient Host dispatch |
 | State Authority | run, lease, attempt, transition, completion |
 | Projection Writer | DB 상태를 읽기 쉬운 파일로 단방향 투영 |
 | Proof Pipeline | risk tier에 맞는 테스트·리뷰·UAT 선택 |
@@ -389,7 +396,7 @@ verification:
 
 기본은 순차 실행이다.
 
-같은 Wave에 들어가기 위한 조건:
+같은 transient Step projection에 선택되기 위한 조건:
 
 - dependency 없음
 - predicted write-set 겹침 없음
@@ -397,7 +404,8 @@ verification:
 - 서로의 설계 전제를 바꾸지 않음
 - 개별 검증과 병합 후 검증이 모두 정의됨
 
-초기 worker 수는 2로 제한한다.
+Host worker 수는 admission capability가 허용하는 범위로 제한하며, 결과는
+기존 Step attempt와 execution receipt에 귀속한다.
 
 ### 9.7 EXECUTE
 
@@ -714,7 +722,7 @@ P1:
 - `kernel-review-spec`
 - `kernel-review-standards`
 - `kernel-review-complexity`
-- `kernel-safe-wave-scheduler`
+- 별도의 scheduler lifecycle이나 public execution skill은 추가하지 않는다.
 
 P2:
 
@@ -784,39 +792,32 @@ upstream 변경 탐지
 
 ---
 
-## 17. Safe Wave Parallelism
+## 17. Derived Step parallelism
 
 ### 기본 정책
 
 ```yaml
 execution:
   defaultMode: sequential
-  waveParallelism:
-    enabled: conditional
-    maxWorkers: 2
+  parallelSelection:
+    source: step-ledger
+    durableLifecycle: false
     nestedFanout: false
 ```
 
 ### 실행 절차
 
-1. DAG 검증과 위상 정렬
-2. frontier 계산
-3. predicted write-set과 shared surface 충돌 검사
-4. worktree 순차 생성
-5. 최대 2 executor 실행
-6. 개별 fresh verification
-7. deterministic merge order
-8. Wave integration verification
-9. 실패 시 Wave 미완료 및 순차 fallback
+1. existing Step dependencies and state are read from the ledger
+2. executable Steps are selected from the current plan revision
+3. disjoint write scopes and mutation freshness are checked
+4. the Host may dispatch admitted Steps in deterministic order
+5. each worker records its existing Step attempt and execution receipt
+6. results integrate by Step ID; partial failure retains the execution root
+7. restart recomputes selection from durable Step facts
 
-executor에서 hook을 생략한 경우 생략 목록과 이유를 기록하고 Wave merge 직후 동등하거나 더 강한 검증을 실행한다.
-
-### 단계적 활성화
-
-- v1: DAG와 Wave dry-run만 제공, 실행은 순차
-- v1.1: 충돌 분석 보고서
-- v1.2: maxWorkers=2 제한 병렬
-- v2: eval 통과 후 worker 확대
+No batch, group, parallel-plan, manager, policy, or integration receipt
+lifecycle is introduced. A conflict, stale worker, or failed integration
+returns to ordinary Step retry/replan semantics.
 
 ---
 
@@ -835,20 +836,16 @@ executor에서 hook을 생략한 경우 생략 목록과 이유를 기록하고 
 
 ## 19. CLI 및 운영 표면
 
-계획된 CLI:
+Model-visible CLI:
 
 ```text
-moon-relay-kernel doctor --json
-moon-relay-kernel status --json
-moon-relay-kernel run
-moon-relay-kernel context build --stage <stage> --json
-moon-relay-kernel plan waves --dry-run --json
-moon-relay-kernel upstream check --json
-moon-relay-kernel profile materialize --target codex --dry-run --json
-moon-relay-kernel evidence close --json
+moon-relay-kernel next <run-id> --contract-json <file> --json
+moon-relay-kernel report <run-id> --report-json <file> --json
 ```
 
-초기 CLI는 기존 `bin/moonshot-relay.mjs` dispatch를 변경하지 않고 별도 `bin/moon-relay-kernel.mjs`로 시작한다.
+운영·검증용 내부 경로는 이 두 상호작용의 권한이나 execution vocabulary를
+확장하지 않는다. 별도의 plan/wave/batch 명령이나 completion authority는
+없다.
 
 ---
 
@@ -986,7 +983,7 @@ Kernel v1은 다음이 모두 만족될 때만 완료다.
 5. 파일 intent와 SQLite execution authority가 분리되고 projection 역갱신이 차단된다.
 6. T0~T3 proof tier와 E0~E2 evidence tier가 시나리오별로 선택된다.
 7. 외부 스킬 update가 자동 적용되지 않고 proposal로만 생성된다.
-8. Safe Wave dry-run이 충돌을 찾아내며 초기 실제 실행은 순차 fallback을 가진다.
+8. Step Ledger가 병렬 선택을 결정하고 Host dispatch가 transient receipt만 남기며, 충돌·실패는 기존 Step recovery로 돌아간다.
 9. Codex 앱 Relay/Kernel 프로젝트가 각각 해당 스킬만 발견한다.
 10. managed Node runtime, package, installer, uninstall, rollback 검증이 통과한다.
 11. 30개 대표 작업 A/B 평가에서 hard gate를 모두 통과한다.
@@ -999,7 +996,7 @@ Kernel v1은 다음이 모두 만족될 때만 완료다.
 - OpenAI Harness Engineering: repository knowledge, progressive disclosure, mechanical invariants
 - Matt Pocock Skills: user/model-invoked skill 분리, grilling, domain glossary, tracer tickets, spec/standards review
 - Ponytail: minimality ladder, root-cause shared seam, safety exclusions
-- GSD: thin orchestrator, fresh executor context, task waves, file-backed human visibility
+- GSD: thin orchestrator, fresh executor context, bounded slices, file-backed human visibility
 - Spec Kit: spec/plan/tasks handoff, dependency and parallel markers, scale-sensitive workflow
 - BMAD: scale-adaptive planning and risk-based testing
 - Superpowers: TDD, systematic debugging, verification before completion, skill TDD
