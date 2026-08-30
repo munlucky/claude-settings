@@ -13,7 +13,7 @@ import { resolveOptimizationModes } from './provider-prompt-policy.mjs';
 import { resolveCodexModelPolicy } from './codex-model-policy.mjs';
 import { resolveClaudeEffort } from './claude-effort-policy.mjs';
 import { buildModelCapsuleView } from './model-capsule-view.mjs';
-import { dispatchKernelRun } from './wave-dispatcher.mjs';
+import { dispatchKernelRun } from './parallel-dispatcher.mjs';
 import { isNativeDelegationRequested } from './codex-actor-router.mjs';
 
 // A decision carries no risk-shape data (security/migration/...) to the Host
@@ -54,7 +54,7 @@ const firstMappedEscalationReason = (reasons = []) => {
   return null;
 };
 
-// Resolves the Wave 5/6 provider model-policy recommendation for this turn.
+// Resolves the provider model-policy recommendation for this turn.
 // Returned unconditionally (not gated on modelPolicyMode) so shadow mode can
 // still measure what *would* have been chosen; only the caller decides
 // whether to apply it to the resolution actually used for admission and
@@ -119,7 +119,7 @@ export const buildExecutionContract = (modelInput = {}, decision = {}) => {
 };
 
 // Compiles the Host prompt envelope for one turn from the Kernel's `next`
-// payload (§Wave 3). Project-stable knowledge is left empty here: `next`
+// payload. Project-stable knowledge is left empty here: `next`
 // exposes it today only as `knowledge`, a single pre-rendered text block
 // that mixes project- and task-scoped facts, so it cannot yet be split into
 // the project-stable / volatile layers the envelope expects. Splitting that
@@ -173,12 +173,12 @@ export const buildTurnPromptEnvelope = ({ modelInput = {}, decision, resolution,
   });
 };
 
-// Wayfinder workers still use the normal Host routing boundary. The wave
-// dispatcher obtains the Kernel directive for each Step, then calls this
+// Parallel workers still use the normal Host routing boundary. The dispatcher
+// obtains the Kernel directive for each Step, then calls this
 // helper before it reaches an adapter so model resolution, route admission,
 // dispatch-time revalidation, and the prompt envelope cannot be skipped by the
 // parallel path.
-export const prepareWayfinderWorkerDispatch = async ({
+export const prepareParallelWorkerDispatch = async ({
   controlPlane,
   runId,
   adapter,
@@ -334,8 +334,8 @@ export const dispatchKernelTurn = async ({
       report: null,
     };
   }
-  const wayfinderMode = String(env.MOON_RELAY_KERNEL_WAYFINDER_MODE || 'shadow').toLowerCase();
-  if (wayfinderMode === 'on' && actionContext.skipWayfinder !== true && controlPlane?.getExecutableSteps) {
+  const parallelMode = String(env.MOON_RELAY_KERNEL_PARALLEL_MODE || 'shadow').toLowerCase();
+  if (parallelMode === 'on' && actionContext.skipParallel !== true && controlPlane?.getExecutableSteps) {
     return dispatchKernelRun({
       controlPlane,
       runId,
@@ -347,7 +347,7 @@ export const dispatchKernelTurn = async ({
       parentSessionConfig,
       env,
       actionContext,
-      prepareDispatch: ({ hosted, step }) => prepareWayfinderWorkerDispatch({
+      prepareDispatch: ({ hosted, step }) => prepareParallelWorkerDispatch({
         controlPlane,
         runId,
         adapter,
@@ -369,7 +369,7 @@ export const dispatchKernelTurn = async ({
         runtimeHome,
         env,
         overrides,
-        actionContext: { ...actionContext, skipWayfinder: true },
+        actionContext: { ...actionContext, skipParallel: true },
         parentSessionId,
         parentSessionConfig,
         toolPolicy,

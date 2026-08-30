@@ -1,7 +1,8 @@
 # Kernel execution capsule and step ledger
 
-Runtime contract for the four artifacts the Kernel added to close the gap
-between "the model said it did the work" and "the Kernel can show that it did".
+Runtime contract for the Step Ledger, execution capsules, and receipts that
+close the gap between "the model said it did the work" and "the Kernel can
+show that it did".
 The public surface is unchanged: one skill, and two runtime commands
 (`kernel next <run-id>`, `kernel report <run-id> --report-json <file>`).
 
@@ -25,8 +26,7 @@ The work cursor is persisted, not remembered.
   model-visible loop is exactly what it was.
 - The ledger decomposes only when the contract or route says the work is large:
   `taskClass: long-running`, `complex: true`, more than eight changed files, a
-  route containing `SLICE`/`SCHEDULE`, an explicit `steps:` decomposition, or a
-  requested safe wave.
+  route containing `SLICE`/`SCHEDULE`, or an explicit `steps:` decomposition.
 - `next` returns **one** step: `{ stepId, objective, acceptanceIds,
   allowedPaths, forbiddenPaths }`. `report` answers it; with a decomposed plan
   and more than one runnable unit, the `stepId` is required rather than guessed.
@@ -46,24 +46,21 @@ The work cursor is persisted, not remembered.
   threshold and make it unreachable, since stagnation outranks retry. They still
   drive the replan recommendation and suspend a Safe Wave.
 
-### Safe Wave
+## Derived parallel selection
 
-Parallel step execution is default-deny and needs all of:
+Parallel execution is a transient Host projection of the existing Step Ledger,
+not another authority. `getExecutableSteps` and `deriveParallelBatch` recompute
+the eligible Steps from dependency state, disjoint scopes, current plan and
+mutation freshness. No persisted batch, group, parallel plan, integration, or
+approval lifecycle is created.
 
-1. `safeWave.approved: true` **and** a named `approvedBy` **and** an
-   `integrationVerification.commandRef` in the task contract — declaring the
-   intent alone is a request, never an authorisation;
-2. an integration command the project actually declares (an unknown ref cannot
-   authorise parallelism);
-3. disjoint write sets across the steps of the wave;
-4. no stagnant step in the current plan.
-
-Any one missing collapses the wave back to a single step, with the reason named
-(`safe-wave-not-approved`, `safe-wave-integration-command-not-declared`,
-`safe-wave-write-set-conflict`, `safe-wave-suspended-by-stagnation`). Width is
-capped by the bounded-wave worker limit — 2, or 3 at T3 with an independent
-review. The wave is a Host concern reached through `getExecutableSteps`; `next`
-still hands the model exactly one work unit.
+Selection is admitted only when the Host has the requested capability, the
+Steps have disjoint write scopes, and no selected Step is stale or stagnant.
+The Host worker limit and deterministic result ordering are dispatch facts;
+the model-visible contract remains one `next` Step followed by one `report`.
+If selection is unsafe or a worker fails, the existing Step attempts and
+execution receipts provide the recovery boundary. Restart recomputes the
+projection from those durable facts instead of resuming a second lifecycle.
 
 ## Execution Capsule
 

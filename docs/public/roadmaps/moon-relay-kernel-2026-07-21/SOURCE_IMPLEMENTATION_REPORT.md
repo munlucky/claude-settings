@@ -15,10 +15,54 @@ This change implements the source-level contracts for phases 01 through 07 witho
 - latest-obligation completion evaluation, acceptance coverage, waiver receipts, and release evidence persistence
 - E0–E2 evidence packaging
 - internal capability skills and managed upstream proposal flow
-- T0–T3 proof routing and Safe Wave dry-run planning
+- T0–T3 proof routing and derived Step Ledger parallel selection
 - disposable Claude, Codex, and Qwen profile templates
 - contained Kernel payload installer with backup, collision detection, checksum manifest, rollback, and uninstall protection
 - focused Kernel contract tests and a 30-case evaluation corpus with executable route/evidence assertions
+
+## Compression ledger
+
+This ledger records the subtract-first implementation boundary as of
+2026-08-30. It is evidence for the compression decision, not a compatibility
+promise for the retired lifecycle.
+
+### Deleted or retired
+
+- Removed the Wave Plan, Bounded Wave, Active Wave, Wave receipt, integration
+  coordinator, and Wave dispatcher modules.
+- Removed Wave-specific run-step columns and the `run_waves` and
+  `wave_integration_receipts` tables from the current state schema; the
+  one-way migration only interrupts or retries legacy in-flight work and then
+  drops those structures.
+- Renamed the five Wave-named Step tests to parallel admission, ledger, scope,
+  selection, and runtime tests; package consumers now use the new names.
+
+### Added or retained
+
+- Added deterministic parallel selection over existing Step Ledger facts and a
+  transient Host dispatcher for execution receipts.
+- Added restart, dirty-workspace, partial-failure, stale-worker, and missing
+  worker-report recovery coverage using existing Step attempts and receipts.
+- No persisted batch, group, parallel plan, or integration lifecycle was added.
+- No WorkUnit, Batch, Manager, Service, Policy, scheduler, daemon, database
+  entity, durable group identity, or long-lived compatibility lifecycle was
+  added as a replacement.
+
+### Net judgment
+
+- Authority remains strong: Task Contract, Run/Step Ledger, revision-bound
+  Execution Capsule, execution/dispatch receipts, Evidence/Review receipts,
+  Project Knowledge, and Completion Authority remain the authorities in their
+  existing roles.
+- Execution vocabulary and persistent lifecycle count decrease: parallel
+  eligibility is derived, dispatch is transient, and only actual Step,
+  attempt, verification, review, and workspace facts remain durable.
+- The model-visible surface is unchanged at `next` and `report`; recovery,
+  mutation fencing, evidence freshness, worktree isolation, and completion
+  semantics remain receipt-bound.
+- Remaining compatibility code is limited to one-way migration handling for
+  old database rows and historical roadmap/ADR wording. No runtime adapter or
+  legacy package surface remains.
 
 ## Focused verification
 

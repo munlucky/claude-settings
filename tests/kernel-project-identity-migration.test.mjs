@@ -94,32 +94,6 @@ test('identity migration preserves SQLite state, active binding, multiple legacy
       planRevision: 1,
       executionWorkspaceId: 'legacy-package-workspace',
     }]);
-    store.createRunWave({
-      waveId: 'origin-wave',
-      runId: 'legacy-origin-run',
-      planRevision: 1,
-      status: 'planned',
-      baseCommitSha: 'origin-base',
-      baseMutationRevision: 0,
-      baseWorkspaceIdentity: digest('f'),
-      integrationWorkspaceId: 'legacy-origin-workspace',
-      integrationCommandRef: 'test:kernel',
-      approvalSource: 'fixture',
-      workerLimit: 1,
-    }, { stepIds: ['origin-step'] });
-    store.createRunWave({
-      waveId: 'package-wave',
-      runId: 'legacy-package-run',
-      planRevision: 1,
-      status: 'planned',
-      baseCommitSha: 'package-base',
-      baseMutationRevision: 0,
-      baseWorkspaceIdentity: digest('g'),
-      integrationWorkspaceId: 'legacy-package-workspace',
-      integrationCommandRef: 'test:kernel',
-      approvalSource: 'fixture',
-      workerLimit: 1,
-    }, { stepIds: ['package-step'] });
     store.createSessionBinding({
       bindingId: 'legacy-active-binding',
       sessionId: 'codex:legacy-identity',
@@ -172,8 +146,8 @@ test('identity migration preserves SQLite state, active binding, multiple legacy
     assert.equal(store.getRun('legacy-package-run').taskContract.nested.project_id, canonicalId);
     assert.equal(store.getRunSteps('legacy-origin-run')[0].executionWorkspaceId, 'legacy-origin-workspace');
     assert.equal(store.getRunSteps('legacy-package-run')[0].executionWorkspaceId, 'legacy-origin-workspace');
-    assert.equal(store.getRunWave('origin-wave').integrationWorkspaceId, 'legacy-origin-workspace');
-    assert.equal(store.getRunWave('package-wave').integrationWorkspaceId, 'legacy-origin-workspace');
+    assert.equal(store.getRunSteps('legacy-origin-run')[0].stepId, 'origin-step');
+    assert.equal(store.getRunSteps('legacy-package-run')[0].stepId, 'package-step');
     assert.equal(store.getActiveSessionBinding({ sessionId: 'codex:legacy-identity', runId: 'legacy-origin-run' }).projectId, canonicalId);
     assert.equal(store.getKnowledgeCandidates('legacy-origin-run')[0].projectId, canonicalId);
     assert.equal(store.listKnowledgeRecords({ projectId: canonicalId }).length, 2);

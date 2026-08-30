@@ -3,6 +3,11 @@ reviewId: moon-relay-kernel-plan-review-iter-01
 reviewedPackageRoot: docs/public/roadmaps/moon-relay-kernel-2026-07-21
 reviewDate: 2026-07-21
 status: accepted_after_edits
+currentImplementationNote: >-
+  This historical review is superseded by the 2026-08-30 compression: the
+  Step Ledger remains the only planning authority, parallel selection is
+  derived, Host dispatch is transient, and no persistent replacement lifecycle
+  is retained.
 perspectives:
   - architecture_authority
   - operational_simplicity
@@ -25,7 +30,7 @@ blockingFindings:
   - id: PQR-003
     finding: Task DAG lacked a bounded execution scheduling contract.
     disposition: accepted_with_staging
-    acceptedChange: Add SCHEDULE and Safe Wave dry-run; keep sequential default and defer worker fanout.
+    acceptedChange: Keep sequential default and derive parallel selection from Step Ledger facts; Host worker fanout remains transient and receipt-bound.
     affectedDocs:
       - ADR/ADR-0004-managed-upstream-and-safe-wave.md
       - 06-adaptive-proof-safe-wave-v1.ko.md
@@ -50,7 +55,7 @@ rejectedChanges:
     reason: Loses atomic lease, attempt, transition and completion semantics; file locks would recreate a weaker state engine.
   - proposal: Automatically synchronize and apply upstream skill changes.
     reason: Breaks reproducibility and introduces supply-chain and model-regression risk.
-  - proposal: Enable multi-agent Wave execution by default.
+  - proposal: Enable multi-agent parallel execution by default.
     reason: Vertical slices may share semantic surfaces despite missing explicit dependencies.
   - proposal: Force fresh agents at every workflow stage.
     reason: Adds spawn and context reconstruction cost inside one bounded objective.

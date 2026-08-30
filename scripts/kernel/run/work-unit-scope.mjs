@@ -40,8 +40,6 @@ export const requiresImplementationWorkUnitScope = ({ contract = null, step = nu
     && DURABLE_STEP_FIELDS.some((field) => Object.prototype.hasOwnProperty.call(step, field)),
   );
   const filesChanged = Number(source.filesChanged || 0);
-  const safeWave = source.safeWave;
-
   return acceptanceCount >= MULTI_ACCEPTANCE_THRESHOLD
     || declaredSteps
     || durableNonSyntheticStep
@@ -54,8 +52,6 @@ export const requiresImplementationWorkUnitScope = ({ contract = null, step = nu
     || flags.independentDeliverables === true
     || source.safeParallelSplit === true
     || flags.safeParallelSplit === true
-    || safeWave === true
-    || (safeWave && typeof safeWave === 'object' && (safeWave.requested === true || safeWave.approved === true))
     || filesChanged > 8
     || (Array.isArray(source.requiredObligations) && source.requiredObligations.length > 1)
     || (Array.isArray(source.requiredVerifications) && source.requiredVerifications.length > 1);

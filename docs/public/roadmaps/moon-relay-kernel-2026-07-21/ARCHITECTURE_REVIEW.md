@@ -35,17 +35,28 @@ Expected effect:
 - 사람이 읽을 수 있는 상태 제공
 - 양방향 동기화 제거
 
-### F-02 Wave execution 부재
+### F-02 Parallel execution boundary
 
-Decision: accepted with staged adoption.
+Decision: resolved by subtract-first compression.
 
-Task DAG와 wave planner는 필요하다. 다만 초기 구현의 기본값은 sequential이며 v1은 dry-run과 충돌 분석부터 제공한다. 실제 병렬 실행은 maxWorkers=2, 독립 write-set, deterministic merge, integration verification을 충족할 때만 활성화한다.
+The Step Ledger is the only planning authority. Dependency and write-scope
+facts derive a transient parallel projection for Host dispatch; no durable
+Wave, batch, group, parallel-plan, or integration lifecycle is created. The
+model still receives one `next` Step and answers with one `report`.
 
 Expected effect:
 
-- 안전한 작업만 wall-clock 단축
-- 초기 scheduler 복잡성 제한
-- 순차 fallback 유지
+- safe independent Steps may reduce wall-clock time without a second authority
+- restart and partial failure recover from existing Step attempts and receipts
+- scope conflict or stale evidence falls back to ordinary Step selection
+
+## Current compression decision
+
+The 2026-08-30 implementation preserves the authority chain and recovery
+fences while deleting the redundant Wave lifecycle. Parallel admission is a
+derived calculation, the Host dispatcher is transient, and the package has no
+Wave-named runtime/test consumer. The deletion ledger and current evidence are
+recorded in `SOURCE_IMPLEMENTATION_REPORT.md`.
 
 ### F-03 고정 3축 리뷰 오버헤드
 

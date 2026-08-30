@@ -45,13 +45,11 @@ export const assertStepTransition = (from, to) => {
   return true;
 };
 
-import { dependenciesSatisfiedWithIntegration } from './active-wave.mjs';
-
-// Dependencies are satisfied only by a PASSED step. A Wayfinder dependency is
-// additionally blocked until its result has been integrated into Delivery.
+// Dependencies are satisfied only by a PASSED step. Execution history is kept
+// on attempts and receipts; it is not a second dependency lifecycle.
 export const dependenciesSatisfied = (step, steps = []) => {
   const byId = new Map(steps.map((entry) => [entry.stepId, entry]));
-  return dependenciesSatisfiedWithIntegration(step, steps);
+  return (step?.dependencyIds || []).every((dependencyId) => byId.get(dependencyId)?.state === 'passed');
 };
 
 export const liveSteps = (steps = [], planRevision = null) => steps.filter((step) => (
@@ -74,8 +72,7 @@ export const scopesOverlap = (left, right) => {
 // are actually runnable now.
 export const selectExecutableSteps = (steps = [], {
   planRevision = null,
-  safeWave = false,
-  integrationVerification = null,
+  parallel = false,
   maxWorkers = 2,
 } = {}) => {
   const runnable = steps
@@ -85,11 +82,11 @@ export const selectExecutableSteps = (steps = [], {
     .sort((a, b) => a.sequence - b.sequence);
 
   if (runnable.length === 0) return { steps: [], reason: 'no-runnable-step' };
-  if (!safeWave) return { steps: runnable.slice(0, 1), reason: 'sequential' };
+  if (!parallel) return { steps: runnable.slice(0, 1), reason: 'sequential' };
 
-  // A parallel wave is only safe when the write sets are disjoint AND an
-  // integration verification exists to catch what per-step evidence cannot.
-  if (!integrationVerification) return { steps: runnable.slice(0, 1), reason: 'safe-wave-requires-integration-verification' };
+  // Parallel execution is a derived view of the current ledger. It is safe
+  // only when the runnable Steps have explicit, disjoint write scopes. There
+  // is no persisted batch identity or completion state to reconcile later.
   const selected = [];
   const claimed = [];
   for (const step of runnable) {
@@ -102,15 +99,22 @@ export const selectExecutableSteps = (steps = [], {
     if (conflicts) break;
     claimed.push(paths);
     selected.push(step);
-    // The wave is capped by the bounded-wave worker limit; overflow stays for
-    // the next wave rather than widening the parallelism.
+    // The derived batch is capped by the host's transient worker bound;
+    // overflow remains in the ledger for the next selection.
     if (selected.length >= maxWorkers) break;
   }
   return {
     steps: selected,
-    reason: selected.length > 1 ? 'safe-wave' : 'safe-wave-write-set-conflict',
+    reason: selected.length > 1 ? 'parallel' : 'parallel-scope-conflict',
   };
 };
+
+// Named for the result, not for a lifecycle. Callers may recompute this after
+// every receipt or restart without consulting another persisted authority.
+export const deriveParallelBatch = (steps = [], options = {}) => selectExecutableSteps(steps, {
+  ...options,
+  parallel: true,
+});
 
 export const currentStep = (steps = [], { planRevision = null } = {}) => {
   const active = steps.find((step) => ['running', 'reported', 'verifying'].includes(step.state)
@@ -128,9 +132,7 @@ export const allStepsPassed = (steps = [], planRevision = null) => {
   // not a finished one — treating that as settled would let a lost replacement
   // step complete the run.
   if (scoped.length === 0) return steps.length === 0;
-  return scoped.every((step) => TERMINAL_STEP_STATES.includes(step.state)
-      && (step.integrationState || 'not-required') !== 'pending'
-      && (step.integrationState || 'not-required') !== 'failed')
+  return scoped.every((step) => TERMINAL_STEP_STATES.includes(step.state))
     && scoped.some((step) => step.state === 'passed');
 };
 

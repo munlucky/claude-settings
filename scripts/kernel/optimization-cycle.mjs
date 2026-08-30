@@ -85,21 +85,21 @@ export const OPTIMIZATION_DISPOSITIONS = Object.freeze([
   }),
   item({
     id: 'O-8',
-    title: 'Wayfinder Parallel Execution',
+    title: 'Derived Parallel Execution',
     highRoi: false,
     disposition: 'DEFERRED',
-    decision: 'Parallel execution is retained as an optional bounded capability, but no independent conflict-free work-unit set with a measured latency or quality benefit appeared in this cycle.',
+    decision: 'Parallel execution is retained as an optional derived capability; no independent conflict-free Step set with a measured latency or quality benefit appeared in this cycle.',
     measurement: 'Not measured: there is no representative parallel-vs-sequential workload baseline.',
-    evidenceRefs: evidence('scripts/kernel/run/bounded-wave.mjs', 'tests/kernel-bounded-wave.test.mjs', 'tests/kernel-wayfinder-runtime.test.mjs'),
+    evidenceRefs: evidence('scripts/kernel/run/run-step-ledger.mjs', 'tests/kernel-run-step-ledger.test.mjs', 'tests/kernel-wayfinder-runtime.test.mjs'),
   }),
   item({
     id: 'O-9',
     title: 'Delegation Budget',
     highRoi: false,
     disposition: 'REJECTED',
-    decision: 'A second budget layer is rejected because bounded work-unit, capsule, and wave guards already constrain delegation without introducing a new orchestration state.',
+    decision: 'A second budget layer is rejected because Step scope and Capsule guards already constrain delegation without introducing a new orchestration state.',
     measurement: 'Contract measurement is available: bounded scope and worker-limit tests pass without unbounded delegation paths.',
-    evidenceRefs: evidence('scripts/kernel/run/bounded-wave.mjs', 'tests/kernel-execution-capsule-budget.test.mjs', 'tests/kernel-bounded-work-unit.test.mjs'),
+    evidenceRefs: evidence('scripts/kernel/run/run-step-ledger.mjs', 'tests/kernel-execution-capsule-budget.test.mjs', 'tests/kernel-bounded-work-unit.test.mjs'),
   }),
   item({
     id: 'O-10',
@@ -260,4 +260,3 @@ export function validateOptimizationCycle(dispositions = OPTIMIZATION_DISPOSITIO
     findings,
   };
 }
-

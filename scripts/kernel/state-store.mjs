@@ -16,7 +16,6 @@ import { sanitizePersistentPayload, sanitizePersistentText } from './persistent-
 import { buildSuccessorKey } from './run/successor-key.mjs';
 import { emptyKnowledgeDoctorFinding } from './knowledge/capture.mjs';
 import { exactEvidenceIdentityMatch } from './proof/evidence-reuse.mjs';
-import { assertWaveTransition } from './run/active-wave.mjs';
 import { normalizeAcceptanceCoverage } from './task/task-contract.mjs';
 import { deriveKernelWorktreeId } from './run/worktree-binding.mjs';
 import {
@@ -479,14 +478,11 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       workspace_identity_start TEXT,
       workspace_identity_end TEXT,
       blocked_reason TEXT,
-      wave_id TEXT,
       execution_workspace_id TEXT,
       base_workspace_identity TEXT,
       result_workspace_identity TEXT,
       result_commit_sha TEXT,
       patch_digest TEXT,
-      integration_state TEXT NOT NULL DEFAULT 'not-required',
-      integrated_at TEXT,
       created_at TEXT NOT NULL,
       started_at TEXT,
       completed_at TEXT,
@@ -521,7 +517,6 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       changed_paths_json TEXT NOT NULL DEFAULT '[]',
       result_digest TEXT,
       failure_reasons_json TEXT NOT NULL DEFAULT '[]',
-      wave_id TEXT,
       workspace_id TEXT,
       workspace_root_hash TEXT,
       base_workspace_identity TEXT,
@@ -535,41 +530,6 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       FOREIGN KEY(run_id) REFERENCES runs(run_id)
     );
     CREATE INDEX IF NOT EXISTS idx_run_step_attempts_step ON run_step_attempts(run_id, step_id);
-    CREATE TABLE IF NOT EXISTS run_waves (
-      wave_id TEXT PRIMARY KEY,
-      run_id TEXT NOT NULL,
-      plan_revision INTEGER NOT NULL,
-      status TEXT NOT NULL,
-      base_commit_sha TEXT NOT NULL,
-      base_mutation_revision INTEGER NOT NULL,
-      base_workspace_identity TEXT NOT NULL,
-      integration_workspace_id TEXT,
-      integration_command_ref TEXT NOT NULL,
-      approval_source TEXT NOT NULL,
-      worker_limit INTEGER NOT NULL,
-      failure_code TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      FOREIGN KEY(run_id) REFERENCES runs(run_id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_run_waves_run ON run_waves(run_id, created_at);
-    CREATE TABLE IF NOT EXISTS wave_integration_receipts (
-      receipt_id TEXT PRIMARY KEY,
-      wave_id TEXT NOT NULL,
-      run_id TEXT NOT NULL,
-      attempt INTEGER NOT NULL,
-      status TEXT NOT NULL,
-      pre_integration_identity TEXT NOT NULL,
-      post_integration_identity TEXT,
-      delivery_workspace_identity TEXT,
-      integration_verification_id TEXT,
-      receipt_digest TEXT NOT NULL,
-      receipt_json TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      FOREIGN KEY(run_id) REFERENCES runs(run_id),
-      FOREIGN KEY(wave_id) REFERENCES run_waves(wave_id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_wave_integration_receipts_wave ON wave_integration_receipts(wave_id, attempt);
     CREATE TABLE IF NOT EXISTS run_capsules (
       capsule_id TEXT PRIMARY KEY,
       run_id TEXT NOT NULL,
@@ -704,15 +664,11 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
   addCol('session_bindings', 'closed_at', 'TEXT');
   addCol('session_bindings', 'close_reason', 'TEXT');
   addCol('session_bindings', 'successor_run_id', 'TEXT');
-  addCol('run_steps', 'wave_id', 'TEXT');
   addCol('run_steps', 'execution_workspace_id', 'TEXT');
   addCol('run_steps', 'base_workspace_identity', 'TEXT');
   addCol('run_steps', 'result_workspace_identity', 'TEXT');
   addCol('run_steps', 'result_commit_sha', 'TEXT');
   addCol('run_steps', 'patch_digest', 'TEXT');
-  addCol('run_steps', 'integration_state', "TEXT DEFAULT 'not-required'");
-  addCol('run_steps', 'integrated_at', 'TEXT');
-  addCol('run_step_attempts', 'wave_id', 'TEXT');
   addCol('run_step_attempts', 'workspace_id', 'TEXT');
   addCol('run_step_attempts', 'workspace_root_hash', 'TEXT');
   addCol('run_step_attempts', 'base_workspace_identity', 'TEXT');
@@ -737,6 +693,29 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
   addCol('review_receipts', 'step_id', 'TEXT');
   addCol('review_receipts', 'reviewer_binding_id', 'TEXT');
   addCol('review_receipts', 'implementer_attempt_id', 'TEXT');
+
+  // Remove the retired execution lifecycle from databases created before the
+  // compression. In-flight grouped executions become ordinary retryable Step
+  // attempts; their individual receipts remain the recovery record. The
+  // migration is intentionally one-way: no compatibility table or adapter is
+  // recreated after the authoritative lifecycle is gone.
+  try {
+    db.exec(`
+      UPDATE run_step_attempts
+      SET status='interrupted', finished_at=COALESCE(finished_at, '${new Date().toISOString()}'),
+          failure_category=COALESCE(failure_category, 'provider/infrastructure')
+      WHERE wave_id IS NOT NULL AND status IN ('started', 'running');
+      UPDATE run_steps
+      SET state='failed', blocked_reason=COALESCE(blocked_reason, 'execution-recovered-after-lifecycle-removal')
+      WHERE integration_state='pending' AND state NOT IN ('passed', 'superseded', 'cancelled');
+    `);
+  } catch {}
+  try { db.exec('ALTER TABLE run_steps DROP COLUMN wave_id'); } catch {}
+  try { db.exec('ALTER TABLE run_steps DROP COLUMN integration_state'); } catch {}
+  try { db.exec('ALTER TABLE run_steps DROP COLUMN integrated_at'); } catch {}
+  try { db.exec('ALTER TABLE run_step_attempts DROP COLUMN wave_id'); } catch {}
+  try { db.exec('DROP TABLE IF EXISTS wave_integration_receipts'); } catch {}
+  try { db.exec('DROP TABLE IF EXISTS run_waves'); } catch {}
 
   // Worktree identity is a deterministic projection of the existing project
   // workspace registry. Backfill it in place so legacy workspaceId-bound Runs
@@ -3231,7 +3210,7 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         });
       }
       const isBoundWorkerWorkspace = run.workspaceId !== workspaceId
-        && this.getRunSteps(runId).some((step) => step.executionWorkspaceId === workspaceId && step.waveId);
+        && this.getRunSteps(runId).some((step) => step.executionWorkspaceId === workspaceId);
       if (run.workspaceId && run.workspaceId !== workspaceId && !isBoundWorkerWorkspace) {
         throw Object.assign(new Error('run_workspace_mismatch'), {
           code: 'run_workspace_mismatch',
@@ -3858,74 +3837,21 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       return rows.map((row) => safeJsonParse(row.admissionJson, null)).filter(Boolean);
     },
 
-    createRunWave(wave, { stepIds = [] } = {}) {
-      if (!wave?.waveId || !wave.runId) throw new Error('wave identity is required');
-      const create = db.transaction(() => {
-        const active = db.prepare(`SELECT wave_id as waveId FROM run_waves WHERE run_id=? AND status IN ('planned','preparing','dispatching','collecting','integrating','verifying') LIMIT 1`).get(wave.runId);
-        if (active) throw Object.assign(new Error(`Run ${wave.runId} already has active wave ${active.waveId}`), { code: 'ACTIVE_WAVE_EXISTS' });
-        db.prepare(`
-          INSERT INTO run_waves(wave_id, run_id, plan_revision, status, base_commit_sha, base_mutation_revision, base_workspace_identity, integration_workspace_id, integration_command_ref, approval_source, worker_limit, failure_code, created_at, updated_at)
-          VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(
-          wave.waveId, wave.runId, Number(wave.planRevision), wave.status || 'planned', wave.baseCommitSha,
-          Number(wave.baseMutationRevision || 0), wave.baseWorkspaceIdentity, wave.integrationWorkspaceId || null,
-          wave.integrationCommandRef, wave.approvalSource, Number(wave.workerLimit || 1), wave.failureCode || null,
-          wave.createdAt || now(), wave.updatedAt || now(),
-        );
-        for (const stepId of stepIds.length ? stepIds : (wave.stepIds || [])) {
-          db.prepare(`UPDATE run_steps SET wave_id=?, integration_state='pending', updated_at=? WHERE run_id=? AND step_id=? AND plan_revision=?`)
-            .run(wave.waveId, now(), wave.runId, stepId, Number(wave.planRevision));
-        }
-      });
-      create();
-      return this.getRunWave(wave.waveId);
-    },
-
-    getRunWave(waveId) {
-      const row = db.prepare(`SELECT wave_id as waveId, run_id as runId, plan_revision as planRevision, status, base_commit_sha as baseCommitSha, base_mutation_revision as baseMutationRevision, base_workspace_identity as baseWorkspaceIdentity, integration_workspace_id as integrationWorkspaceId, integration_command_ref as integrationCommandRef, approval_source as approvalSource, worker_limit as workerLimit, failure_code as failureCode, created_at as createdAt, updated_at as updatedAt FROM run_waves WHERE wave_id=?`).get(waveId);
-      if (!row) return null;
-      return { ...row, stepIds: db.prepare(`SELECT step_id as stepId FROM run_steps WHERE run_id=? AND wave_id=? ORDER BY sequence ASC`).all(row.runId, row.waveId).map((step) => step.stepId) };
-    },
-
-    getActiveWave(runId) {
-      const row = db.prepare(`SELECT wave_id as waveId FROM run_waves WHERE run_id=? AND status IN ('planned','preparing','dispatching','collecting','integrating','verifying') ORDER BY created_at DESC LIMIT 1`).get(runId);
-      return row ? this.getRunWave(row.waveId) : null;
-    },
-
-    listRunWaves(runId) {
-      return db.prepare(`SELECT wave_id as waveId FROM run_waves WHERE run_id=? ORDER BY created_at ASC`).all(runId).map((row) => this.getRunWave(row.waveId));
-    },
-
-    updateRunWave(waveId, patch = {}) {
-      const current = this.getRunWave(waveId);
-      if (!current) throw new Error(`Wave ${waveId} not found`);
-      if (patch.status && patch.status !== current.status) assertWaveTransition(current.status, patch.status);
-      const columns = { status: 'status', integrationWorkspaceId: 'integration_workspace_id', failureCode: 'failure_code', updatedAt: 'updated_at' };
-      const assignments = [];
-      const values = [];
-      for (const [key, column] of Object.entries(columns)) {
-        if (patch[key] === undefined) continue;
-        assignments.push(`${column}=?`);
-        values.push(patch[key]);
-      }
-      if (assignments.length === 0) return current;
-      if (patch.updatedAt === undefined) { assignments.push('updated_at=?'); values.push(now()); }
-      db.prepare(`UPDATE run_waves SET ${assignments.join(', ')} WHERE wave_id=?`).run(...values, waveId);
-      return this.getRunWave(waveId);
-    },
-
-    recordStepResult(runId, waveId, stepId, result = {}) {
+    // A worker result is an execution fact attached to the Step and its
+    // canonical attempt. It does not open a second lifecycle or require a
+    // group identity to become recoverable.
+    recordStepResult(runId, stepId, result = {}) {
       const step = this.getRunStep(runId, stepId);
-      if (!step || step.waveId !== waveId) throw Object.assign(new Error('step-wave-mismatch'), { code: 'STEP_WAVE_MISMATCH' });
+      if (!step) throw Object.assign(new Error('step-not-found'), { code: 'STEP_NOT_FOUND' });
       const updated = this.updateRunStep(runId, stepId, {
         resultWorkspaceIdentity: result.resultWorkspaceIdentity,
         resultCommitSha: result.resultCommitSha,
         patchDigest: result.patchDigest,
         resultDigest: result.receiptDigest || result.resultDigest,
         workspaceIdentityEnd: result.resultWorkspaceIdentity,
-        integrationState: 'pending',
       });
-      const attempt = this.getStepAttempts(runId, { stepId }).filter((entry) => entry.waveId === waveId).at(-1);
+      const attempt = this.getActiveStepAttempt(runId, { stepId })
+        || this.getStepAttempts(runId, { stepId }).at(-1);
       if (attempt) this.updateStepAttempt(attempt.id, {
         resultWorkspaceIdentity: result.resultWorkspaceIdentity,
         resultCommitSha: result.resultCommitSha,
@@ -3950,63 +3876,6 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       return updated;
     },
 
-    markStepIntegrated(runId, stepId, { receiptId, integratedAt = now() } = {}) {
-      return this.updateRunStep(runId, stepId, { integrationState: 'integrated', resultDigest: receiptId || undefined, integratedAt });
-    },
-
-    recordWaveIntegrationReceipt(receipt) {
-      if (!receipt?.receiptId || !receipt.waveId || !receipt.runId) throw new Error('integration receipt identity is required');
-      db.prepare(`
-        INSERT INTO wave_integration_receipts(receipt_id, wave_id, run_id, attempt, status, pre_integration_identity, post_integration_identity, delivery_workspace_identity, integration_verification_id, receipt_digest, receipt_json, created_at)
-        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        receipt.receiptId, receipt.waveId, receipt.runId, Number(receipt.attempt || 1), receipt.status,
-        receipt.preIntegrationIdentity, receipt.postIntegrationIdentity || null, receipt.deliveryWorkspaceIdentity || null,
-        receipt.integrationVerificationRef || null, receipt.receiptDigest, persistentJson(receipt), receipt.createdAt || now(),
-      );
-      return receipt;
-    },
-
-    getWaveIntegrationReceipts(waveId) {
-      return db.prepare(`SELECT receipt_json as receiptJson FROM wave_integration_receipts WHERE wave_id=? ORDER BY attempt ASC, created_at ASC`).all(waveId)
-        .map((row) => safeJsonParse(row.receiptJson, null)).filter(Boolean);
-    },
-
-    completeRunWave(runId, waveId, receipt = null) {
-      const wave = this.getRunWave(waveId);
-      if (!wave || wave.runId !== runId) throw new Error('wave-run-mismatch');
-      const complete = db.transaction(() => {
-        if (receipt) {
-          const existing = db.prepare(`SELECT receipt_id FROM wave_integration_receipts WHERE receipt_id=?`).get(receipt.receiptId);
-          if (!existing) this.recordWaveIntegrationReceipt(receipt);
-        }
-        db.prepare(`UPDATE run_steps SET integration_state='integrated', integrated_at=COALESCE(integrated_at, ?), updated_at=? WHERE run_id=? AND wave_id=?`).run(now(), now(), runId, waveId);
-        db.prepare(`UPDATE run_waves SET status='integrated', updated_at=? WHERE wave_id=?`).run(now(), waveId);
-      });
-      complete();
-      return this.getRunWave(waveId);
-    },
-
-    failRunWave(runId, waveId, failureCode, status = 'failed') {
-      const wave = this.getRunWave(waveId);
-      if (!wave || wave.runId !== runId) throw new Error('wave-run-mismatch');
-      if (wave.status !== status) this.updateRunWave(waveId, { status, failureCode });
-      // A failed integration must return the affected Steps to the executable
-      // frontier. Leaving them as passed/pending makes the failed Wave terminal
-      // from the ledger's perspective: selectExecutableSteps only considers
-      // ready/failed Steps and dependency satisfaction rejects pending
-      // integration. Preserve genuinely integrated results, but make every
-      // other Step retryable with an explicit failed integration state.
-      db.prepare(`
-        UPDATE run_steps
-        SET state=CASE WHEN integration_state='integrated' THEN state ELSE 'failed' END,
-            integration_state=CASE WHEN integration_state='integrated' THEN 'superseded' ELSE 'failed' END,
-            updated_at=?
-        WHERE run_id=? AND wave_id=?
-      `).run(now(), runId, waveId);
-      return this.getRunWave(waveId);
-    },
-
     // Run Step Ledger (K2). The work cursor is state, not chat context: which
     // unit is running, what it may touch, what it must prove, and how many times
     // it has already failed all survive a process restart.
@@ -4023,8 +3892,8 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         }
       }
       const insert = db.prepare(`
-        INSERT INTO run_steps(step_id, run_id, sequence, objective, state, plan_revision, dependency_ids_json, allowed_paths_json, forbidden_paths_json, acceptance_ids_json, obligation_ids_json, expected_outputs_json, assigned_role, synthetic, migration_origin, wave_id, execution_workspace_id, base_workspace_identity, result_workspace_identity, result_commit_sha, patch_digest, integration_state, integrated_at, created_at, updated_at)
-        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO run_steps(step_id, run_id, sequence, objective, state, plan_revision, dependency_ids_json, allowed_paths_json, forbidden_paths_json, acceptance_ids_json, obligation_ids_json, expected_outputs_json, assigned_role, synthetic, migration_origin, execution_workspace_id, base_workspace_identity, result_workspace_identity, result_commit_sha, patch_digest, created_at, updated_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(run_id, step_id) DO NOTHING
       `);
       for (const step of steps) {
@@ -4034,9 +3903,9 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
           JSON.stringify(step.dependencyIds || []), JSON.stringify(step.allowedPaths || []), JSON.stringify(step.forbiddenPaths || []),
           JSON.stringify(step.acceptanceIds || []), JSON.stringify(step.obligationIds || []), JSON.stringify(step.expectedOutputs || []),
           String(step.assignedRole || 'implementer'), step.synthetic ? 1 : 0, step.migrationOrigin || null,
-          step.waveId || null, step.executionWorkspaceId || null, step.baseWorkspaceIdentity || null,
+          step.executionWorkspaceId || null, step.baseWorkspaceIdentity || null,
           step.resultWorkspaceIdentity || null, step.resultCommitSha || null, step.patchDigest || null,
-          step.integrationState || 'not-required', step.integratedAt || null, now(), now(),
+          now(), now(),
         );
       }
       return this.getRunSteps(runId);
@@ -4068,14 +3937,11 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         workspaceIdentityStart: row.workspace_identity_start || null,
         workspaceIdentityEnd: row.workspace_identity_end || null,
         blockedReason: row.blocked_reason || null,
-        waveId: row.wave_id || null,
         executionWorkspaceId: row.execution_workspace_id || null,
         baseWorkspaceIdentity: row.base_workspace_identity || null,
         resultWorkspaceIdentity: row.result_workspace_identity || null,
         resultCommitSha: row.result_commit_sha || null,
         patchDigest: row.patch_digest || null,
-        integrationState: row.integration_state || 'not-required',
-        integratedAt: row.integrated_at || null,
         createdAt: row.created_at,
         startedAt: row.started_at || null,
         completedAt: row.completed_at || null,
@@ -4096,14 +3962,11 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         workspaceIdentityStart: 'workspace_identity_start',
         workspaceIdentityEnd: 'workspace_identity_end',
         blockedReason: 'blocked_reason',
-        waveId: 'wave_id',
         executionWorkspaceId: 'execution_workspace_id',
         baseWorkspaceIdentity: 'base_workspace_identity',
         resultWorkspaceIdentity: 'result_workspace_identity',
         resultCommitSha: 'result_commit_sha',
         patchDigest: 'patch_digest',
-        integrationState: 'integration_state',
-        integratedAt: 'integrated_at',
         startedAt: 'started_at',
         completedAt: 'completed_at',
       };
@@ -4221,7 +4084,6 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       workspaceIdentityStart = null,
       summary = null,
       changedPaths = [],
-      waveId = null,
       workspaceId = null,
       workspaceRootHash = null,
       baseWorkspaceIdentity = null,
@@ -4251,13 +4113,13 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       });
       const attemptNumber = this.nextStepAttemptNumber(runId, stepId);
       const result = db.prepare(`
-        INSERT INTO run_step_attempts(attempt_id, run_id, step_id, attempt_number, binding_id, actor_session_id, capsule_id, capsule_digest, admission_id, route_decision_id, usage_receipt_id, parent_attempt_id, provenance_kind, plan_revision, mutation_revision, retry_reason, failure_category, status, workspace_identity_start, summary, changed_paths_json, wave_id, workspace_id, workspace_root_hash, base_workspace_identity, verification_refs_json, knowledge_observation_refs_json, started_at)
-        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'started', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO run_step_attempts(attempt_id, run_id, step_id, attempt_number, binding_id, actor_session_id, capsule_id, capsule_digest, admission_id, route_decision_id, usage_receipt_id, parent_attempt_id, provenance_kind, plan_revision, mutation_revision, retry_reason, failure_category, status, workspace_identity_start, summary, changed_paths_json, workspace_id, workspace_root_hash, base_workspace_identity, verification_refs_json, knowledge_observation_refs_json, started_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'started', ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         provenance.attemptId, runId, stepId, attemptNumber, provenance.bindingId, hashSessionId(actorSessionId), provenance.capsuleId,
         provenance.capsuleDigest, provenance.admissionId, routeDecisionId, usageReceiptId, provenance.parentAttemptId,
         provenance.provenanceKind, provenance.planRevision, provenance.mutationRevision, provenance.retryReason,
-        provenance.failureCategory, workspaceIdentityStart, summary, JSON.stringify(changedPaths), waveId, workspaceId,
+        provenance.failureCategory, workspaceIdentityStart, summary, JSON.stringify(changedPaths), workspaceId,
         workspaceRootHash, baseWorkspaceIdentity, JSON.stringify(verificationRefs), JSON.stringify(knowledgeObservationRefs), now(),
       );
       db.prepare(`UPDATE run_steps SET attempt_count=attempt_count+1, updated_at=? WHERE run_id=? AND step_id=?`).run(now(), runId, stepId);
@@ -4373,7 +4235,6 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         changedPaths: safeJsonParse(row.changed_paths_json, []),
         resultDigest: row.result_digest || null,
         failureReasons: safeJsonParse(row.failure_reasons_json, []),
-        waveId: row.wave_id || null,
         workspaceId: row.workspace_id || null,
         workspaceRootHash: row.workspace_root_hash || null,
         baseWorkspaceIdentity: row.base_workspace_identity || null,
@@ -4395,14 +4256,13 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       return row ? this.getStepAttempt(row.id) : null;
     },
 
-    getActiveStepAttempt(runId, { stepId = null, attemptId = null, capsuleId = null, waveId = null } = {}) {
+    getActiveStepAttempt(runId, { stepId = null, attemptId = null, capsuleId = null } = {}) {
       const activeStatuses = ['started', 'reported', 'verifying'];
       if (attemptId) {
         const requested = this.getStepAttemptByAttemptId(attemptId, { runId });
         return requested && activeStatuses.includes(requested.status) ? requested : null;
       }
       const candidates = this.getStepAttempts(runId, { stepId })
-        .filter((attempt) => !waveId || attempt.waveId === waveId)
         .filter((attempt) => !capsuleId || (attempt.capsuleId || attempt.capsuleDigest) === capsuleId)
         .filter((attempt) => activeStatuses.includes(attempt.status));
       return candidates.at(-1) || null;

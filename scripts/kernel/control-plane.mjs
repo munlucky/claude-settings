@@ -3,8 +3,6 @@ import path from 'node:path';
 import { openKernelStateStore } from './state-store.mjs';
 import { buildContextReceipt } from './context-build.mjs';
 import { resolveProofRoute } from './proof-route.mjs';
-import { planDryRunWave } from './wave-plan.mjs';
-import { planBoundedWaves } from './run/bounded-wave.mjs';
 import { detectStagnation } from './run/stagnation.mjs';
 import { recommendModelRouting, resolveModelRoute } from './run/model-routing.mjs';
 import { buildExecutionAssignmentId, normalizeHostCapabilities, resolveEnforcementStrategy, summarizeModelRouting } from './run/model-route-contract.mjs';
@@ -438,7 +436,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
 
   return {
     // Internal Host hooks. They do not add a model-visible command or stage;
-    // the Host uses them to build a Wave behind next/report.
+    // the Host derives any parallel selection behind next/report.
     projectRoot,
     stateStore: store,
     discoverProjectCommands: () => discoverProjectCommands({ projectRoot }),
@@ -1026,21 +1024,6 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       return updated;
     },
 
-    async planWaves(runId, slices = []) {
-      const run = store.getRun(runId);
-      if (!run) throw new Error(`Run ${runId} not found`);
-      return planDryRunWave(slices);
-    },
-
-    // Bounded, safety-checked wave plan (§20). Worker count is capped by the
-    // run's risk tier; parallel waves require disjoint write sets, per-slice
-    // verification, and a declared integration check.
-    async planBounded(runId, slices = [], { includeIndependentReview = false, integrationVerification = null } = {}) {
-      const run = store.getRun(runId);
-      if (!run) throw new Error(`Run ${runId} not found`);
-      return planBoundedWaves(slices, { riskTier: run.proofTier, includeIndependentReview, integrationVerification });
-    },
-
     async recordProof(runId, { obligationId = 'default', status, sourceIdentity, evidenceRef, command, commandRef = null, exitCode = 0, evidenceDigest, acceptanceCoverage = [], evidenceClass = null } = {}) {
       const run = store.getRun(runId);
       const effectiveSourceIdentity = sourceIdentity || run?.sourceIdentity;
@@ -1113,7 +1096,8 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     // signals (a no-op retry, an identical result digest) fire at two attempts,
     // which would overtake the retry-escalation threshold and make it
     // unreachable — stagnation outranks retry. Those signals still drive the
-    // replan recommendation and suspend a Safe Wave.
+    // replan recommendation. Parallel selection is derived again from the
+    // resulting Step Ledger, so no execution lifecycle needs suspension.
     stagnationSignal(runId) {
       const runLevel = this.detectStagnation(runId);
       const stepLevel = this.detectStepStagnation(runId);
@@ -1273,7 +1257,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       }
 
       // The attempt is opened after the Kernel has issued the bounded capsule
-      // but before admission/dispatch. Wave workers pass their pre-bound
+      // but before admission/dispatch. Routed workers pass their pre-bound
       // attempt so the shared path never creates a duplicate row.
       let attempt = actionContext.attemptId
         ? store.getStepAttemptByAttemptId(actionContext.attemptId, { runId })
@@ -1282,7 +1266,6 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         attempt = store.getActiveStepAttempt(runId, {
           stepId: executionCapsule.stepId,
           capsuleId: executionCapsule.capsuleId,
-          waveId: actionContext.waveId || null,
         });
       }
       if (decision.modelClass !== 'kernel' && executionCapsule?.stepId) {
@@ -1310,7 +1293,6 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
             workspaceIdentityStart: executionCapsule.provenance?.workspaceIdentity || run.currentWorkspaceIdentity,
             workspaceId: actionContext.workspaceId || run.workspaceId || null,
             baseWorkspaceIdentity: actionContext.workspaceIdentity || null,
-            waveId: actionContext.waveId || null,
           });
         }
       }
@@ -2216,16 +2198,21 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       // use the step attempt returned by the canonical work-attempt authority.
       const attempt = store.recordAttempt(runId, { attemptNumber: store.nextAttemptNumber(runId), state: run.state, status: 'started' });
 
-      const waveAttempt = stepResolution.attempt || null;
-      const boundWorkspaceId = report.workspaceId || waveAttempt?.workspaceId || null;
+      const boundAttempt = stepResolution.attempt || null;
+      const boundWorkspaceId = report.workspaceId || boundAttempt?.workspaceId || null;
       const boundWorkspace = boundWorkspaceId && store.getProjectWorkspace
         ? store.getProjectWorkspace(boundWorkspaceId)
         : null;
       const observation = observeWorkspaceIdentity({ projectRoot: boundWorkspace?.canonicalRoot || projectRoot });
-      // A Worker Worktree has its own identity and mutation lock. Observing it
-      // must not advance the Parent Delivery Workspace mutation revision; the
-      // revision advances once, after Integration materializes the Wave.
-      const observed = stepResolution.activeWave
+      // A routed Step workspace has its own identity and mutation lock. Its
+      // observation is an execution receipt, not a mutation of the owner
+      // workspace; only the owner workspace advances the Run revision.
+      const workerWorkspace = Boolean(
+        report.workspaceId
+        && report.workspaceId !== run.workspaceId
+        && stepResolution.step?.executionWorkspaceId === report.workspaceId,
+      );
+      const observed = workerWorkspace
         ? { changed: false, run: store.getRun(runId) }
         : store.observeWorkspaceIdentity(runId, observation.identity);
 
@@ -2282,11 +2269,10 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
 
       if (activeStep) {
         const boundCapsule = report.capsuleId ? store.getExecutionCapsule(report.capsuleId, { runId }) : null;
-        stepAttempt = waveAttempt || stepResolution.attempt || store.getActiveStepAttempt(runId, {
+        stepAttempt = boundAttempt || store.getActiveStepAttempt(runId, {
           stepId: activeStep.stepId,
           attemptId: report.attemptId,
           capsuleId: report.capsuleId,
-          waveId: stepResolution.activeWave?.waveId || null,
         });
         if (!stepAttempt) {
           stepAttempt = this.beginAttempt(runId, {
@@ -2301,16 +2287,15 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
             workspaceIdentityStart: observation.identity,
             summary: report.summary || null,
             changedPaths: report.changedPaths,
-            waveId: stepResolution.activeWave?.waveId || null,
             workspaceId: report.workspaceId || null,
-            baseWorkspaceIdentity: stepResolution.activeWave?.baseWorkspaceIdentity || null,
+            baseWorkspaceIdentity: stepResolution.step?.baseWorkspaceIdentity || null,
           });
         }
         // Workspace observation is what advances mutationRevision for a direct
         // report. Bind the active attempt to that observed result before proof
         // and before a later process resumes it; a manually stale attempt with
         // no new workspace observation is still rejected by resolveReportStep.
-        if (stepAttempt && observed.changed && !stepResolution.activeWave) {
+        if (stepAttempt && observed.changed && !workerWorkspace) {
           stepAttempt = this.attachAttemptLineage(stepAttempt.attemptId, {
             mutationRevision: observed.run.mutationRevision,
           });
@@ -2484,15 +2469,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         ? this.settleStep(runId, { step: activeStep, attempt: stepAttempt, report, failures, outstanding, observation })
         : null;
       const currentSteps = store.getRunSteps(runId, { planRevision: refreshed.planRevision });
-      const wayfinderWaveIds = [...new Set(currentSteps.map((step) => step.waveId).filter(Boolean))];
-      const deliveryIdentity = store.getRun(runId)?.currentWorkspaceIdentity;
-      const integrationsFresh = wayfinderWaveIds.every((waveId) => {
-        const wave = store.getRunWave?.(waveId);
-        const receipts = store.getWaveIntegrationReceipts?.(waveId) || [];
-        return wave?.status === 'integrated'
-          && receipts.some((receipt) => receipt.status === 'integrated' && (!deliveryIdentity || receipt.deliveryWorkspaceIdentity === deliveryIdentity));
-      });
-      const stepsSettled = allStepsPassed(currentSteps, refreshed.planRevision) && integrationsFresh;
+      const stepsSettled = allStepsPassed(currentSteps, refreshed.planRevision);
 
       let finalization = null;
       if (failures.length === 0 && outstanding.length === 0 && stepsSettled && verifications.length > 0 && refreshed.state === 'PROVE') {

@@ -1,5 +1,10 @@
 # ADR-0004 Managed Upstream Skills and Safe Wave Execution
 
+> **Current implementation note (2026-08-30):** This ADR is retained as
+> decision provenance. Its original Wave lifecycle is superseded by the Step
+> Ledger compression: selection is derived, Host dispatch is transient, and
+> no persistent batch, group, parallel-plan, or integration lifecycle exists.
+
 ## Status
 
 Accepted
@@ -17,13 +22,19 @@ Kernel은 Ponytail, Matt Pocock Skills, GSD, Spec Kit, BMAD, Superpowers 등에�
 - upstream update는 check → diff → classify → A/B eval → security/license review → proposal → human approval → pin update 순서로 처리한다.
 - 자동 변경 탐지와 proposal 생성은 허용하지만 자동 적용은 금지한다.
 
-### 병렬 실행
+### Step Ledger parallel selection
 
 - 기본 실행 모드는 sequential이다.
-- v1은 DAG와 Wave dry-run만 제공한다.
-- 같은 Wave는 dependency, predicted write-set, schema/migration, public interface, fixture, design premise 충돌이 없어야 한다.
-- 실제 병렬 실행은 maxWorkers=2, no nested fanout, deterministic merge order, Wave integration verification을 요구한다.
-- 안전 조건을 충족하지 못하면 순차 실행으로 fallback한다.
+- 현재 plan revision의 Step dependency, predicted write-set, schema/migration,
+  public interface, fixture, design premise 충돌을 기존 Ledger facts로
+  계산한다.
+- eligible Steps는 Host capability와 mutation freshness를 통과할 때만
+  transient dispatch되며, 결과는 기존 Step attempt와 execution receipt에
+  귀속한다.
+- 안전 조건을 충족하지 못하거나 worker가 실패하면 기존 Step retry/replan과
+  workspace recovery로 fallback한다.
+- 별도의 Wave, batch, group, parallel-plan, integration receipt lifecycle은
+  저장하지 않는다.
 
 ## Consequences
 
@@ -37,4 +48,4 @@ Kernel은 Ponytail, Matt Pocock Skills, GSD, Spec Kit, BMAD, Superpowers 등에�
 - 외부 SKILL.md를 무검증 자동 업데이트한다.
 - 외부 프로젝트 전체를 Kernel runtime dependency로 둔다.
 - task graph의 모든 frontier를 자동 병렬 실행한다.
-- `--no-verify` 결과를 Wave 검증 없이 accepted completion으로 사용한다.
+- `--no-verify` 결과를 Step 검증 없이 accepted completion으로 사용한다.
