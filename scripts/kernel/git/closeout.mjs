@@ -4,6 +4,7 @@ import path from 'node:path';
 import { rm } from 'node:fs/promises';
 import { runGit, gitCurrentBranch } from '../../lib/git-safe.mjs';
 import { filterStagingSelection, stageSelectedPaths, validateGitCloseoutPath } from './staging-policy.mjs';
+import { buildKernelCommitMessage } from './commit-message.mjs';
 import { verifyRemoteParity } from './remote-parity.mjs';
 import { observeWorkspaceIdentity } from '../run/workspace-identity.mjs';
 
@@ -195,6 +196,24 @@ export async function executeKernelGitCloseout({
     return skippedReceipt;
   }
 
+  const run = stateStore && typeof stateStore.getRun === 'function'
+    ? stateStore.getRun(runId)
+    : { runId, projectId };
+  const completion = stateStore && typeof stateStore.getCompletionDecision === 'function'
+    ? stateStore.getCompletionDecision(runId)
+    : null;
+  const commitMessage = buildKernelCommitMessage({
+    message: gitCloseoutRequest.message || null,
+    run,
+    completion,
+    projectId,
+    selectedPaths,
+    excludedPaths,
+    knowledgeCommitReceipt,
+    closeoutMode: requestedMode,
+  });
+  const commitSubject = commitMessage.split('\n', 1)[0];
+
   const beforeHeadRes = runGit(repoRoot, ['rev-parse', 'HEAD']);
   const beforeHeadSha = beforeHeadRes.status === 0 ? String(beforeHeadRes.stdout || '').trim() : '';
 
@@ -222,8 +241,7 @@ export async function executeKernelGitCloseout({
       }
       const treeSha = String(writeTreeRes.stdout || '').trim();
 
-      const commitMsg = `feat(kernel): update ${projectId} implementation\n\n- Completed phase execution for ${runId}\n- Knowledge commit ref: ${knowledgeCommitReceipt.digest || 'none'}`;
-      const commitArgs = ['commit-tree', treeSha, '-m', commitMsg];
+      const commitArgs = ['commit-tree', treeSha, '-m', commitMessage];
       if (beforeHeadSha) {
         commitArgs.push('-p', beforeHeadSha);
       }
@@ -263,7 +281,7 @@ export async function executeKernelGitCloseout({
           status: 'commit_created',
           beforeHeadSha,
           selectedPaths,
-          receiptJson: { runId, projectId, commitSha, branch: currentBranch, status: 'commit_created' },
+          receiptJson: { runId, projectId, commitSha, branch: currentBranch, commitSubject, commitMessage, status: 'commit_created' },
         });
       }
     } finally {
@@ -296,6 +314,7 @@ export async function executeKernelGitCloseout({
             status: 'parity_failed',
             errorCode: 'REMOTE_PARITY_MISMATCH',
             errorMessage: `Remote parity mismatch: local ${commitSha} != remote ${remoteHeadSha}`,
+            receiptJson: { runId, projectId, commitSha, branch: currentBranch, commitSubject, commitMessage, status: 'parity_failed' },
           });
         }
         throw new KernelGitCloseoutError('REMOTE_PARITY_MISMATCH', `Remote parity mismatch on branch ${currentBranch}: local ${commitSha} != remote ${remoteHeadSha}`);
@@ -313,6 +332,7 @@ export async function executeKernelGitCloseout({
           status: 'push_failed',
           errorCode: 'GIT_PUSH_FAILED',
           errorMessage: pushRes.stderr,
+          receiptJson: { runId, projectId, commitSha, branch: currentBranch, commitSubject, commitMessage, status: 'push_failed' },
         });
       }
       throw new KernelGitCloseoutError('GIT_PUSH_FAILED', `Git push failed: ${pushRes.stderr}`);
@@ -325,6 +345,8 @@ export async function executeKernelGitCloseout({
     projectId,
     requestedMode: gitCloseoutRequest.mode,
     knowledgeCommitReceiptRef: knowledgeCommitReceipt.digest || '',
+    commitSubject,
+    commitMessage,
     selectedPaths,
     excludedPaths,
     commitSha,

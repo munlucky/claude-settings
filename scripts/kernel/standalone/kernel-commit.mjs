@@ -8,6 +8,7 @@ import { extractCodebaseCandidates } from '../knowledge-ingestion/candidate-extr
 import { commitImportedProjectKnowledge } from '../knowledge-ingestion/import.mjs';
 import { runGit, gitCurrentBranch } from '../../lib/git-safe.mjs';
 import { isPathStagable, stageSelectedPaths } from '../git/staging-policy.mjs';
+import { buildKernelCommitMessage } from '../git/commit-message.mjs';
 import { gitTreeDigest } from '../../lib/candidate-identity.mjs';
 import { parseCliArgs, printResult, readJson, resolveStandaloneProject, sha256, writeJsonAtomic } from './common.mjs';
 import { ensureAccountRootTrack } from '../runtime-home.mjs';
@@ -190,7 +191,6 @@ export async function kernelCommit({ cwd = process.cwd(), env = process.env, mes
   const statusResult = runGitChecked(project.projectRoot, ['status', '--porcelain=v1']);
   const statusEntries = parseGitStatus(statusResult.stdout);
   const { selected, denied } = selectStagingPaths(statusEntries);
-  if (!message && selected.length > 0) throw new Error('COMMIT_MESSAGE_REQUIRED');
   const stateStore = await openKernelStateStore({ runtimeHome: project.runtimeHome });
   try {
     const admission = selected.length > 0
@@ -204,9 +204,20 @@ export async function kernelCommit({ cwd = process.cwd(), env = process.env, mes
     }
     if (memoryReview && !approvalRef) return { status: 'awaiting_review', projectId: project.projectId, staging: { selected, denied }, candidates, index };
     if (selected.length === 0) return { status: 'no_op', projectId: project.projectId, staging: { selected, denied }, index, candidates };
+    const commitMessage = buildKernelCommitMessage({
+      message,
+      run: admission?.run,
+      completion: admission?.completion,
+      projectId: project.projectId,
+      selectedPaths: selected,
+      excludedPaths: denied,
+      knowledgeStatus: memory ? (approvalRef ? 'approval-requested' : 'candidate-snapshot') : 'not-requested',
+      closeoutMode: push ? 'commit_and_push' : 'commit',
+    });
+    const commitSubject = commitMessage.split('\n', 1)[0];
     const beforeHeadSha = runGitChecked(project.projectRoot, ['rev-parse', 'HEAD']).stdout.trim();
     stageSelectedPaths({ repoRoot: project.projectRoot, paths: selected, git: runGit });
-    const commitResult = runGitChecked(project.projectRoot, ['commit', '-m', message]);
+    const commitResult = runGitChecked(project.projectRoot, ['commit', '-m', commitMessage]);
     const commitHash = runGitChecked(project.projectRoot, ['rev-parse', 'HEAD']).stdout.trim();
     const receipt = {
       schemaVersion: 2,
@@ -214,6 +225,8 @@ export async function kernelCommit({ cwd = process.cwd(), env = process.env, mes
       projectId: project.projectId,
       branch: gitCurrentBranch(project.projectRoot),
       commitHash,
+      commitSubject,
+      commitMessage,
       selectedPaths: selected,
       deniedPaths: denied,
       treeDigest: gitTreeDigest(project.projectRoot),
@@ -268,7 +281,7 @@ export async function kernelCommit({ cwd = process.cwd(), env = process.env, mes
         receiptJson: receipt,
       });
     }
-    return { status: 'committed', projectId: project.projectId, commitHash, receipt, staging: { selected, denied }, index };
+    return { status: 'committed', projectId: project.projectId, commitHash, commitSubject, commitMessage, receipt, staging: { selected, denied }, index };
   } finally { await stateStore.close(); }
 }
 

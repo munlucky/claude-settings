@@ -18,7 +18,12 @@
       ]
     },
     "approvedBy": { "type": "string" },
-    "approvalReceipt": { "type": "string" }
+    "approvalReceipt": { "type": "string" },
+    "message": {
+      "type": "string",
+      "maxLength": 12000,
+      "description": "Optional commit subject and body. The Kernel appends task context to the requested message."
+    }
   },
   "additionalProperties": true
 }
