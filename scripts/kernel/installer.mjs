@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { chmod, cp, lstat, mkdir, readFile, readdir, rm, stat } from 'node:fs/promises';
+import { lstatSync } from 'node:fs';
+import { chmod, cp, lstat, mkdir, readFile, readdir, realpath, rm, stat } from 'node:fs/promises';
 import { buildRuntimeManifest } from './runtime-resolver.mjs';
 import { canonicalPath } from './runtime-home.mjs';
 import { atomicWriteText } from './durable-write.mjs';
@@ -36,11 +37,25 @@ const exists = async (target) => {
 };
 const sha256File = async (target) => createHash('sha256').update(await readFile(target)).digest('hex');
 const isWithin = (root, target) => target === root || target.startsWith(`${root}${path.sep}`);
-const assertContained = (root, target) => {
+const assertNoSymlinkComponents = (root, target, label = 'target path') => {
   const resolvedRoot = path.resolve(root);
   const resolvedTarget = path.resolve(target);
   if (!isWithin(resolvedRoot, resolvedTarget)) throw new Error(`Kernel installer path escapes target root: ${target}`);
+  let cursor = resolvedTarget;
+  while (cursor !== resolvedRoot && isWithin(resolvedRoot, cursor)) {
+    try {
+      if (lstatSync(cursor).isSymbolicLink()) throw new Error(`unsafe_target: symlinked ${label}: ${cursor}`);
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+    cursor = path.dirname(cursor);
+  }
   return resolvedTarget;
+};
+const assertContained = (root, target) => {
+  const resolvedRoot = path.resolve(root);
+  const resolvedTarget = path.resolve(target);
+  return assertNoSymlinkComponents(resolvedRoot, resolvedTarget);
 };
 const rejectSymlink = async (target, label) => {
   try {
@@ -90,10 +105,53 @@ const collectFiles = async (root, rel = '') => {
 
 const readManifest = async (manifestPath) => JSON.parse(await readFile(manifestPath, 'utf8'));
 
-export const materializeKernelCommandShim = async ({ runtimeHome, entrypoint } = {}) => {
+const nodeRelativePath = () => (process.platform === 'win32' ? 'node.exe' : path.join('bin', 'node'));
+const installedPayloadRoots = (root) => [
+  path.join(root, '.moon-relay', 'kernel-payload'),
+  path.join(root, 'kernel-payload'),
+  root,
+];
+const firstExisting = async (candidates) => {
+  for (const candidate of candidates) if (await exists(candidate)) return candidate;
+  return null;
+};
+const quoteWindows = (value) => String(value).replaceAll('%', '%%').replaceAll('"', '\\"');
+const quotePosix = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
+
+const resolveInstalledEntrypoint = async (root, requested) => requested
+  ? path.resolve(requested)
+  : await firstExisting(installedPayloadRoots(root).map((candidate) => path.join(candidate, 'bin', 'moon-relay-kernel.mjs')))
+    || path.join(root, '.moon-relay', 'kernel-payload', 'bin', 'moon-relay-kernel.mjs');
+
+const resolveInstalledNode = async (root, requested) => requested
+  ? path.resolve(requested)
+  : await firstExisting(installedPayloadRoots(root).map((candidate) => path.join(candidate, 'runtime', 'current', nodeRelativePath())))
+    || path.join(root, '.moon-relay', 'kernel-payload', 'runtime', 'current', nodeRelativePath());
+
+export const materializeKernelMcpLauncher = async ({ runtimeHome, entrypoint = null, managedNodePath = null, write = true } = {}) => {
+  if (!runtimeHome) throw new Error('Kernel MCP launcher requires runtimeHome');
+  const root = await safeInstallRoot(runtimeHome, 'runtime home');
+  const binDir = path.join(root, 'bin');
+  const cli = await resolveInstalledEntrypoint(root, entrypoint);
+  const node = await resolveInstalledNode(root, managedNodePath);
+  const launcherPath = path.join(binDir, process.platform === 'win32' ? 'moon-relay-kernel-mcp.cmd' : 'moon-relay-kernel-mcp');
+  if (write) {
+    await mkdir(binDir, { recursive: true });
+    if (process.platform === 'win32') {
+      await atomicWrite(launcherPath, `@echo off\r\nsetlocal\r\n"${quoteWindows(node)}" "${quoteWindows(cli)}" mcp-bridge %*\r\nexit /b %ERRORLEVEL%\r\n`);
+    } else {
+      await atomicWrite(launcherPath, `#!/bin/sh\nexec ${quotePosix(node)} ${quotePosix(cli)} mcp-bridge "$@"\n`);
+      await chmod(launcherPath, 0o755);
+    }
+  }
+  return { status: write ? 'installed' : 'planned', launcherPath, nodePath: node, entrypoint: cli, managedRuntime: await exists(node), written: write ? [launcherPath] : [] };
+};
+
+export const materializeKernelCommandShim = async ({ runtimeHome, entrypoint, nodePath = null } = {}) => {
   if (!runtimeHome || !entrypoint) throw new Error('Kernel command shim requires runtimeHome and entrypoint');
   const root = await safeInstallRoot(runtimeHome);
   const cli = path.resolve(entrypoint);
+  const node = nodePath ? path.resolve(nodePath) : 'node';
   const binDir = path.join(root, 'bin');
   await mkdir(binDir, { recursive: true });
   const written = [];
@@ -101,19 +159,21 @@ export const materializeKernelCommandShim = async ({ runtimeHome, entrypoint } =
     for (const name of ['kernel', 'moon-relay-kernel']) {
       const cmd = path.join(binDir, `${name}.cmd`);
       const ps1 = path.join(binDir, `${name}.ps1`);
-      await atomicWrite(cmd, `@echo off\r\nnode "${cli}" %*\r\n`);
-      await atomicWrite(ps1, `& node "${cli}" @args\r\n`);
+      const command = node === 'node' ? 'node' : `"${quoteWindows(node)}"`;
+      await atomicWrite(cmd, `@echo off\r\n${command} "${quoteWindows(cli)}" %*\r\n`);
+      await atomicWrite(ps1, `& ${command} "${quoteWindows(cli)}" @args\r\n`);
       written.push(cmd, ps1);
     }
   } else {
     for (const name of ['kernel', 'moon-relay-kernel']) {
       const shim = path.join(binDir, name);
-      await atomicWrite(shim, `#!/bin/sh\nexec node "${cli}" "$@"\n`);
+      const command = node === 'node' ? 'node' : quotePosix(node);
+      await atomicWrite(shim, `#!/bin/sh\nexec ${command} ${quotePosix(cli)} "$@"\n`);
       await chmod(shim, 0o755);
       written.push(shim);
     }
   }
-  return { status: 'installed', runtimeHome: root, entrypoint: cli, written };
+  return { status: 'installed', runtimeHome: root, entrypoint: cli, nodePath: node, written };
 };
 
 // Ordinary installs remain collision-protected; only an explicit closeout
@@ -163,9 +223,13 @@ export const installKernel = async ({ targetRoot = process.cwd(), sourceRoot = p
   if (runtimeSource) {
     if (!(await exists(runtimeSource))) throw new Error(`Kernel managed runtime source does not exist: ${runtimeSource}`);
     const sourceRootWithCurrent = path.join(runtimeSource, 'runtime', 'current');
-    const sourceCurrent = await exists(sourceRootWithCurrent)
+    const sourceCurrentCandidate = await exists(sourceRootWithCurrent)
       ? sourceRootWithCurrent
       : (await exists(path.join(runtimeSource, 'current')) ? path.join(runtimeSource, 'current') : runtimeSource);
+    // Provider installers commonly expose runtime/current as a junction or
+    // symlink. Kernel payloads must contain the resolved files, never that
+    // provider-owned link.
+    const sourceCurrent = await realpath(sourceCurrentCandidate);
     managedRuntimePlan = { sourceCurrent, files: await collectFiles(sourceCurrent, '') };
     for (const rel of managedRuntimePlan.files) {
       desiredPaths.add(path.join('kernel-payload', 'runtime', 'current', rel).replaceAll('\\', '/'));
@@ -232,13 +296,24 @@ export const installKernel = async ({ targetRoot = process.cwd(), sourceRoot = p
     }
     await atomicWrite(manifestPath, JSON.stringify(manifest, null, 2));
     const runtimeHome = trackHome ? await safeInstallRoot(trackHome, 'track home') : null;
+    const managedNodePath = runtimeSource
+      ? path.join(kernelDir, 'kernel-payload', 'runtime', 'current', nodeRelativePath())
+      : null;
     const commandShim = runtimeHome
       ? await materializeKernelCommandShim({
         runtimeHome,
         entrypoint: path.join(kernelDir, 'kernel-payload', 'bin', 'moon-relay-kernel.mjs'),
+        nodePath: managedNodePath && await exists(managedNodePath) ? managedNodePath : null,
       })
       : null;
-    return { status: 'installed', targetRoot: root, installedFilesCount: installed.length, manifestPath, backupPath: existingFiles.length ? backupPath : null, commandShim };
+    const mcpLauncher = runtimeHome
+      ? await materializeKernelMcpLauncher({
+        runtimeHome,
+        entrypoint: path.join(kernelDir, 'kernel-payload', 'bin', 'moon-relay-kernel.mjs'),
+        managedNodePath,
+      })
+      : null;
+    return { status: 'installed', targetRoot: root, installedFilesCount: installed.length, manifestPath, backupPath: existingFiles.length ? backupPath : null, commandShim, mcpLauncher };
   } catch (error) {
     await rm(path.join(kernelDir, 'kernel-payload'), { force: true, recursive: true });
     for (const file of existingFiles) {

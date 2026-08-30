@@ -53,7 +53,7 @@ test('phase 01 process characterization is metadata-only and injectable', async 
   assert.equal(quiet.status, 'quiescent');
 });
 
-test('macOS process guard detects Codex and Claude app binaries including truncated comm output', async () => {
+test('macOS process guard detects GUI Codex and Claude binaries only on Desktop surfaces', async () => {
   const execProvider = async () => ({ stdout: [
     ' 101 /Applications/Codex.app/Contents/MacOS/Codex /Applications/Codex.app/Contents/MacOS/Codex',
     ' 202 /Applications/Claude.app/Contents/MacOS/Claude /Applications/Claude.app/Contents/MacOS/Claude',
@@ -61,8 +61,18 @@ test('macOS process guard detects Codex and Claude app binaries including trunca
     ' 404 /Applications/Ch /Applications/ChatGPT.app/Contents/MacOS/ChatGPT --user-data-dir=...',
   ].join('\n') });
   assert.deepEqual((await listProviderProcesses({ surface: 'codex_desktop', platform: 'darwin', execProvider })).map((row) => row.pid), [101, 404]);
-  assert.deepEqual((await listProviderProcesses({ surface: 'claude_cli', platform: 'darwin', execProvider })).map((row) => row.pid), [202]);
+  assert.deepEqual((await listProviderProcesses({ surface: 'claude_desktop', platform: 'darwin', execProvider })).map((row) => row.pid), [202]);
+  assert.deepEqual(await listProviderProcesses({ surface: 'claude_cli', platform: 'darwin', execProvider }), []);
   await assert.rejects(() => listProviderProcesses({ surface: 'codex_desktop', platform: 'darwin', execProvider: async () => { throw new Error('ps failed'); } }), (error) => error.code === 'process_probe_failed');
+});
+
+test('Windows Claude CLI guard ignores Desktop GUI processes while Desktop guard requires a window', async () => {
+  const processProvider = async () => [
+    { pid: 501, name: 'Claude', Path: 'C:\\Program Files\\Claude\\Claude.exe', MainWindowHandle: 42 },
+    { pid: 502, name: 'Claude', Path: 'C:\\Tools\\claude.exe', MainWindowHandle: 0 },
+  ];
+  assert.deepEqual((await listProviderProcesses({ surface: 'claude_desktop', platform: 'win32', processProvider })).map((row) => row.pid), [501]);
+  assert.deepEqual(await listProviderProcesses({ surface: 'claude_cli', platform: 'win32', processProvider }), []);
 });
 
 test('phase 01 app discovery is unpinned and records typed probe gaps', async () => {

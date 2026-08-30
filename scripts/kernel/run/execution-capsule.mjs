@@ -365,7 +365,10 @@ export const capsuleStaleness = ({ capsule, run } = {}) => {
   if (!capsule) return { stale: true, reasons: ['capsule-missing'] };
   if (!run) return { stale: true, reasons: ['run-missing'] };
   if (capsule.runId !== run.runId) reasons.push('capsule-run-mismatch');
-  if (capsule.mutationRevision !== run.mutationRevision) reasons.push('capsule-stale-mutation-revision');
+  const capsuleMutationRevision = capsule.role === 'reviewer'
+    ? capsule.subject?.mutationRevision
+    : capsule.mutationRevision;
+  if (capsuleMutationRevision !== run.mutationRevision) reasons.push('capsule-stale-mutation-revision');
   if (run.currentWorkspaceIdentity && capsule.provenance.workspaceIdentity !== run.currentWorkspaceIdentity) {
     reasons.push('capsule-stale-workspace-identity');
   }

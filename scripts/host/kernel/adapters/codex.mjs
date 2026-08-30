@@ -602,7 +602,8 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
       }
       // A snapshot is enough to prove the parent before launch, but it is not
       // the final invariant. The after snapshot below must match the same
-      // Luna/Max session before this dispatch can be reported as successful.
+      // parent session identity before this dispatch can be reported as
+      // successful; its model and effort remain telemetry only.
       const parentSessionPolicyBefore = parentBeforePolicy;
       const invoke = async (selectedLaunch, dispatchMechanism, fallbackReason = null) => {
         if (!selectedLaunch) return { result: {}, dispatchMechanism, fallbackReason };

@@ -9,7 +9,7 @@ import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
-import { normalizeReviewCapsule } from '../scripts/kernel/run/execution-capsule.mjs';
+import { capsuleStaleness, normalizeReviewCapsule } from '../scripts/kernel/run/execution-capsule.mjs';
 import { hashSessionId } from '../scripts/kernel/run/model-route-contract.mjs';
 import { dispatchKernelTurn } from '../scripts/host/kernel/turn-dispatcher.mjs';
 import { createModelRegistry } from '../scripts/host/kernel/model-registry.mjs';
@@ -150,6 +150,20 @@ test('K1: a review capsule is a closed record with a read-only permission floor'
 
   assert.throws(() => normalizeReviewCapsule({ ...base, reviewScope: { stage: 'implementation' } }), /reviewScope.stage/);
   assert.throws(() => normalizeReviewCapsule({ ...base, subject: { ...base.subject, workspaceIdentity: 'HEAD' } }), /workspaceIdentity/);
+});
+
+test('K1: reviewer capsule freshness is checked against its subject mutation revision', () => {
+  const workspaceIdentity = `sha256:${'a'.repeat(64)}`;
+  const capsule = normalizeReviewCapsule({
+    runId: 'r-freshness',
+    stepId: 'step-1',
+    planRevision: 2,
+    subject: { changedPaths: ['a.mjs'], workspaceIdentity, mutationRevision: 3 },
+    reviewScope: { stage: 'engineering', obligationId: 'security-review' },
+  });
+  const run = { runId: 'r-freshness', planRevision: 2, mutationRevision: 3, currentWorkspaceIdentity: workspaceIdentity };
+  assert.deepEqual(capsuleStaleness({ capsule, run }), { stale: false, reasons: [] });
+  assert.deepEqual(capsuleStaleness({ capsule, run: { ...run, mutationRevision: 4 } }), { stale: true, reasons: ['capsule-stale-mutation-revision'] });
 });
 
 test('K1: the capsule reaches the worker launcher, not just the dispatcher', async () => {

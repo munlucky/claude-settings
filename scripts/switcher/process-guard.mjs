@@ -4,7 +4,7 @@ const execFileAsync = promisify(execFile);
 const probeFailed = (error) => Object.assign(new Error(`process_probe_failed: ${error.message}`), { code: 'process_probe_failed', cause: error });
 
 const DEFAULT_PATTERNS = {
-  claude_cli: ['Claude'],
+  claude_desktop: ['Claude'],
   codex_desktop: ['ChatGPT', 'codex', 'codex-code-mode-host'],
   antigravity_desktop: ['Antigravity', 'language_server', 'gemini'],
 };
@@ -19,17 +19,23 @@ const isCodexDesktopProcess = (row) => {
   if (name === 'chatgpt' || (row.executable && row.executable.toLowerCase().endsWith('chatgpt.exe'))) return true;
   return false;
 };
-const isClaudeDesktopProcess = (row) => {
+export const isClaudeDesktopProcess = (row) => {
   const name = row.name.replaceAll('\\', '/').split('/').pop().toLowerCase();
   return name === 'claude' && (row.mainWindowHandle === undefined || Number(row.mainWindowHandle) > 0);
 };
+const isClaudeDesktopBundle = (row) => `${row.name} ${row.executable || ''}`.toLowerCase().includes('.app/contents/macos/claude');
 const isAntigravityDesktopProcess = (row) => {
   const name = row.name.toLowerCase();
   if (name === 'antigravity') return row.mainWindowHandle === undefined || Number(row.mainWindowHandle) > 0;
   return false;
 };
 export async function listProviderProcesses({ surface, processProvider, platform = process.platform, execProvider = execFileAsync } = {}) {
-  if (processProvider) return (await processProvider(surface)).map(normalize);
+  if (processProvider) {
+    const rows = (await processProvider(surface)).map(normalize);
+    if (surface === 'claude_cli') return [];
+    if (surface === 'claude_desktop') return platform === 'darwin' ? rows.filter(isClaudeDesktopBundle) : rows.filter(isClaudeDesktopProcess);
+    return rows;
+  }
   if (platform === 'darwin') {
     try {
       const { stdout } = await execProvider('ps', ['-axo', 'pid=,comm=,args='], { timeout: 10000 });
@@ -38,7 +44,8 @@ export async function listProviderProcesses({ surface, processProvider, platform
         return match ? normalize({ pid: match[1], name: match[2], executable: match[3] }) : null;
       }).filter(Boolean);
       const isBundle = (row, names) => names.some((name) => `${row.name} ${row.executable || ''}`.toLowerCase().includes(`.app/contents/macos/${name}`));
-      if (surface === 'claude_cli') return rows.filter((row) => isBundle(row, ['claude']));
+      if (surface === 'claude_cli') return [];
+      if (surface === 'claude_desktop') return rows.filter((row) => isBundle(row, ['claude']));
       if (surface === 'codex_desktop') return rows.filter((row) => isBundle(row, ['codex', 'chatgpt']));
       if (surface === 'antigravity_desktop') return rows.filter((row) => isBundle(row, ['antigravity', 'gemini']));
       return [];
@@ -50,7 +57,8 @@ export async function listProviderProcesses({ surface, processProvider, platform
     const parsed = JSON.parse(stdout || '[]');
     const rows = Array.isArray(parsed) ? parsed : [parsed];
     const normalized = rows.map(normalize);
-    if (surface === 'claude_cli') return normalized.filter(isClaudeDesktopProcess);
+    if (surface === 'claude_cli') return [];
+    if (surface === 'claude_desktop') return normalized.filter(isClaudeDesktopProcess);
     if (surface === 'codex_desktop') return normalized.filter(isCodexDesktopProcess);
     if (surface === 'antigravity_desktop') return normalized.filter(isAntigravityDesktopProcess);
     const patterns = DEFAULT_PATTERNS[surface] || [];

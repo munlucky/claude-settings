@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { lstat, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { resolveKernelNode, buildRuntimeManifest, sha256File, parseNodeVersion } from '../scripts/kernel/runtime-resolver.mjs';
@@ -116,6 +116,28 @@ test('Kernel installer places an external runtime source in the resolver runtime
     const resolved = await resolveKernelNode({ runtimeHome, fallback: '/host/node', skipExecuteCheck: true });
     assert.equal(resolved.source, 'managed');
     assert.equal(resolved.nodePath, path.join(runtimeHome, 'runtime', 'current', nodeRel));
+    await uninstallKernel({ targetRoot: project });
+  } finally {
+    await rm(project, { recursive: true, force: true });
+    await rm(runtimeSource, { recursive: true, force: true });
+  }
+});
+
+test('Kernel installer dereferences a provider runtime/current junction before copying', async () => {
+  const project = await mkdtemp(path.join(os.tmpdir(), 'krn-runtime-junction-project-'));
+  const runtimeSource = await mkdtemp(path.join(os.tmpdir(), 'krn-runtime-junction-source-'));
+  const nodeRel = process.platform === 'win32' ? 'node.exe' : path.join('bin', 'node');
+  const versionDir = path.join(runtimeSource, 'versions', 'v24.18.0');
+  const currentLink = path.join(runtimeSource, 'current');
+  const nodeSource = path.join(versionDir, nodeRel);
+  await mkdir(path.dirname(nodeSource), { recursive: true });
+  await writeFile(nodeSource, 'junction-managed-node');
+  await symlink(versionDir, currentLink, process.platform === 'win32' ? 'junction' : 'dir');
+  try {
+    await installKernel({ targetRoot: project, sourceRoot: process.cwd(), runtimeSource });
+    const installedCurrent = path.join(project, '.moon-relay', 'kernel-payload', 'runtime', 'current');
+    assert.equal((await lstat(installedCurrent)).isSymbolicLink(), false);
+    assert.equal(await readFile(path.join(installedCurrent, nodeRel), 'utf8'), 'junction-managed-node');
     await uninstallKernel({ targetRoot: project });
   } finally {
     await rm(project, { recursive: true, force: true });

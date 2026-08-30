@@ -68,14 +68,11 @@ const normalizeEffort = (value) => {
   return value.trim().toLowerCase();
 };
 
-// The main Codex session is a Host invariant, not a Kernel model enum. The
-// owner is the Luna/Max orchestrator and default executor for the whole run;
-// concrete model and effort choices for a delegated child belong only to that
-// optional invocation.
+// The main Codex session is a Host identity invariant, not a Kernel model
+// enum. The owner may choose its model and effort at runtime; concrete model
+// and effort choices for a delegated child belong only to that invocation.
 export const CODEX_MAIN_SESSION_POLICY = Object.freeze({
   role: 'orchestrator',
-  model: 'gpt-5.6-luna',
-  effort: 'max',
   // The Codex owner is also the default executor for an ordinary bounded
   // work unit. A native child is an optional delegation surface, not a
   // prerequisite for implementation.
@@ -134,22 +131,25 @@ export const compareCodexSessionConfig = ({ requested = {}, observed = {} } = {}
 };
 
 export const compareCodexMainSessionConfig = ({ expectedSessionId = null, observed = {} } = {}) => {
-  const comparison = compareCodexSessionConfig({
-    requested: CODEX_MAIN_SESSION_POLICY,
-    observed,
-  });
   const observedSessionId = observed?.sessionId ? String(observed.sessionId) : null;
   const sessionMatch = Boolean(expectedSessionId && observedSessionId && String(expectedSessionId) === observedSessionId);
-  const exact = comparison.exact && sessionMatch;
+  const observedModel = observed.model ? String(observed.model) : null;
+  const observedEffort = normalizeEffort(observed.effort);
   return Object.freeze({
-    ...comparison,
+    requestedModel: null,
+    requestedEffort: null,
+    observedModel,
+    observedEffort,
+    // These fields are telemetry only for the owner session. They must not be
+    // interpreted as a model/effort correctness gate.
+    modelMatch: null,
+    effortMatch: null,
+    complete: Boolean(observedModel && observedEffort),
     expectedSessionId: expectedSessionId ? String(expectedSessionId) : null,
     observedSessionId,
     sessionMatch,
-    exact,
-    reason: !sessionMatch
-      ? 'parent-session-not-stable'
-      : comparison.reason,
+    exact: sessionMatch,
+    reason: sessionMatch ? null : 'parent-session-not-stable',
   });
 };
 
@@ -178,8 +178,6 @@ const missingParentTelemetryReason = ({ parentSessionId, comparison } = {}) => {
   const entries = comparisonEntries(comparison);
   if (entries.length === 0) return 'parent-session-telemetry-missing';
   if (entries.some((entry) => !entry?.observedSessionId)) return 'parent-session-id-telemetry-missing';
-  if (entries.some((entry) => !entry?.observedModel)) return 'parent-session-model-telemetry-missing';
-  if (entries.some((entry) => !entry?.observedEffort)) return 'parent-session-effort-telemetry-missing';
   return null;
 };
 
