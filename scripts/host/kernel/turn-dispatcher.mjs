@@ -14,6 +14,7 @@ import { resolveCodexModelPolicy } from './codex-model-policy.mjs';
 import { resolveClaudeEffort } from './claude-effort-policy.mjs';
 import { buildModelCapsuleView } from './model-capsule-view.mjs';
 import { dispatchKernelRun } from './wave-dispatcher.mjs';
+import { isNativeDelegationRequested } from './codex-actor-router.mjs';
 
 // A decision carries no risk-shape data (security/migration/...) to the Host
 // today, only actionKind/riskTier/reasonCodes, so the recommendation below is
@@ -285,16 +286,17 @@ export const dispatchKernelTurn = async ({
 } = {}) => {
   if (!adapter) throw new Error('dispatchKernelTurn requires a Host adapter');
   const hostCapabilities = adapter.capabilities || {};
+  const nativeDelegationRequested = isNativeDelegationRequested({ actionContext });
   // Codex Desktop is already the native owner session. When it has no
   // optional native worker launcher, return the Kernel work unit to that
   // owner instead of entering the child-worker dispatcher and manufacturing a
   // missing-worker failure. `next()` is deliberately used here rather than
   // `hostNext()`: the latter acquires a worker mutation lock and opens a
   // delegated attempt that an owner-direct turn cannot close.
-  const ownerDirectRequested = hostCapabilities.surface === 'codex'
+  const ownerDirectRequested = ['codex', 'claude'].includes(hostCapabilities.surface)
     && adapter.ownerDirectDefault === true
-    && actionContext.executionMode !== 'native-subagent'
-    && actionContext.delegationRequired !== true;
+    && !['prove', 'close'].includes(actionContext.actionKind)
+    && (!nativeDelegationRequested || adapter.nativeDelegationAvailable !== true);
   if (ownerDirectRequested) {
     const modelInput = await controlPlane.next(runId);
     if (modelInput.status === 'not_found') return modelInput;
@@ -306,11 +308,9 @@ export const dispatchKernelTurn = async ({
         runId,
         dispatched: false,
         executionMode: 'independent-review',
-        reason: 'independent-review-unavailable',
-        blocker: {
-          reason: 'external-dependency',
-          detail: 'This Codex owner surface has no independent native review context.',
-        },
+        reason: 'independent-review-required',
+        review: { required: true, status: 'pending', independent: true, crossSurface: true },
+        blocker: null,
         modelInput,
         hostDirective: null,
         receipt: null,
@@ -500,6 +500,9 @@ export const dispatchKernelTurn = async ({
       parentSessionId,
       parentSessionConfig,
       concurrencyGroup: actionContext.concurrencyGroup || runId,
+      actionContext,
+      executionMode: actionContext.executionMode || null,
+      delegationRequested: nativeDelegationRequested,
       childSession: {
         role: decision.role,
         canDelegate: false,
@@ -561,7 +564,7 @@ export const dispatchKernelTurn = async ({
         ...dispatch.report,
         attemptId,
         bindingId: attempt?.bindingId || dispatch.report.bindingId,
-        assignmentId: dispatch.report.assignmentId || hostDirective.actorAssignment?.assignmentId || null,
+        assignmentId: dispatch.report.assignmentId || hostDirective.executionAssignment?.assignmentId || null,
         actorSessionId: dispatch.report.actorSessionId || dispatch.actorSessionId || null,
       }
       : null,

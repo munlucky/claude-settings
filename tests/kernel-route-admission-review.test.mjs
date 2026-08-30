@@ -32,7 +32,12 @@ const withT3Run = async (fn) => {
   }
 };
 
-const reviewContext = { actionKind: 'review_engineering', obligationId: 'security-review' };
+const reviewContext = {
+  actionKind: 'review_engineering',
+  obligationId: 'security-review',
+  executionMode: 'native-subagent',
+  delegationRequested: true,
+};
 
 test('K3: a configured frontier reviewer session is admitted and dispatched', async () => {
   await withT3Run(async (cp, runId) => {
@@ -90,7 +95,14 @@ test('K3: a Host with no independent context cannot dispatch the review at all',
   await withT3Run(async (cp, runId) => {
     const adapter = createClaudeAdapter({ launch: async () => ({ resolvedModel: 'configured-frontier', sessionId: 's' }) });
     // Strip the capability the independent review depends on.
-    const degraded = { ...adapter, capabilities: { ...adapter.capabilities, supportsIndependentContext: false } };
+    const degraded = {
+      ...adapter,
+      capabilities: {
+        ...adapter.capabilities,
+        supportsIndependentContext: false,
+        supportsCrossSurfaceReview: false,
+      },
+    };
     const result = await dispatchKernelTurn({
       controlPlane: cp,
       runId,

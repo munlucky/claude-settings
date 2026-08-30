@@ -9,60 +9,41 @@ import { buildCodexDesktopLaunch, verifyCodexChild } from '../scripts/switcher/p
 import { buildAntigravityLaunch, verifyAntigravityChild } from '../scripts/switcher/providers/antigravity.mjs';
 import { providerParityMatrix } from '../scripts/switcher/providers/matrix.mjs';
 import { buildProcessEnvironment } from '../scripts/switcher/launch-adapter.mjs';
-import { resolveTrackRoots } from '../scripts/switcher/paths.mjs';
-test('Kernel launch exports the Kernel home without poisoning the Relay home', () => {
+import { resolveSurfaceRoots } from '../scripts/switcher/paths.mjs';
+test('Kernel launch exports the Kernel home without rewriting Provider homes', () => {
   const runtimeHome = path.join(os.tmpdir(), 'kernel-env');
+  const providerHome = path.join(os.homedir(), '.claude');
   const env = buildProcessEnvironment({
     surface: 'claude_cli',
-    track: 'kernel',
-    roots: { runtimeHome },
-    baseEnv: { MOONSHOT_RELAY_HOME: runtimeHome },
+    roots: { runtimeHome, providerHome },
+    baseEnv: { CLAUDE_CONFIG_DIR: providerHome },
   });
   assert.equal(env.MOON_RELAY_KERNEL_HOME, runtimeHome);
-  assert.equal(env.CLAUDE_CONFIG_DIR, undefined);
-  assert.equal(env.MOON_RELAY_TRACK, 'kernel');
-  assert.equal(env.MOONSHOT_RELAY_HOME, undefined);
+  assert.equal(env.CLAUDE_CONFIG_DIR, providerHome);
+  assert.equal(env.MOON_RELAY_KERNEL_RUNTIME, 'moon-relay-kernel');
 });
-test('Kernel launch preserves a distinct custom Relay home', () => {
-  const runtimeHome = path.join(os.tmpdir(), 'kernel-env-custom');
-  const relayHome = path.join(os.tmpdir(), 'relay-env-custom');
-  const env = buildProcessEnvironment({
-    surface: 'claude_cli',
-    track: 'kernel',
-    roots: { runtimeHome },
-    baseEnv: { MOONSHOT_RELAY_HOME: relayHome },
-  });
-  assert.equal(env.MOONSHOT_RELAY_HOME, relayHome);
-});
-test('phase 04 Codex launch carries process-specific home and disposable app data', () => {
-  const roots = { runtimeHome: path.join(os.tmpdir(), 'kernel'), providerHome: path.join(os.tmpdir(), 'kernel', 'codex'), appDataRoot: path.join(os.tmpdir(), 'codex-app') };
-  const spec = buildCodexDesktopLaunch({ track: 'relay', roots, executable: 'ChatGPT.exe' });
-  assert.equal(spec.env.CODEX_HOME, roots.providerHome); assert.ok(spec.args.includes(roots.appDataRoot));
+test('Codex launch uses the native user Provider HOME and Kernel runtime metadata', () => {
+  const roots = { runtimeHome: path.join(os.tmpdir(), 'kernel'), providerHome: path.join(os.homedir(), '.codex'), appDataRoot: path.join(os.tmpdir(), 'codex-app') };
+  const spec = buildCodexDesktopLaunch({ roots, executable: 'ChatGPT.exe' });
+  assert.equal(spec.env.CODEX_HOME, roots.providerHome); assert.equal(spec.args.includes(roots.appDataRoot), false);
   assert.equal(verifyCodexChild({ expectedProviderHome: roots.providerHome, childEnvironment: spec.env, childExecutable: 'ChatGPT.exe', expectedExecutable: 'ChatGPT.exe' }).status, 'verified');
-  const kernelSpec = buildCodexDesktopLaunch({ track: 'kernel', roots, executable: 'ChatGPT.exe' });
-  assert.equal(kernelSpec.env.CODEX_HOME, undefined);
-  assert.equal(kernelSpec.env.MOON_RELAY_KERNEL_HOME, roots.runtimeHome);
+  assert.equal(spec.env.MOON_RELAY_KERNEL_HOME, roots.runtimeHome);
 });
-test('phase 05 Antigravity launch carries Gemini home and user data dir', () => {
-  const roots = { runtimeHome: path.join(os.tmpdir(), 'kernel'), providerHome: path.join(os.tmpdir(), 'kernel', 'antigravity'), appDataRoot: path.join(os.tmpdir(), 'ag-app') };
-  const spec = buildAntigravityLaunch({ track: 'relay', roots, executable: 'Antigravity.exe' });
+test('Antigravity launch uses the native Gemini HOME and user data dir', () => {
+  const roots = { runtimeHome: path.join(os.tmpdir(), 'kernel'), providerHome: path.join(os.homedir(), '.gemini', 'antigravity'), appDataRoot: path.join(os.tmpdir(), 'ag-app') };
+  const spec = buildAntigravityLaunch({ roots, executable: 'Antigravity.exe' });
   assert.equal(spec.env.GEMINI_HOME, roots.providerHome); assert.equal(verifyAntigravityChild({ expectedProviderHome: roots.providerHome, childEnvironment: spec.env, childArgs: spec.args, expectedAppDataRoot: roots.appDataRoot }).status, 'verified');
-  const kernelSpec = buildAntigravityLaunch({ track: 'kernel', roots, executable: 'Antigravity.exe' });
-  assert.equal(kernelSpec.env.GEMINI_HOME, undefined);
-  assert.equal(kernelSpec.env.MOON_RELAY_KERNEL_HOME, roots.runtimeHome);
+  assert.equal(spec.env.MOON_RELAY_KERNEL_HOME, roots.runtimeHome);
 });
-test('phase 05 provider parity matrix keeps all surfaces disjoint', () => {
-  const result = providerParityMatrix({ relayHome: path.join(os.tmpdir(), 'relay'), kernelHome: path.join(os.tmpdir(), 'kernel') });
+test('provider parity matrix keeps all native surfaces disjoint from Kernel state', () => {
+  const result = providerParityMatrix({ kernelHome: path.join(os.tmpdir(), 'kernel') });
   assert.equal(result.status, 'passed'); assert.equal(result.rows.length, 6); assert.ok(result.rows.every((row) => row.sensitiveContentRead === false));
 });
-test('Codex Desktop uses macOS Application Support roots for Relay and Kernel', () => {
-  const relayHome = path.join(os.tmpdir(), 'relay-macos');
+test('Codex Desktop uses the native macOS Application Support root', () => {
   const kernelHome = path.join(os.tmpdir(), 'kernel-macos');
-  const relay = resolveTrackRoots({ track: 'relay', surface: 'codex_desktop', relayHome, kernelHome, platform: 'darwin' });
-  const kernel = resolveTrackRoots({ track: 'kernel', surface: 'codex_desktop', relayHome, kernelHome, platform: 'darwin' });
-  assert.match(relay.appDataRoot, /Library[\\/]Application Support[\\/]OpenAI[\\/]Codex-Relay$/);
-  assert.match(kernel.appDataRoot, /Library[\\/]Application Support[\\/]OpenAI[\\/]Codex-Kernel$/);
-  assert.notEqual(relay.appDataRoot, kernel.appDataRoot);
+  const roots = resolveSurfaceRoots({ surface: 'codex_desktop', kernelHome, platform: 'darwin' });
+  assert.match(roots.appDataRoot, /Library[\\/]Application Support[\\/]OpenAI[\\/]Codex$/);
+  assert.equal(roots.runtime, 'moon-relay-kernel');
 });
 test('phase 04/05 application resolvers do not hard-code a versioned WindowsApps path', async () => {
   const codex = await resolveCodexDesktop({ candidates: [], commandResolver: async () => null, windowsAppsResolver: async () => null });

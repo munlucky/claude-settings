@@ -79,7 +79,7 @@ test('control-plane rejects an unbounded implementation before any dispatch stat
       assert.equal(host.hostDirective.mutationLock, null);
       assert.equal(host.hostDirective.attemptId, null);
       assert.equal(host.hostDirective.executionCapsule, null);
-      assert.equal(host.hostDirective.actorAssignment, null);
+      assert.equal(host.hostDirective.executionAssignment, null);
       assertNoDispatchState(cp, entry.runId, run);
     }
 

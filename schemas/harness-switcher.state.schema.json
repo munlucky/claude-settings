@@ -3,10 +3,11 @@
   "$id": "https://moonshot-relay.local/schemas/harness-switcher.state.schema.json",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "productId", "surfaces", "lastCommitted", "leases", "journal"],
+  "required": ["schemaVersion", "productId", "runtime", "surfaces", "lastCommitted", "leases", "journal"],
   "properties": {
     "schemaVersion": { "const": 1 },
     "productId": { "const": "moon-harness-switcher" },
+    "runtime": { "const": "moon-relay-kernel" },
     "surfaces": { "type": "object", "additionalProperties": { "type": "object" } },
     "lastCommitted": { "type": "object", "additionalProperties": { "type": ["object", "null"] } },
     "leases": { "type": "object", "additionalProperties": { "type": "object" } },

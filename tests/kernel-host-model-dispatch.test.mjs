@@ -37,7 +37,7 @@ test('a Host that applies the requested model records an enforced receipt', asyn
     const adapter = createClaudeAdapter({
       launch: async ({ invocation }) => ({ resolvedModel: invocation.model, sessionId: 'claude-session-1', inputTokens: 900, outputTokens: 120 }),
     });
-    const result = await dispatchKernelTurn({ controlPlane: cp, runId, adapter, registry: registryFor('claude', FRONTIER_ENV) });
+    const result = await dispatchKernelTurn({ controlPlane: cp, runId, adapter, registry: registryFor('claude', FRONTIER_ENV), actionContext: { executionMode: 'native-subagent', delegationRequested: true } });
     assert.equal(result.dispatched, true);
     assert.equal(result.dispatch.invocation.subagent, 'kernel-implementer');
     assert.equal(result.resolution.model, 'configured-value');
@@ -52,7 +52,7 @@ test('a Host that applies the requested model records an enforced receipt', asyn
 test('a Host that silently answers with a different model records a fallback', async () => {
   await withRun(async (cp, runId) => {
     const adapter = createClaudeAdapter({ launch: async () => ({ resolvedModel: 'some-other-model', sessionId: 's' }) });
-    const result = await dispatchKernelTurn({ controlPlane: cp, runId, adapter, registry: registryFor('claude', FRONTIER_ENV) });
+    const result = await dispatchKernelTurn({ controlPlane: cp, runId, adapter, registry: registryFor('claude', FRONTIER_ENV), actionContext: { executionMode: 'native-subagent', delegationRequested: true } });
     assert.equal(result.receipt.enforcementStatus, 'fallback');
     assert.equal(result.receipt.resolvedModel, 'some-other-model');
   });
@@ -61,7 +61,7 @@ test('a Host that silently answers with a different model records a fallback', a
 test('an unconfigured model resolves to the installed Host default and stays advisory', async () => {
   await withRun(async (cp, runId) => {
     const adapter = createClaudeAdapter({ launch: async () => ({ resolvedModel: 'whatever-the-host-runs', sessionId: 's' }) });
-    const result = await dispatchKernelTurn({ controlPlane: cp, runId, adapter, registry: registryFor('claude', {}) });
+    const result = await dispatchKernelTurn({ controlPlane: cp, runId, adapter, registry: registryFor('claude', {}), actionContext: { executionMode: 'native-subagent', delegationRequested: true } });
     assert.equal(result.resolution.source, 'host-default');
     assert.equal(result.receipt.enforcementStatus, 'advisory');
   });
@@ -79,9 +79,9 @@ test('a Host without model switching is recorded as unsupported, never as enforc
 
 test('a Host that cannot report tokens leaves them unavailable rather than zero', async () => {
   await withRun(async (cp, runId) => {
-    const adapter = createCodexAdapter({ parentSessionObserver: stableParentObserver, launch: async ({ invocation }) => ({ resolvedModel: invocation.model, resolvedEffort: invocation.effort, effortObserved: true, sessionId: 'codex-1' }) });
-    const result = await dispatchKernelTurn({ controlPlane: cp, runId, adapter, parentSessionId: 'codex-parent-session', registry: registryFor('codex', FRONTIER_ENV) });
-    assert.equal(result.dispatch.invocation.mechanism, 'session-model-override');
+    const adapter = createCodexAdapter({ parentSessionObserver: stableParentObserver, launch: async ({ invocation }) => ({ resolvedModel: invocation.model, resolvedEffort: invocation.effort, observedSessionConfig: { model: invocation.model, effort: invocation.effort }, effortObserved: true, sessionId: 'codex-1' }) });
+    const result = await dispatchKernelTurn({ controlPlane: cp, runId, adapter, parentSessionId: 'codex-parent-session', registry: registryFor('codex', FRONTIER_ENV), actionContext: { executionMode: 'native-subagent', delegationRequested: true } });
+    assert.equal(result.dispatch.invocation.mechanism, 'worker-model-override');
     assert.equal(result.dispatch.invocation.sandbox, 'workspace-write');
     assert.equal(result.receipt.enforcementStatus, 'enforced');
     assert.equal(result.receipt.inputTokens, null);
@@ -113,7 +113,7 @@ test('Codex without an optional native launcher returns the bounded unit to the 
 test('a failing dispatch is recorded as failed and never as an enforced success', async () => {
   await withRun(async (cp, runId) => {
     const adapter = createClaudeAdapter({ launch: async () => { throw new Error('worker crashed'); } });
-    const result = await dispatchKernelTurn({ controlPlane: cp, runId, adapter, registry: registryFor('claude', FRONTIER_ENV) });
+    const result = await dispatchKernelTurn({ controlPlane: cp, runId, adapter, registry: registryFor('claude', FRONTIER_ENV), actionContext: { executionMode: 'native-subagent', delegationRequested: true } });
     assert.equal(result.receipt.enforcementStatus, 'failed');
     assert.equal(result.receipt.resultStatus, 'failed');
   });

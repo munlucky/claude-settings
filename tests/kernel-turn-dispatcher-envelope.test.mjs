@@ -67,7 +67,13 @@ test('a real dispatch records a non-null prefix digest and cache mode on the rec
         return { resolvedModel: invocation.model, sessionId: 'claude-session-1' };
       },
     });
-    const result = await dispatchKernelTurn({ controlPlane: cp, runId, adapter, registry: createModelRegistry({ surface: 'claude', env: FRONTIER_ENV }) });
+    const result = await dispatchKernelTurn({
+      controlPlane: cp,
+      runId,
+      adapter,
+      registry: createModelRegistry({ surface: 'claude', env: FRONTIER_ENV }),
+      actionContext: { executionMode: 'native-subagent', delegationRequested: true },
+    });
     assert.equal(result.dispatched, true);
     assert.ok(result.envelope);
     assert.match(result.receipt.promptPrefixDigest, /^sha256:[a-f0-9]{64}$/);
@@ -91,7 +97,13 @@ test('computing the envelope does not change the legacy execution contract sent 
         return { resolvedModel: invocation.model, sessionId: 'claude-session-1' };
       },
     });
-    await dispatchKernelTurn({ controlPlane: cp, runId, adapter, registry: createModelRegistry({ surface: 'claude', env: FRONTIER_ENV }) });
+    await dispatchKernelTurn({
+      controlPlane: cp,
+      runId,
+      adapter,
+      registry: createModelRegistry({ surface: 'claude', env: FRONTIER_ENV }),
+      actionContext: { executionMode: 'native-subagent', delegationRequested: true },
+    });
     assert.ok(seenContract);
     assert.equal(typeof seenContract.objective, 'string');
     assert.ok(!Object.hasOwn(seenContract, 'envelope'));
@@ -110,8 +122,9 @@ test('two independent turns with the same identity fingerprint do not share a se
       launch: async ({ invocation }) => ({ resolvedModel: invocation.model, sessionId: 'claude-session-1' }),
     });
     const registry = createModelRegistry({ surface: 'claude', env: FRONTIER_ENV });
-    const first = await dispatchKernelTurn({ controlPlane: cp, runId, adapter, registry });
-    const second = await dispatchKernelTurn({ controlPlane: cp, runId, adapter, registry });
+    const actionContext = { executionMode: 'native-subagent', delegationRequested: true };
+    const first = await dispatchKernelTurn({ controlPlane: cp, runId, adapter, registry, actionContext });
+    const second = await dispatchKernelTurn({ controlPlane: cp, runId, adapter, registry, actionContext });
     assert.equal(first.envelope.cacheIdentity.prefixDigest, second.envelope.cacheIdentity.prefixDigest, 'the two turns must share the same identity fingerprint for this regression to be meaningful');
     assert.notEqual(first.receipt.sessionLineageId, second.receipt.sessionLineageId);
   });
@@ -126,7 +139,13 @@ test('the launcher receives the model-visible capsule projection, never the pers
     const adapter = createClaudeAdapter({
       launch: async ({ executionCapsule }) => { seenCapsule = executionCapsule; return { resolvedModel: 'model-a', sessionId: 'claude-session-1' }; },
     });
-    const result = await dispatchKernelTurn({ controlPlane: cp, runId, adapter, registry: createModelRegistry({ surface: 'claude', env: FRONTIER_ENV }) });
+    const result = await dispatchKernelTurn({
+      controlPlane: cp,
+      runId,
+      adapter,
+      registry: createModelRegistry({ surface: 'claude', env: FRONTIER_ENV }),
+      actionContext: { executionMode: 'native-subagent', delegationRequested: true },
+    });
     assert.ok(seenCapsule, 'the fake launcher must have received a capsule to make this regression meaningful');
     assert.ok(!Object.hasOwn(seenCapsule, 'capsuleId'));
     assert.ok(!Object.hasOwn(seenCapsule, 'mutationRevision'));

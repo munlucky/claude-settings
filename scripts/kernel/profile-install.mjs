@@ -153,17 +153,15 @@ const mergeKernelDeveloperInstructions = (existing, incoming) => {
   return `${before}\n\n${directive}\n\n${after}`;
 };
 
-const isKernelTrackHook = (value) => Array.isArray(value?.hooks)
+const isKernelProjectHook = (value) => Array.isArray(value?.hooks)
   && value.hooks.some((hook) => typeof hook?.command === 'string' && /assert-track\b/.test(hook.command));
 
-const rewriteKernelTrackHook = (value, command) => {
-  if (Array.isArray(value)) return value.map((item) => rewriteKernelTrackHook(item, command));
+const rewriteKernelProjectHook = (value, command) => {
+  if (Array.isArray(value)) return value.map((item) => rewriteKernelProjectHook(item, command));
   if (!value || typeof value !== 'object') return value;
   const result = { ...value };
   if (typeof result.command === 'string' && /assert-track\b/.test(result.command)) result.command = command;
-  for (const [key, child] of Object.entries(result)) {
-    if (key !== 'command') result[key] = rewriteKernelTrackHook(child, command);
-  }
+  for (const [key, child] of Object.entries(result)) if (key !== 'command') result[key] = rewriteKernelProjectHook(child, command);
   return result;
 };
 
@@ -174,8 +172,8 @@ const mergeKernelHooks = (existing, incoming, command) => {
   merged.hooks = { ...existingEvents, ...incomingEvents };
   for (const event of new Set([...Object.keys(existingEvents), ...Object.keys(incomingEvents)])) {
     if (event !== 'SessionStart') continue;
-    const retained = Array.isArray(existingEvents[event]) ? existingEvents[event].filter((item) => !isKernelTrackHook(item)) : [];
-    const kernelHooks = Array.isArray(incomingEvents[event]) ? rewriteKernelTrackHook(incomingEvents[event], command) : [];
+    const retained = Array.isArray(existingEvents[event]) ? existingEvents[event].filter((item) => !isKernelProjectHook(item)) : [];
+    const kernelHooks = Array.isArray(incomingEvents[event]) ? rewriteKernelProjectHook(incomingEvents[event], command) : [];
     merged.hooks[event] = [...retained, ...kernelHooks];
   }
   return merged;
@@ -216,8 +214,8 @@ const writeAccountRootManifest = async ({ root, sourceRoot, runtime, runtimeHome
   return {
     schemaVersion: 1,
     productId: PROFILE_PRODUCT_ID,
-    track: 'kernel',
     runtime,
+    kernelRuntime: 'moon-relay-kernel',
     layout: ACCOUNT_ROOT_PROFILE_LAYOUT,
     targetRoot: root,
     runtimeHome: canonicalPath(runtimeHome),
@@ -246,6 +244,26 @@ export async function installKernelAccountRoot({ sourceRoot = process.cwd(), run
     throw new Error('target_collision: foreign or non-account-root Kernel profile manifest');
   }
   if (await exists(markerPath) && !prior) throw new Error('target_collision: marker without trusted manifest');
+
+  // A healthy account-root projection is already the desired state. Returning
+  // without touching the provider home keeps the operation idempotent and,
+  // importantly, avoids treating our own Kernel-owned files as fresh user
+  // backup material on every launch/adoption pass.
+  if (prior) {
+    const current = await inspectProfile(root);
+    if (current.status === 'ready' && current.manifest.kernelRuntime === 'moon-relay-kernel' && current.manifest.layout === ACCOUNT_ROOT_PROFILE_LAYOUT) {
+      return {
+        status: 'already_current',
+        runtime,
+        layout: ACCOUNT_ROOT_PROFILE_LAYOUT,
+        targetRoot: root,
+        manifestPath,
+        backupPath: prior.backupPath || null,
+        retiredRelaySkills: prior.retiredRelaySkills || [],
+        installedFilesCount: prior.files?.length || 0,
+      };
+    }
+  }
 
   const effectiveRuntimeHome = runtimeHome || resolveKernelRuntimeHome();
   const backupPath = path.join(root, '.moon-relay-kernel-backups', `account-root-${Date.now()}-${process.pid}`);
@@ -300,8 +318,8 @@ export async function installKernelAccountRoot({ sourceRoot = process.cwd(), run
   const marker = {
     schemaVersion: 1,
     productId: PROFILE_PRODUCT_ID,
-    track: 'kernel',
-    runtime,
+    runtime: 'moon-relay-kernel',
+    provider: runtime,
     layout: ACCOUNT_ROOT_PROFILE_LAYOUT,
   };
   await atomicWrite(markerPath, JSON.stringify(marker, null, 2));
@@ -341,6 +359,10 @@ export async function installKernelProfile({ sourceRoot = process.cwd(), runtime
   const prior = await exists(manifestPath) ? JSON.parse(await readFile(manifestPath, 'utf8')) : null;
   if (await exists(markerPath) && !prior) throw new Error('target_collision: marker without trusted manifest');
   if (prior && prior.productId !== PROFILE_PRODUCT_ID) throw new Error('target_collision: foreign profile manifest');
+  if (prior && !force) {
+    const current = await inspectProfile(root);
+    if (current.status === 'ready' && current.manifest.runtime === 'moon-relay-kernel') return { status: 'already_current', runtime, targetRoot: root, manifestPath, backupPath: null, installedFilesCount: prior.files?.length || 0 };
+  }
   const backupPath = prior ? path.join(root, '.moon-relay-kernel-backups', `backup-${Date.now()}`) : null;
   if (prior) {
     for (const entry of prior.files || []) {
@@ -408,7 +430,7 @@ export async function installKernelProfile({ sourceRoot = process.cwd(), runtime
         await cp(path.join(dir, rel), target, { force: true });
       }
     }
-    const marker = { schemaVersion: 1, productId: PROFILE_PRODUCT_ID, track: 'kernel', runtime, ownership: 'manifest-owned-static-only' };
+    const marker = { schemaVersion: 1, productId: PROFILE_PRODUCT_ID, runtime: 'moon-relay-kernel', provider: runtime, ownership: 'manifest-owned-static-only' };
     await atomicWrite(markerPath, JSON.stringify(marker, null, 2));
     if (skillsRoot && runtime === 'antigravity') {
       await copyTree(canonicalSkill, path.resolve(skillsRoot, 'skills', KERNEL_ENTRYPOINT_SKILL));
@@ -420,7 +442,7 @@ export async function installKernelProfile({ sourceRoot = process.cwd(), runtime
       for (const rel of await files(dir)) await stage(`skills/${name}/${rel}`);
     }
     await stage(PROFILE_MARKER_NAME);
-    const manifest = { schemaVersion: 1, productId: PROFILE_PRODUCT_ID, track: 'kernel', runtime, targetRoot: root, installedAt: new Date().toISOString(), backupPath, files: staged };
+    const manifest = { schemaVersion: 1, productId: PROFILE_PRODUCT_ID, runtime: 'moon-relay-kernel', provider: runtime, targetRoot: root, installedAt: new Date().toISOString(), backupPath, files: staged };
     await atomicWrite(manifestPath, JSON.stringify(manifest, null, 2));
     return { status: prior ? 'reinstalled' : 'installed', runtime, targetRoot: root, manifestPath, backupPath, installedFilesCount: staged.length };
   } catch (error) {

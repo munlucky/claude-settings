@@ -170,6 +170,7 @@ test('K1: the capsule reaches the worker launcher, not just the dispatcher', asy
       runId: 'r-launch',
       adapter,
       registry: createModelRegistry({ surface: 'claude', env: { MOON_RELAY_KERNEL_MODEL_FRONTIER: 'configured-frontier', MOON_RELAY_KERNEL_MODEL_VALUE: 'configured-value' } }),
+      actionContext: { executionMode: 'native-subagent', delegationRequested: true },
     });
     // The launcher is the thing that actually starts a worker session; a capsule
     // that stops at the dispatcher would leave the worker with the old flat
@@ -186,7 +187,12 @@ test('K1: the capsule reaches the worker launcher, not just the dispatcher', asy
       runId: 'r-launch',
       adapter,
       registry: createModelRegistry({ surface: 'claude', env: { MOON_RELAY_KERNEL_MODEL_FRONTIER: 'configured-frontier', MOON_RELAY_KERNEL_MODEL_VALUE: 'configured-value' } }),
-      actionContext: { actionKind: 'review_engineering', obligationId: 'security-review' },
+      actionContext: {
+        actionKind: 'review_engineering',
+        obligationId: 'security-review',
+        executionMode: 'native-subagent',
+        delegationRequested: true,
+      },
     });
     assert.ok(reviewTurn.executionCapsule.capsuleId);
     assert.ok(!Object.hasOwn(seen[1], 'capsuleId'), 'the launcher must not see the persisted capsuleId');

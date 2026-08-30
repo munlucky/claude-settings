@@ -4,21 +4,20 @@ import os from 'node:os';
 import path from 'node:path';
 import { realpathSync } from 'node:fs';
 import { mkdir, rm, symlink, writeFile, readFile } from 'node:fs/promises';
-import { physicalTargetIdentity, resolveTrackRoots } from '../scripts/switcher/paths.mjs';
+import { physicalTargetIdentity, resolveSurfaceRoots } from '../scripts/switcher/paths.mjs';
 import { listProviderProcesses, waitForQuiescence } from '../scripts/switcher/process-guard.mjs';
 import { resolveCodexDesktop } from '../scripts/switcher/app-resolver/codex.mjs';
 import { resolveAntigravity } from '../scripts/switcher/app-resolver/antigravity.mjs';
 
-test('phase 01 roots keep Relay and Kernel physically distinct', async () => {
+test('phase 01 roots keep the Kernel runtime and native Provider home physically distinct', async () => {
   const root = await mkdir(path.join(os.tmpdir(), `switcher-p01-${Date.now()}`), { recursive: true });
-  const relay = path.join(root, 'relay'); const kernel = path.join(root, 'kernel');
-  const relayRoots = resolveTrackRoots({ track: 'relay', surface: 'codex_cli', relayHome: relay, kernelHome: kernel });
-  const kernelRoots = resolveTrackRoots({ track: 'kernel', surface: 'codex_cli', relayHome: relay, kernelHome: kernel });
-  assert.notEqual(relayRoots.runtimeHome, kernelRoots.runtimeHome);
-  assert.equal(relayRoots.providerHome, kernelRoots.providerHome);
-  const identity = await physicalTargetIdentity(kernelRoots.providerHome, { protectedRoots: [relayRoots.runtimeHome] });
+  const kernelRoots = resolveSurfaceRoots({ surface: 'codex_cli', kernelHome: path.join(root, 'kernel'), baseEnv: { USERPROFILE: root } });
+  assert.equal(kernelRoots.runtime, 'moon-relay-kernel');
+  assert.notEqual(kernelRoots.runtimeHome, kernelRoots.providerHome);
+  const identity = await physicalTargetIdentity(kernelRoots.providerHome, { protectedRoots: [kernelRoots.runtimeHome] });
   assert.equal(identity.safe, true);
   assert.equal(identity.sensitiveContentRead, undefined);
+  await rm(root, { recursive: true, force: true });
 });
 
 test('phase 01 physical target identity follows a symlinked parent and refuses it', async (t) => {

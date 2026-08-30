@@ -1,5 +1,5 @@
 schemaVersion: 1
 productId: moon-relay-kernel
 runtime: antigravity
-track: kernel
+runtime: moon-relay-kernel
 managedStaticOnly: true

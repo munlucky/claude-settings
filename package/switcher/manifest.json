@@ -4,5 +4,6 @@
   "entrypoint": "bin/moon-harness-switcher.mjs",
   "ownedStatic": ["bin/moon-harness-switcher.mjs", "scripts/switcher/", "schemas/harness-switcher.*", "package/switcher/"],
   "stateRoot": "~/.moon-harness-switcher",
-  "preservedRoots": ["~/.moonshot-relay", "~/.codex", "~/.claude", "~/.qwen", "~/.gemini"]
+  "runtime": "moon-relay-kernel",
+  "preservedRoots": ["~/.codex", "~/.claude", "~/.qwen", "~/.gemini"]
 }

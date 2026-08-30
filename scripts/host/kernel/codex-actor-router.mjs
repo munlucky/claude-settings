@@ -6,6 +6,19 @@ import { buildCodexMainSessionPolicy } from './codex-session-observer.mjs';
 
 export const CODEX_ACTOR_ROLES = Object.freeze(['planner', 'implementer', 'debugger', 'reviewer']);
 
+// Native subagents are opt-in delegation. Merely having a launcher or a model
+// route never changes the current owner surface into a worker orchestrator.
+export const isNativeDelegationRequested = ({ executionMode = null, delegationRequested = false, actionContext = null, executionContract = null } = {}) => {
+  const context = actionContext && typeof actionContext === 'object' ? actionContext : {};
+  const contract = executionContract && typeof executionContract === 'object' ? executionContract : {};
+  return executionMode === 'native-subagent'
+    || delegationRequested === true
+    || context.executionMode === 'native-subagent'
+    || context.delegationRequested === true
+    || contract.execution?.mode === 'native-subagent'
+    || contract.delegationRequested === true;
+};
+
 const repeatedFailure = (decision = {}) => decision.workProfile?.repeatedFailure === true
   || (decision.reasonCodes || []).some((code) => code === 'RETRY_ESCALATION' || code === 'PROTECTED_OBLIGATION_FAILURE' || code === 'ESCALATION_LOCKED');
 
@@ -14,6 +27,7 @@ export const resolveCodexActorRoute = ({
   invocation = {},
   capabilities = {},
   hasNativeLauncher = false,
+  delegationRequested = false,
   parentSessionId = null,
   parentSessionConfig = null,
 } = {}) => {
@@ -28,7 +42,12 @@ export const resolveCodexActorRoute = ({
     || invocation.freshSessionRequired === true;
   const independentReviewRequired = role === 'reviewer' && decision.independentContextRequired === true;
   const nativeAvailable = hasNativeLauncher && capabilities.supportsSubagentModel === true;
-  const dispatchMechanism = nativeAvailable
+  const dispatchMechanism = delegationRequested && nativeAvailable
+    ? 'native-subagent'
+    : independentReviewRequired
+      ? 'independent-review'
+      : 'owner-direct';
+  const executionMode = delegationRequested && nativeAvailable
     ? 'native-subagent'
     : independentReviewRequired
       ? 'independent-review'
@@ -45,14 +64,18 @@ export const resolveCodexActorRoute = ({
     sessionPolicy: freshSessionRequired ? 'fresh' : 'reusable',
     freshSessionRequired,
     fallbackAllowed: false,
-    parentMayImplement: !independentReviewRequired,
     ownerDirectAllowed: !independentReviewRequired,
-    executionMode: independentReviewRequired ? 'independent-review' : 'owner-direct',
+    executionMode,
     delegation: Object.freeze({
       mode: independentReviewRequired ? 'required' : 'optional',
       available: nativeAvailable,
+      requested: delegationRequested,
     }),
-    nestedDelegationAllowed: false,
+    execution: Object.freeze({
+      role,
+      mode: executionMode,
+      delegation: independentReviewRequired ? 'required' : 'optional',
+    }),
     parentSessionPolicy,
   });
 };

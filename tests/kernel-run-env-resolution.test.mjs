@@ -20,14 +20,20 @@ test('run selection rejects conflicting explicit/environment identities before f
   try {
     await cp.startRun({ runId: 'run-one', objective: 'one', taskContract: { acceptance: ['one'] } });
     assert.equal(await cp.resolveRunId({}), 'run-one');
-    assert.equal(await cp.resolveRunId({ envRunId: 'run-env' }), 'run-env');
-    assert.equal(await cp.resolveRunId({ explicitRunId: 'run-explicit', envRunId: 'run-explicit' }), 'run-explicit');
     await assert.rejects(
-      () => cp.resolveRunId({ explicitRunId: 'run-explicit', envRunId: 'run-env' }),
+      () => cp.resolveRunId({ envRunId: 'run-env' }),
+      (error) => error.code === 'run_access_denied',
+    );
+    assert.equal(await cp.resolveRunId({ explicitRunId: 'run-one', envRunId: 'run-one' }), 'run-one');
+    await assert.rejects(
+      () => cp.resolveRunId({ explicitRunId: 'run-one', envRunId: 'run-env' }),
       (error) => error.code === 'run_binding_conflict',
     );
-    await cp.startRun({ runId: 'run-two', objective: 'two', taskContract: { acceptance: ['two'] } });
-    await assert.rejects(() => cp.resolveRunId({}), /ambiguous_active_run/);
+    await assert.rejects(
+      () => cp.startRun({ runId: 'run-two', objective: 'two', taskContract: { acceptance: ['two'] } }),
+      (error) => error.code === 'worktree_run_conflict',
+    );
+    assert.equal(await cp.resolveRunId({}), 'run-one');
   } finally {
     await cp.close();
   }
@@ -66,7 +72,7 @@ test('CLI rejects conflicting explicit and environment run identities with recov
   assert.notEqual(result.status, 0);
   const payload = JSON.parse(result.stderr || result.stdout);
   assert.equal(payload.errorCode, 'run_binding_conflict');
-  assert.equal(payload.nextAction, 'relaunch-through-kernel-host');
+  assert.equal(payload.nextAction, 'reopen-from-correct-worktree');
   assert.match(payload.diagnostics.remediation.command, /moon-harness-switcher launch --track kernel/);
 });
 
@@ -219,7 +225,7 @@ test('conflicting Codex and Kernel session bindings fail closed with one recover
   assert.notEqual(result.status, 0);
   const payload = JSON.parse(result.stderr || result.stdout);
   assert.equal(payload.errorCode, 'host_binding_conflict');
-  assert.equal(payload.nextAction, 'relaunch-through-kernel-host');
+  assert.equal(payload.nextAction, 'reopen-from-correct-worktree');
   assert.match(payload.diagnostics.remediation.command, /moon-harness-switcher launch --track kernel/);
 });
 

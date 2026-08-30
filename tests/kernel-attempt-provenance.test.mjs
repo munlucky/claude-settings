@@ -465,6 +465,7 @@ test('a provider crash leaves the dispatched attempt interrupted with a failed u
       runId,
       adapter,
       registry: createModelRegistry({ surface: 'claude', env: { MOON_RELAY_KERNEL_MODEL_VALUE: 'configured-value' } }),
+      actionContext: { executionMode: 'native-subagent', delegationRequested: true },
     });
     assert.equal(result.dispatched, true);
     assert.equal(result.receipt.resultStatus, 'failed');
@@ -507,6 +508,7 @@ test('a Wave provider crash records failed usage and preserves interrupted linea
       adapter,
       hostCapabilities: adapter.capabilities,
       parentSessionId: 'wave-parent',
+      actionContext: { executionMode: 'native-subagent', delegationRequested: true },
       prepareDispatch: ({ hosted, step }) => prepareWayfinderWorkerDispatch({
         controlPlane: cp,
         runId,
@@ -542,7 +544,13 @@ test('a routed review receipt links reviewer usage to the step and implementer a
       },
     });
     const adapter = createClaudeAdapter({ launch: async ({ invocation }) => ({ resolvedModel: invocation.model, sessionId: `${invocation.subagent}-session` }) });
-    const implementation = await dispatchKernelTurn({ controlPlane: cp, runId, adapter, registry });
+    const implementation = await dispatchKernelTurn({
+      controlPlane: cp,
+      runId,
+      adapter,
+      registry,
+      actionContext: { executionMode: 'native-subagent', delegationRequested: true },
+    });
     await writeFile(path.join(fixture.projectRoot, 'app.mjs'), 'export const value = 1;\n');
     const report = await cp.report(runId, {
       stepId: implementation.receipt.stepId,
@@ -562,7 +570,12 @@ test('a routed review receipt links reviewer usage to the step and implementer a
       runId,
       adapter,
       registry,
-      actionContext: { actionKind: 'review_engineering', obligationId: 'security-review' },
+      actionContext: {
+        actionKind: 'review_engineering',
+        obligationId: 'security-review',
+        executionMode: 'native-subagent',
+        delegationRequested: true,
+      },
     });
     const reviewResult = await cp.recordReview(runId, {
       stage: 'engineering',

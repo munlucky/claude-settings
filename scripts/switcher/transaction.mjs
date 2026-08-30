@@ -1,8 +1,8 @@
 import { makeId } from './constants.mjs';
 import { clearJournal, readJournal, writeJournal } from './state-store.mjs';
 export const JOURNAL_STATES = ['prepared', 'old_app_stopped', 'launch_requested', 'process_observed', 'provider_home_verified', 'workspace_verified', 'skill_discovery_verified', 'effective_verified', 'committed', 'recovery_required', 'close_incomplete'];
-export async function prepareTransaction({ surface, requestedTrack, roots, previousSelection = null, processSet = [] } = {}) {
-  const journal = { schemaVersion: 1, journalId: makeId('journal'), surface, requestedTrack, state: 'prepared', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), roots, previousSelection, processSet, errorCode: null };
+export async function prepareTransaction({ surface, requestedRuntime = 'moon-relay-kernel', roots, previousSelection = null, processSet = [] } = {}) {
+  const journal = { schemaVersion: 1, journalId: makeId('journal'), surface, requestedRuntime, state: 'prepared', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), roots, previousSelection, processSet, errorCode: null };
   await writeJournal(journal); return journal;
 }
 export async function advanceTransaction(journal, state, extra = {}) {

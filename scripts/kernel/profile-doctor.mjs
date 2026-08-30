@@ -8,7 +8,8 @@ import { resolveKernelNode } from './runtime-resolver.mjs';
 export async function doctorKernelProfile({ targetRoot, runtime = null, runtimeHome = null } = {}) {
   const result = await inspectProfile(targetRoot);
   if (result.status === 'not_installed') return { status: 'not_installed', effective: 'unknown', targetRoot: result.targetRoot, recovery: 'install Kernel profile before launch' };
-  if (runtime && result.manifest.runtime !== runtime) return { status: 'wrong_harness', effective: 'unknown', targetRoot: result.targetRoot, expectedRuntime: runtime, actualRuntime: result.manifest.runtime };
+  const providerRuntime = result.manifest.provider || result.manifest.runtime;
+  if (runtime && providerRuntime !== runtime) return { status: 'wrong_harness', effective: 'unknown', targetRoot: result.targetRoot, expectedRuntime: runtime, actualRuntime: providerRuntime };
   if (result.status !== 'ready') return { status: 'drift', effective: 'unknown', targetRoot: result.targetRoot, recovery: 'rollback or reinstall manifest-owned static files', checks: result.checks };
   const commandChecks = [];
   const requiredProfileFiles = {
@@ -17,7 +18,7 @@ export async function doctorKernelProfile({ targetRoot, runtime = null, runtimeH
       : ['AGENTS.override.md', '.codex/config.toml', '.codex/hooks.json', 'skills/moon-relay-kernel/SKILL.md'],
     claude: ['CLAUDE.md', 'settings.json', 'skills/moon-relay-kernel/SKILL.md'],
   };
-  for (const relativePath of requiredProfileFiles[result.manifest.runtime] || ['skills/moon-relay-kernel/SKILL.md']) {
+  for (const relativePath of requiredProfileFiles[providerRuntime] || ['skills/moon-relay-kernel/SKILL.md']) {
     let present = true;
     try { await access(path.join(path.resolve(targetRoot), relativePath)); } catch { present = false; }
     commandChecks.push({ check: `profile-surface:${relativePath.replaceAll('\\', '/')}`, passed: present });
@@ -64,7 +65,7 @@ export async function doctorKernelProfile({ targetRoot, runtime = null, runtimeH
     status: commandReady ? 'ready' : 'drift',
     effective: commandReady ? 'kernel' : 'unknown',
     targetRoot: result.targetRoot,
-    runtime: result.manifest.runtime,
+    runtime: providerRuntime,
     managedFileCount: result.manifest.files.length,
     checks: [...(result.checks || []), ...commandChecks],
     authContentRead: false,

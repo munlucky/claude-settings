@@ -1,6 +1,7 @@
 import process from 'node:process';
 import path from 'node:path';
 import readline from 'node:readline';
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createKernelControlPlane } from '../control-plane.mjs';
 import { resolveKernelWorktreeIdentity } from '../run/worktree-binding.mjs';
@@ -9,6 +10,17 @@ import { resolveKernelRuntimeHome } from '../runtime-home.mjs';
 const MCP_PROTOCOL_VERSION = '2024-11-05';
 const SERVER_NAME = 'moon-relay-kernel-bridge';
 const SERVER_VERSION = '0.1.0';
+export const KERNEL_MCP_ENTRYPOINT = 'bin/moon-relay-kernel.mjs';
+
+export const resolveInstalledKernelEntrypoint = ({ runtimeHome = null, env = process.env } = {}) => {
+  const root = runtimeHome || resolveKernelRuntimeHome({ env });
+  const candidates = [
+    path.join(root, KERNEL_MCP_ENTRYPOINT),
+    path.join(root, '.moon-relay', 'kernel-payload', KERNEL_MCP_ENTRYPOINT),
+    path.join(root, 'kernel-payload', KERNEL_MCP_ENTRYPOINT),
+  ];
+  return candidates.find((candidate) => existsSync(candidate)) || candidates[0];
+};
 
 export const KERNEL_MCP_TOOLS = [
   {

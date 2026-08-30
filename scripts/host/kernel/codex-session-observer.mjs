@@ -79,8 +79,8 @@ export const CODEX_MAIN_SESSION_POLICY = Object.freeze({
   // The Codex owner is also the default executor for an ordinary bounded
   // work unit. A native child is an optional delegation surface, not a
   // prerequisite for implementation.
-  parentMayImplement: true,
-  nestedDelegationAllowed: false,
+  ownerExecutionDefault: true,
+  delegation: 'optional',
 });
 
 // These are Host capabilities, not model-routing outcomes. A missing parent

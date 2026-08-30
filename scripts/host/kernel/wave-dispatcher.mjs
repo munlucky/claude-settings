@@ -34,6 +34,11 @@ const dispatchDefaultStep = async ({ adapter, hosted, dispatchContext = null, wo
       permissions: { ...context.executionCapsule.permissions, canCommit: false, canDelegate: false },
     }
     : null;
+  const executionMode = context.hostDirective?.executionAssignment?.executionMode
+    || hosted.hostDirective?.executionAssignment?.executionMode
+    || null;
+  const delegationRequested = context.hostDirective?.executionAssignment?.delegation?.requested === true
+    || hosted.hostDirective?.executionAssignment?.delegation?.requested === true;
   return adapter.dispatch({
     decision: context.decision || context.hostDirective?.modelRouteDecision || hosted.hostDirective?.modelRouteDecision || {},
     resolution: context.resolution,
@@ -59,6 +64,9 @@ const dispatchDefaultStep = async ({ adapter, hosted, dispatchContext = null, wo
     parentSessionConfig,
     concurrencyGroup: waveId,
     childSession: { parentSessionId, maxNestedAgents: 0, canDelegate: false, canCommit: false },
+    executionMode,
+    delegationRequested,
+    actionContext: { executionMode, delegationRequested },
   });
 };
 
@@ -174,7 +182,7 @@ export const dispatchKernelStep = async ({
       capsuleId: hosted.executionCapsule?.capsuleId || workerReport.capsuleId,
       workspaceId: workspace.workspaceId,
       bindingId: boundAttempt?.bindingId || workerReport.bindingId,
-      assignmentId: workerReport.assignmentId || hosted.hostDirective?.actorAssignment?.assignmentId || null,
+      assignmentId: workerReport.assignmentId || hosted.hostDirective?.executionAssignment?.assignmentId || null,
       actorSessionId: result?.actorSessionId || boundAttempt?.actorSessionId || workerReport.actorSessionId,
     });
   }

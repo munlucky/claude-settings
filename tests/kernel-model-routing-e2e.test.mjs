@@ -59,6 +59,7 @@ test('a full routed turn implements on value coding and finishes on kernel evide
       runId: 'r-e2e',
       adapter: adapterFor(sessions),
       registry: createModelRegistry({ surface: 'claude', env: ENV }),
+      actionContext: { executionMode: 'native-subagent', delegationRequested: true },
     });
     assert.equal(turn.dispatched, true);
     assert.equal(turn.hostDirective.modelRouteDecision.modelClass, 'value_coding');
@@ -110,7 +111,13 @@ test('planning, implementation, and review each land on the class their action r
     await cp.startRun({ runId: 'r-mix', objective: 'auth boundary', taskContract: { surfaces: ['security_boundary'] } });
 
     for (const actionKind of ['plan', 'implement', 'review_engineering']) {
-      await dispatchKernelTurn({ controlPlane: cp, runId: 'r-mix', adapter, registry, actionContext: { actionKind } });
+    await dispatchKernelTurn({
+      controlPlane: cp,
+      runId: 'r-mix',
+      adapter,
+      registry,
+      actionContext: { actionKind, executionMode: 'native-subagent', delegationRequested: true },
+    });
     }
     assert.deepEqual(sessions, [
       { role: 'planner', model: 'frontier-model' },

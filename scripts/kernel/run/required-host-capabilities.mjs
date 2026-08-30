@@ -15,7 +15,7 @@ export const assertRequiredHostCapabilities = (contract, hostCapabilities) => {
   const required = requiredHostCapabilities(contract);
   const missing = [];
   if (required.proofExecution && hostCapabilities.supportsProofExecution !== true) missing.push('proof-command-execution');
-  if (required.independentReviewer && hostCapabilities.supportsIndependentContext !== true) missing.push('independent-reviewer');
+  if (required.independentReviewer && hostCapabilities.supportsCrossSurfaceReview !== true && hostCapabilities.supportsIndependentContext !== true) missing.push('independent-reviewer');
   if (required.readOnlyReview && hostCapabilities.supportsReadOnlyReview !== true) missing.push('read-only-review');
   if (missing.length) {
     const error = new Error(`required_host_capability_missing: ${missing.join(', ')}`);

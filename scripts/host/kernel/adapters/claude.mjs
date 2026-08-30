@@ -1,6 +1,8 @@
-// Claude Host adapter (§11.1). Maps a Kernel role onto a Claude subagent and
-// injects the model id from the Host registry. No provider SDK lives here: the
-// adapter builds an invocation and hands it to the launcher the Host supplies.
+// Claude Host adapter (§11.1). Maps an explicitly delegated Kernel role onto a
+// Claude subagent and injects the model id from the Host registry. Ordinary
+// work remains in the current native owner surface.
+
+import { isNativeDelegationRequested } from '../codex-actor-router.mjs';
 
 export const CLAUDE_AGENT_FOR_ROLE = Object.freeze({
   planner: 'kernel-planner',
@@ -13,6 +15,8 @@ export const CLAUDE_CAPABILITIES = Object.freeze({
   supportsSubagentModel: true,
   supportsSessionModelOverride: false,
   supportsIndependentContext: true,
+  supportsCrossSurfaceReview: true,
+  supportsReadOnlyReview: true,
   supportsUsageTokens: true,
   supportsResolvedModelIdentity: true,
   // Wave 7. Claude marks cacheable prefixes explicitly and reports read and
@@ -47,12 +51,53 @@ export const buildClaudeInvocation = ({ decision, resolution }) => {
   };
 };
 
+const ownerDirectDispatch = ({ decision, resolution, parentSessionId = null } = {}) => ({
+  status: 'owner-direct',
+  resultStatus: 'interrupted',
+  executionMode: 'owner-direct',
+  dispatchMechanism: 'owner-direct',
+  requestedModel: resolution?.model || null,
+  requestedEffort: resolution?.effort || null,
+  actorRole: decision?.role || null,
+  actorSessionId: null,
+  parentSessionId,
+  outcome: null,
+  report: null,
+});
+
+const reviewPendingDispatch = ({ decision, resolution, parentSessionId = null } = {}) => ({
+  status: 'review-required',
+  resultStatus: 'interrupted',
+  executionMode: 'independent-review',
+  dispatchMechanism: 'independent-review',
+  requestedModel: resolution?.model || null,
+  requestedEffort: resolution?.effort || null,
+  actorRole: decision?.role || 'reviewer',
+  actorSessionId: null,
+  parentSessionId,
+  review: { required: true, status: 'pending', independent: true, crossSurface: true },
+  outcome: null,
+  report: null,
+});
+
 export const createClaudeAdapter = ({ launch = null, capabilities = {} } = {}) => ({
   surface: 'claude',
   capabilities: { ...CLAUDE_CAPABILITIES, ...capabilities },
-  async dispatch({ decision, resolution, strategy, executionCapsule = null, executionContract, envelope = null, workingDirectory = null, environment = null, parentSessionId = null, concurrencyGroup = null, childSession = null }) {
+  ownerDirectAvailable: true,
+  ownerDirectDefault: true,
+  nativeDelegationAvailable: Boolean(launch),
+  async dispatch({ decision, resolution, strategy, executionCapsule = null, executionContract, envelope = null, workingDirectory = null, environment = null, parentSessionId = null, concurrencyGroup = null, childSession = null, executionMode = null, delegationRequested = false, actionContext = null }) {
     const invocation = buildClaudeInvocation({ decision, resolution });
-    if (!launch) return { status: 'unsupported', resultStatus: 'completed', invocation };
+    const nativeRequested = isNativeDelegationRequested({ executionMode, delegationRequested, actionContext, executionContract });
+    const independentReviewRequired = decision.role === 'reviewer' && decision.independentContextRequired === true;
+    if (independentReviewRequired && !launch) {
+      // Independent review cannot silently fall back to the owner's context,
+      // even when a caller explicitly requested optional native delegation.
+      return { ...reviewPendingDispatch({ decision, resolution, parentSessionId }), invocation };
+    }
+    if (!nativeRequested || !launch) {
+      return { ...ownerDirectDispatch({ decision, resolution, parentSessionId }), invocation };
+    }
     // The envelope carries the cache-stable segments and breakpoint digests
     // (Wave 3/5); a launcher that speaks the Claude API reads it for
     // cache_control placement, but this adapter still owns no provider SDK.

@@ -47,7 +47,11 @@ test('Scenario 1 & 3: Cross-surface resume on same worktree preserves Run identi
 
   const taskContract = {
     objective: 'Implement cross-surface feature',
-    acceptance: ['feature implemented and verified'],
+    acceptance: [{
+      acceptance: 'feature implemented and verified',
+      evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test'], obligationId: 'default' },
+    }],
+    allowedPaths: ['README.md'],
     nonGoals: ['no out of scope changes'],
     constraints: ['keep minimal'],
   };
@@ -70,6 +74,7 @@ test('Scenario 1 & 3: Cross-surface resume on same worktree preserves Run identi
   const startPayload = JSON.parse(startRes.result.content[0].text);
   const runId = startPayload.runId;
   assert.ok(runId);
+  assert.equal(startPayload.action.type, 'implement');
 
   // Detach surface 1
   const detachRes = await mcpHandler({
@@ -115,12 +120,23 @@ test('Scenario 1 & 3: Cross-surface resume on same worktree preserves Run identi
 
   const reportRes = await cpClaude.report(runId, {
     stepId: claudeNext.action.step.stepId,
+    summary: 'feature implemented on the resumed worktree',
     changedPaths: ['README.md'],
-    evidence: [],
-    outcome: 'completed',
+    verifications: [{
+      obligationId: 'default',
+      commandRef: 'test',
+      acceptanceCoverage: ['AC-1'],
+    }],
   });
 
-  assert.ok(['accepted', 'in-progress'].includes(reportRes.status));
+  assert.equal(reportRes.status, 'completed', JSON.stringify(reportRes.failures));
+  assert.equal(reportRes.executed[0].status, 'passed');
+  const finalNext = await cpClaude.next(runId);
+  assert.equal(finalNext.action.type, 'done');
+  const persistedRun = await cpClaude.getRun(runId);
+  const identity = resolveKernelWorktreeIdentity({ cwd: mainRoot, workspaceRoot: mainRoot });
+  assert.equal(persistedRun.projectId, identity.projectId);
+  assert.equal(persistedRun.worktreeId, identity.worktreeId);
   await cpClaude.close();
 });
 

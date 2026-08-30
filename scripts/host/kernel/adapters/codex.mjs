@@ -3,7 +3,7 @@
 // implementation turns. Model selection happens per worker invocation only.
 
 import { selectCodexProfileName } from '../codex-model-policy.mjs';
-import { resolveCodexActorRoute } from '../codex-actor-router.mjs';
+import { isNativeDelegationRequested, resolveCodexActorRoute } from '../codex-actor-router.mjs';
 import {
   buildCodexMainSessionPolicy,
   compareCodexSessionConfig,
@@ -253,6 +253,8 @@ export const CODEX_CAPABILITIES = Object.freeze({
   supportsSessionModelOverride: true,
   supportsLaunchProfile: true,
   supportsIndependentContext: true,
+  supportsCrossSurfaceReview: true,
+  supportsReadOnlyReview: true,
   supportsUsageTokens: false,
   supportsResolvedModelIdentity: true,
   // Wave 7. Session continuation is the one cache mechanism the CLI surface
@@ -426,9 +428,39 @@ const buildOwnerDirectDispatch = ({ invocation, parentSessionId = null, actorRol
   errorSummary: null,
   capability: null,
   unsupportedCapability: null,
-  actorSessionId: parentSessionId || null,
+  actorSessionId: null,
   outcome: null,
   report: null,
+  parentSessionId: parentSessionId || null,
+  invocation,
+});
+
+const buildIndependentReviewPending = ({ invocation, parentSessionId = null, actorRole = 'reviewer', sessionPolicy = null, crossSurfaceAvailable = true } = {}) => ({
+  status: 'review-required',
+  resultStatus: 'interrupted',
+  resolvedModel: null,
+  resolvedEffort: null,
+  requestedModel: invocation?.model || null,
+  requestedEffort: invocation?.effort || null,
+  observedModel: null,
+  observedEffort: null,
+  dispatchMechanism: 'independent-review',
+  executionMode: 'independent-review',
+  delegation: { mode: 'required', available: crossSurfaceAvailable, requested: false, actorRole },
+  actorRole,
+  sessionPolicy,
+  parentSessionPolicy: null,
+  enforcementStatus: 'advisory',
+  enforcementReason: 'independent-review-pending',
+  fallbackReason: null,
+  errorCode: null,
+  errorSummary: null,
+  capability: null,
+  unsupportedCapability: null,
+  actorSessionId: null,
+  outcome: null,
+  report: null,
+  review: { required: true, status: 'pending', independent: true, crossSurfaceAvailable },
   parentSessionId: parentSessionId || null,
   invocation,
 });
@@ -448,7 +480,9 @@ const isWorkerTelemetryUnavailable = ({ actualLauncher, identityRequired, observ
 
 export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeAgentHost = globalThis, parentSessionObserver = null, defaultParentSessionConfig = null, parentSessionEnvironment = null, parentEnvironment = null, projectRoot = null, images = [], timeoutMs = CODEX_WORKER_TIMEOUT_MS, capabilities = {}, runtimeHome = null, env = process.env } = {}) => {
   const automaticNativeLaunch = nativeLaunch === null ? createCodexNativeAgentLauncher({ host: nativeAgentHost }) : null;
-  const effectiveNativeLaunch = nativeLaunch || automaticNativeLaunch;
+  // The injected launch seam is usable only after an explicit delegation
+  // request; it never changes the ordinary owner-direct default.
+  const effectiveNativeLaunch = nativeLaunch || automaticNativeLaunch || launch;
   const resolved = {
     ...CODEX_CAPABILITIES,
     ...capabilities,
@@ -460,23 +494,35 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
     surface: 'codex',
     capabilities: resolved,
     ownerDirectAvailable: true,
-    ownerDirectDefault: Boolean(!effectiveNativeLaunch && !launch),
-    async dispatch({ decision, resolution, strategy, executionCapsule = null, executionContract, envelope = null, workingDirectory = null, environment = null, parentSessionId = null, parentSessionConfig = defaultParentSessionConfig, parentSessionEnvironment: dispatchParentSessionEnvironment = null, parentEnvironment: dispatchParentEnvironment = null, concurrencyGroup = null, childSession = null }) {
+    ownerDirectDefault: true,
+    nativeDelegationAvailable: Boolean(effectiveNativeLaunch && resolved.supportsSubagentModel === true),
+    async dispatch({ decision, resolution, strategy, executionCapsule = null, executionContract, envelope = null, workingDirectory = null, environment = null, parentSessionId = null, parentSessionConfig = defaultParentSessionConfig, parentSessionEnvironment: dispatchParentSessionEnvironment = null, parentEnvironment: dispatchParentEnvironment = null, concurrencyGroup = null, childSession = null, executionMode = null, delegationRequested = false, actionContext = null }) {
       const invocation = buildCodexInvocation({ decision, resolution, capabilities: resolved });
       const nativeAvailable = Boolean(effectiveNativeLaunch && resolved.supportsSubagentModel === true);
+      const nativeRequested = isNativeDelegationRequested({ executionMode, delegationRequested, actionContext, executionContract });
       const actorRoute = resolveCodexActorRoute({
         decision,
         invocation,
         capabilities: resolved,
         hasNativeLauncher: Boolean(effectiveNativeLaunch),
+        delegationRequested: nativeRequested,
         parentSessionId,
         parentSessionConfig,
       });
       // A missing native launcher only removes optional delegation. The
       // owner-direct path is the normal interactive Codex execution surface;
       // it must not require parent/child telemetry or invent a worker result.
-      if (!nativeAvailable && !launch) {
+      if (!nativeRequested || !nativeAvailable) {
         const independentReviewRequired = isIndependentReviewRequired({ decision, actorRoute, executionContract });
+        if (independentReviewRequired) {
+          return buildIndependentReviewPending({
+            invocation,
+            parentSessionId,
+            actorRole: actorRoute.role,
+            sessionPolicy: actorRoute.sessionPolicy,
+            crossSurfaceAvailable: resolved.supportsCrossSurfaceReview === true || resolved.supportsIndependentContext === true,
+          });
+        }
         if (!independentReviewRequired) {
           return buildOwnerDirectDispatch({
             invocation,
@@ -485,17 +531,12 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
             sessionPolicy: actorRoute.sessionPolicy,
           });
         }
-        return buildUnsupportedDispatch({
+        return buildIndependentReviewPending({
           invocation,
           parentSessionId,
           actorRole: actorRoute.role,
           sessionPolicy: actorRoute.sessionPolicy,
-          dispatchMechanism: 'capability-guard',
-          executionMode: 'independent-review',
-          delegation: { mode: 'required', available: false, actorRole: actorRoute.role },
-          capability: 'independent-reviewer',
-          reason: 'independent-review-unavailable',
-          remediation: 'Provide an independent native Codex review context.',
+          crossSurfaceAvailable: resolved.supportsCrossSurfaceReview === true || resolved.supportsIndependentContext === true,
         });
       }
 
@@ -586,7 +627,7 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
 
       const nativeSelected = nativeAvailable;
       let selectedLaunch = nativeSelected ? effectiveNativeLaunch : launch;
-      let dispatchMechanism = nativeSelected ? 'native-subagent' : (launch ? 'legacy-launch' : invocation.mechanism);
+      let dispatchMechanism = nativeSelected ? 'native-subagent' : 'owner-direct';
       let fallbackReason = null;
       let invocationResult;
       try {

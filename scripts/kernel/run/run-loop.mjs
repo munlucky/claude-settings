@@ -74,7 +74,8 @@ const describeObligations = (obligations = [], obligationIds = []) => obligation
 
 // An ordinary work unit is assigned a bounded execution role before the model
 // can report implementation work. The current native owner is the default
-// executor; a Host may still map the role onto an optional worker mechanism.
+// executor; a Host may still request an optional native worker. Keep this
+// projection provider-neutral: it is part of the model-visible contract.
 const actorRoleForAction = (actionType) => {
   if (actionType === 'review') return 'reviewer';
   if (actionType === 'debug') return 'debugger';
@@ -83,18 +84,14 @@ const actorRoleForAction = (actionType) => {
   return null;
 };
 
-const withActorAssignment = (action) => {
+const withExecution = (action) => {
   const role = actorRoleForAction(action?.type);
   if (!role) return action;
   const independentReviewRequired = role === 'reviewer' && action?.independentReviewRequired === true;
   return {
     ...action,
-    actorAssignment: {
-      required: true,
+    execution: {
       role,
-      parentRole: independentReviewRequired ? 'orchestrator' : 'owner',
-      parentMayImplement: !independentReviewRequired,
-      nestedDelegationAllowed: false,
       executionMode: independentReviewRequired ? 'independent-review' : 'owner-direct',
       delegation: { mode: independentReviewRequired ? 'required' : 'optional' },
     },
@@ -170,7 +167,7 @@ export const buildNextPayload = ({
   if (failing.length > 0) {
     return {
       ...base,
-      action: withActorAssignment({
+      action: withExecution({
         type: 'fix',
         guidance: 'Fix the failing verification(s), then submit kernel report again with the verifications to re-run.',
         failures: failing.map((failure) => ({
@@ -190,7 +187,7 @@ export const buildNextPayload = ({
     if (outstanding.length > 0 && described.every((entry) => entry.evidenceClass === 'judgment')) {
       return {
         ...base,
-        action: withActorAssignment({
+        action: withExecution({
           type: 'review',
           guidance: 'Route the outstanding judgment obligations to an independent reviewer session and submit the Kernel-recorded review receipt in kernel report.',
           outstandingObligations: outstanding,
@@ -203,7 +200,7 @@ export const buildNextPayload = ({
       .filter((entry) => entry.evidenceClass === 'hard' && entry.allowedCommandRefs.length === 0);
     return {
       ...base,
-      action: withActorAssignment({
+      action: withExecution({
         type: 'implement',
         guidance: missingEvidencePlans.length > 0
           ? `Before submitting proof, provide one structured evidencePlan per acceptance criterion (${missingEvidencePlans.join(', ')}), each bound to the real obligation and project commandRef.`

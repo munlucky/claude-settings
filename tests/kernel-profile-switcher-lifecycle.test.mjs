@@ -18,7 +18,8 @@ test('phase 02 installs all four Kernel profiles and preserves external files', 
     assert.equal(await readFile(path.join(target, 'user-owned.txt'), 'utf8'), 'preserve');
     const manifest = await inspectProfile(target);
     assert.equal(manifest.status, 'ready');
-    assert.equal(manifest.manifest.track, 'kernel');
+    assert.equal(manifest.manifest.runtime, 'moon-relay-kernel');
+    assert.equal(manifest.manifest.provider, runtime);
     const uninstall = await uninstallKernelProfile({ targetRoot: target });
     assert.equal(uninstall.status, 'uninstalled');
     assert.equal(await readFile(path.join(target, 'user-owned.txt'), 'utf8'), 'preserve');

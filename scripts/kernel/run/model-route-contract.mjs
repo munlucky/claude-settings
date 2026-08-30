@@ -144,12 +144,11 @@ export const loadModelPolicy = ({ sourceRoot: root = sourceRoot, text } = {}) =>
 export const buildDecisionId = ({ runId = 'run', attemptNumber = 1, sequence = 0, actionKind = 'implement' } = {}) =>
   `route-${createHash('sha256').update(`${runId}|${attemptNumber}|${sequence}|${actionKind}`).digest('hex').slice(0, 24)}`;
 
-// A Host actor assignment is derived from the persisted route decision.  It is
-// intentionally provider-neutral and deterministic so the report boundary can
-// consume the handle without adding provider/session data to the Kernel
-// decision.  The worker must echo this value; a capsule id alone is not an
-// actor assignment.
-export const buildActorAssignmentId = (decisionId = null) => {
+// A delegated execution assignment is derived from the persisted route
+// decision. It is intentionally provider-neutral and deterministic so the
+// report boundary can consume the handle without adding provider/session data
+// to the Kernel decision. Owner-direct turns do not need an assignment handle.
+export const buildExecutionAssignmentId = (decisionId = null) => {
   const value = String(decisionId || '');
   return /^route-[a-f0-9]{8,64}$/.test(value)
     ? `assignment-${value.slice('route-'.length)}`
@@ -214,6 +213,8 @@ export const normalizeHostCapabilities = (capabilities = {}) => {
     supportsSubagentModel: flag('supportsSubagentModel'),
     supportsSessionModelOverride: flag('supportsSessionModelOverride'),
     supportsIndependentContext: flag('supportsIndependentContext'),
+    supportsCrossSurfaceReview: flag('supportsCrossSurfaceReview') || flag('supportsIndependentContext'),
+    supportsReadOnlyReview: flag('supportsReadOnlyReview'),
     supportsUsageTokens: flag('supportsUsageTokens'),
     supportsResolvedModelIdentity: flag('supportsResolvedModelIdentity'),
   });
@@ -224,7 +225,9 @@ export const normalizeHostCapabilities = (capabilities = {}) => {
 export const resolveEnforcementStrategy = (capabilities, decision = null) => {
   const host = normalizeHostCapabilities(capabilities);
   if (decision && decision.modelClass === 'kernel') return 'unsupported';
-  if (decision && decision.independentContextRequired && !host.supportsIndependentContext) return 'unsupported';
+  // Independent review is a separate native session/surface concern. A Host
+  // may be unable to launch a child worker and still accept a review receipt
+  // from another native surface, so this is not an ordinary execution blocker.
   if (!host.supportsResolvedModelIdentity) {
     return host.supportsSubagentModel || host.supportsSessionModelOverride ? 'advisory' : 'unsupported';
   }

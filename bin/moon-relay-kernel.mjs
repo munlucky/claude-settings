@@ -161,8 +161,12 @@ const output = (value) =>
   );
 
 try {
+  if (hostSessionResolutionError) throw hostSessionResolutionError;
   if (hostRunResolutionError) throw hostRunResolutionError;
-  if (command === '--version' || command === 'version') {
+  if (command === 'mcp-bridge') {
+    const { startMcpBridgeServer } = await import('../scripts/kernel/bridge/mcp.mjs');
+    startMcpBridgeServer({ runtimeHome: runtimeHomeArg || undefined, env: kernelEnv });
+  } else if (command === '--version' || command === 'version') {
     output({ productId: 'moon-relay-kernel', version: '0.1.0' });
   } else if (command === 'doctor') {
     const runtimeHome = runtimeHomeArg || resolveKernelRuntimeHome({ env: trackEnv() });

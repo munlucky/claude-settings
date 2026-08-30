@@ -37,12 +37,8 @@ test('the model-visible next payload is unchanged and carries no routing vocabul
     const { capsuleId, ...hostAction } = host.modelInput.action;
     assert.match(capsuleId, /^capsule-[a-f0-9]{8,64}$/);
     assert.deepEqual({ ...host.modelInput, action: hostAction }, plain);
-    assert.deepEqual(plain.action.actorAssignment, {
-      required: true,
+    assert.deepEqual(plain.action.execution, {
       role: 'implementer',
-      parentRole: 'owner',
-      parentMayImplement: true,
-      nestedDelegationAllowed: false,
       executionMode: 'owner-direct',
       delegation: { mode: 'optional' },
     });
@@ -61,11 +57,11 @@ test('hostNext derives the action kind from the action the model was handed', as
     assert.equal(host.hostDirective.modelRouteDecision.actionKind, 'implement');
     assert.equal(host.hostDirective.modelRouteDecision.modelClass, 'value_coding');
     assert.equal(host.hostDirective.enforcementStrategy, 'subagent');
-    assert.equal(host.hostDirective.actorAssignment.role, 'implementer');
-    assert.equal(host.hostDirective.actorAssignment.parentMayImplement, true);
-    assert.equal(host.hostDirective.actorAssignment.executionMode, 'owner-direct');
-    assert.deepEqual(host.hostDirective.actorAssignment.delegation, { mode: 'optional' });
-    assert.equal(host.hostDirective.actorAssignment.nestedDelegationAllowed, false);
+    assert.equal(host.hostDirective.executionAssignment.role, 'implementer');
+    assert.equal(host.hostDirective.executionAssignment.executionMode, 'owner-direct');
+    assert.deepEqual(host.hostDirective.executionAssignment.delegation, { mode: 'optional', requested: false });
+    assert.equal(Object.hasOwn(host.hostDirective.executionAssignment, 'parentMayImplement'), false);
+    assert.equal(Object.hasOwn(host.hostDirective.executionAssignment, 'nestedDelegationAllowed'), false);
     const review = await cp.hostNext(runId, { hostCapabilities: CLAUDE, actionContext: { actionKind: 'review_engineering' } });
     assert.equal(review.hostDirective.modelRouteDecision.modelClass, 'frontier_reasoning');
     assert.equal(review.hostDirective.modelRouteDecision.permissions, 'read_only');
@@ -116,9 +112,10 @@ test('undeclared Host capabilities default to unsupported rather than assumed', 
   assert.equal(resolveEnforcementStrategy(bare), 'unsupported');
   assert.equal(resolveEnforcementStrategy({ surface: 'x', supportsSubagentModel: true }), 'advisory');
   assert.equal(resolveEnforcementStrategy({ surface: 'x', supportsSessionModelOverride: true, supportsResolvedModelIdentity: true }), 'session');
-  // A T3 review needs a genuinely separate context; a Host without one cannot serve it.
+  // A review may be performed from another native surface; missing child
+  // context is not an ordinary enforcement blocker.
   assert.equal(resolveEnforcementStrategy(CLAUDE, { modelClass: 'frontier_reasoning', independentContextRequired: true }), 'subagent');
-  assert.equal(resolveEnforcementStrategy({ ...CLAUDE, supportsIndependentContext: false }, { modelClass: 'frontier_reasoning', independentContextRequired: true }), 'unsupported');
+  assert.equal(resolveEnforcementStrategy({ ...CLAUDE, supportsIndependentContext: false }, { modelClass: 'frontier_reasoning', independentContextRequired: true }), 'subagent');
   assert.equal(resolveEnforcementStrategy(CLAUDE, { modelClass: 'kernel' }), 'unsupported');
   assert.throws(() => normalizeHostCapabilities({}), /require a surface/);
 });

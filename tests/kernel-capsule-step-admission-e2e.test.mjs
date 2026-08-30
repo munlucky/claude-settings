@@ -50,7 +50,11 @@ const dispatch = (cp, runId, sessionId, actionContext = {}) => dispatchKernelTur
   runId,
   adapter: adapterFor(sessionId),
   registry: createModelRegistry({ surface: 'claude', env: CONFIGURED }),
-  actionContext,
+  actionContext: {
+    executionMode: 'native-subagent',
+    delegationRequested: true,
+    ...actionContext,
+  },
 });
 
 test('K4 scenario A: a simple brownfield change walks contract -> step -> capsule -> admission -> evidence -> completion', async () => {

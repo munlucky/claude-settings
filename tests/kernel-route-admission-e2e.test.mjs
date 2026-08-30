@@ -44,6 +44,7 @@ test('K3-1/10: a value implementation turn is admitted and its receipt carries t
       adapter,
       registry: createModelRegistry({ surface: 'claude', env: CONFIGURED }),
       economics: { maxCostUnits: 10, estimatedCostUnits: 3 },
+      actionContext: { executionMode: 'native-subagent', delegationRequested: true },
     });
 
     assert.equal(result.dispatched, true);
@@ -70,7 +71,13 @@ test('K3-1/10: a value implementation turn is admitted and its receipt carries t
 test('K3-7: a Host that answers with another model is admitted but recorded as a fallback', async () => {
   await withRun(async (cp, runId) => {
     const adapter = createClaudeAdapter({ launch: async () => ({ resolvedModel: 'something-else', sessionId: 's' }) });
-    const result = await dispatchKernelTurn({ controlPlane: cp, runId, adapter, registry: createModelRegistry({ surface: 'claude', env: CONFIGURED }) });
+    const result = await dispatchKernelTurn({
+      controlPlane: cp,
+      runId,
+      adapter,
+      registry: createModelRegistry({ surface: 'claude', env: CONFIGURED }),
+      actionContext: { executionMode: 'native-subagent', delegationRequested: true },
+    });
     // Admission answers "may this dispatch happen"; the receipt answers "what
     // actually ran". The mismatch surfaces in the receipt, not as a success.
     assert.equal(result.admission.decision, 'admitted');
@@ -81,8 +88,15 @@ test('K3-7: a Host that answers with another model is admitted but recorded as a
 
 test('K3-8: a Host that cannot report tokens leaves them unavailable on an admitted turn', async () => {
   await withRun(async (cp, runId, fixture) => {
-    const adapter = createCodexAdapter({ parentSessionObserver: stableParentObserver, launch: async ({ invocation }) => ({ resolvedModel: invocation.model, resolvedEffort: invocation.effort, effortObserved: true, sessionId: 'codex-1' }) });
-    const result = await dispatchKernelTurn({ controlPlane: cp, runId, adapter, parentSessionId: 'codex-parent-session', registry: createModelRegistry({ surface: 'codex', env: CONFIGURED }) });
+    const adapter = createCodexAdapter({ parentSessionObserver: stableParentObserver, launch: async ({ invocation }) => ({ resolvedModel: invocation.model, resolvedEffort: invocation.effort, observedSessionConfig: { model: invocation.model, effort: invocation.effort }, effortObserved: true, sessionId: 'codex-1' }) });
+    const result = await dispatchKernelTurn({
+      controlPlane: cp,
+      runId,
+      adapter,
+      parentSessionId: 'codex-parent-session',
+      registry: createModelRegistry({ surface: 'codex', env: CONFIGURED }),
+      actionContext: { executionMode: 'native-subagent', delegationRequested: true },
+    });
     assert.equal(result.admission.decision, 'admitted');
     assert.equal(result.receipt.enforcementStatus, 'enforced');
     assert.equal(result.receipt.inputTokens, null);
@@ -122,7 +136,13 @@ test('K3: a Host that can neither select a model nor prove one is advisory, and 
 test('K3: an advisory admission is recorded as advisory, never as admitted', async () => {
   await withRun(async (cp, runId) => {
     const adapter = createClaudeAdapter({ launch: async () => ({ resolvedModel: 'host-default-model', sessionId: 's' }) });
-    const result = await dispatchKernelTurn({ controlPlane: cp, runId, adapter, registry: createModelRegistry({ surface: 'claude', env: {} }) });
+    const result = await dispatchKernelTurn({
+      controlPlane: cp,
+      runId,
+      adapter,
+      registry: createModelRegistry({ surface: 'claude', env: {} }),
+      actionContext: { executionMode: 'native-subagent', delegationRequested: true },
+    });
     assert.equal(result.dispatched, true);
     assert.equal(result.admission.decision, 'advisory_admitted');
     assert.equal(result.admission.resolved.source, 'host-default');
@@ -147,7 +167,13 @@ test('K3-6: a permission policy that moved between admission and dispatch stops 
       },
     });
 
-    const result = await dispatchKernelTurn({ controlPlane: cp, runId, adapter: drifting, registry: createModelRegistry({ surface: 'claude', env: CONFIGURED }) });
+    const result = await dispatchKernelTurn({
+      controlPlane: cp,
+      runId,
+      adapter: drifting,
+      registry: createModelRegistry({ surface: 'claude', env: CONFIGURED }),
+      actionContext: { executionMode: 'native-subagent', delegationRequested: true },
+    });
     assert.equal(result.dispatched, false);
     assert.equal(launched, false, 'drift is caught before the worker starts');
     assert.ok(result.drift.length > 0);

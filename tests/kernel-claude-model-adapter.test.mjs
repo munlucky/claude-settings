@@ -33,18 +33,26 @@ test('the reviewer is read-only and runs in a fresh context; T3 demands a separa
 
 test('the adapter injects the registry model rather than pinning one of its own', async () => {
   const adapter = createClaudeAdapter({ launch: async ({ invocation }) => ({ resolvedModel: invocation.model, sessionId: 's1' }) });
-  const planned = await adapter.dispatch({ decision: decisionFor('plan'), resolution: resolution('registry-frontier'), strategy: 'subagent', executionContract: {} });
+  const planned = await adapter.dispatch({
+    decision: decisionFor('plan'),
+    resolution: resolution('registry-frontier'),
+    strategy: 'subagent',
+    executionContract: {},
+    executionMode: 'native-subagent',
+    delegationRequested: true,
+  });
   assert.equal(planned.resolvedModel, 'registry-frontier');
   assert.equal(planned.resolvedEffort, 'high');
   // No provider model id may appear anywhere in the adapter source contract.
   assert.doesNotMatch(JSON.stringify(CLAUDE_AGENT_FOR_ROLE), /gpt-|claude-|gemini/i);
 });
 
-test('a Host with no launcher reports unsupported instead of pretending to route', async () => {
+test('a Host with no launcher keeps ordinary work owner-direct instead of inventing a worker blocker', async () => {
   const adapter = createClaudeAdapter();
   const decision = decisionFor('implement');
   const dispatch = await adapter.dispatch({ decision, resolution: resolution('registry-value'), strategy: 'subagent', executionContract: {} });
-  assert.equal(dispatch.status, 'unsupported');
+  assert.equal(dispatch.status, 'owner-direct');
+  assert.equal(dispatch.resultStatus, 'interrupted');
   const receipt = buildUsageReceipt({
     decision,
     capabilities: adapter.capabilities,
@@ -53,7 +61,7 @@ test('a Host with no launcher reports unsupported instead of pretending to route
     dispatch,
     actorSessionId: 'no-launcher',
   });
-  assert.equal(receipt.enforcementStatus, 'unsupported');
+  assert.equal(receipt.enforcementStatus, 'advisory');
   assert.equal(receipt.resolvedModel, null);
 });
 
@@ -64,7 +72,14 @@ test('a Host that cannot resolve model identity is downgraded even when it can p
   });
   assert.equal(adapter.capabilities.supportsResolvedModelIdentity, false);
   const decision = decisionFor('implement');
-  const dispatch = await adapter.dispatch({ decision, resolution: resolution('registry-value'), strategy: 'advisory', executionContract: {} });
+  const dispatch = await adapter.dispatch({
+    decision,
+    resolution: resolution('registry-value'),
+    strategy: 'advisory',
+    executionContract: {},
+    executionMode: 'native-subagent',
+    delegationRequested: true,
+  });
   const receipt = buildUsageReceipt({ decision, capabilities: adapter.capabilities, strategy: 'advisory', resolution: resolution('registry-value'), dispatch, actorSessionId: 's1' });
   assert.equal(receipt.enforcementStatus, 'unsupported');
 });

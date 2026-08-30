@@ -7,7 +7,7 @@ import { planDryRunWave } from './wave-plan.mjs';
 import { planBoundedWaves } from './run/bounded-wave.mjs';
 import { detectStagnation } from './run/stagnation.mjs';
 import { recommendModelRouting, resolveModelRoute } from './run/model-routing.mjs';
-import { buildActorAssignmentId, normalizeHostCapabilities, resolveEnforcementStrategy, summarizeModelRouting } from './run/model-route-contract.mjs';
+import { buildExecutionAssignmentId, normalizeHostCapabilities, resolveEnforcementStrategy, summarizeModelRouting } from './run/model-route-contract.mjs';
 import { buildReleaseEvidencePack } from './evidence-pack.mjs';
 import { projectRunState } from './state-projector.mjs';
 import { resolveKernelRuntimeHome } from './runtime-home.mjs';
@@ -312,7 +312,21 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     assertRunWorktreeMutationAuthority({ stateStore: store, run, worktree: currentWorktree });
     if (!requireHostBinding || !hostSessionId) return { run, worktree: currentWorktree };
     const binding = getHostBinding({ runId });
-    if (!binding) return { run, worktree: currentWorktree };
+    if (!binding) {
+      // Strict Host entrypoints may only operate through their active owner
+      // binding. Unbound legacy adoption is handled once in ensureRun; a
+      // second native surface must not silently gain mutation authority by
+      // naming the same Run.
+      return assertBoundRunAccess({
+        stateStore: store,
+        requestedRunId: runId,
+        currentProject,
+        currentWorkspace: effectiveWorkspaceId,
+        sessionId: hostSessionId,
+        requiredAccess: command,
+        command,
+      });
+    }
     return assertBoundRunAccess({
       stateStore: store,
       requestedRunId: runId,
@@ -395,7 +409,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
           permissions: 'workspace_write',
           reasonCodes: [failure.errorCode],
         },
-        actorAssignment: null,
+        executionAssignment: null,
         hostCapabilities: capabilities,
         enforcementStrategy: 'kernel',
         executionCapsule: null,
@@ -724,11 +738,16 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         throw Object.assign(new Error('host_binding_missing'), { code: 'host_binding_missing' });
       }
       const binding = hostSessionId ? getHostBinding() : null;
+      const worktreeLease = effectiveWorktreeId && typeof store.getWorktreeMutationLease === 'function'
+        ? store.getWorktreeMutationLease(effectiveWorktreeId)
+        : null;
       const mutable = store.listRuns({
         projectId: currentProject.projectId,
         worktreeId: effectiveWorktreeId,
         statuses: ['active', 'blocked'],
-      });
+      }).filter((run) => run.status === 'active'
+        || (worktreeLease?.projectId === currentProject.projectId
+          && worktreeLease?.holderRunId === run.runId));
       if (mutable.length > 1) {
         throw Object.assign(new Error('worktree_run_conflict'), {
           code: 'worktree_run_conflict',
@@ -1303,17 +1322,15 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       // keeps the orchestrator/worker boundary mandatory.
       const independentReviewRequired = decision.role === 'reviewer' && decision.independentContextRequired === true;
       const ownerDirectAllowed = !independentReviewRequired;
-      const actorAssignment = decision.modelClass === 'kernel'
+      const nativeDelegationRequested = actionContext.executionMode === 'native-subagent' || actionContext.delegationRequested === true;
+      const executionAssignment = decision.modelClass === 'kernel'
         ? null
         : {
-          assignmentId: buildActorAssignmentId(decision.decisionId),
+          ...(nativeDelegationRequested ? { assignmentId: buildExecutionAssignmentId(decision.decisionId) } : {}),
           role: decision.role,
-          parentRole: ownerDirectAllowed ? 'owner' : 'orchestrator',
           workProfile: decision.workProfile,
-          parentMayImplement: ownerDirectAllowed,
-          nestedDelegationAllowed: false,
-          executionMode: ownerDirectAllowed ? 'owner-direct' : 'independent-review',
-          delegation: { mode: ownerDirectAllowed ? 'optional' : 'required' },
+          executionMode: nativeDelegationRequested ? 'native-subagent' : (ownerDirectAllowed ? 'owner-direct' : 'independent-review'),
+          delegation: { mode: ownerDirectAllowed ? 'optional' : 'required', requested: nativeDelegationRequested },
           freshSessionRequired: decision.independentContextRequired === true
             || decision.workProfile?.independentContextRequired === true
             || decision.role === 'reviewer',
@@ -1325,7 +1342,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         executionCapsule,
         hostDirective: {
           modelRouteDecision: decision,
-          actorAssignment,
+          executionAssignment,
           hostCapabilities: capabilities,
           enforcementStrategy: resolveEnforcementStrategy(capabilities, decision),
           executionCapsule,
@@ -1815,6 +1832,33 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         ? this.ensureRunStepsMigrated(runId).find((entry) => entry.stepId === stepId && entry.planRevision === run.planRevision)
         : null;
       const step = requestedStep || this.getCurrentStep(runId);
+      // Owner-direct turns use the same fail-closed scope boundary as routed
+      // workers. Refuse an unbounded implementation before the owner is
+      // invited to mutate the workspace.
+      if (step && ['implement', 'fix'].includes(payload.action?.type)) {
+        try {
+          assertImplementationWorkUnitScope({ step, contract: run.taskContract, actionType: payload.action.type });
+        } catch (error) {
+          const failure = workUnitScopeFailure(error);
+          payload.status = 'scope-rejected';
+          payload.errorCode = failure.errorCode;
+          payload.failureCode = failure.failureCode;
+          payload.errorSummary = failure.errorSummary;
+          payload.nextAction = failure.nextAction;
+          payload.action = {
+            ...payload.action,
+            workUnitScope: {
+              valid: false,
+              reason: failure.scopeReason,
+              errorCode: failure.errorCode,
+              allowedPaths: failure.allowedPaths,
+              ...(failure.workspaceWide.length > 0 ? { workspaceWide: failure.workspaceWide } : {}),
+            },
+            guidance: [failure.errorSummary, payload.action.guidance || ''].filter(Boolean).join(' ').trim(),
+          };
+          return payload;
+        }
+      }
       if (step && ['implement', 'fix', 'review', 'report'].includes(payload.action?.type)) {
         payload.action.step = {
           stepId: step.stepId,

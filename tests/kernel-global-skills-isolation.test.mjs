@@ -29,7 +29,7 @@ const withAccountHome = async (label, body) => {
 
 const readyKernelRoots = async (home) => {
   const runtimeHome = path.join(home, 'kernel');
-  const providerHome = path.join(runtimeHome, 'providers', 'claude');
+  const providerHome = path.join(home, 'native-claude');
   await mkdir(runtimeHome, { recursive: true });
   await writeFile(path.join(runtimeHome, 'install-manifest.json'), JSON.stringify({ productId: 'moon-relay-kernel' }), 'utf8');
   await installKernelProfile({ sourceRoot: process.cwd(), runtime: 'claude', targetRoot: providerHome });
@@ -75,7 +75,6 @@ test('a Kernel launch leaves the account-root skills directory untouched', async
 
     const receipt = await launchSwitch({
       surface: 'claude_cli',
-      track: 'kernel',
       sourceRoot: process.cwd(),
       dryRun: true,
       processProvider: async () => [],
@@ -85,7 +84,6 @@ test('a Kernel launch leaves the account-root skills directory untouched', async
     assert.equal(receipt.status, 'committed');
     assert.deepEqual(await readdir(accountSkills), ['operator-skill']);
     assert.equal(await readFile(path.join(accountSkills, 'operator-skill', 'SKILL.md'), 'utf8'), '# operator owned\n');
-    await assert.rejects(() => readdir(path.join(home, '.claude', '.skills-relay-backup')), /ENOENT/);
     assert.deepEqual(receipt.effective.discoveredSkills, ['moon-relay-kernel']);
   });
 });
@@ -99,7 +97,6 @@ test('a Kernel launch refuses a shared mutable provider surface and leaves no jo
 
     const receipt = await launchSwitch({
       surface: 'claude_cli',
-      track: 'kernel',
       sourceRoot: process.cwd(),
       dryRun: false,
       processProvider: async () => [],
@@ -122,7 +119,6 @@ test('a Kernel launch refuses a provider home that does not serve the entrypoint
 
     const receipt = await launchSwitch({
       surface: 'claude_cli',
-      track: 'kernel',
       sourceRoot: process.cwd(),
       dryRun: true,
       processProvider: async () => [],

@@ -1,25 +1,26 @@
 import path from 'node:path';
 import { spawn, execFileSync } from 'node:child_process';
-import { pathsOverlap, resolveTrackRoots } from './paths.mjs';
+import { pathsOverlap, resolveSurfaceRoots } from './paths.mjs';
 import { canonicalPath } from '../kernel/runtime-home.mjs';
 import { canonicalizeHostSessionId, providerForSurface } from '../kernel/run/host-session.mjs';
 import { nativeProviderDescriptor } from './native-provider.mjs';
+import { KERNEL_RUNTIME_ID, SURFACE_ENV } from './constants.mjs';
 
-function resolveClaudeDesktopAumid() {
-  if (process.platform !== 'win32') return null;
+function resolveClaudeDesktopAumid({ platform = process.platform, execFileSyncImpl = execFileSync } = {}) {
+  if (platform !== 'win32') return null;
   try {
-    const out = execFileSync('powershell.exe', ['-NoProfile', '-Command', '(Get-AppxPackage *Claude*).PackageFamilyName'], { encoding: 'utf8', windowsHide: true, timeout: 3000 });
+    const out = execFileSyncImpl('powershell.exe', ['-NoProfile', '-Command', '(Get-AppxPackage *Claude*).PackageFamilyName'], { encoding: 'utf8', windowsHide: true, timeout: 3000 });
     const familyName = out.trim();
-    if (familyName) return `${familyName}!Claude`;
+    if (familyName) return familyName + '!Claude';
   } catch {}
   return 'Claude_pzs8sxrjxfjjc!Claude';
 }
 
-function resolveCommandPath(command) {
+function resolveCommandPath(command, { platform = process.platform, execFileSyncImpl = execFileSync } = {}) {
   if (!command || path.isAbsolute(command)) return command;
-  if (process.platform === 'win32') {
+  if (platform === 'win32') {
     try {
-      const output = execFileSync('where.exe', [command], { encoding: 'utf8', windowsHide: true, timeout: 3000 });
+      const output = execFileSyncImpl('where.exe', [command], { encoding: 'utf8', windowsHide: true, timeout: 3000 });
       const found = output.split(/\r?\n/).map((line) => line.trim()).find(Boolean);
       if (found) return found;
     } catch {}
@@ -27,128 +28,88 @@ function resolveCommandPath(command) {
   return command;
 }
 
-export function buildProcessEnvironment({ surface, track, roots, workspaceRoot = null, workspaceId = null, runId = null, projectId = null, sessionId = null, baseEnv = process.env } = {}) {
-  const env = { ...baseEnv };
-  const userHome = baseEnv.USERPROFILE || baseEnv.HOME || process.env.USERPROFILE || process.env.HOME || '';
-  const kernelHome = canonicalPath(baseEnv.MOON_RELAY_KERNEL_HOME || path.join(userHome, '.moon-relay-kernel'));
-  const activeProvider = {
-    claude: surface === 'claude_cli' ? roots.providerHome : null,
-    codex: ['codex_cli', 'codex_desktop'].includes(surface) ? roots.providerHome : null,
-    qwen: surface === 'qwen_cli' ? roots.providerHome : null,
-    antigravity: surface === 'antigravity_desktop' ? roots.providerHome : null,
-  };
-  const safeRelayPath = (candidate, fallback, label = 'provider') => {
-    const selected = candidate ? canonicalPath(candidate) : fallback;
-    if (pathsOverlap(kernelHome, fallback)) throw new Error(`unsafe_target: Relay ${label} fallback overlaps Kernel home`);
-    return pathsOverlap(kernelHome, selected) ? fallback : selected;
-  };
-  const sanitizeRelayPath = (value) => {
-    if (typeof value !== 'string') return value;
-    return value
-      .split(path.delimiter)
-      .filter((entry) => !entry || !pathsOverlap(kernelHome, entry))
-      .join(path.delimiter);
-  };
-  if (track === 'kernel') {
-    const provider = providerForSurface(surface);
-    env.MOON_RELAY_KERNEL_HOME = roots.runtimeHome;
-    env.PATH = `${path.join(roots.runtimeHome, 'bin')}${path.delimiter}${env.PATH || ''}`;
-    if (runId) env.MOON_RELAY_KERNEL_RUN_ID = String(runId);
-    if (projectId) env.MOON_RELAY_KERNEL_PROJECT_ID = String(projectId);
-    if (sessionId) env.MOON_RELAY_KERNEL_SESSION_ID = canonicalizeHostSessionId({ provider, sessionId });
-    env.MOON_RELAY_KERNEL_PROVIDER = provider;
-    if (workspaceId) env.MOON_RELAY_KERNEL_WORKSPACE_ID = String(workspaceId);
-    if (surface) env.MOON_RELAY_KERNEL_SURFACE = surface;
-    // Older switcher builds incorrectly exported the Kernel runtime through
-    // MOONSHOT_RELAY_HOME. Do not propagate that poisoned alias into another
-    // Kernel surface, while preserving a genuinely distinct custom Relay home.
-    if (env.MOONSHOT_RELAY_HOME && path.resolve(env.MOONSHOT_RELAY_HOME) === path.resolve(roots.runtimeHome)) {
-      delete env.MOONSHOT_RELAY_HOME;
-    }
-  } else {
-    env.MOONSHOT_RELAY_HOME = roots.runtimeHome;
-    const inheritedPath = Object.entries(env).find(([key]) => key.toLowerCase() === 'path')?.[1];
-    for (const key of Object.keys(env)) if (key.toLowerCase() === 'path') delete env[key];
-    env.PATH = sanitizeRelayPath(inheritedPath);
-    for (const key of [
-      'MOON_RELAY_KERNEL_HOME',
-      'MOON_RELAY_KERNEL_RUN_ID',
-      'MOON_RELAY_KERNEL_PROJECT_ID',
-      'MOON_RELAY_KERNEL_SESSION_ID',
-      'MOON_RELAY_KERNEL_LEGACY_SESSION_ID',
-      'MOON_RELAY_KERNEL_PROVIDER',
-      'MOON_RELAY_KERNEL_WORKSPACE_ID',
-      'MOON_RELAY_WORKSPACE_ROOT',
-    ]) delete env[key];
-    const relayClaudeHome = safeRelayPath(activeProvider.claude || env.CLAUDE_HOME || path.join(userHome, '.claude'), path.join(userHome, '.claude'), 'Claude');
-    const relayClaudeConfig = safeRelayPath(activeProvider.claude || env.CLAUDE_CONFIG_DIR || path.join(userHome, '.claude'), path.join(userHome, '.claude'), 'Claude config');
-    const relayCodexHome = safeRelayPath(activeProvider.codex || env.CODEX_HOME || path.join(userHome, '.codex'), path.join(userHome, '.codex'), 'Codex');
-    const relayQwenHome = safeRelayPath(activeProvider.qwen || env.QWEN_HOME || path.join(userHome, '.qwen'), path.join(userHome, '.qwen'), 'Qwen');
-    const relayAntigravityFallback = path.join(roots.runtimeHome, 'providers', 'antigravity');
-    const relayAntigravitySkillsFallback = path.join(roots.runtimeHome, 'providers', 'antigravity-skills');
-    const relayAntigravityHome = safeRelayPath(
-      activeProvider.antigravity || env.ANTIGRAVITY_HOME || path.join(userHome, '.gemini', 'antigravity'),
-      relayAntigravityFallback,
-      'Antigravity',
-    );
-    const relayAntigravitySkillsHome = safeRelayPath(
-      env.ANTIGRAVITY_SKILLS_HOME || path.join(userHome, '.gemini', 'config'),
-      relayAntigravitySkillsFallback,
-      'Antigravity skills',
-    );
-    env.CLAUDE_HOME = relayClaudeHome;
-    env.CLAUDE_CONFIG_DIR = relayClaudeConfig;
-    env.CODEX_HOME = relayCodexHome;
-    env.QWEN_HOME = relayQwenHome;
-    env.GEMINI_HOME = relayAntigravityHome;
-    env.ANTIGRAVITY_HOME = relayAntigravityHome;
-    env.ANTIGRAVITY_SKILLS_HOME = relayAntigravitySkillsHome;
+const runtimeEnvKeys = Object.freeze([
+  'MOON_RELAY_TRACK',
+  'MOON_RELAY_KERNEL_HOME',
+  'MOON_RELAY_KERNEL_RUN_ID',
+  'MOON_RELAY_KERNEL_PROJECT_ID',
+  'MOON_RELAY_KERNEL_SESSION_ID',
+  'MOON_RELAY_KERNEL_LEGACY_SESSION_ID',
+  'MOON_RELAY_KERNEL_PROVIDER',
+  'MOON_RELAY_KERNEL_WORKSPACE_ID',
+  'MOON_RELAY_WORKSPACE_ROOT',
+]);
+
+export function buildProcessEnvironment({ surface, roots, workspaceRoot = null, workspaceId = null, runId = null, projectId = null, sessionId = null, baseEnv = process.env } = {}) {
+  if (!roots?.runtimeHome || !roots?.providerHome) throw new Error('unsafe_target: native provider roots are required');
+  if (pathsOverlap(roots.runtimeHome, roots.providerHome)) {
+    throw Object.assign(new Error('unsafe_target: native provider home overlaps Kernel runtime'), { code: 'unsafe_target' });
   }
-  env.MOON_RELAY_TRACK = track;
-  if (workspaceRoot) env.MOON_RELAY_WORKSPACE_ROOT = workspaceRoot;
+  const env = { ...baseEnv };
+  for (const key of runtimeEnvKeys) delete env[key];
+  const provider = providerForSurface(surface);
+  env.MOON_RELAY_KERNEL_HOME = canonicalPath(roots.runtimeHome);
+  env.MOON_RELAY_KERNEL_RUNTIME = KERNEL_RUNTIME_ID;
+  env.PATH = path.join(roots.runtimeHome, 'bin') + path.delimiter + (env.PATH || env.Path || '');
+  delete env.Path;
+  if (runId) env.MOON_RELAY_KERNEL_RUN_ID = String(runId);
+  if (projectId) env.MOON_RELAY_KERNEL_PROJECT_ID = String(projectId);
+  if (sessionId) env.MOON_RELAY_KERNEL_SESSION_ID = canonicalizeHostSessionId({ provider, sessionId });
+  env.MOON_RELAY_KERNEL_PROVIDER = provider;
+  if (workspaceId) env.MOON_RELAY_KERNEL_WORKSPACE_ID = String(workspaceId);
+  if (surface) env.MOON_RELAY_KERNEL_SURFACE = surface;
+  if (workspaceRoot) env.MOON_RELAY_WORKSPACE_ROOT = path.resolve(workspaceRoot);
+
+  // Native provider homes are operator/user-owned. Preserve the complete
+  // provider environment; the Kernel runtime never swaps all Provider homes.
+  // When a caller supplies an explicit native root and no corresponding
+  // process binding exists, bind only the active surface.
+  const providerEnv = SURFACE_ENV[surface];
+  if (providerEnv && !env[providerEnv]) env[providerEnv] = roots.providerHome;
+  if (surface === 'antigravity_desktop') {
+    if (!env.GEMINI_HOME) env.GEMINI_HOME = roots.providerHome;
+    if (!env.ANTIGRAVITY_HOME) env.ANTIGRAVITY_HOME = roots.providerHome;
+  }
   return env;
 }
 
-const defaultCommand = (surface) => {
-  if (surface === 'claude_desktop') return process.platform === 'darwin' ? 'Claude' : 'Claude.exe';
+const defaultCommand = (surface, platform = process.platform) => {
+  if (surface === 'claude_desktop') return platform === 'darwin' ? 'Claude' : 'Claude.exe';
   if (surface === 'claude_cli') return 'claude';
   if (surface === 'qwen_cli') return 'qwen';
   if (surface === 'codex_cli') return 'codex';
   return surface;
 };
 
-export function buildLaunchSpec({ surface, track, sourceRoot = process.cwd(), workspaceRoot = null, workspaceId = null, runId = null, projectId = null, sessionId = null, command, args = [], roots = resolveTrackRoots({ track, surface, sourceRoot }) } = {}) {
-  const resolvedWorkspace = workspaceRoot ? path.resolve(workspaceRoot) : (track === 'kernel' ? path.resolve(sourceRoot) : null);
-  const expectedPublicSkills = track === 'kernel' ? ['moon-relay-kernel'] : null;
+export function buildLaunchSpec({ surface, sourceRoot = process.cwd(), workspaceRoot = null, workspaceId = null, runId = null, projectId = null, sessionId = null, command, args = [], roots = resolveSurfaceRoots({ surface, sourceRoot }) } = {}) {
+  const resolvedWorkspace = workspaceRoot ? path.resolve(workspaceRoot) : path.resolve(sourceRoot);
   const nativeProvider = {
     ...nativeProviderDescriptor({ surface, command, runtimeHome: roots.runtimeHome }),
-    // The Host/dispatch layer is shared, but completion remains owned by the
-    // selected track. Kernel completion is runtime-state authority; Relay
-    // completion must never inherit that authority by using this adapter.
-    completionAuthority: track === 'kernel' ? 'kernel' : 'relay',
+    completionAuthority: 'kernel',
+    runtime: KERNEL_RUNTIME_ID,
   };
   return {
     schemaVersion: 1,
     surface,
-    track,
+    runtime: KERNEL_RUNTIME_ID,
     command: command || nativeProvider.command || defaultCommand(surface),
     args: [...args],
     aumid: null,
     roots,
     workspaceRoot: resolvedWorkspace,
     cwd: resolvedWorkspace || process.cwd(),
-    expectedPublicSkills,
+    expectedPublicSkills: ['moon-relay-kernel'],
     providerRuntime: nativeProvider,
-    env: buildProcessEnvironment({ surface, track, roots, workspaceRoot: resolvedWorkspace, workspaceId, runId, projectId, sessionId }),
+    env: buildProcessEnvironment({ surface, roots, workspaceRoot: resolvedWorkspace, workspaceId, runId, projectId, sessionId }),
   };
 }
 
-export function spawnTrack(spec, { spawnImpl = spawn } = {}) {
-  if (process.platform === 'win32' && (spec.surface === 'claude_desktop' || spec.surface === 'claude-app')) {
+export function spawnNativeSurface(spec, { spawnImpl = spawn, platform = process.platform, execFileSyncImpl = execFileSync } = {}) {
+  if (platform === 'win32' && (spec.surface === 'claude_desktop' || spec.surface === 'claude-app')) {
     const cmdExecutable = process.env.ComSpec || path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'cmd.exe');
-    const aumid = resolveClaudeDesktopAumid();
+    const aumid = spec.aumid || resolveClaudeDesktopAumid({ platform, execFileSyncImpl });
     if (aumid) {
-      const shellTarget = `shell:AppsFolder\\${aumid}`;
+      const shellTarget = 'shell:AppsFolder\\' + aumid;
       const child = spawnImpl(cmdExecutable, ['/c', 'start', shellTarget, ...spec.args], {
         env: spec.env,
         cwd: spec.cwd || process.cwd(),
@@ -161,7 +122,7 @@ export function spawnTrack(spec, { spawnImpl = spawn } = {}) {
       return { pid: child.pid || null, status: 'launch_requested', child, launcher: 'cmd_shell_activation' };
     }
   }
-  if (process.platform === 'darwin' && (spec.surface === 'claude_desktop' || spec.surface === 'claude-app')) {
+  if (platform === 'darwin' && (spec.surface === 'claude_desktop' || spec.surface === 'claude-app')) {
     const openArgs = ['-a', 'Claude'];
     if (spec.args.length) openArgs.push('--args', ...spec.args);
     const child = spawnImpl('open', openArgs, {
@@ -174,9 +135,9 @@ export function spawnTrack(spec, { spawnImpl = spawn } = {}) {
     child.unref?.();
     return { pid: child.pid || null, status: 'launch_requested', child, launcher: 'macos_open' };
   }
-  if (process.platform === 'win32' && spec.surface?.endsWith('_cli')) {
+  if (platform === 'win32' && spec.surface?.endsWith('_cli')) {
     const cmdExecutable = process.env.ComSpec || path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'cmd.exe');
-    const resolvedTarget = resolveCommandPath(spec.command);
+    const resolvedTarget = resolveCommandPath(spec.command, { platform, execFileSyncImpl });
     const child = spawnImpl(cmdExecutable, ['/d', '/s', '/c', 'start', '', resolvedTarget, ...spec.args], {
       env: spec.env,
       cwd: spec.cwd || process.cwd(),
@@ -189,43 +150,35 @@ export function spawnTrack(spec, { spawnImpl = spawn } = {}) {
     return { pid: child.pid || null, status: 'launch_requested', child, launcher: 'cmd_start_cli' };
   }
 
-  const isCmdOrBat = process.platform === 'win32' && (/\.(cmd|bat)$/i.test(spec.command) || spec.surface?.endsWith('_cli'));
-  // Antigravity is a native Electron desktop app. On Windows, keeping its
-  // child attached to the short-lived switcher process causes the app to be
-  // torn down as soon as the switcher exits, which later looks like a false
-  // launch_unverified result. Keep the desktop process alive independently.
+  const isCmdOrBat = platform === 'win32' && (/\.(cmd|bat)$/i.test(spec.command) || spec.surface?.endsWith('_cli'));
   const options = {
     env: spec.env,
     cwd: spec.cwd || process.cwd(),
-    windowsHide: process.platform === 'win32' && spec.surface === 'antigravity_desktop' ? false : true,
-    detached: process.platform === 'win32' && spec.surface === 'antigravity_desktop',
+    windowsHide: platform === 'win32' && spec.surface === 'antigravity_desktop' ? false : true,
+    detached: platform === 'win32' && spec.surface === 'antigravity_desktop',
     stdio: 'ignore',
     ...(isCmdOrBat ? { shell: true } : {}),
   };
 
-  const isWindowsApps = process.platform === 'win32' && (/[\\/]WindowsApps[\\/]/i.test(spec.command) || Boolean(spec.aumid));
+  const isWindowsApps = platform === 'win32' && (/[\\/]WindowsApps[\\/]/i.test(spec.command) || Boolean(spec.aumid));
   if (isWindowsApps) {
     const env = {
       ...spec.env,
       MOON_SWITCHER_TARGET: spec.command,
       MOON_SWITCHER_ARGS_JSON: JSON.stringify(spec.args),
+      MOON_SWITCHER_AUMID: spec.aumid || '',
+      MOON_SWITCHER_WINDOW_TITLE: spec.surface === 'antigravity_desktop' ? 'Antigravity' : 'ChatGPT',
     };
     const aumid = spec.aumid || null;
-    env.MOON_SWITCHER_AUMID = aumid || '';
-    env.MOON_SWITCHER_WINDOW_TITLE = spec.surface === 'antigravity_desktop' ? 'Antigravity' : 'ChatGPT';
-    const shellTarget = `shell:AppsFolder\\${aumid}`;
+    const shellTarget = 'shell:AppsFolder\\' + aumid;
     let child;
     if (aumid) {
-      const cmdExecutable = process.env.ComSpec || (process.platform === 'win32' ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'cmd.exe') : 'cmd.exe');
+      const cmdExecutable = process.env.ComSpec || path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'cmd.exe');
       child = spawnImpl(cmdExecutable, ['/c', 'start', shellTarget, ...spec.args], { ...options, env });
       child.on?.('error', () => {});
-      const focusScript = "$ErrorActionPreference='SilentlyContinue'; try { $shell=New-Object -ComObject WScript.Shell; for ($i=0; $i -lt 20; $i++) { Start-Sleep -Milliseconds 500; if ($shell.AppActivate($env:MOON_SWITCHER_WINDOW_TITLE)) { break } } } catch {}";
-      const psExec = process.platform === 'win32' ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe') : 'powershell';
-      const focusChild = spawnImpl(psExec, ['-NoProfile', '-Command', focusScript], { ...options, env });
-      focusChild.on?.('error', () => {});
     } else {
       const psScript = "$ErrorActionPreference='SilentlyContinue'; $envHash = @{}; Get-ChildItem env: | ForEach-Object { $envHash[$_.Name] = $_.Value }; try { Start-Process -FilePath $env:MOON_SWITCHER_TARGET -ArgumentList (@($env:MOON_SWITCHER_ARGS_JSON | ConvertFrom-Json)) -Environment $envHash -WindowStyle Normal } catch { Start-Process -FilePath $env:MOON_SWITCHER_TARGET -ArgumentList (@($env:MOON_SWITCHER_ARGS_JSON | ConvertFrom-Json)) -WindowStyle Normal }";
-      const psExec = process.platform === 'win32' ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe') : 'powershell';
+      const psExec = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
       child = spawnImpl(psExec, ['-NoProfile', '-Command', psScript], { ...options, env });
       child.on?.('error', () => {});
       child.unref?.();
@@ -233,12 +186,8 @@ export function spawnTrack(spec, { spawnImpl = spawn } = {}) {
     return { pid: null, status: 'launch_requested', child, launcher: aumid ? 'cmd_shell_activation' : 'powershell_start_process' };
   }
 
-  try {
-    const child = spawnImpl(spec.command, spec.args, options);
-    child.on?.('error', () => {});
-    child.unref?.();
-    return { pid: child.pid || null, status: 'launch_requested', child, launcher: 'direct' };
-  } catch (error) {
-    throw error;
-  }
+  const child = spawnImpl(spec.command, spec.args, options);
+  child.on?.('error', () => {});
+  child.unref?.();
+  return { pid: child.pid || null, status: 'launch_requested', child, launcher: 'direct' };
 }

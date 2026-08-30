@@ -137,6 +137,8 @@ test('Wayfinder worker adapters preserve the isolated session boundary', async (
     parentSessionId: 'parent-session',
     concurrencyGroup: 'wave-1',
     childSession: { maxNestedAgents: 0, canDelegate: false, canCommit: false },
+    executionMode: 'native-subagent',
+    delegationRequested: true,
   });
   assert.equal(received.workingDirectory, 'C:/runtime/step-a');
   assert.equal(received.environment.MOON_RELAY_KERNEL_STEP_ID, 'step-a');

@@ -60,6 +60,11 @@ test('Kernel account-root profile replaces Relay command skills and preserves us
   assert.equal(doctor.effective, 'kernel');
   assert.equal(doctor.managedFileCount, 21);
 
+  const manifestBefore = await readFile(result.manifestPath, 'utf8');
+  const second = await installKernelAccountRoot({ sourceRoot, runtime: 'codex', targetRoot, runtimeHome });
+  assert.equal(second.status, 'already_current');
+  assert.equal(await readFile(result.manifestPath, 'utf8'), manifestBefore);
+
   const targetStats = await stat(targetRoot);
   assert.ok(targetStats.isDirectory());
 });

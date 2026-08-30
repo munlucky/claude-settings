@@ -72,6 +72,7 @@ test('Codex shadow mode computes the recommendation but does not apply it', asyn
       parentSessionId: 'codex-parent-session',
       registry: createModelRegistry({ surface: 'codex' }),
       env: { MOON_RELAY_KERNEL_CODEX_MODEL_POLICY_MODE: 'shadow' },
+      actionContext: { executionMode: 'native-subagent', delegationRequested: true },
     });
     assert.equal(result.dispatched, true);
     // The final Codex profile defaults on; explicitly selecting shadow must
@@ -96,6 +97,7 @@ test('Codex-specific on mode applies Luna/max to the actual dispatch', async () 
       parentSessionId: 'codex-parent-session',
       registry: createModelRegistry({ surface: 'codex' }),
       env: { MOON_RELAY_KERNEL_CODEX_MODEL_POLICY_MODE: 'on' },
+      actionContext: { executionMode: 'native-subagent', delegationRequested: true },
     });
     assert.equal(result.resolution.model, CODEX_MODELS.luna);
     assert.equal(result.resolution.effort, 'max');
@@ -118,6 +120,7 @@ test('MOON_RELAY_KERNEL_MODEL_POLICY_MODE=on applies the recommendation to the a
       parentSessionId: 'codex-parent-session',
       registry: createModelRegistry({ surface: 'codex' }),
       env: { MOON_RELAY_KERNEL_MODEL_POLICY_MODE: 'on' },
+      actionContext: { executionMode: 'native-subagent', delegationRequested: true },
     });
     assert.equal(result.dispatched, true);
     assert.equal(result.resolution.model, CODEX_MODELS.luna);
@@ -143,6 +146,7 @@ test('model-policy mode never claims enforced on Claude with no concrete model c
       adapter,
       registry: createModelRegistry({ surface: 'claude' }),
       env: { MOON_RELAY_KERNEL_MODEL_POLICY_MODE: 'on' },
+      actionContext: { executionMode: 'native-subagent', delegationRequested: true },
     });
     assert.equal(result.resolution.model, null);
     assert.notEqual(result.resolution.source, 'model-policy');
@@ -184,6 +188,7 @@ test('an explicit invocation-override model survives model-policy mode', async (
       registry: createModelRegistry({ surface: 'codex' }),
       overrides: { value_coding: 'explicit-strong-model' },
       env: { MOON_RELAY_KERNEL_CODEX_MODEL_POLICY_MODE: 'on' },
+      actionContext: { executionMode: 'native-subagent', delegationRequested: true },
     });
     assert.equal(result.resolution.source, 'invocation-override');
     assert.equal(result.resolution.model, 'explicit-strong-model');
@@ -203,7 +208,12 @@ test('shadow mode still records the model-policy escalation reason on the receip
       adapter,
       parentSessionId: 'codex-parent-session',
       registry: createModelRegistry({ surface: 'codex' }),
-      actionContext: { actionKind: 'review_engineering', obligationId: 'security-review' },
+      actionContext: {
+        actionKind: 'review_engineering',
+        obligationId: 'security-review',
+        executionMode: 'native-subagent',
+        delegationRequested: true,
+      },
       env: { MOON_RELAY_KERNEL_CODEX_MODEL_POLICY_MODE: 'shadow' },
     });
     assert.equal(result.receipt.cacheMode, 'shadow');

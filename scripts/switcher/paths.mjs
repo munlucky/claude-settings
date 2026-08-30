@@ -2,7 +2,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { lstat, mkdir, readFile, stat } from 'node:fs/promises';
 import os from 'node:os';
-import { SURFACES, TRACKS } from './constants.mjs';
+import { KERNEL_RUNTIME_ID, SURFACES } from './constants.mjs';
 import { canonicalPath } from '../kernel/runtime-home.mjs';
 
 const home = () => process.env.MOON_HARNESS_SWITCHER_HOME || path.join(process.env.USERPROFILE || os.homedir(), '.moon-harness-switcher');
@@ -29,17 +29,10 @@ const providerEnvNames = Object.freeze({
   antigravity_desktop: 'ANTIGRAVITY_HOME',
 });
 
-export function resolveTrackRoots({ track, surface, sourceRoot = process.cwd(), relayHome = process.env.MOONSHOT_RELAY_HOME, kernelHome = process.env.MOON_RELAY_KERNEL_HOME, platform = process.platform } = {}) {
-  if (!TRACKS.includes(track)) throw new Error(`wrong_harness: unsupported track ${track}`);
+export function resolveSurfaceRoots({ surface, sourceRoot = process.cwd(), kernelHome = process.env.MOON_RELAY_KERNEL_HOME, platform = process.platform, baseEnv = process.env } = {}) {
   if (!SURFACES.includes(surface)) throw new Error(`wrong_harness: unsupported surface ${surface}`);
-  const userHome = process.env.USERPROFILE || os.homedir();
-  const defaultRelay = canonicalPath(path.join(userHome, '.moonshot-relay'));
-  const kernel = canonicalPath(kernelHome || path.join(userHome, '.moon-relay-kernel'));
-  const configuredRelay = relayHome ? canonicalPath(relayHome) : null;
-  const relay = configuredRelay && !pathsOverlap(kernel, configuredRelay)
-    ? configuredRelay
-    : defaultRelay;
-  if (pathsOverlap(kernel, relay)) throw new Error('unsafe_target: Kernel and Relay runtime homes overlap');
+  const userHome = baseEnv.USERPROFILE || baseEnv.HOME || os.homedir();
+  const runtimeHome = canonicalPath(kernelHome || baseEnv.MOON_RELAY_KERNEL_HOME || path.join(userHome, '.moon-relay-kernel'));
   const defaultProvider = {
     claude_desktop: path.join(userHome, '.claude'),
     claude_cli: path.join(userHome, '.claude'),
@@ -48,34 +41,25 @@ export function resolveTrackRoots({ track, surface, sourceRoot = process.cwd(), 
     codex_desktop: path.join(userHome, '.codex'),
     antigravity_desktop: path.join(userHome, '.gemini', 'antigravity'),
   };
-  const providerRelay = {
-    claude_desktop: null,
-    claude_cli: null,
-    codex_cli: null,
-    qwen_cli: null,
-    codex_desktop: null,
-    antigravity_desktop: null,
-  };
-  for (const item of SURFACES) {
-    const configuredProvider = providerEnvNames[item] ? process.env[providerEnvNames[item]] : null;
-    const candidate = configuredProvider ? canonicalPath(configuredProvider) : null;
-    const fallback = canonicalPath(defaultProvider[item]);
-    providerRelay[item] = candidate && !pathsOverlap(kernel, candidate) ? candidate : fallback;
-    if (pathsOverlap(kernel, providerRelay[item])) throw new Error(`unsafe_target: ${item} Relay provider overlaps Kernel home`);
-  }
-  const roots = track === 'relay'
-    ? { runtimeHome: relay, providerHome: providerRelay[surface] }
-    : { runtimeHome: kernel, providerHome: providerRelay[surface] };
+  const configuredProvider = providerEnvNames[surface] ? baseEnv[providerEnvNames[surface]] : null;
+  const providerHome = canonicalPath(configuredProvider || defaultProvider[surface]);
+  if (pathsOverlap(runtimeHome, providerHome)) throw Object.assign(new Error(`unsafe_target: ${surface} native provider home overlaps Kernel runtime`), { code: 'unsafe_target' });
+  const roots = { runtimeHome, providerHome };
   if (surface === 'codex_desktop') {
     const appDataBase = platform === 'darwin'
-      ? path.join(os.homedir(), 'Library', 'Application Support')
-      : path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'));
-    roots.appDataRoot = path.join(appDataBase, 'OpenAI', track === 'relay' ? 'Codex-Relay' : 'Codex-Kernel');
+      ? path.join(userHome, 'Library', 'Application Support')
+      : platform === 'win32'
+        ? path.join(baseEnv.LOCALAPPDATA || path.join(userHome, 'AppData', 'Local'))
+        : path.join(baseEnv.XDG_CONFIG_HOME || path.join(userHome, '.config'));
+    roots.appDataRoot = path.join(appDataBase, 'OpenAI', 'Codex');
   }
-  if (surface === 'antigravity_desktop') roots.appDataRoot = track === 'relay'
-    ? path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'Antigravity-Relay')
-    : path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'Antigravity-Kernel');
-  return { ...roots, sourceRoot: path.resolve(sourceRoot), track, surface };
+  if (surface === 'antigravity_desktop') {
+    const appDataBase = platform === 'darwin'
+      ? path.join(userHome, 'Library', 'Application Support')
+      : path.join(baseEnv.APPDATA || path.join(userHome, 'AppData', 'Roaming'));
+    roots.appDataRoot = path.join(appDataBase, 'Antigravity');
+  }
+  return { ...roots, sourceRoot: path.resolve(sourceRoot), runtime: KERNEL_RUNTIME_ID, surface };
 }
 
 export async function physicalTargetIdentity(target, { protectedRoots = [] } = {}) {

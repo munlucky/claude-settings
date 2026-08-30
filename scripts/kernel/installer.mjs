@@ -98,16 +98,20 @@ export const materializeKernelCommandShim = async ({ runtimeHome, entrypoint } =
   await mkdir(binDir, { recursive: true });
   const written = [];
   if (process.platform === 'win32') {
-    const cmd = path.join(binDir, 'kernel.cmd');
-    const ps1 = path.join(binDir, 'kernel.ps1');
-    await atomicWrite(cmd, `@echo off\r\nnode "${cli}" %*\r\n`);
-    await atomicWrite(ps1, `& node "${cli}" @args\r\n`);
-    written.push(cmd, ps1);
+    for (const name of ['kernel', 'moon-relay-kernel']) {
+      const cmd = path.join(binDir, `${name}.cmd`);
+      const ps1 = path.join(binDir, `${name}.ps1`);
+      await atomicWrite(cmd, `@echo off\r\nnode "${cli}" %*\r\n`);
+      await atomicWrite(ps1, `& node "${cli}" @args\r\n`);
+      written.push(cmd, ps1);
+    }
   } else {
-    const shim = path.join(binDir, 'kernel');
-    await atomicWrite(shim, `#!/bin/sh\nexec node "${cli}" "$@"\n`);
-    await chmod(shim, 0o755);
-    written.push(shim);
+    for (const name of ['kernel', 'moon-relay-kernel']) {
+      const shim = path.join(binDir, name);
+      await atomicWrite(shim, `#!/bin/sh\nexec node "${cli}" "$@"\n`);
+      await chmod(shim, 0o755);
+      written.push(shim);
+    }
   }
   return { status: 'installed', runtimeHome: root, entrypoint: cli, written };
 };

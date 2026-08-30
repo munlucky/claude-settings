@@ -10,10 +10,9 @@ export const NATIVE_PROVIDER_POLICY = Object.freeze({
   mode: 'native-provider',
   managedRuntime: 'kernel-node-only',
   dataRoot: 'native-provider-home',
-  relayRuntimeDependency: 'forbidden',
   executionLayer: 'native-surface',
-  trackIsolation: 'kernel-state-only',
-  completionAuthority: 'track-owned',
+  runtimeIsolation: 'kernel-state-only',
+  completionAuthority: 'kernel',
 });
 
 const PROVIDERS = Object.freeze({

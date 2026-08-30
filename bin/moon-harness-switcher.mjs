@@ -29,7 +29,16 @@ const normalizeSurface = async (s) => {
 try {
   const rawSurface = get('--surface');
   const surface = await normalizeSurface(rawSurface);
-  const track = get('--track');
+  const requestedRuntime = get('--track');
+  if (requestedRuntime && requestedRuntime !== 'kernel' && requestedRuntime !== 'relay') {
+    throw Object.assign(new Error('wrong_harness: unsupported runtime selector ' + requestedRuntime), { code: 'wrong_harness' });
+  }
+  if (requestedRuntime === 'relay') {
+    const retired = { schemaVersion: 1, status: 'retired', runtime: 'moon-relay-kernel', errorCode: 'relay_track_retired', message: 'Relay runtime track is retired; launch Kernel directly.', sensitiveContentRead: false };
+    output(retired);
+    process.exitCode = 1;
+    throw Object.assign(new Error(retired.message), { code: retired.errorCode, alreadyOutput: true });
+  }
   let result;
   if (command === 'status') result = await switchStatus({ surface: surface === 'all' ? null : surface });
   else if (command === 'doctor') result = await switchDoctor({ surface: surface === 'all' ? null : surface });
@@ -53,7 +62,6 @@ try {
     for (const item of targets) {
       const res = await launchSwitch({
         surface: item,
-        track,
         sourceRoot: get('--source-root') || process.cwd(),
         projectRoot: get('--project-root') || process.cwd(),
         taskBinding,
@@ -62,7 +70,7 @@ try {
       });
       results.push(res);
     }
-    result = targets.length === 1 ? results[0] : { schemaVersion: 1, status: 'completed', operation: 'launch', track, results };
+    result = targets.length === 1 ? results[0] : { schemaVersion: 1, status: 'completed', operation: 'launch', runtime: 'moon-relay-kernel', results };
   }
   else if (command === 'recover') result = await recoverSwitch({ surface: surface === 'all' ? null : surface, closeApproval: args.includes('--approved') });
   else if (command === 'rollback') result = await rollbackSwitch({ surface: surface === 'all' ? null : surface });
@@ -74,6 +82,6 @@ try {
     if (launches.some((item) => !['committed', 'already_effective'].includes(item?.status))) process.exitCode = 1;
   } else if (result?.status === 'error' || result?.status === 'unsafe_target' || result?.errorCode === 'wrong_harness' || result?.errorCode === 'unsafe_target') process.exitCode = 1;
 } catch (error) {
-  output({ schemaVersion: 1, status: 'error', errorCode: error.code || 'unknown_error', message: error.message, sensitiveContentRead: false });
+  if (!error.alreadyOutput) output({ schemaVersion: 1, status: 'error', errorCode: error.code || 'unknown_error', message: error.message, sensitiveContentRead: false });
   process.exitCode = 1;
 }

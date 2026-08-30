@@ -68,10 +68,10 @@ test('a launch profile is named by the materialized overlay, never by provider m
 });
 
 test('Codex reports no usage tokens, so they stay unavailable rather than zero', async () => {
-  const adapter = createCodexAdapter({ parentSessionObserver: stableParentObserver, launch: async ({ invocation }) => ({ resolvedModel: invocation.model, resolvedEffort: invocation.effort, effortObserved: true, sessionId: 'codex-session', wallClockMs: 4200 }) });
+  const adapter = createCodexAdapter({ parentSessionObserver: stableParentObserver, launch: async ({ invocation }) => ({ resolvedModel: invocation.model, resolvedEffort: invocation.effort, observedSessionConfig: { model: invocation.model, effort: invocation.effort }, effortObserved: true, sessionId: 'codex-session', wallClockMs: 4200 }) });
   assert.equal(adapter.capabilities.supportsUsageTokens, false);
   const decision = decisionFor('implement');
-  const dispatch = await adapter.dispatch({ decision, resolution: resolution('value-model'), strategy: 'session', parentSessionId: 'codex-parent-session', executionContract: {} });
+  const dispatch = await adapter.dispatch({ decision, resolution: resolution('value-model'), strategy: 'session', parentSessionId: 'codex-parent-session', executionContract: {}, executionMode: 'native-subagent', delegationRequested: true });
   const receipt = buildUsageReceipt({ decision, capabilities: adapter.capabilities, strategy: 'session', resolution: resolution('value-model'), dispatch, actorSessionId: dispatch.actorSessionId });
   assert.equal(receipt.enforcementStatus, 'enforced');
   assert.equal(receipt.inputTokens, null);
@@ -82,7 +82,7 @@ test('Codex reports no usage tokens, so they stay unavailable rather than zero',
 test('an unresolvable model is advisory and never reported as enforced', async () => {
   const adapter = createCodexAdapter({ parentSessionObserver: stableParentObserver, launch: async () => ({ resolvedModel: 'whatever-the-cli-defaults-to', sessionId: 'codex-session' }) });
   const decision = decisionFor('implement');
-  const dispatch = await adapter.dispatch({ decision, resolution: resolution(null), strategy: 'session', parentSessionId: 'codex-parent-session', executionContract: {} });
+  const dispatch = await adapter.dispatch({ decision, resolution: resolution(null), strategy: 'session', parentSessionId: 'codex-parent-session', executionContract: {}, executionMode: 'native-subagent', delegationRequested: true });
   assert.equal(dispatch.invocation.mechanism, 'host-default');
   const receipt = buildUsageReceipt({ decision, capabilities: adapter.capabilities, strategy: 'session', resolution: resolution(null), dispatch, actorSessionId: 'codex-session' });
   assert.equal(receipt.enforcementStatus, 'advisory');
@@ -97,11 +97,10 @@ test('the Codex actor route keeps owner-direct as the default while preserving f
   assert.equal(route.role, 'debugger');
   assert.equal(route.dispatchMechanism, 'owner-direct');
   assert.equal(route.sessionPolicy, 'fresh');
-  assert.equal(route.parentMayImplement, true);
   assert.equal(route.ownerDirectAllowed, true);
   assert.equal(route.executionMode, 'owner-direct');
-  assert.deepEqual(route.delegation, { mode: 'optional', available: false });
-  assert.equal(route.nestedDelegationAllowed, false);
+  assert.deepEqual(route.delegation, { mode: 'optional', available: false, requested: false });
+  assert.deepEqual(route.execution, { role: 'debugger', mode: 'owner-direct', delegation: 'optional' });
 });
 
 test('the main Codex session invariance guard requires Luna/Max before and after the run', () => {
@@ -134,6 +133,7 @@ test('a parent session observation mismatch blocks Codex work before the launche
       after: { sessionId: 'main-session', model: 'gpt-5.6-sol', effort: 'high' },
     },
     executionContract: {},
+    executionMode: 'native-subagent', delegationRequested: true,
   });
   assert.equal(launched, false);
   assert.equal(dispatch.status, 'failed');
@@ -155,6 +155,7 @@ test('missing parent model/session telemetry is an actionable unsupported capabi
     resolution: { model: 'gpt-5.6-luna', effort: 'max', enforcementIntent: 'enforced' },
     parentSessionId: 'external-node-parent',
     executionContract: {},
+    executionMode: 'native-subagent', delegationRequested: true,
   });
   assert.equal(launched, false);
   assert.equal(dispatch.status, 'unsupported');
@@ -223,6 +224,7 @@ test('the production native launcher sends explicit model and effort and observe
     workingDirectory: '/workspace/worker',
     concurrencyGroup: 'run-1',
     childSession: { canDelegate: false, canCommit: false },
+    executionMode: 'native-subagent', delegationRequested: true,
   });
   assert.deepEqual(parentPhases, ['before', 'after']);
   assert.equal(request.task_name, 'kernel_implementer');
@@ -259,6 +261,7 @@ test('native reviewer dispatch uses the read-only review contract and schema', a
     resolution: { model: 'gpt-5.6-sol', effort: 'high', enforcementIntent: 'enforced' },
     parentSessionId: 'main-session',
     executionContract: { permissions: 'read_only' },
+    executionMode: 'native-subagent', delegationRequested: true,
   });
   assert.equal(dispatch.status, 'completed');
   assert.equal(dispatch.outcome.verdict, 'pass');
@@ -280,7 +283,7 @@ test('a parent model change observed after child execution fails the whole dispa
     },
     launch: async ({ invocation }) => {
       launched = true;
-      return { resolvedModel: invocation.model, resolvedEffort: invocation.effort, sessionId: 'worker-session' };
+      return { resolvedModel: invocation.model, resolvedEffort: invocation.effort, observedSessionConfig: { model: invocation.model, effort: invocation.effort }, sessionId: 'worker-session' };
     },
   });
   const dispatch = await adapter.dispatch({
@@ -288,6 +291,7 @@ test('a parent model change observed after child execution fails the whole dispa
     resolution: { model: 'gpt-5.6-luna', effort: 'max', enforcementIntent: 'enforced' },
     parentSessionId: 'main-session',
     executionContract: {},
+    executionMode: 'native-subagent', delegationRequested: true,
   });
   assert.equal(launched, true);
   assert.equal(phase, 'after');
@@ -314,7 +318,7 @@ test('the default Host observer proves the canonical parent rollout before and a
       parentSessionEnvironment: { CODEX_HOME: parentCodexHome },
       launch: async ({ invocation, environment }) => {
         childEnvironment = environment;
-        return { resolvedModel: invocation.model, resolvedEffort: invocation.effort, sessionId: 'codex:worker-child' };
+        return { resolvedModel: invocation.model, resolvedEffort: invocation.effort, observedSessionConfig: { model: invocation.model, effort: invocation.effort }, sessionId: 'codex:worker-child' };
       },
     });
     const dispatch = await adapter.dispatch({
@@ -323,6 +327,7 @@ test('the default Host observer proves the canonical parent rollout before and a
       parentSessionId: `codex:${threadId}`,
       executionContract: {},
       environment: { CODEX_HOME: providerCodexHome },
+      executionMode: 'native-subagent', delegationRequested: true,
     });
     assert.equal(dispatch.status, 'completed');
     assert.equal(dispatch.parentSessionPolicy.observationStatus, 'enforced');
@@ -335,7 +340,7 @@ test('the default Host observer proves the canonical parent rollout before and a
   }
 });
 
-test('a legacy Codex launcher cannot silently execute in the parent session', async () => {
+test('an explicitly delegated Codex launcher cannot silently execute in the parent session', async () => {
   const adapter = createCodexAdapter({
     parentSessionObserver: stableParentObserver,
     launch: async ({ invocation }) => ({
@@ -350,8 +355,9 @@ test('a legacy Codex launcher cannot silently execute in the parent session', as
     resolution: resolution('gpt-5.6-luna'),
     parentSessionId: 'main-session',
     executionContract: {},
+    executionMode: 'native-subagent', delegationRequested: true,
   });
-  assert.equal(dispatch.dispatchMechanism, 'legacy-launch');
+  assert.equal(dispatch.dispatchMechanism, 'native-subagent');
   assert.equal(dispatch.status, 'failed');
   assert.equal(dispatch.enforcementReason, 'worker-session-not-distinct');
 });
@@ -368,8 +374,9 @@ test('a Codex launcher failure stays a dispatch failure instead of becoming tele
     resolution: resolution('gpt-5.6-luna'),
     parentSessionId: 'main-session',
     executionContract: {},
+    executionMode: 'native-subagent', delegationRequested: true,
   });
-  assert.equal(dispatch.dispatchMechanism, 'legacy-launch');
+  assert.equal(dispatch.dispatchMechanism, 'native-subagent');
   assert.equal(dispatch.status, 'failed');
   assert.equal(dispatch.resultStatus, 'failed');
   assert.equal(dispatch.enforcementStatus, 'failed');
@@ -398,6 +405,7 @@ test('a native model mismatch fails a mutating dispatch directly without CLI fal
       parentSessionId: 'parent-session',
       workingDirectory: workerRoot,
       executionContract: {},
+      executionMode: 'native-subagent', delegationRequested: true,
     });
     assert.deepEqual(calls, ['native']);
     assert.equal(dispatch.status, 'failed');
@@ -420,6 +428,7 @@ test('when native observation mismatches the dispatch fails closed', async () =>
     resolution: { model: 'gpt-5.6-luna', effort: 'max', enforcementIntent: 'enforced' },
     parentSessionId: 'parent-session',
     executionContract: {},
+    executionMode: 'native-subagent', delegationRequested: true,
   });
   assert.equal(dispatch.status, 'failed');
   assert.equal(dispatch.errorCode, 'model-enforcement-failed');
@@ -462,11 +471,11 @@ test('a Codex adapter without a native launcher blocks only a required independe
     resolution: { model: 'gpt-5.6-sol', effort: 'xhigh', enforcementIntent: 'enforced' },
     executionContract: { role: 'reviewer', independentReviewRequired: true },
   });
-  assert.equal(dispatch.status, 'unsupported');
-  assert.equal(dispatch.resultStatus, 'failed');
-  assert.equal(dispatch.errorCode, 'codex-host-capability-unsupported');
-  assert.equal(dispatch.capability.capability, 'independent-reviewer');
-  assert.equal(dispatch.capability.reason, 'independent-review-unavailable');
+  assert.equal(dispatch.status, 'review-required');
+  assert.equal(dispatch.resultStatus, 'interrupted');
+  assert.equal(dispatch.errorCode, null);
+  assert.equal(dispatch.capability, null);
   assert.equal(dispatch.executionMode, 'independent-review');
-  assert.deepEqual(dispatch.delegation, { mode: 'required', available: false, actorRole: 'reviewer' });
+  assert.deepEqual(dispatch.delegation, { mode: 'required', available: true, requested: false, actorRole: 'reviewer' });
+  assert.equal(dispatch.review.status, 'pending');
 });

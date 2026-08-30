@@ -126,9 +126,8 @@ export async function runUnificationAudit({ repoRoot = repoRootDefault } = {}) {
   const providerPolicy = manifest.providerRuntimePolicy || {};
   if (providerPolicy.mode !== 'native-provider'
     || providerPolicy.managedRuntime !== 'kernel-node-only'
-    || providerPolicy.relayRuntimeDependency !== 'forbidden'
     || providerPolicy.executionLayer !== 'native-surface'
-    || providerPolicy.trackIsolation !== 'kernel-state-only'
+    || providerPolicy.runtimeIsolation !== 'kernel-state-only'
     || providerPolicy.completionAuthority !== 'kernel') {
     findings.push(finding('kernel-native-provider-policy-missing', 'Kernel package must declare native surface dispatch with isolated Kernel state and Kernel completion authority.'));
   }

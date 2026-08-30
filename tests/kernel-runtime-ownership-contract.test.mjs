@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
-import { resolveTrackRoots } from '../scripts/switcher/paths.mjs';
+import { resolveSurfaceRoots } from '../scripts/switcher/paths.mjs';
 import { buildCodexDesktopLaunch } from '../scripts/switcher/providers/codex.mjs';
 import { resolveKernelWorktreeIdentity } from '../scripts/kernel/run/worktree-binding.mjs';
 
@@ -77,13 +77,13 @@ test('Invariant 2: Kernel does not own or override Provider HOME (Kernel State !
   const relayHome = path.join(os.tmpdir(), 'relay-home');
   const kernelHome = path.join(os.tmpdir(), 'kernel-home');
 
-  const roots = resolveTrackRoots({ track: 'kernel', surface: 'codex_desktop', relayHome, kernelHome });
+  const roots = resolveSurfaceRoots({ surface: 'codex_desktop', sourceRoot: process.cwd(), kernelHome });
   assert.equal(roots.runtimeHome, kernelHome);
   // Provider home points to native user codex home, not inside kernelHome
   assert.ok(!roots.providerHome.startsWith(kernelHome));
 
-  const launchSpec = buildCodexDesktopLaunch({ track: 'kernel', roots, executable: 'ChatGPT.exe' });
-  assert.equal(launchSpec.env.CODEX_HOME, undefined);
+  const launchSpec = buildCodexDesktopLaunch({ sourceRoot: process.cwd(), roots, executable: 'ChatGPT.exe' });
+  assert.equal(launchSpec.env.CODEX_HOME, roots.providerHome);
   assert.equal(launchSpec.env.MOON_RELAY_KERNEL_HOME, kernelHome);
   assert.equal(launchSpec.env.MOON_RELAY_KERNEL_SURFACE, 'codex_desktop');
 });
@@ -226,8 +226,8 @@ test('Invariant 7: Abandoned Run cannot be resumed; new contract creates a fresh
 });
 
 test('Invariant 8: Kernel Codex Desktop does not pass --user-data-dir', () => {
-  const roots = resolveTrackRoots({ track: 'kernel', surface: 'codex_desktop' });
-  const launchSpec = buildCodexDesktopLaunch({ track: 'kernel', roots, executable: 'ChatGPT.exe' });
+  const roots = resolveSurfaceRoots({ surface: 'codex_desktop', sourceRoot: process.cwd() });
+  const launchSpec = buildCodexDesktopLaunch({ sourceRoot: process.cwd(), roots, executable: 'ChatGPT.exe' });
   assert.equal(launchSpec.args.includes('--user-data-dir'), false);
   assert.ok(!launchSpec.args.some((arg) => typeof arg === 'string' && arg.startsWith('--user-data-dir')));
 });
