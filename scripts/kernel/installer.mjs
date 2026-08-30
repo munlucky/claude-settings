@@ -154,6 +154,31 @@ export const materializeKernelCommandShim = async ({ runtimeHome, entrypoint, no
   const node = nodePath ? path.resolve(nodePath) : 'node';
   const binDir = path.join(root, 'bin');
   await mkdir(binDir, { recursive: true });
+  const legacyHostModule = ['moon-relay-kernel', 'host.mjs'].join('-');
+  const legacyHostCli = path.join(path.dirname(cli), legacyHostModule);
+  const normalizeLineEndings = (value) => String(value).replaceAll('\r\n', '\n');
+  const legacyShims = process.platform === 'win32'
+    ? [
+      { name: 'kernel-host.cmd', content: `@echo off\r\nnode "${legacyHostCli}" %*\r\n` },
+      { name: 'kernel-host.ps1', content: `& node "${legacyHostCli}" @args\r\n` },
+    ]
+    : [{ name: 'kernel-host', content: `#!/bin/sh\nexec node "${legacyHostCli}" "$@"\n` }];
+  const retired = [];
+  for (const legacy of legacyShims) {
+    const target = assertContained(root, path.join(binDir, legacy.name));
+    try {
+      const info = await lstat(target);
+      if (!info.isFile()) continue;
+      const existing = await readFile(target, 'utf8');
+      // Only remove the exact shim emitted by the pre-native Host installer.
+      // A user-modified or foreign file remains untouched for collision safety.
+      if (normalizeLineEndings(existing) !== normalizeLineEndings(legacy.content)) continue;
+      await rm(target, { force: true });
+      retired.push(target);
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+  }
   const written = [];
   if (process.platform === 'win32') {
     for (const name of ['kernel', 'moon-relay-kernel']) {
@@ -173,7 +198,7 @@ export const materializeKernelCommandShim = async ({ runtimeHome, entrypoint, no
       written.push(shim);
     }
   }
-  return { status: 'installed', runtimeHome: root, entrypoint: cli, nodePath: node, written };
+  return { status: 'installed', runtimeHome: root, entrypoint: cli, nodePath: node, written, retired };
 };
 
 // Ordinary installs remain collision-protected; only an explicit closeout

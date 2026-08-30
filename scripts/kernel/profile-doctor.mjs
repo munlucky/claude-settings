@@ -26,10 +26,8 @@ export async function doctorKernelProfile({ targetRoot, runtime = null, runtimeH
   if (runtimeHome) {
     const binDir = path.join(path.resolve(runtimeHome), 'bin');
     const shim = path.join(binDir, process.platform === 'win32' ? 'kernel.cmd' : 'kernel');
-    const hostShim = path.join(binDir, process.platform === 'win32' ? 'kernel-host.cmd' : 'kernel-host');
     let present = true;
     let executable = true;
-    let hostPresent = true;
     try {
       await access(shim);
       if (process.platform !== 'win32') await access(shim, constants.X_OK);
@@ -37,7 +35,6 @@ export async function doctorKernelProfile({ targetRoot, runtime = null, runtimeH
       present = error.code !== 'ENOENT';
       executable = false;
     }
-    try { await access(hostShim); } catch { hostPresent = false; }
     const payloadRoot = [
       path.join(runtimeHome, '.moon-relay', 'kernel-payload'),
       path.join(runtimeHome, 'kernel-payload'),
@@ -54,7 +51,6 @@ export async function doctorKernelProfile({ targetRoot, runtime = null, runtimeH
     commandChecks.push(
       { check: 'kernel-shim-present', passed: present },
       { check: 'kernel-shim-executable', passed: executable },
-      { check: 'kernel-host-shim-present', passed: hostPresent },
       { check: 'node-runtime-resolves', passed: Boolean(nodeRuntime?.nodePath) },
       { check: 'kernel-cli-starts', passed: direct.status === 0 },
       { check: 'provider-child-path-resolves', passed: throughPath.status === 0 },

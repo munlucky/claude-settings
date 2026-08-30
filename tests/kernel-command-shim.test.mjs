@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { access, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import os from 'node:os';
@@ -33,4 +33,25 @@ test('process-scoped kernel shim executes without changing the parent PATH', asy
     const result = spawnSync(shim, ['next'], { encoding: 'utf8' });
     assert.deepEqual(JSON.parse(result.stdout).argv, ['next']);
   }
+});
+
+test('command shim reconciliation retires only the exact legacy Host shims', async () => {
+  const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-shim-retire-'));
+  const binDir = path.join(runtimeHome, 'bin');
+  const entrypoint = path.join(runtimeHome, 'payload', 'bin', 'moon-relay-kernel.mjs');
+  const legacyHost = path.join(runtimeHome, 'payload', 'bin', 'moon-relay-kernel-host.mjs');
+  await mkdir(binDir, { recursive: true });
+
+  const legacy = process.platform === 'win32'
+    ? [
+      [path.join(binDir, 'kernel-host.cmd'), `@echo off\r\nnode "${legacyHost}" %*\r\n`],
+      [path.join(binDir, 'kernel-host.ps1'), `& node "${legacyHost}" @args\r\n`],
+    ]
+    : [[path.join(binDir, 'kernel-host'), `#!/bin/sh\nexec node "${legacyHost}" "$@"\n`]];
+  for (const [file, content] of legacy) await writeFile(file, content);
+
+  const installed = await materializeKernelCommandShim({ runtimeHome, entrypoint });
+  assert.deepEqual(installed.retired, legacy.map(([file]) => file));
+  for (const [file] of legacy) await assert.rejects(access(file));
+  assert.ok(installed.written.length >= 1);
 });
