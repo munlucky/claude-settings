@@ -12,4 +12,12 @@ The active Host bridge:
 4. records the observed session, model, usage, capsule, and admission;
 5. ingests the structured verdict and returns the Kernel-issued `reviewReceiptId`.
 
+The source Host integration boundary is `dispatchKernelTurn`. For a native
+review turn it uses the same usage receipt created for the dispatch, passes the
+Host-observed reviewer session id to Kernel, and derives the reviewed mutation
+revision from the issued capsule. The reviewer output never supplies a receipt,
+reviewer identity, or provenance revision. If the native launcher, reviewer
+outcome, or lineage is missing, the result stays pending/blocked and no review
+receipt is returned.
+
 Optional `--image <absolute-path>` arguments attach visual evidence to the reviewer session. The command never accepts a caller-supplied reviewer identity or receipt. Same-session, missing-model, writable, stale-subject, and incomplete-lineage attempts fail closed.

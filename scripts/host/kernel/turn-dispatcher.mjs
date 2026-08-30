@@ -118,6 +118,16 @@ export const buildExecutionContract = (modelInput = {}, decision = {}) => {
   };
 };
 
+const buildReviewerOutcomeForIngestion = ({ outcome, executionCapsule }) => {
+  if (!outcome || typeof outcome !== 'object') return null;
+  const reviewedMutationRevision = executionCapsule?.subject?.mutationRevision;
+  if (!Number.isInteger(reviewedMutationRevision)) return null;
+  // The mutation revision is Host/Kernel provenance, not model output. The
+  // reviewer must never be able to claim that it inspected a different state
+  // by echoing a caller-supplied revision.
+  return { ...outcome, reviewedMutationRevision };
+};
+
 // Compiles the Host prompt envelope for one turn from the Kernel's `next`
 // payload. Project-stable knowledge is left empty here: `next`
 // exposes it today only as `knowledge`, a single pre-rendered text block
@@ -546,7 +556,7 @@ export const dispatchKernelTurn = async ({
     },
   });
   await controlPlane.recordModelUsage(runId, receipt);
-  return {
+  const response = {
     schemaVersion: 1,
     runId,
     dispatched: true,
@@ -569,4 +579,71 @@ export const dispatchKernelTurn = async ({
       }
       : null,
   };
+  if (decision.role !== 'reviewer') return response;
+
+  if (dispatch.status !== 'completed' || !dispatch.outcome) {
+    return {
+      ...response,
+      review: {
+        required: true,
+        independent: true,
+        status: dispatch.status === 'failed' || dispatch.status === 'unsupported' ? 'blocked' : 'pending',
+        blockedReason: dispatch.status === 'failed' || dispatch.status === 'unsupported'
+          ? dispatch.errorCode || 'reviewer-dispatch-failed'
+          : null,
+        errorSummary: dispatch.errorSummary || null,
+      },
+      reviewReceipt: null,
+      reviewReceiptId: null,
+    };
+  }
+
+  const reviewerOutcome = buildReviewerOutcomeForIngestion({
+    outcome: dispatch.outcome,
+    executionCapsule,
+  });
+  if (!reviewerOutcome) {
+    return {
+      ...response,
+      review: { required: true, independent: true, status: 'blocked', blockedReason: 'reviewer-provenance-missing' },
+      reviewReceipt: null,
+      reviewReceiptId: null,
+      blocker: { reason: 'reviewer-provenance-missing', detail: 'The Host could not bind the reviewer outcome to the current capsule mutation revision.' },
+    };
+  }
+
+  try {
+    const review = await controlPlane.ingestReviewerOutcome({
+      runId,
+      stepId: executionCapsule.stepId || null,
+      capsuleId: executionCapsule.capsuleId,
+      routeDecisionId: decision.decisionId,
+      usageReceiptId: receipt.receiptId,
+      reviewerSessionId: dispatch.actorSessionId,
+      outcome: reviewerOutcome,
+    });
+    return {
+      ...response,
+      review,
+      reviewReceipt: review.reviewReceipt || null,
+      reviewReceiptId: review.reviewReceipt?.receiptId || null,
+    };
+  } catch (error) {
+    // A usage receipt may exist even when the review chain is incomplete. It
+    // remains observable, but it can never be promoted to a review receipt by
+    // the Host or by the model.
+    return {
+      ...response,
+      review: {
+        required: true,
+        independent: true,
+        status: 'blocked',
+        blockedReason: 'incomplete_review_chain',
+        errorSummary: error?.message || String(error),
+      },
+      reviewReceipt: null,
+      reviewReceiptId: null,
+      blocker: { reason: 'incomplete_review_chain', detail: error?.message || String(error) },
+    };
+  }
 };
