@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
-import { mkdir, mkdtemp, readFile, readdir, stat, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { installKernelAccountRoot } from '../scripts/kernel/profile-install.mjs';
 import { doctorKernelProfile } from '../scripts/kernel/profile-doctor.mjs';
 
@@ -67,4 +67,28 @@ test('Kernel account-root profile replaces Relay command skills and preserves us
 
   const targetStats = await stat(targetRoot);
   assert.ok(targetStats.isDirectory());
+});
+
+test('Kernel account-root profile reprojects when the canonical source skill changes', async () => {
+  const home = await mkdtemp(path.join(os.tmpdir(), 'kernel-account-root-refresh-'));
+  const sourceRoot = await mkdtemp(path.join(os.tmpdir(), 'kernel-account-root-source-'));
+  const targetRoot = path.join(home, '.codex');
+  const runtimeHome = path.join(home, '.moon-relay-kernel');
+  try {
+    await mkdir(path.join(sourceRoot, 'package', 'kernel', 'profiles'), { recursive: true });
+    await mkdir(path.join(sourceRoot, 'skills'), { recursive: true });
+    await cp(path.join(process.cwd(), 'package', 'kernel', 'profiles', 'codex'), path.join(sourceRoot, 'package', 'kernel', 'profiles', 'codex'), { recursive: true });
+    await cp(path.join(process.cwd(), 'skills', 'moon-relay-kernel'), path.join(sourceRoot, 'skills', 'moon-relay-kernel'), { recursive: true });
+
+    await installKernelAccountRoot({ sourceRoot, runtime: 'codex', targetRoot, runtimeHome });
+    const sourceSkill = path.join(sourceRoot, 'skills', 'moon-relay-kernel', 'SKILL.md');
+    await writeFile(sourceSkill, `${await readFile(sourceSkill, 'utf8')}\n# source drift marker\n`);
+
+    const refreshed = await installKernelAccountRoot({ sourceRoot, runtime: 'codex', targetRoot, runtimeHome });
+    assert.equal(refreshed.status, 'reinstalled');
+    assert.match(await readFile(path.join(targetRoot, 'skills', 'moon-relay-kernel', 'SKILL.md'), 'utf8'), /source drift marker/);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+    await rm(sourceRoot, { recursive: true, force: true });
+  }
 });

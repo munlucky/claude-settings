@@ -181,6 +181,60 @@ const mergeKernelHooks = (existing, incoming, command) => {
 
 const quoteShellPath = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
 
+const sameFile = async (left, right) => {
+  if (!(await exists(left)) || !(await exists(right))) return false;
+  return (await sha256(left)) === (await sha256(right));
+};
+
+const accountRootProjectionIsCurrent = async ({ root, sourceRoot, runtimeHome } = {}) => {
+  const source = path.resolve(sourceRoot);
+  const profileSource = path.join(source, 'package', 'kernel', 'profiles', 'codex');
+  if (!(await sameFile(path.join(root, 'AGENTS.md'), path.join(profileSource, 'AGENTS.override.md')))) return false;
+
+  const sourceConfig = await readFile(path.join(profileSource, '.codex', 'config.toml'), 'utf8');
+  const targetConfig = await readFile(path.join(root, 'config.toml'), 'utf8').catch(() => '');
+  try {
+    if (extractDeveloperInstruction(targetConfig) !== extractDeveloperInstruction(sourceConfig)) return false;
+  } catch {
+    return false;
+  }
+
+  const expectedHookCommand = `${quoteShellPath(path.join(canonicalPath(runtimeHome), 'bin', 'kernel'))} assert-track --project-only --allow-non-kernel --json`;
+  let hooks;
+  try {
+    hooks = JSON.parse(await readFile(path.join(root, 'hooks.json'), 'utf8'));
+  } catch {
+    return false;
+  }
+  const commands = [];
+  const collectCommands = (value) => {
+    if (Array.isArray(value)) {
+      for (const item of value) collectCommands(item);
+    } else if (value && typeof value === 'object') {
+      if (typeof value.command === 'string') commands.push(value.command);
+      for (const child of Object.values(value)) collectCommands(child);
+    }
+  };
+  collectCommands(hooks);
+  if (!commands.includes(expectedHookCommand)) return false;
+
+  const compareTree = async (sourceDir, targetDir) => {
+    const sourceFiles = (await files(sourceDir)).sort();
+    const targetFiles = (await files(targetDir)).sort();
+    if (sourceFiles.length !== targetFiles.length || sourceFiles.some((file, index) => file !== targetFiles[index])) return false;
+    for (const relativePath of sourceFiles) {
+      if (!(await sameFile(path.join(sourceDir, relativePath), path.join(targetDir, relativePath)))) return false;
+    }
+    return true;
+  };
+
+  if (!(await compareTree(canonicalKernelSkillDir(source), path.join(root, KERNEL_SKILL_INSTALL_REL)))) return false;
+  for (const { name, dir } of await canonicalStandaloneSkillDirs(source)) {
+    if (!(await compareTree(dir, path.join(root, 'skills', name)))) return false;
+  }
+  return true;
+};
+
 const moveToBackup = async (root, relativePath, backupRoot) => {
   const source = safeJoin(root, relativePath);
   if (!(await exists(source))) return false;
@@ -227,7 +281,7 @@ const writeAccountRootManifest = async ({ root, sourceRoot, runtime, runtimeHome
   };
 };
 
-export async function installKernelAccountRoot({ sourceRoot = process.cwd(), runtime = 'codex', targetRoot, runtimeHome = null } = {}) {
+export async function installKernelAccountRoot({ sourceRoot = process.cwd(), runtime = 'codex', targetRoot, runtimeHome = null, force = false } = {}) {
   if (runtime !== 'codex') throw new Error(`unsupported_account_root_profile: ${runtime}`);
   const root = await safeProfileRoot(targetRoot);
   const source = path.resolve(sourceRoot, 'package', 'kernel', 'profiles', runtime);
@@ -251,7 +305,13 @@ export async function installKernelAccountRoot({ sourceRoot = process.cwd(), run
   // backup material on every launch/adoption pass.
   if (prior) {
     const current = await inspectProfile(root);
-    if (current.status === 'ready' && current.manifest.kernelRuntime === 'moon-relay-kernel' && current.manifest.layout === ACCOUNT_ROOT_PROFILE_LAYOUT) {
+    const projectionCurrent = !force
+      && prior.sourceRoot === path.resolve(sourceRoot)
+      && await accountRootProjectionIsCurrent({ root, sourceRoot, runtimeHome: runtimeHome || resolveKernelRuntimeHome() });
+    if (current.status === 'ready'
+      && current.manifest.kernelRuntime === 'moon-relay-kernel'
+      && current.manifest.layout === ACCOUNT_ROOT_PROFILE_LAYOUT
+      && projectionCurrent) {
       return {
         status: 'already_current',
         runtime,

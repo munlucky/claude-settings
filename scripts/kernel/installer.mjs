@@ -116,7 +116,9 @@ export const materializeKernelCommandShim = async ({ runtimeHome, entrypoint } =
   return { status: 'installed', runtimeHome: root, entrypoint: cli, written };
 };
 
-export const installKernel = async ({ targetRoot = process.cwd(), sourceRoot = process.cwd(), runtimeSource, trackHome } = {}) => {
+// Ordinary installs remain collision-protected; only an explicit closeout
+// sync may replace a trusted, modified Kernel-owned projection.
+export const installKernel = async ({ targetRoot = process.cwd(), sourceRoot = process.cwd(), runtimeSource, trackHome, replaceModified = false } = {}) => {
   const root = await safeInstallRoot(targetRoot);
   const source = path.resolve(sourceRoot);
   const kernelDir = assertContained(root, path.join(root, '.moon-relay'));
@@ -147,6 +149,30 @@ export const installKernel = async ({ targetRoot = process.cwd(), sourceRoot = p
   }
   if (planned.length === 0) throw new Error(`Kernel payload source is empty: ${source}`);
 
+  // A sync must also reconcile files that were owned by an older payload but
+  // are no longer present in the current source tree. Keep this set limited
+  // to the trusted prior manifest so unrelated files under the target remain
+  // untouched.
+  const desiredPaths = new Set(['track.yaml']);
+  for (const item of planned) {
+    for (const rel of await collectFiles(item.sourcePath, '')) {
+      desiredPaths.add(path.join(item.targetRel, rel).replaceAll('\\', '/'));
+    }
+  }
+  let managedRuntimePlan = null;
+  if (runtimeSource) {
+    if (!(await exists(runtimeSource))) throw new Error(`Kernel managed runtime source does not exist: ${runtimeSource}`);
+    const sourceRootWithCurrent = path.join(runtimeSource, 'runtime', 'current');
+    const sourceCurrent = await exists(sourceRootWithCurrent)
+      ? sourceRootWithCurrent
+      : (await exists(path.join(runtimeSource, 'current')) ? path.join(runtimeSource, 'current') : runtimeSource);
+    managedRuntimePlan = { sourceCurrent, files: await collectFiles(sourceCurrent, '') };
+    for (const rel of managedRuntimePlan.files) {
+      desiredPaths.add(path.join('kernel-payload', 'runtime', 'current', rel).replaceAll('\\', '/'));
+    }
+    desiredPaths.add('kernel-payload/runtime/current/runtime-manifest.json');
+  }
+
   const existingFiles = existingManifest?.files || [];
   const collisions = [];
   for (const file of existingFiles) {
@@ -154,8 +180,9 @@ export const installKernel = async ({ targetRoot = process.cwd(), sourceRoot = p
     await rejectSymlink(target, 'owned file');
     if (await exists(target)) {
       const actual = await sha256File(target);
-      if (actual !== file.checksum) collisions.push({ path: file.path, reason: 'modified-owned-file', expected: file.checksum, actual });
-      else {
+      if (actual !== file.checksum && !replaceModified) {
+        collisions.push({ path: file.path, reason: 'modified-owned-file', expected: file.checksum, actual });
+      } else {
         const snapshot = path.join(snapshotRoot, file.path);
         await copyTree(target, snapshot);
       }
@@ -167,6 +194,11 @@ export const installKernel = async ({ targetRoot = process.cwd(), sourceRoot = p
     await mkdir(kernelDir, { recursive: true });
     await atomicWrite(trackPath, TRACK_CONTENT);
     const installed = [{ path: 'track.yaml', checksum: await sha256File(trackPath) }];
+    for (const file of existingFiles) {
+      if (!desiredPaths.has(file.path)) {
+        await rm(assertContained(kernelDir, path.join(kernelDir, file.path)), { force: true, recursive: true });
+      }
+    }
     for (const item of planned) {
       await copyTree(item.sourcePath, item.targetPath);
       for (const rel of await collectFiles(item.targetPath, '')) {
@@ -176,14 +208,9 @@ export const installKernel = async ({ targetRoot = process.cwd(), sourceRoot = p
       }
     }
     if (runtimeSource) {
-      if (!(await exists(runtimeSource))) throw new Error(`Kernel managed runtime source does not exist: ${runtimeSource}`);
       const runtimeRoot = path.join(kernelDir, 'kernel-payload', 'runtime');
       const runtimeTarget = assertContained(kernelDir, path.join(runtimeRoot, 'current'));
-      const sourceRootWithCurrent = path.join(runtimeSource, 'runtime', 'current');
-      const sourceCurrent = await exists(sourceRootWithCurrent)
-        ? sourceRootWithCurrent
-        : (await exists(path.join(runtimeSource, 'current')) ? path.join(runtimeSource, 'current') : runtimeSource);
-      await copyTree(sourceCurrent, runtimeTarget);
+      await copyTree(managedRuntimePlan.sourceCurrent, runtimeTarget);
       const nodeRel = process.platform === 'win32' ? 'node.exe' : path.join('bin', 'node');
       const nodeTarget = path.join(runtimeTarget, nodeRel);
       if (!(await exists(nodeTarget))) throw new Error(`Kernel managed runtime is missing ${nodeRel}`);

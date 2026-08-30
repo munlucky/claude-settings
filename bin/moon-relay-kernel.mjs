@@ -293,6 +293,7 @@ try {
       sourceRoot: getArgValue('--source-root') || process.cwd(),
       runtimeSource: getArgValue('--runtime-source'),
       trackHome: getArgValue('--track-home') || (path.resolve(targetRoot) === path.resolve(resolvedRuntimeHome) ? resolvedRuntimeHome : null),
+      replaceModified: args.includes('--sync'),
     }));
   } else if (command === 'profile-install') {
     const { installKernelAccountRoot, installKernelProfile } = await import('../scripts/kernel/profile-install.mjs');
@@ -300,8 +301,8 @@ try {
     const targetRoot = getArgValue('--target-root') || process.cwd();
     const sourceRoot = getArgValue('--source-root') || process.cwd();
     output(await (args.includes('--account-root')
-      ? installKernelAccountRoot({ runtime, targetRoot, sourceRoot, runtimeHome: getArgValue('--runtime-home') || undefined })
-      : installKernelProfile({ runtime, targetRoot, sourceRoot, skillsRoot: getArgValue('--skills-root') })));
+      ? installKernelAccountRoot({ runtime, targetRoot, sourceRoot, runtimeHome: getArgValue('--runtime-home') || undefined, force: args.includes('--sync') })
+      : installKernelProfile({ runtime, targetRoot, sourceRoot, skillsRoot: getArgValue('--skills-root'), force: args.includes('--sync') })));
   } else if (command === 'profile-doctor') {
     const { doctorKernelProfile } = await import('../scripts/kernel/profile-doctor.mjs');
     output(await doctorKernelProfile({

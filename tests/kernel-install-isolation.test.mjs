@@ -20,6 +20,34 @@ test('Kernel installer protects Relay marker and owned-file collisions', async (
   await assert.rejects(() => installKernel({ targetRoot: root, sourceRoot: process.cwd() }), /Relay marker is protected/);
 });
 
+test('Kernel sync replaces modified retired payload files only after preserving a backup', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'krn-install-sync-'));
+  try {
+    const first = await installKernel({ targetRoot: root, sourceRoot: process.cwd() });
+    const retiredRel = 'kernel-payload/scripts/host/kernel/codex-review-host.mjs';
+    const retiredTarget = path.join(root, '.moon-relay', retiredRel);
+    const manifestPath = first.manifestPath;
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+    manifest.files.push({ path: retiredRel, checksum: '0'.repeat(64) });
+    await writeFile(manifestPath, JSON.stringify(manifest, null, 2));
+    await writeFile(retiredTarget, 'retired local implementation\n');
+
+    const blocked = await installKernel({ targetRoot: root, sourceRoot: process.cwd() });
+    assert.equal(blocked.status, 'collision');
+    assert.equal(blocked.collisions[0].path, retiredRel);
+
+    const synced = await installKernel({ targetRoot: root, sourceRoot: process.cwd(), replaceModified: true });
+    assert.equal(synced.status, 'installed');
+    assert.ok(synced.backupPath);
+    assert.equal(await readFile(path.join(synced.backupPath, 'snapshot', retiredRel), 'utf8'), 'retired local implementation\n');
+    await assert.rejects(() => readFile(retiredTarget, 'utf8'));
+    const syncedManifest = JSON.parse(await readFile(synced.manifestPath, 'utf8'));
+    assert.equal(syncedManifest.files.some((entry) => entry.path === retiredRel), false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('Kernel installer creates a backup and rollback restores owned files', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'krn-install-'));
   const first = await installKernel({ targetRoot: root, sourceRoot: process.cwd() });
