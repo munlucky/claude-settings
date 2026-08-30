@@ -610,10 +610,10 @@ const prepareProfilePlan = async ({ root, item, runtime, runtimeHome, prior, for
     return { type: 'json', target, content: `${JSON.stringify(projected, null, 2)}\n`, entry };
   }
 
-  if (priorEntry && !force) {
+  if (priorEntry) {
     const problem = await preflightOwnedEntry(root, priorEntry);
-    if (problem) return { collision: problem };
-  } else if (present && !force) {
+    if (problem && !force) return { collision: problem };
+  } else if (present) {
     const actual = await sha256(target);
     if (actual !== sourceHash) return { collision: collision(root, rel, PROFILE_OWNERSHIP.OWNED_FILE, 'existing-owned-file-without-manifest') };
   }
@@ -663,6 +663,44 @@ const markerFor = (runtime, layout = null) => ({
   ownership: Object.values(PROFILE_OWNERSHIP),
 });
 
+const isCompatibleProfileMarker = ({ marker, runtime, layout }) => {
+  if (!marker || marker.productId !== PROFILE_PRODUCT_ID) return false;
+  if (marker.runtime === 'moon-relay-kernel') {
+    return marker.provider === runtime && (layout ? marker.layout === layout : !marker.layout);
+  }
+  return marker.track === 'kernel' && marker.runtime === runtime;
+};
+
+const isCompatibleProfileManifest = ({ manifest, runtime, layout }) => {
+  if (layout) {
+    return manifest.layout === layout
+      && manifest.runtime === runtime
+      && manifest.kernelRuntime === 'moon-relay-kernel';
+  }
+  return (manifest.runtime === 'moon-relay-kernel' && manifest.provider === runtime && !manifest.layout)
+    || (manifest.track === 'kernel' && manifest.runtime === runtime);
+};
+
+const trustedPriorManifest = async ({ root, manifest, runtime, layout = null }) => {
+  try {
+    if (!manifest || manifest.productId !== PROFILE_PRODUCT_ID || !Array.isArray(manifest.files)) return null;
+    if (!isCompatibleProfileManifest({ manifest, runtime, layout })) return null;
+    if (typeof manifest.targetRoot !== 'string' || canonicalPath(manifest.targetRoot) !== root) return null;
+    const markerEntry = priorEntryFor(manifest, PROFILE_MARKER_NAME);
+    if (!markerEntry
+      || ownershipFor(markerEntry) !== PROFILE_OWNERSHIP.OWNED_FILE
+      || typeof markerEntry.checksum !== 'string') return null;
+    const markerPath = safeJoin(root, PROFILE_MARKER_NAME);
+    if (!(await exists(markerPath))) return null;
+    await rejectSymlink(markerPath);
+    if (await sha256(markerPath) !== markerEntry.checksum) return null;
+    if (!isCompatibleProfileMarker({ marker: await parseJsonFile(markerPath), runtime, layout })) return null;
+    return manifest;
+  } catch {
+    return null;
+  }
+};
+
 const markerPlan = async ({ root, runtime, prior, force, layout = null }) => {
   const rel = PROFILE_MARKER_NAME;
   const target = safeJoin(root, rel);
@@ -687,9 +725,10 @@ export async function installKernelProfile({ sourceRoot = process.cwd(), runtime
   await rejectSymlink(root);
   const markerPath = profileMarkerPath(root);
   const manifestPath = profileManifestPath(root);
-  const prior = await readPriorManifest(root);
+  const priorManifest = await readPriorManifest(root);
+  if (priorManifest && priorManifest.productId !== PROFILE_PRODUCT_ID) throw new Error('target_collision: foreign profile manifest');
+  const prior = await trustedPriorManifest({ root, manifest: priorManifest, runtime });
   if (await exists(markerPath) && !prior) throw new Error('target_collision: marker without trusted manifest');
-  if (prior && prior.productId !== PROFILE_PRODUCT_ID) throw new Error('target_collision: foreign profile manifest');
   if (!(await exists(canonicalKernelSkillDir(sourceRoot)))) throw new Error(`skill_source_missing: ${canonicalKernelSkillDir(sourceRoot)}`);
   if (prior && !force) {
     if (await profileProjectionIsCurrent({ root, sourceRoot, runtime, runtimeHome, manifest: prior })) {
@@ -820,10 +859,10 @@ const accountPlan = async ({ root, sourceRoot, runtimeHome, prior, force }) => {
       const present = await exists(target);
       const priorEntry = priorEntryFor(prior, targetRel);
       const checksum = await sourceChecksum(path.join(dir, rel));
-      if (present && priorEntry && !force) {
+      if (present && priorEntry) {
         const problem = await preflightOwnedEntry(root, priorEntry);
-        if (problem) collisions.push(problem);
-      } else if (present && !force && await sha256(target) !== checksum) {
+        if (problem && !force) collisions.push(problem);
+      } else if (present && !priorEntry && await sha256(target) !== checksum) {
         collisions.push(collision(root, targetRel, PROFILE_OWNERSHIP.OWNED_FILE, 'existing-owned-file-without-manifest'));
       }
       plans.push({ type: 'file', target, sourcePath: path.join(dir, rel), entry: { path: targetRel, ownership: PROFILE_OWNERSHIP.OWNED_FILE, sourceChecksum: checksum, createdByKernel: createdByKernelFor({ present, priorEntry }), checksum } });
@@ -860,8 +899,9 @@ export async function installKernelAccountRoot({ sourceRoot = process.cwd(), run
   await rejectSymlink(root);
   const manifestPath = profileManifestPath(root);
   const markerPath = profileMarkerPath(root);
-  const prior = await readPriorManifest(root);
-  if (prior && (prior.productId !== PROFILE_PRODUCT_ID || prior.layout !== ACCOUNT_ROOT_PROFILE_LAYOUT)) throw new Error('target_collision: foreign or non-account-root Kernel profile manifest');
+  const priorManifest = await readPriorManifest(root);
+  if (priorManifest && (priorManifest.productId !== PROFILE_PRODUCT_ID || priorManifest.layout !== ACCOUNT_ROOT_PROFILE_LAYOUT)) throw new Error('target_collision: foreign or non-account-root Kernel profile manifest');
+  const prior = await trustedPriorManifest({ root, manifest: priorManifest, runtime, layout: ACCOUNT_ROOT_PROFILE_LAYOUT });
   if (await exists(markerPath) && !prior) throw new Error('target_collision: marker without trusted manifest');
   const effectiveRuntimeHome = runtimeHome || resolveKernelRuntimeHome();
   if (prior && !force && await accountProjectionIsCurrent({ root, sourceRoot, runtimeHome: effectiveRuntimeHome, manifest: prior })) {

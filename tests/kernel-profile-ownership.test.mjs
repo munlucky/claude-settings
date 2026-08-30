@@ -6,7 +6,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { access, constants } from 'node:fs';
 import { cp, mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
-import { installKernelProfile, inspectProfile, profileManifestPath, uninstallKernelProfile } from '../scripts/kernel/profile-install.mjs';
+import { installKernelAccountRoot, installKernelProfile, inspectProfile, profileManifestPath, uninstallKernelProfile, PROFILE_PRODUCT_ID } from '../scripts/kernel/profile-install.mjs';
 import { materializeKernelMcpLauncher } from '../scripts/kernel/installer.mjs';
 
 const tempRoots = [];
@@ -87,6 +87,110 @@ test('uninstall preserves a pre-existing identical owned file', async () => {
   assert.equal(skillEntry.createdByKernel, false);
   assert.equal((await uninstallKernelProfile({ targetRoot })).status, 'uninstalled');
   assert.equal(await readFile(targetSkill, 'utf8'), await readFile(sourceSkill, 'utf8'));
+});
+
+test('sync does not overwrite an untrusted pre-existing provider skill file', async () => {
+  const home = await mkdtemp(path.join(os.tmpdir(), 'kernel-profile-sync-collision-'));
+  tempRoots.push(home);
+  const targetRoot = path.join(home, '.claude');
+  const targetSkill = path.join(targetRoot, 'skills', 'moon-relay-kernel', 'SKILL.md');
+  const before = '# User-owned skill\n';
+  await mkdir(path.dirname(targetSkill), { recursive: true });
+  await writeFile(targetSkill, before);
+
+  const result = await installKernelProfile({
+    sourceRoot: process.cwd(),
+    runtime: 'claude',
+    targetRoot,
+    runtimeHome: path.join(home, 'runtime'),
+    force: true,
+  });
+
+  assert.equal(result.status, 'collision');
+  const skillCollision = result.collisions.find((entry) => entry.path === 'skills/moon-relay-kernel/SKILL.md');
+  assert.equal(skillCollision?.reason, 'existing-owned-file-without-manifest');
+  assert.equal(await readFile(targetSkill, 'utf8'), before);
+});
+
+test('sync does not trust a profile manifest without its paired Kernel marker', async () => {
+  const home = await mkdtemp(path.join(os.tmpdir(), 'kernel-profile-manifest-without-marker-'));
+  tempRoots.push(home);
+  const targetRoot = path.join(home, '.claude');
+  const targetSkill = path.join(targetRoot, 'skills', 'moon-relay-kernel', 'SKILL.md');
+  const before = '# User-owned skill with copied manifest\n';
+  await mkdir(path.dirname(targetSkill), { recursive: true });
+  await writeFile(targetSkill, before);
+  await writeFile(profileManifestPath(targetRoot), `${JSON.stringify({
+    schemaVersion: 2,
+    productId: PROFILE_PRODUCT_ID,
+    runtime: 'moon-relay-kernel',
+    provider: 'claude',
+    targetRoot,
+    files: [{
+      path: 'skills/moon-relay-kernel/SKILL.md',
+      ownership: 'owned-file',
+      checksum: '0'.repeat(64),
+    }],
+  }, null, 2)}\n`);
+
+  const result = await installKernelProfile({
+    sourceRoot: process.cwd(),
+    runtime: 'claude',
+    targetRoot,
+    runtimeHome: path.join(home, 'runtime'),
+    force: true,
+  });
+
+  assert.equal(result.status, 'collision');
+  const skillCollision = result.collisions.find((entry) => entry.path === 'skills/moon-relay-kernel/SKILL.md');
+  assert.equal(skillCollision?.reason, 'existing-owned-file-without-manifest');
+  assert.equal(await readFile(targetSkill, 'utf8'), before);
+});
+
+test('sync updates a trusted Kernel-owned projection after the canonical source changes', async () => {
+  const home = await mkdtemp(path.join(os.tmpdir(), 'kernel-profile-sync-owned-'));
+  tempRoots.push(home);
+  const sourceRoot = path.join(home, 'source');
+  const targetRoot = path.join(home, '.claude');
+  await cp(path.join(process.cwd(), 'skills', 'moon-relay-kernel'), path.join(sourceRoot, 'skills', 'moon-relay-kernel'), { recursive: true });
+  await cp(path.join(process.cwd(), 'package', 'kernel', 'profiles', 'claude'), path.join(sourceRoot, 'package', 'kernel', 'profiles', 'claude'), { recursive: true });
+
+  await installKernelProfile({ sourceRoot, runtime: 'claude', targetRoot, runtimeHome: path.join(home, 'runtime') });
+  const sourceInstructions = path.join(sourceRoot, 'package', 'kernel', 'profiles', 'claude', 'CLAUDE.md');
+  await writeFile(sourceInstructions, `${await readFile(sourceInstructions, 'utf8')}\nTrusted sync revision\n`);
+
+  const result = await installKernelProfile({
+    sourceRoot,
+    runtime: 'claude',
+    targetRoot,
+    runtimeHome: path.join(home, 'runtime'),
+    force: true,
+  });
+
+  assert.equal(result.status, 'reinstalled');
+  assert.match(await readFile(path.join(targetRoot, 'CLAUDE.md'), 'utf8'), /Trusted sync revision/);
+});
+
+test('account-root sync does not overwrite an untrusted pre-existing standalone skill file', async () => {
+  const home = await mkdtemp(path.join(os.tmpdir(), 'kernel-account-sync-collision-'));
+  tempRoots.push(home);
+  const targetRoot = path.join(home, '.codex');
+  const targetSkill = path.join(targetRoot, 'skills', 'project-memory', 'SKILL.md');
+  const before = '# User-owned standalone skill\n';
+  await mkdir(path.dirname(targetSkill), { recursive: true });
+  await writeFile(targetSkill, before);
+
+  const result = await installKernelAccountRoot({
+    sourceRoot: process.cwd(),
+    targetRoot,
+    runtimeHome: path.join(home, 'runtime'),
+    force: true,
+  });
+
+  assert.equal(result.status, 'collision');
+  const skillCollision = result.collisions.find((entry) => entry.path === 'skills/project-memory/SKILL.md');
+  assert.equal(skillCollision?.reason, 'existing-owned-file-without-manifest');
+  assert.equal(await readFile(targetSkill, 'utf8'), before);
 });
 
 test('owned-directory uninstall verifies every declared child before removal', async () => {

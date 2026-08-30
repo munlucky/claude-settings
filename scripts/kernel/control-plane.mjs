@@ -211,6 +211,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
   const identityState = store.inspectProjectIdentity({
     projectId: currentProject.projectId,
     canonicalRoot: currentProject.canonicalRoot,
+    gitCommonDir: currentProject.gitCommonDir,
     legacyCandidates: (currentProject.legacyAliases || []).filter((candidate) => candidate?.projectId),
   });
   const legacyData = identityState.legacyCandidates.filter((candidate) => candidate.hasData);

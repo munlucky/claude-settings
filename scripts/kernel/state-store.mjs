@@ -2956,10 +2956,25 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       return mapProjectIdentity(row, aliases);
     },
 
-    inspectProjectIdentity({ projectId = null, canonicalRoot = null, legacyCandidates = [] } = {}) {
-      const currentIdentity = canonicalRoot
+    inspectProjectIdentity({ projectId = null, canonicalRoot = null, gitCommonDir = null, legacyCandidates = [] } = {}) {
+      const rootIdentity = canonicalRoot
         ? this.getProjectIdentity({ canonicalRoot })
-        : (projectId ? this.getProjectIdentity({ projectId }) : null);
+        : null;
+      const projectIdentity = projectId
+        ? this.getProjectIdentity({ projectId })
+        : null;
+      // A linked worktree has a distinct canonical root, but it is still the
+      // same logical project when its project id and Git common directory both
+      // match the persisted project identity. Do not fall back on project id
+      // alone: a copied origin or caller-supplied identity is not ownership
+      // evidence across unrelated repositories.
+      const linkedIdentity = !rootIdentity && projectIdentity && canonicalRoot && gitCommonDir
+        && deriveGitCommonDir(projectIdentity.canonicalRoot) === canonicalIdentityRoot(gitCommonDir)
+        ? projectIdentity
+        : null;
+      const currentIdentity = rootIdentity || linkedIdentity || (
+        !canonicalRoot ? projectIdentity : null
+      );
       const candidates = [...new Map((Array.isArray(legacyCandidates) ? legacyCandidates : [])
         .filter((candidate) => candidate?.projectId)
         .map((candidate) => [String(candidate.projectId), candidate])).values()];

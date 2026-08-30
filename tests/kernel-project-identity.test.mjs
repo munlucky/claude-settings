@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
 import { realpathSync } from 'node:fs';
@@ -7,10 +8,17 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { pathHashId, resolveKernelProjectIdentity, normalizeRemoteUrl, sanitizeId } from '../scripts/kernel/project-identity.mjs';
 import { openKernelStateStore } from '../scripts/kernel/state-store.mjs';
 import { approveKernelProjectIdentityRepair, bootstrapKernelProjectIdentity, inspectKernelProjectIdentity, repairKernelProjectIdentity } from '../scripts/kernel/project-identity-preflight.mjs';
+import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
 
 const canonicalTestRoot = (value) => {
   const resolved = realpathSync(value).replaceAll('\\', '/');
   return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+};
+
+const runGit = (cwd, args) => {
+  const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  return result.stdout.trim();
 };
 
 test('resolveKernelProjectIdentity anchors identity to the workspace root and keeps origin as an alias', async () => {
@@ -222,6 +230,47 @@ test('identity preflight bootstraps a fresh namespace without a Kernel Run', asy
     }
   } finally {
     await rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test('linked worktree identity preflight reuses the proven logical project identity', async () => {
+  const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), 'kernel-identity-linked-worktree-'));
+  const repository = path.join(fixtureRoot, 'repository');
+  const linkedWorktree = path.join(fixtureRoot, 'linked-worktree');
+  const runtimeHome = path.join(fixtureRoot, 'runtime');
+  try {
+    await mkdir(repository, { recursive: true });
+    await writeFile(path.join(repository, 'tracked.txt'), 'fixture\n');
+    runGit(repository, ['init']);
+    runGit(repository, ['config', 'user.email', 'kernel-test@example.invalid']);
+    runGit(repository, ['config', 'user.name', 'Kernel Test']);
+    runGit(repository, ['add', '.']);
+    runGit(repository, ['commit', '-m', 'fixture']);
+    runGit(repository, ['worktree', 'add', '-b', 'linked', linkedWorktree, 'HEAD']);
+
+    const primary = await bootstrapKernelProjectIdentity({ projectRoot: repository, runtimeHome, policy: 'isolate' });
+    const linked = await inspectKernelProjectIdentity({ projectRoot: linkedWorktree, runtimeHome });
+
+    assert.equal(linked.status, 'ready');
+    assert.equal(linked.projectId, primary.projectId);
+    assert.equal(linked.identity.projectId, primary.projectId);
+    assert.equal(linked.identity.canonicalRoot, canonicalTestRoot(repository));
+    assert.notEqual(linked.canonicalRoot, linked.identity.canonicalRoot);
+
+    const controlPlane = await createKernelControlPlane({
+      runtimeHome,
+      projectRoot: linkedWorktree,
+      env: {
+        MOON_RELAY_KERNEL_HOME: runtimeHome,
+        MOON_RELAY_KERNEL_PROVIDER: 'codex',
+        MOON_RELAY_KERNEL_SESSION_ID: 'codex:linked-worktree-preflight',
+      },
+      requireHostBinding: false,
+    });
+    await controlPlane.close();
+  } finally {
+    try { runGit(repository, ['worktree', 'remove', '--force', linkedWorktree]); } catch {}
+    await rm(fixtureRoot, { recursive: true, force: true });
   }
 });
 

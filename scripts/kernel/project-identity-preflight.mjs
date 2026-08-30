@@ -193,6 +193,7 @@ export const inspectKernelProjectIdentity = async ({ projectRoot = process.cwd()
     const state = store.inspectProjectIdentity({
       projectId: identity.projectId,
       canonicalRoot: identity.canonicalRoot,
+      gitCommonDir: identity.gitCommonDir,
       legacyCandidates: uniqueCandidates(identity),
     });
     const unresolved = state.legacyCandidates.filter((candidate) => candidate.hasData);
@@ -242,6 +243,7 @@ const loadRepairContext = async ({ projectRoot, runtimeHome, env }) => {
     const state = store.inspectProjectIdentity({
       projectId: identity.projectId,
       canonicalRoot: identity.canonicalRoot,
+      gitCommonDir: identity.gitCommonDir,
       legacyCandidates: uniqueCandidates(identity),
     });
     const unresolved = state.legacyCandidates.filter((candidate) => candidate.hasData);
