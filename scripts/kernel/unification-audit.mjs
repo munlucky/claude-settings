@@ -4,6 +4,8 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildStandaloneLock, loadStandaloneCatalog, STANDALONE_CATALOG_REL, STANDALONE_LOCK_REL } from './standalone/catalog.mjs';
+import { auditActiveRuntimeBoundary } from './runtime-boundary-audit.mjs';
+import { validateOptimizationCycle } from './optimization-cycle.mjs';
 
 const scriptPath = fileURLToPath(import.meta.url);
 const repoRootDefault = path.resolve(path.dirname(scriptPath), '../..');
@@ -74,6 +76,10 @@ const auditStandaloneAuthority = async (repoRoot, catalog) => {
 
 export async function runUnificationAudit({ repoRoot = repoRootDefault } = {}) {
   const findings = [];
+  const activeRuntimeBoundary = await auditActiveRuntimeBoundary({ repoRoot });
+  findings.push(...activeRuntimeBoundary.findings);
+  const optimizationCycle = validateOptimizationCycle();
+  findings.push(...optimizationCycle.findings.map((entry) => finding(`optimization-${entry.code}`, entry.message)));
   const legacy = await readJson(path.join(repoRoot, 'catalog', 'moonshot-catalog.json'));
   const matrix = await readJson(path.join(repoRoot, 'catalog', 'relay-replacement-matrix.json'));
   const matrixEntries = Array.isArray(matrix.entries) ? matrix.entries : [];
@@ -162,8 +168,10 @@ export async function runUnificationAudit({ repoRoot = repoRootDefault } = {}) {
     G12_kernelSingleAuthority: authorityText.includes('recordCompletionDecision')
       && authorityText.includes('recordVerification')
       && authorityText.includes('recordReviewReceipt'),
-    G13_relayRuntimeDependencyZero: !findings.some((item) => item.code.includes('relay-runtime-dependency') || item.code === 'kernel-payload-relay-surface' || item.code === 'kernel-managed-provider-payload' || item.code === 'kernel-native-provider-policy-missing'),
+    G13_relayRuntimeDependencyZero: activeRuntimeBoundary.status === 'pass'
+      && !findings.some((item) => item.code.includes('relay-runtime-dependency') || item.code === 'kernel-payload-relay-surface' || item.code === 'kernel-managed-provider-payload' || item.code === 'kernel-native-provider-policy-missing'),
     G14_regressionGateDeclared: declaredRegressionGates,
+    G15_optimizationCycleComplete: optimizationCycle.status === 'pass' && optimizationCycle.cycleStatus === 'COMPLETE' && optimizationCycle.highRoiUnresolved.length === 0,
   };
   const status = findings.length === 0 && Object.values(gates).every(Boolean) ? 'pass' : 'fail';
   return {
@@ -172,6 +180,7 @@ export async function runUnificationAudit({ repoRoot = repoRootDefault } = {}) {
     catalog: STANDALONE_CATALOG_REL,
     lock: STANDALONE_LOCK_REL,
     matrix: 'catalog/relay-replacement-matrix.json',
+    optimizationCycle,
     legacyCapabilityCount: legacyCapabilities.length,
     standaloneCapabilityCount: standalone.skills.length,
     gates,

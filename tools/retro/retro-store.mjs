@@ -1,15 +1,15 @@
 import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 
+import { resolveKernelRuntimeHome } from '../../scripts/kernel/runtime-home.mjs';
 import { assertSafeRetroPayload, validateCollectRecord, validateDate, validateRetroIdentifier } from './retro-normalize.mjs';
 
-export function resolveRetroRoot({ projectId, stateRoot } = {}) {
+export function resolveRetroRoot({ projectId, stateRoot, env = process.env } = {}) {
   if (!projectId) throw new Error('--project is required');
   validateRetroIdentifier(projectId, 'projectId');
   if (stateRoot) return path.resolve(stateRoot);
-  const home = process.env.MOONSHOT_RELAY_HOME || path.join(os.homedir(), '.moonshot-relay');
+  const home = resolveKernelRuntimeHome({ env });
   return path.join(home, 'state', 'projects', projectId, 'retro');
 }
 

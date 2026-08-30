@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
 import { buildLaunchSpec } from '../scripts/switcher/launch-adapter.mjs';
@@ -31,11 +32,32 @@ test('Kernel refuses a provider binary copied under its managed runtime', () => 
   );
 });
 
-test('account-root setup makes Kernel ownership the first install authority', async () => {
+test('account-root setup routes installation through Kernel-only integration', async () => {
   const launcher = await readFile(path.join(process.cwd(), 'bin', 'moonshot-relay.mjs'), 'utf8');
-  const kernelFirst = launcher.indexOf("if (command === 'install' && !args.includes('--dry-run')) runKernelInstall();");
-  const primaryInstaller = launcher.indexOf('const result = spawnSync(process.execPath, installerArgs');
-  assert.ok(kernelFirst >= 0, 'default install must invoke the Kernel install stage');
-  assert.ok(primaryInstaller > kernelFirst, 'Relay compatibility installation must follow Kernel installation');
-  assert.match(launcher, /if \(command === 'kernel'\) \{\s*runKernelInstall\(\);/);
+  assert.match(launcher, /const runKernelInstall = \(\) => runKernelCommand/);
+  assert.match(launcher, /const runKernelProfileInstall = \(runtime\) => runKernelCommand/);
+  assert.doesNotMatch(launcher, /install-account-root-harness|install-project-runtime-bridge|relaySetupEnvironment|MOONSHOT_RELAY_HOME/);
+});
+
+test('retired Relay options are rejected in both separated and equals forms', () => {
+  const wrapper = path.join(process.cwd(), 'bin', 'moonshot-relay.mjs');
+  const optionArgs = [
+    ['--moonshot-home', 'C:/tmp/legacy'],
+    ['--moonshot-home=C:/tmp/legacy'],
+    ['--no-backup'],
+    ['--no-backup=true'],
+    ['--clean-overlay'],
+    ['--clean-overlay=true'],
+  ];
+  for (const args of optionArgs) {
+    const result = spawnSync(process.execPath, [wrapper, 'install', ...args, '--dry-run', '--json'], {
+      cwd: process.cwd(),
+      env: process.env,
+      encoding: 'utf8',
+    });
+    assert.equal(result.status, 1, `${args.join(' ')} must be rejected`);
+    const receipt = JSON.parse(result.stdout);
+    assert.equal(receipt.errorCode, 'relay_track_retired');
+    assert.equal(receipt.sensitiveContentRead, false);
+  }
 });

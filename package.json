@@ -15,7 +15,7 @@
     "test:kernel-lifecycle": "node --test tests/kernel-multi-provider-session.test.mjs tests/kernel-session-binding.test.mjs tests/kernel-session-run-lifecycle.test.mjs tests/kernel-successor-worktree.test.mjs tests/kernel-workspace-mutation-lock.test.mjs tests/kernel-lifecycle-doctor.test.mjs tests/kernel-attempt-provenance.test.mjs tests/kernel-worktree-binding.test.mjs tests/kernel-cross-surface-e2e.test.mjs tests/kernel-runtime-ownership-contract.test.mjs",
     "test:kernel": "node --test tests/kernel-*.test.mjs",
     "test:kernel-explicit-invocation": "node --test tests/kernel-explicit-invocation-policy.test.mjs",
-    "test:kernel-unification": "node scripts/kernel/unification-audit.mjs --with-tests tests/kernel-native-provider-policy.test.mjs tests/kernel-standalone-unification.test.mjs",
+    "test:kernel-unification": "node scripts/kernel/unification-audit.mjs --with-tests tests/kernel-native-provider-policy.test.mjs tests/kernel-standalone-unification.test.mjs tests/kernel-optimization-cycle.test.mjs",
     "test:kernel-reliability": "node --test tests/kernel-command-shim.test.mjs tests/kernel-completion-view.test.mjs tests/kernel-finalization-report-resume.test.mjs tests/kernel-mutation-guard.test.mjs tests/kernel-next-purity.test.mjs tests/kernel-path-canonicalization.test.mjs tests/kernel-required-capability.test.mjs tests/kernel-review-host-bridge.test.mjs tests/kernel-run-env-resolution.test.mjs tests/kernel-secret-redaction.test.mjs tests/kernel-sqlite-adapter-contract.test.mjs tests/kernel-workspace-mutation-lock.test.mjs",
     "lint:kernel": "node scripts/kernel/proof/static-analysis.mjs",
     "test:active": "npm test",

@@ -6,26 +6,25 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { canonicalPath } from '../scripts/kernel/runtime-home.mjs';
-import { pathsOverlap, physicalTargetIdentity } from '../scripts/switcher/paths.mjs';
+import { physicalTargetIdentity } from '../scripts/switcher/paths.mjs';
 
 const binPath = fileURLToPath(import.meta.url);
 const repoRoot = path.dirname(path.dirname(binPath));
-const installer = path.join(repoRoot, 'scripts', 'install-account-root-harness.mjs');
-const bridgeInstaller = path.join(repoRoot, 'scripts', 'install-project-runtime-bridge.mjs');
 const kernelInstaller = path.join(repoRoot, 'bin', 'moon-relay-kernel.mjs');
 const deliverySubmit = path.join(repoRoot, 'scripts', 'delivery-submit.mjs');
 const retroCli = path.join(repoRoot, 'tools', 'retro', 'retro-cli.mjs');
+const PROFILE_RUNTIMES = Object.freeze(['claude', 'codex', 'qwen', 'antigravity']);
 
 const usage = `Usage:
-  moonshot-relay [install] [--dry-run] [--json] [--no-backup]
-  moonshot-relay install [--runtime all|claude|codex|qwen] [--moonshot-home <dir>] [--claude-home <dir>] [--codex-home <dir>] [--qwen-home <dir>]
+  moonshot-relay [install] [--dry-run] [--json] [--sync]
+  moonshot-relay install [--runtime all|claude,codex,qwen,antigravity] [--claude-home <dir>] [--codex-home <dir>] [--qwen-home <dir>] [--antigravity-home <dir>] [--antigravity-skills-home <dir>]
   moonshot-relay kernel [--json]
-  moonshot-relay bridge [--target <project-root>] [--plan-package docs/implementation/<slug-or-account-root-package>] [--dry-run] [--json]
   moonshot-relay delivery submit --score <json-file> --verification <json-file> --current-sha <sha> [--mode local|pr|release] [--out <submission.json>] [--json]
   moonshot-relay retro collect|import|daily|propose|issue-draft [options]
 
-Runs the account-root installer from the current package source; the final Codex
-command-skill surface is synchronized to the Kernel profile without the switcher.`;
+The install command materializes the Kernel runtime and native-provider
+integrations. Provider HOME, auth, session, cache, and unrelated user files
+remain outside Kernel ownership.`;
 
 const args = process.argv.slice(2).filter((arg) => arg !== '--');
 
@@ -35,21 +34,36 @@ if (args.includes('--help') || args.includes('-h')) {
 }
 
 let command = 'install';
-if (args[0] && !args[0].startsWith('-')) {
-  command = args.shift();
-}
+if (args[0] && !args[0].startsWith('-')) command = args.shift();
 
-if (!['install', 'kernel', 'bridge', 'delivery', 'retro'].includes(command)) {
+if (!['install', 'kernel', 'delivery', 'retro', 'bridge'].includes(command)) {
   console.error(`Unknown command: ${command}\n${usage}`);
   process.exit(1);
 }
 
-// In --json mode the primary installer prints one JSON document to stdout.
-// The chained Kernel install steps must NOT pollute stdout
-// with their human logs, or `install --json` stops being parseable. Route
-// their output to stderr in json mode; keep everything on stdout otherwise.
 const jsonMode = args.includes('--json');
-const chainedStdio = jsonMode ? ['inherit', 2, 2] : 'inherit';
+
+const emitRetiredRelay = (surface = command) => {
+  const receipt = {
+    schemaVersion: 1,
+    status: 'retired',
+    runtime: 'moon-relay-kernel',
+    surface,
+    errorCode: 'relay_track_retired',
+    message: 'The legacy Relay runtime path is retired; use the Kernel install and native surfaces.',
+    sensitiveContentRead: false,
+  };
+  if (jsonMode) console.log(JSON.stringify(receipt, null, 2));
+  else console.error(`${receipt.errorCode}: ${receipt.message}`);
+  process.exit(1);
+};
+
+// These options belonged to the retired profile/runtime path. Refuse them
+// explicitly so an old caller cannot silently request a different authority.
+const RETIRED_OPTIONS = Object.freeze(['--moonshot-home', '--no-backup', '--clean-overlay']);
+const isRetiredOption = (arg) => RETIRED_OPTIONS.some((option) => arg === option || arg.startsWith(`${option}=`));
+const retiredOption = args.find(isRetiredOption);
+if (retiredOption) emitRetiredRelay(retiredOption);
 
 if (command === 'retro') {
   if (!existsSync(retroCli)) {
@@ -90,55 +104,10 @@ if (command === 'delivery') {
   process.exit(result.status ?? 1);
 }
 
-const selectedInstaller = command === 'bridge' ? bridgeInstaller : installer;
+if (command === 'bridge') emitRetiredRelay('bridge');
 
-const relaySetupEnvironment = ({ userHome, kernelHome }) => {
-  const physicalKernelHome = canonicalPath(kernelHome);
-  const defaultRelayHome = canonicalPath(path.join(userHome, '.moonshot-relay'));
-  if (pathsOverlap(physicalKernelHome, defaultRelayHome)) throw new Error('unsafe_target: Kernel and Relay runtime homes overlap');
-  const configuredRelayHome = process.env.MOONSHOT_RELAY_HOME;
-  const relayHome = configuredRelayHome
-    && !pathsOverlap(physicalKernelHome, configuredRelayHome)
-    ? canonicalPath(configuredRelayHome)
-    : defaultRelayHome;
-  const configuredOrDefault = (key, fallback) => {
-    const configured = process.env[key];
-    const fallbackPath = canonicalPath(fallback);
-    if (pathsOverlap(physicalKernelHome, fallbackPath)) throw new Error(`unsafe_target: ${key} fallback overlaps Kernel home`);
-    return configured && !pathsOverlap(physicalKernelHome, configured) ? canonicalPath(configured) : fallbackPath;
-  };
-  const relayEnv = {
-    ...process.env,
-    MOON_RELAY_TRACK: 'relay',
-    MOONSHOT_RELAY_HOME: relayHome,
-    CLAUDE_HOME: configuredOrDefault('CLAUDE_HOME', path.join(userHome, '.claude')),
-    CLAUDE_CONFIG_DIR: configuredOrDefault('CLAUDE_CONFIG_DIR', path.join(userHome, '.claude')),
-    CODEX_HOME: configuredOrDefault('CODEX_HOME', path.join(userHome, '.codex')),
-    QWEN_HOME: configuredOrDefault('QWEN_HOME', path.join(userHome, '.qwen')),
-    ANTIGRAVITY_HOME: configuredOrDefault('ANTIGRAVITY_HOME', path.join(userHome, '.gemini', 'antigravity')),
-    ANTIGRAVITY_SKILLS_HOME: configuredOrDefault('ANTIGRAVITY_SKILLS_HOME', path.join(userHome, '.gemini', 'config')),
-    GEMINI_HOME: configuredOrDefault('GEMINI_HOME', path.join(userHome, '.gemini', 'antigravity')),
-  };
-  const inheritedPath = Object.entries(process.env).find(([key]) => key.toLowerCase() === 'path')?.[1];
-  for (const key of Object.keys(relayEnv)) if (key.toLowerCase() === 'path') delete relayEnv[key];
-  relayEnv.PATH = typeof inheritedPath === 'string'
-    ? inheritedPath.split(path.delimiter).filter((entry) => !entry || !pathsOverlap(physicalKernelHome, entry)).join(path.delimiter)
-    : inheritedPath;
-  for (const key of [
-    'MOON_RELAY_KERNEL_HOME',
-    'MOON_RELAY_KERNEL_RUN_ID',
-    'MOON_RELAY_KERNEL_PROJECT_ID',
-    'MOON_RELAY_KERNEL_SESSION_ID',
-    'MOON_RELAY_KERNEL_LEGACY_SESSION_ID',
-    'MOON_RELAY_KERNEL_PROVIDER',
-    'MOON_RELAY_KERNEL_WORKSPACE_ID',
-    'MOON_RELAY_WORKSPACE_ROOT',
-  ]) delete relayEnv[key];
-  return relayEnv;
-};
-
-if (command !== 'kernel' && !existsSync(selectedInstaller)) {
-  console.error(`Moonshot Relay installer not found: ${selectedInstaller}`);
+if (!existsSync(kernelInstaller)) {
+  console.error(`Kernel installer not found: ${kernelInstaller}`);
   process.exit(1);
 }
 
@@ -147,134 +116,131 @@ const optionValue = (flag) => {
   const index = args.indexOf(flag);
   return index >= 0 && index + 1 < args.length ? args[index + 1] : null;
 };
+
+const providerHomes = {
+  claude: canonicalPath(optionValue('--claude-home') || process.env.CLAUDE_CONFIG_DIR || process.env.CLAUDE_HOME || path.join(userHome, '.claude')),
+  codex: canonicalPath(optionValue('--codex-home') || process.env.CODEX_HOME || path.join(userHome, '.codex')),
+  qwen: canonicalPath(optionValue('--qwen-home') || process.env.QWEN_HOME || path.join(userHome, '.qwen')),
+  antigravity: canonicalPath(optionValue('--antigravity-home') || process.env.ANTIGRAVITY_HOME || path.join(userHome, '.gemini', 'antigravity')),
+};
+const antigravitySkillsHome = optionValue('--antigravity-skills-home')
+  || process.env.ANTIGRAVITY_SKILLS_HOME
+  || path.join(userHome, '.gemini', 'config');
+
 const requestedKernelHome = process.env.MOON_RELAY_KERNEL_HOME || path.join(userHome, '.moon-relay-kernel');
 const kernelHomeIdentity = await physicalTargetIdentity(requestedKernelHome, {
-  protectedRoots: [process.env.MOONSHOT_RELAY_HOME || path.join(userHome, '.moonshot-relay')],
+  protectedRoots: [...Object.values(providerHomes), antigravitySkillsHome],
 });
 if (!kernelHomeIdentity.safe) {
   console.error(`Setup refused: unsafe Kernel home ${requestedKernelHome}`);
   process.exit(1);
 }
 const kernelHome = kernelHomeIdentity.canonicalPath;
-const relayEnv = command === 'install' ? relaySetupEnvironment({ userHome, kernelHome }) : process.env;
-const codexHome = canonicalPath(optionValue('--codex-home') || process.env.CODEX_HOME || path.join(userHome, '.codex'));
+const kernelEnvironment = {
+  ...process.env,
+  MOON_RELAY_TRACK: 'kernel',
+  MOON_RELAY_KERNEL_HOME: kernelHome,
+};
+const legacyRuntimeEnvKey = ['MOONSHOT', 'RELAY', 'HOME'].join('_');
+delete kernelEnvironment[legacyRuntimeEnvKey];
 
-const runKernelInstall = () => {
-  if (!existsSync(kernelInstaller)) {
-    console.error(`Kernel installer not found: ${kernelInstaller}`);
+const requestedRuntimes = () => {
+  const raw = optionValue('--runtime') || 'all';
+  const names = raw === 'all' ? [...PROFILE_RUNTIMES] : raw.split(',').map((runtime) => runtime.trim()).filter(Boolean);
+  if (!names.length || names.some((runtime) => !PROFILE_RUNTIMES.includes(runtime))) {
+    console.error(`Unsupported runtime: ${raw}\n${usage}`);
     process.exit(1);
   }
-  const kernelInstallArgs = ['install', '--target-root', kernelHome, '--source-root', repoRoot];
-  if (jsonMode) kernelInstallArgs.push('--json');
-  const kernelInstall = spawnSync(process.execPath, [kernelInstaller, ...kernelInstallArgs], {
-    cwd: repoRoot,
-    env: { ...process.env, MOON_RELAY_TRACK: 'kernel', MOON_RELAY_KERNEL_HOME: kernelHome },
-    stdio: command === 'kernel' ? 'inherit' : chainedStdio,
-  });
-  if (kernelInstall.error) {
-    console.error(`Kernel account install failed: ${kernelInstall.error.message}`);
-    process.exit(1);
-  }
-  if (kernelInstall.status !== 0) {
-    console.error(`Kernel account install failed with exit code ${kernelInstall.status}`);
-    process.exit(kernelInstall.status || 1);
-  }
+  return [...new Set(names)];
+};
 
-  // A Kernel install must establish the account-root project identity before
-  // any legacy Relay profile is allowed to run. This is setup-time bootstrap,
-  // not a bypass of the normal model-visible identity preflight.
-  const identityBootstrap = spawnSync(process.execPath, [
-    kernelInstaller,
-    'identity',
-    'bootstrap',
-    '--project-root',
-    repoRoot,
-    '--runtime-home',
-    kernelHome,
-    '--policy',
-    'isolate',
-    '--json',
-  ], {
+const runKernelCommand = (kernelArgs, label) => {
+  const childArgs = [...kernelArgs];
+  if (jsonMode) childArgs.push('--json');
+  const result = spawnSync(process.execPath, [kernelInstaller, ...childArgs], {
     cwd: repoRoot,
-    env: { ...process.env, MOON_RELAY_TRACK: 'kernel', MOON_RELAY_KERNEL_HOME: kernelHome },
-    stdio: chainedStdio,
+    env: kernelEnvironment,
+    encoding: 'utf8',
+    stdio: jsonMode ? ['ignore', 'pipe', 'inherit'] : 'inherit',
   });
-  if (identityBootstrap.error) {
-    console.error(`Kernel project identity bootstrap failed: ${identityBootstrap.error.message}`);
+  if (result.error) {
+    console.error(`${label} failed: ${result.error.message}`);
     process.exit(1);
   }
-  if (identityBootstrap.status !== 0) {
-    console.error(`Kernel project identity bootstrap failed with exit code ${identityBootstrap.status}`);
-    process.exit(identityBootstrap.status || 1);
+  if (result.status !== 0) {
+    console.error(`${label} failed with exit code ${result.status}`);
+    process.exit(result.status || 1);
+  }
+  if (!jsonMode) return { status: 'executed', command: label };
+  try {
+    return JSON.parse(result.stdout || '{}');
+  } catch (error) {
+    console.error(`${label} returned invalid JSON: ${error.message}`);
+    process.exit(1);
   }
 };
 
-const runKernelAccountRootProfileInstall = () => {
-  const profileArgs = [
-    kernelInstaller,
-    'profile-install',
-    '--runtime',
-    'codex',
-    '--account-root',
-    '--target-root',
-    codexHome,
-    '--source-root',
-    repoRoot,
-    '--runtime-home',
-    kernelHome,
-  ];
-  if (jsonMode) profileArgs.push('--json');
-  const profileInstall = spawnSync(process.execPath, profileArgs, {
-    cwd: repoRoot,
-    env: { ...process.env, MOON_RELAY_TRACK: 'kernel', MOON_RELAY_KERNEL_HOME: kernelHome },
-    stdio: chainedStdio,
-  });
-  if (profileInstall.error) {
-    console.error(`Kernel Codex account-root profile install failed: ${profileInstall.error.message}`);
-    process.exit(1);
+const runKernelInstall = () => runKernelCommand([
+  'install',
+  '--target-root', kernelHome,
+  '--source-root', repoRoot,
+  ...(args.includes('--sync') ? ['--sync'] : []),
+], 'Kernel runtime install');
+
+const runKernelIdentityBootstrap = () => runKernelCommand([
+  'identity', 'bootstrap',
+  '--project-root', repoRoot,
+  '--runtime-home', kernelHome,
+  '--policy', 'isolate',
+], 'Kernel project identity bootstrap');
+
+const runKernelProfileInstall = (runtime) => runKernelCommand([
+  'profile-install',
+  '--runtime', runtime,
+  '--target-root', providerHomes[runtime],
+  '--source-root', repoRoot,
+  '--runtime-home', kernelHome,
+  ...(runtime === 'codex' ? ['--account-root'] : []),
+  ...(runtime === 'antigravity' ? ['--skills-root', antigravitySkillsHome] : []),
+  ...(args.includes('--sync') ? ['--sync'] : []),
+], `Kernel ${runtime} profile install`);
+
+const runKernelIntegrations = (runtimes) => runtimes.map(runKernelProfileInstall);
+
+const runInstall = () => {
+  const runtimes = command === 'kernel' ? ['codex'] : requestedRuntimes();
+  if (args.includes('--dry-run')) {
+    const kernelPlan = runKernelCommand(['package', '--dry-run'], 'Kernel package dry-run');
+    return {
+      schemaVersion: 1,
+      productId: 'moon-relay-kernel',
+      runtime: 'moon-relay-kernel',
+      dryRun: true,
+      kernel: kernelPlan,
+      profileRuntimes: runtimes,
+      manifests: [],
+    };
   }
-  if (profileInstall.status !== 0) {
-    console.error(`Kernel Codex account-root profile install failed with exit code ${profileInstall.status}`);
-    process.exit(profileInstall.status || 1);
-  }
+
+  const kernel = runKernelInstall();
+  const identity = runKernelIdentityBootstrap();
+  const profiles = runKernelIntegrations(runtimes);
+  return {
+    schemaVersion: 1,
+    productId: 'moon-relay-kernel',
+    runtime: 'moon-relay-kernel',
+    dryRun: false,
+    kernel,
+    identity,
+    profiles,
+    // Keep the top-level result easy for existing callers to consume while
+    // making every entry explicitly Kernel-owned.
+    manifests: [kernel, ...profiles],
+  };
 };
 
-if (command === 'kernel') {
-  runKernelInstall();
-  runKernelAccountRootProfileInstall();
-  process.exit(0);
+const result = runInstall();
+if (!args.includes('--dry-run')) {
+  console.error('Kernel installation and native-provider integration completed.');
 }
-
-// Kernel is the first installation authority. The Relay installer below only
-// materializes compatibility profiles; the direct Codex Kernel account profile
-// is synchronized after it so `/` command discovery has the Kernel default.
-if (command === 'install' && !args.includes('--dry-run')) runKernelInstall();
-
-const installerArgs = command === 'bridge'
-  ? [selectedInstaller, ...args]
-  : [
-      selectedInstaller,
-      '--runtime',
-      'all',
-      '--source-root',
-      repoRoot,
-      '--remove-legacy-harness-core',
-      ...args.filter((a) => a !== '--force' && a !== '-f' && a !== '--clean-overlay'),
-    ];
-
-const result = spawnSync(process.execPath, installerArgs, {
-  cwd: repoRoot,
-  env: relayEnv,
-  stdio: 'inherit',
-});
-
-if (result.error) {
-  console.error(result.error.message);
-  process.exit(1);
-}
-
-if (result.status === 0 && command === 'install' && !args.includes('--dry-run')) {
-  runKernelAccountRootProfileInstall();
-}
-
-process.exit(result.status ?? 1);
+if (jsonMode) console.log(JSON.stringify(result, null, 2));

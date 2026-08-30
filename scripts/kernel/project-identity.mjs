@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { gitConfigValue } from '../lib/git-safe.mjs';
-import { resolveKernelRuntimeHome, assertIsolatedRuntimeHomes, RELAY_DEFAULT_HOME } from './runtime-home.mjs';
+import { resolveKernelRuntimeHome } from './runtime-home.mjs';
 
 const PROJECT_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{1,126}[a-z0-9]$/;
 const WINDOWS_RESERVED_PROJECT_ID = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
@@ -174,9 +174,6 @@ const readPersistedAlias = (kernelHome, projectRoot, alternateRoots = []) => {
 
 export function resolveKernelProjectIdentity({ cwd = process.cwd(), env = process.env } = {}) {
   const kernelHome = resolveKernelRuntimeHome({ env });
-  const relayHome = env.MOONSHOT_RELAY_HOME ? path.resolve(env.MOONSHOT_RELAY_HOME) : RELAY_DEFAULT_HOME;
-
-  assertIsolatedRuntimeHomes(kernelHome, relayHome);
 
   const lexicalProjectRoot = findGitRoot(cwd) || path.resolve(cwd);
   let projectRoot = lexicalProjectRoot;
@@ -201,11 +198,6 @@ export function resolveKernelProjectIdentity({ cwd = process.cwd(), env = proces
     }
   } catch {
     gitCommonDir = null;
-  }
-
-  // Guard: if project root or kernel home overlaps relay home unexpectedly.
-  if (path.resolve(projectRoot) === path.resolve(relayHome)) {
-    throw new KernelProjectIdentityError('NAMESPACE_OVERLAP', 'Kernel project root cannot be equal to Relay home directory');
   }
 
   const aliases = [];

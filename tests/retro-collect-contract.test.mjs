@@ -5,9 +5,25 @@ import path from 'node:path';
 import { test } from 'node:test';
 
 import { collectRetroRecord } from '../tools/retro/collect.mjs';
-import { importCollectRecords, readCollectRecord } from '../tools/retro/retro-store.mjs';
+import { importCollectRecords, readCollectRecord, resolveRetroRoot } from '../tools/retro/retro-store.mjs';
 
 const root = process.cwd();
+
+test('retro root defaults to Kernel runtime home and ignores retired Relay home', async () => {
+  const kernelHome = await mkdtemp(path.join(os.tmpdir(), 'retro-kernel-home-'));
+  const legacyHome = await mkdtemp(path.join(os.tmpdir(), 'retro-legacy-home-'));
+
+  assert.equal(
+    resolveRetroRoot({
+      projectId: 'fixture',
+      env: {
+        MOON_RELAY_KERNEL_HOME: kernelHome,
+        MOONSHOT_RELAY_HOME: legacyHome,
+      },
+    }),
+    path.join(kernelHome, 'state', 'projects', 'fixture', 'retro'),
+  );
+});
 
 test('retro collect writes a schema-shaped advisory outbox record', async () => {
   const out = await mkdtemp(path.join(os.tmpdir(), 'retro-outbox-'));

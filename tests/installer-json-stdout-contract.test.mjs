@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdir, mkdtemp, rm, symlink } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
@@ -26,9 +26,43 @@ const sandboxedEnv = (home) => ({
   ANTIGRAVITY_HOME: path.join(realpathSync(home), '.gemini', 'antigravity'),
 });
 
-test('install --json emits a single parseable JSON document on stdout (real install, Kernel chaining active)', async () => {
+const providerSentinelLayout = Object.freeze([
+  ['auth', '.user-owned-auth-sentinel.json'],
+  ['session', path.join('sessions', '.user-owned-session-sentinel.json')],
+  ['cache', path.join('cache', '.user-owned-cache-sentinel.txt')],
+  ['skills', path.join('skills', '.user-owned-skill-sentinel', 'SKILL.md')],
+  ['hooks', path.join('hooks', '.user-owned-hook-sentinel.mjs')],
+  ['mcp', path.join('mcp', '.user-owned-mcp-sentinel.json')],
+  ['config', path.join('config', '.user-owned-config-sentinel.toml')],
+]);
+
+const seedProviderSentinels = async (home, label) => {
+  const values = [];
+  for (const [kind, relative] of providerSentinelLayout) {
+    const file = path.join(home, relative);
+    const value = `user-owned:${label}:${kind}`;
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, value, 'utf8');
+    values.push({ file, value });
+  }
+  return values;
+};
+
+const assertSentinelsPreserved = async (sentinels) => {
+  for (const sentinel of sentinels) assert.equal(await readFile(sentinel.file, 'utf8'), sentinel.value, `${sentinel.file} was changed`);
+};
+
+test('install --json emits a single parseable JSON document on stdout (real Kernel-only install)', async () => {
   const home = await mkdtemp(path.join(os.tmpdir(), 'mr-json-stdout-'));
   try {
+    const accountHome = realpathSync(home);
+    const sentinelGroups = await Promise.all([
+      ['claude', path.join(accountHome, '.claude')],
+      ['codex', path.join(accountHome, '.codex')],
+      ['qwen', path.join(accountHome, '.qwen')],
+      ['antigravity', path.join(accountHome, '.gemini', 'antigravity')],
+    ].map(async ([label, providerHome]) => seedProviderSentinels(providerHome, label)));
+    const antigravitySkills = await seedProviderSentinels(path.join(accountHome, '.gemini', 'config'), 'antigravity-skills');
     const result = spawnSync(process.execPath, [wrapper, 'install', '--runtime', 'all', '--json'], {
       cwd: repoRoot,
       env: sandboxedEnv(home),
@@ -43,8 +77,10 @@ test('install --json emits a single parseable JSON document on stdout (real inst
     assert.doesNotThrow(() => { parsed = JSON.parse(result.stdout); }, `stdout was not pure JSON:\n${result.stdout.slice(0, 400)}`);
     assert.equal(parsed.dryRun, false);
     assert.ok(Array.isArray(parsed.manifests) && parsed.manifests.length > 0);
-    // The Kernel chaining did run (non-dry-run) — its human output belongs on stderr.
+    // The Kernel install summary is diagnostic output; JSON remains parseable.
     assert.match(result.stderr, /kernel|install/i);
+    for (const group of sentinelGroups) await assertSentinelsPreserved(group);
+    await assertSentinelsPreserved(antigravitySkills);
 
     const identity = spawnSync(process.execPath, [
       kernelCli,
@@ -62,15 +98,15 @@ test('install --json emits a single parseable JSON document on stdout (real inst
     });
     assert.equal(identity.status, 0, identity.stderr);
     assert.equal(JSON.parse(identity.stdout).status, 'ready');
-    const accountHome = realpathSync(home);
-    assert.equal(existsSync(path.join(accountHome, '.codex', '.moonshot-relay-install-manifest.json')), true);
+    assert.equal(existsSync(path.join(accountHome, '.codex', '.moon-relay-kernel-profile-manifest.json')), true);
     assert.equal(existsSync(path.join(accountHome, '.moon-relay-kernel', '.moon-relay', 'install-manifest.json')), true);
+    assert.equal(existsSync(path.join(accountHome, '.moonshot-relay')), false);
   } finally {
     await rm(home, { recursive: true, force: true });
   }
 });
 
-test('install --dry-run --json is also pure JSON (no chaining)', async () => {
+test('install --dry-run --json is also pure JSON (no materialization)', async () => {
   const home = await mkdtemp(path.join(os.tmpdir(), 'mr-json-dry-'));
   try {
     const result = spawnSync(process.execPath, [wrapper, 'install', '--runtime', 'all', '--dry-run', '--json'], {
