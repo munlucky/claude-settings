@@ -2,6 +2,9 @@ import path from 'node:path';
 import { existsSync, realpathSync } from 'node:fs';
 import { capsuleStaleness } from './execution-capsule.mjs';
 import { findScopeViolations } from './capsule-selection.mjs';
+import { runGit } from '../../lib/git-safe.mjs';
+import { observeWorkspaceIdentity } from './workspace-identity.mjs';
+import { assertRunWorktreeMutationAuthority } from './worktree-binding.mjs';
 
 export const MUTATION_OPERATIONS = Object.freeze([
   'file_write', 'file_delete', 'git_commit', 'git_checkout', 'git_reset',
@@ -15,6 +18,28 @@ const fail = (code, message) => {
 };
 
 const canonicalWorkspace = (workspaceRoot) => realpathSync(path.resolve(workspaceRoot));
+
+const failForMode = (mode, genericCode, deliveryCode, message) => {
+  fail(mode === 'delivery' ? deliveryCode : genericCode, message);
+};
+
+const registeredWorkspaceFor = ({ stateStore, workspaceId, run }) => (
+  workspaceId && stateStore.getProjectWorkspace
+    ? stateStore.getProjectWorkspace(workspaceId)
+    : null
+);
+
+const readHeadCommit = (workspaceRoot) => {
+  const result = runGit(workspaceRoot, ['rev-parse', '--verify', 'HEAD']);
+  if (result.error || result.status !== 0) return null;
+  return String(result.stdout || '').trim() || null;
+};
+
+const readWorkspaceStatus = (workspaceRoot) => {
+  const result = runGit(workspaceRoot, ['status', '--porcelain=v1', '--untracked-files=all']);
+  if (result.error || result.status !== 0) return null;
+  return String(result.stdout || '').trim();
+};
 
 export const canonicalMutationPath = ({ workspaceRoot, targetPath, platform = process.platform } = {}) => {
   const root = canonicalWorkspace(workspaceRoot);
@@ -39,6 +64,162 @@ export const canonicalMutationPath = ({ workspaceRoot, targetPath, platform = pr
     fail('mutation_outside_workspace', `target escapes workspace: ${targetPath}`);
   }
   return relative;
+};
+
+// The workspace lock and its fencing credentials are the shared mutation
+// authority. Ordinary Step mutations and owner Delivery materialization both
+// enter through this primitive; the caller decides whether a Step/Capsule
+// scope must be checked after the fence is held.
+export const assertWorkspaceMutationFence = ({
+  stateStore,
+  workspaceRoot,
+  runId,
+  workspaceId = null,
+  projectId = null,
+  fencingToken = null,
+  sessionToken = null,
+  worktree = null,
+  requireOwnerWorktree = false,
+  mode = 'mutation',
+} = {}) => {
+  if (!stateStore || !workspaceRoot) fail('mutation_guard_invalid', 'stateStore and workspaceRoot are required');
+  const run = stateStore.getRun(runId);
+  if (!run || run.status !== 'active') {
+    failForMode(mode, 'mutation_run_inactive', 'delivery_run_inactive', runId);
+  }
+
+  const effectiveWorkspaceId = workspaceId || run.workspaceId;
+  const registeredWorkspace = registeredWorkspaceFor({ stateStore, workspaceId: effectiveWorkspaceId, run });
+  if (registeredWorkspace && path.resolve(workspaceRoot) !== path.resolve(registeredWorkspace.canonicalRoot)) {
+    failForMode(mode, 'mutation_workspace_mismatch', 'delivery_workspace_mismatch', effectiveWorkspaceId || runId);
+  }
+
+  if (requireOwnerWorktree) {
+    try {
+      assertRunWorktreeMutationAuthority({
+        stateStore,
+        run,
+        worktree: worktree || {
+          projectId: projectId || run.projectId,
+          worktreeId: run.worktreeId,
+          workspaceId: effectiveWorkspaceId,
+        },
+      });
+    } catch (error) {
+      failForMode(
+        mode,
+        error.code || 'mutation_worktree_authority_lost',
+        'delivery_worktree_authority_lost',
+        error.message,
+      );
+    }
+  }
+
+  const lock = effectiveWorkspaceId
+    ? stateStore.getWorkspaceMutationLockV2(effectiveWorkspaceId)
+    : stateStore.getWorkspaceMutationLock(run.projectId);
+  if (!lock) {
+    failForMode(mode, 'workspace_mutation_lock_missing', 'delivery_mutation_fence_lost', run.projectId);
+  }
+  if (fencingToken === null || fencingToken === undefined || !sessionToken) {
+    failForMode(mode, 'mutation_fence_credentials_missing', 'delivery_mutation_fence_lost', run.projectId);
+  }
+  if (
+    lock.holderRunId !== runId
+    || lock.fencingToken !== fencingToken
+    || lock.sessionToken !== sessionToken
+  ) {
+    failForMode(mode, 'workspace_mutation_fence_mismatch', 'delivery_mutation_fence_lost', run.projectId);
+  }
+
+  return {
+    allowed: true,
+    run,
+    workspaceId: effectiveWorkspaceId || null,
+    workspace: registeredWorkspace,
+    lock,
+    fencingToken: lock.fencingToken,
+    sessionToken: lock.sessionToken,
+  };
+};
+
+// Delivery CAS adds the owner Run/worktree snapshot and the native workspace
+// checks to the shared fence. `phase=pre` is used immediately before git
+// apply; `phase=post` deliberately permits the expected dirty state while
+// still requiring the Run/revision/HEAD/fence to be unchanged.
+export const assertOwnerWorkspaceMutationCAS = ({
+  stateStore,
+  workspaceRoot,
+  runId,
+  workspaceId = null,
+  projectId = null,
+  worktree = null,
+  fencingToken = null,
+  sessionToken = null,
+  expectedMutationRevision = null,
+  expectedWorkspaceIdentity = null,
+  expectedHeadCommitSha = null,
+  expectedWorkspaceId = null,
+  expectedWorktreeId = null,
+  expectedProjectId = null,
+  actualWorkspaceIdentity = null,
+  phase = 'pre',
+} = {}) => {
+  const fence = assertWorkspaceMutationFence({
+    stateStore,
+    workspaceRoot,
+    runId,
+    workspaceId,
+    projectId,
+    fencingToken,
+    sessionToken,
+    worktree,
+    requireOwnerWorktree: true,
+    mode: 'delivery',
+  });
+  const run = fence.run;
+  if (expectedWorkspaceId && run.workspaceId !== expectedWorkspaceId) {
+    fail('delivery_worktree_authority_lost', `Run workspace ${run.workspaceId || '<missing>'} does not match expected workspace ${expectedWorkspaceId}`);
+  }
+  if (expectedProjectId && run.projectId !== expectedProjectId) {
+    fail('delivery_worktree_authority_lost', `Run project ${run.projectId} does not match expected project ${expectedProjectId}`);
+  }
+  if (expectedWorktreeId && run.worktreeId !== expectedWorktreeId) {
+    fail('delivery_worktree_authority_lost', `Run worktree ${run.worktreeId || '<missing>'} does not match expected worktree ${expectedWorktreeId}`);
+  }
+  if (expectedMutationRevision !== null && expectedMutationRevision !== undefined
+    && Number(run.mutationRevision) !== Number(expectedMutationRevision)) {
+    fail('delivery_mutation_revision_stale', `Run mutation revision ${run.mutationRevision} does not match expected ${expectedMutationRevision}`);
+  }
+  if (expectedWorkspaceIdentity && run.currentWorkspaceIdentity !== expectedWorkspaceIdentity) {
+    fail('delivery_workspace_drift', 'Run workspace identity no longer matches the Delivery CAS snapshot');
+  }
+
+  const headCommitSha = readHeadCommit(workspaceRoot);
+  if (!headCommitSha) fail('delivery_head_changed', 'Delivery HEAD is unavailable');
+  if (expectedHeadCommitSha && headCommitSha !== expectedHeadCommitSha) {
+    fail('delivery_head_changed', `Delivery HEAD ${headCommitSha} does not match expected ${expectedHeadCommitSha}`);
+  }
+
+  const observedIdentity = actualWorkspaceIdentity || observeWorkspaceIdentity({ projectRoot: workspaceRoot }).identity;
+  if (phase === 'pre' || phase === 'post-commit') {
+    if (expectedWorkspaceIdentity && observedIdentity !== expectedWorkspaceIdentity) {
+      fail('delivery_workspace_drift', 'Delivery workspace identity no longer matches the CAS snapshot');
+    }
+  }
+  if (phase === 'pre') {
+    const status = readWorkspaceStatus(workspaceRoot);
+    if (status === null) fail('delivery_workspace_drift', 'Delivery workspace status is unavailable');
+    if (status) fail('delivery_workspace_drift', 'Delivery workspace is dirty before materialization');
+  }
+
+  return {
+    ...fence,
+    run,
+    headCommitSha,
+    workspaceIdentity: observedIdentity,
+    phase,
+  };
 };
 
 export const assertMutationAllowed = ({
@@ -70,28 +251,14 @@ export const assertMutationAllowed = ({
   if (operation === 'git_commit' && capsule.permissions?.canCommit !== true) fail('mutation_operation_forbidden', operation);
 
   const effectiveWorkspaceId = step.executionWorkspaceId || run.workspaceId;
-  const registeredWorkspace = effectiveWorkspaceId && stateStore.getProjectWorkspace
-    ? stateStore.getProjectWorkspace(effectiveWorkspaceId)
-    : null;
-  if (registeredWorkspace && path.resolve(workspaceRoot) !== path.resolve(registeredWorkspace.canonicalRoot)) {
-    fail('mutation_workspace_mismatch', stepId);
-  }
-  const lock = effectiveWorkspaceId
-    ? stateStore.getWorkspaceMutationLockV2(effectiveWorkspaceId)
-    : stateStore.getWorkspaceMutationLock(run.projectId);
-  if (!lock) {
-    fail('workspace_mutation_lock_missing', run.projectId);
-  }
-  if (fencingToken === null || fencingToken === undefined || !sessionToken) {
-    fail('mutation_fence_credentials_missing', run.projectId);
-  }
-  if (
-    lock.holderRunId !== runId
-    || lock.fencingToken !== fencingToken
-    || lock.sessionToken !== sessionToken
-  ) {
-    fail('workspace_mutation_fence_mismatch', run.projectId);
-  }
+  const fence = assertWorkspaceMutationFence({
+    stateStore,
+    workspaceRoot,
+    runId,
+    workspaceId: effectiveWorkspaceId,
+    fencingToken,
+    sessionToken,
+  });
 
   const relativePaths = targetPaths.map((targetPath) => canonicalMutationPath({ workspaceRoot, targetPath }));
   const violations = findScopeViolations({
@@ -100,5 +267,5 @@ export const assertMutationAllowed = ({
     forbiddenPaths: capsule.workUnit?.forbiddenPaths || [],
   });
   if (violations.length) fail('mutation_path_forbidden', violations.map((item) => item.path).join(', '));
-  return { allowed: true, runId, stepId, workspaceId: effectiveWorkspaceId || null, capsuleId, operation, targetPaths: relativePaths, fencingToken: lock?.fencingToken || null };
+  return { allowed: true, runId, stepId, workspaceId: effectiveWorkspaceId || null, capsuleId, operation, targetPaths: relativePaths, fencingToken: fence.fencingToken };
 };

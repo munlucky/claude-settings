@@ -483,6 +483,7 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       result_workspace_identity TEXT,
       result_commit_sha TEXT,
       patch_digest TEXT,
+      result_attempt_id TEXT,
       created_at TEXT NOT NULL,
       started_at TEXT,
       completed_at TEXT,
@@ -523,6 +524,7 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       result_workspace_identity TEXT,
       result_commit_sha TEXT,
       patch_digest TEXT,
+      worker_report_json TEXT,
       verification_refs_json TEXT NOT NULL DEFAULT '[]',
       knowledge_observation_refs_json TEXT NOT NULL DEFAULT '[]',
       started_at TEXT NOT NULL,
@@ -669,12 +671,14 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
   addCol('run_steps', 'result_workspace_identity', 'TEXT');
   addCol('run_steps', 'result_commit_sha', 'TEXT');
   addCol('run_steps', 'patch_digest', 'TEXT');
+  addCol('run_steps', 'result_attempt_id', 'TEXT');
   addCol('run_step_attempts', 'workspace_id', 'TEXT');
   addCol('run_step_attempts', 'workspace_root_hash', 'TEXT');
   addCol('run_step_attempts', 'base_workspace_identity', 'TEXT');
   addCol('run_step_attempts', 'result_workspace_identity', 'TEXT');
   addCol('run_step_attempts', 'result_commit_sha', 'TEXT');
   addCol('run_step_attempts', 'patch_digest', 'TEXT');
+  addCol('run_step_attempts', 'worker_report_json', 'TEXT');
   addCol('run_step_attempts', 'verification_refs_json', "TEXT DEFAULT '[]'");
   addCol('run_step_attempts', 'knowledge_observation_refs_json', "TEXT DEFAULT '[]'");
   addCol('run_step_attempts', 'attempt_id', 'TEXT');
@@ -693,7 +697,6 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
   addCol('review_receipts', 'step_id', 'TEXT');
   addCol('review_receipts', 'reviewer_binding_id', 'TEXT');
   addCol('review_receipts', 'implementer_attempt_id', 'TEXT');
-
   // Remove the retired execution lifecycle from databases created before the
   // compression. In-flight grouped executions become ordinary retryable Step
   // attempts; their individual receipts remain the recovery record. The
@@ -895,6 +898,38 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
   const persistentJson = (value) => typeof value === 'string'
     ? sanitizePersistentText(value)
     : JSON.stringify(sanitizePersistentPayload(value));
+  const canonicalReceiptPaths = (paths) => [...new Set((Array.isArray(paths) ? paths : [])
+    .map((value) => String(value).replaceAll('\\', '/').replace(/^\.\//u, ''))
+    .filter(Boolean))].sort();
+  const canonicalReceiptValue = (field, value) => field === 'changedPaths'
+    ? canonicalReceiptPaths(value)
+    : value;
+  const receiptValueIsMissing = (field, value) => value === null
+    || value === undefined
+    || (Array.isArray(value) && value.length === 0)
+    || (field === 'workerReport' && value && typeof value === 'object' && Object.keys(value).length === 0);
+  const receiptValuesEqual = (field, left, right) => JSON.stringify(canonicalReceiptValue(field, left))
+    === JSON.stringify(canonicalReceiptValue(field, right));
+  const mergeImmutableReceiptFields = (current, incoming, fields) => {
+    const patch = {};
+    for (const field of fields) {
+      const nextValue = incoming?.[field];
+      if (receiptValueIsMissing(field, nextValue)) continue;
+      const currentValue = current?.[field];
+      if (receiptValueIsMissing(field, currentValue)) {
+        patch[field] = field === 'changedPaths' ? canonicalReceiptPaths(nextValue) : nextValue;
+        continue;
+      }
+      if (!receiptValuesEqual(field, currentValue, nextValue)) {
+        throw Object.assign(new Error(`step result field ${field} is immutable for the canonical attempt`), {
+          code: 'STEP_RESULT_IMMUTABLE_CONFLICT',
+          errorCode: 'STEP_RESULT_IMMUTABLE_CONFLICT',
+          field,
+        });
+      }
+    }
+    return patch;
+  };
   const canonicalIdentityRoot = (value) => {
     const resolved = path.resolve(String(value || ''));
     try {
@@ -1852,6 +1887,68 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         return { changed: !isInitialObservation, run: this.getRun(runId) };
       } catch (err) {
         db.exec('ROLLBACK');
+        throw err;
+      }
+    },
+
+    // Delivery materialization uses the same observation route as ordinary
+    // reports, but with an owner snapshot CAS. The workspace fence prevents
+    // another Kernel owner from entering the critical section; this SQL CAS
+    // also protects the revision/identity pair from a stale process that
+    // observed the same workspace before its lock was lost.
+    observeWorkspaceIdentityCAS(runId, {
+      expectedMutationRevision,
+      expectedWorkspaceIdentity,
+      identity,
+      provenance = null,
+    } = {}) {
+      if (!identity || !sha256Regex.test(identity)) {
+        throw Object.assign(new Error('delivery_workspace_identity_invalid'), {
+          code: 'delivery_workspace_identity_invalid',
+          errorCode: 'delivery_workspace_identity_invalid',
+        });
+      }
+      const fail = (code, message) => {
+        throw Object.assign(new Error(`${code}: ${message}`), { code, errorCode: code });
+      };
+      db.exec('BEGIN IMMEDIATE TRANSACTION');
+      try {
+        const run = this.getRun(runId);
+        if (!run || run.status !== 'active') fail('delivery_run_inactive', runId);
+        if (expectedMutationRevision === null || expectedMutationRevision === undefined) {
+          fail('delivery_mutation_revision_stale', 'expected mutation revision is required');
+        }
+        if (Number(run.mutationRevision) !== Number(expectedMutationRevision)) {
+          fail('delivery_mutation_revision_stale', `Run mutation revision ${run.mutationRevision} does not match expected ${expectedMutationRevision}`);
+        }
+        if (expectedWorkspaceIdentity && run.currentWorkspaceIdentity !== expectedWorkspaceIdentity) {
+          fail('delivery_workspace_drift', 'Run workspace identity no longer matches the Delivery CAS snapshot');
+        }
+        if (!run.currentWorkspaceIdentity || run.currentWorkspaceIdentity === identity) {
+          fail('delivery_mutation_not_observed', 'Delivery identity did not advance from the expected owner identity');
+        }
+        const updated = db.prepare(`
+          UPDATE runs
+          SET current_workspace_identity=?,
+              run_start_workspace_identity=COALESCE(run_start_workspace_identity, ?),
+              mutation_revision=mutation_revision+1,
+              revision=revision+1,
+              updated_at=?
+          WHERE run_id=? AND mutation_revision=? AND current_workspace_identity=?
+        `).run(identity, identity, now(), runId, Number(expectedMutationRevision), expectedWorkspaceIdentity || run.currentWorkspaceIdentity);
+        if (Number(updated.changes || 0) !== 1) {
+          fail('delivery_mutation_revision_stale', 'Delivery identity CAS did not update exactly one Run');
+        }
+        if (provenance) this.recordMutationProvenance(runId, provenance);
+        db.exec('COMMIT');
+        return {
+          changed: true,
+          previousWorkspaceIdentity: run.currentWorkspaceIdentity,
+          run: this.getRun(runId),
+          provenance: provenance ? this.getMutationProvenance(runId) : null,
+        };
+      } catch (err) {
+        try { db.exec('ROLLBACK'); } catch {}
         throw err;
       }
     },
@@ -3260,6 +3357,37 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       return !row || Date.parse(row.expiresAt) <= Date.now() ? null : row;
     },
 
+    renewWorkspaceMutationLockV2({ workspaceId, projectId, runId, sessionToken, fencingToken, ttlMs = 120000 } = {}) {
+      if (!workspaceId || !projectId || !runId || !sessionToken || fencingToken === null || fencingToken === undefined) {
+        throw new Error('renewWorkspaceMutationLockV2 requires workspaceId, projectId, runId, sessionToken, and fencingToken');
+      }
+      const expiresAt = new Date(Date.now() + ttlMs).toISOString();
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        const current = db.prepare(`SELECT workspace_id as workspaceId, project_id as projectId, holder_run_id as holderRunId, session_token as sessionToken, fencing_token as fencingToken, acquired_at as acquiredAt, expires_at as expiresAt FROM workspace_mutation_locks_v2 WHERE workspace_id=?`).get(workspaceId);
+        if (!current
+          || current.projectId !== projectId
+          || current.holderRunId !== runId
+          || current.sessionToken !== sessionToken
+          || Number(current.fencingToken) !== Number(fencingToken)
+          || Date.parse(current.expiresAt) <= Date.now()) {
+          db.exec('ROLLBACK');
+          return { renewed: false, lock: current || null };
+        }
+        const updated = db.prepare(`UPDATE workspace_mutation_locks_v2 SET expires_at=? WHERE workspace_id=? AND project_id=? AND holder_run_id=? AND session_token=? AND fencing_token=? AND expires_at>?`)
+          .run(expiresAt, workspaceId, projectId, runId, sessionToken, Number(fencingToken), new Date().toISOString());
+        if (Number(updated.changes || 0) !== 1) {
+          db.exec('ROLLBACK');
+          return { renewed: false, lock: current };
+        }
+        db.exec('COMMIT');
+        return { renewed: true, lock: { ...current, expiresAt } };
+      } catch (error) {
+        try { db.exec('ROLLBACK'); } catch {}
+        throw error;
+      }
+    },
+
     releaseWorkspaceMutationLockV2({
       workspaceId,
       runId,
@@ -3692,14 +3820,17 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         INSERT INTO mutation_provenance(run_id, project_id, workspace_id, source_identity, base_source_identity, mutation_revision, changed_paths_json, workspace_identity, mutation_digest, attempt_id, created_at, updated_at)
         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(run_id) DO UPDATE SET project_id=excluded.project_id, workspace_id=excluded.workspace_id, source_identity=excluded.source_identity, base_source_identity=excluded.base_source_identity, mutation_revision=excluded.mutation_revision, changed_paths_json=excluded.changed_paths_json, workspace_identity=excluded.workspace_identity, mutation_digest=excluded.mutation_digest, attempt_id=excluded.attempt_id, updated_at=excluded.updated_at
-      `).run(runId, projectId, workspaceId, sourceIdentity, baseSourceIdentity, Number(mutationRevision), JSON.stringify([...new Set(changedPaths.map((value) => String(value).replaceAll('\\', '/')))].sort()), workspaceIdentity, mutationDigest, attemptId, now(), now());
+      `).run(runId, projectId, workspaceId, sourceIdentity, baseSourceIdentity, Number(mutationRevision), JSON.stringify(canonicalReceiptPaths(changedPaths)), workspaceIdentity, mutationDigest, attemptId, now(), now());
       return this.getMutationProvenance(runId);
     },
 
     getMutationProvenance(runId) {
       const row = db.prepare(`SELECT run_id as runId, project_id as projectId, workspace_id as workspaceId, source_identity as sourceIdentity, base_source_identity as baseSourceIdentity, mutation_revision as mutationRevision, changed_paths_json as changedPathsJson, workspace_identity as workspaceIdentity, mutation_digest as mutationDigest, attempt_id as attemptId, created_at as createdAt, updated_at as updatedAt FROM mutation_provenance WHERE run_id=?`).get(runId);
       if (!row) return null;
-      return { ...row, changedPaths: safeJsonParse(row.changedPathsJson, []) };
+      return {
+        ...row,
+        changedPaths: canonicalReceiptPaths(safeJsonParse(row.changedPathsJson, [])),
+      };
     },
 
     recordFinalizationReceipt(runId, receipt = {}) {
@@ -3854,38 +3985,113 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
 
     // A worker result is an execution fact attached to the Step and its
     // canonical attempt. It does not open a second lifecycle or require a
-    // group identity to become recoverable.
+    // group identity to become recoverable. Once an attempt has a result,
+    // replay is exact-only: a different worker receipt cannot overwrite the
+    // bytes or lineage that the recovery path relies on.
     recordStepResult(runId, stepId, result = {}) {
       const step = this.getRunStep(runId, stepId);
       if (!step) throw Object.assign(new Error('step-not-found'), { code: 'STEP_NOT_FOUND' });
-      const updated = this.updateRunStep(runId, stepId, {
-        resultWorkspaceIdentity: result.resultWorkspaceIdentity,
-        resultCommitSha: result.resultCommitSha,
-        patchDigest: result.patchDigest,
-        resultDigest: result.receiptDigest || result.resultDigest,
+
+      const attempts = this.getStepAttempts(runId, { stepId });
+      const attempt = result.attemptId
+        ? this.getStepAttemptByAttemptId(result.attemptId, { runId })
+        : this.getActiveStepAttempt(runId, { stepId }) || attempts.at(-1) || null;
+      if (result.attemptId && (!attempt || attempt.stepId !== stepId)) {
+        throw Object.assign(new Error(`worker result attempt ${result.attemptId} does not belong to step ${stepId}`), {
+          code: 'STEP_RESULT_ATTEMPT_MISMATCH',
+          errorCode: 'STEP_RESULT_ATTEMPT_MISMATCH',
+        });
+      }
+      const latestAttempt = attempts.at(-1) || null;
+      if (result.attemptId && latestAttempt && attempt.id !== latestAttempt.id) {
+        throw Object.assign(new Error(`worker result attempt ${result.attemptId} is not the current canonical attempt`), {
+          code: 'STEP_RESULT_IMMUTABLE_CONFLICT',
+          errorCode: 'STEP_RESULT_IMMUTABLE_CONFLICT',
+          field: 'attemptId',
+        });
+      }
+
+      const resultDigest = result.receiptDigest || result.resultDigest;
+      const attemptResult = {
+        changedPaths: result.changedPaths,
+        mutationRevision: result.mutationRevision,
         workspaceIdentityEnd: result.resultWorkspaceIdentity,
-      });
-      const attempt = this.getActiveStepAttempt(runId, { stepId })
-        || this.getStepAttempts(runId, { stepId }).at(-1);
-      if (attempt) this.updateStepAttempt(attempt.id, {
         resultWorkspaceIdentity: result.resultWorkspaceIdentity,
         resultCommitSha: result.resultCommitSha,
         patchDigest: result.patchDigest,
-        verificationRefs: result.verificationRefs || [],
-        knowledgeObservationRefs: result.knowledgeObservationRefs || [],
-      });
-      if (attempt && Array.isArray(result.changedPaths) && result.changedPaths.length > 0 && result.resultWorkspaceIdentity) {
+        resultDigest,
+        verificationRefs: result.verificationRefs,
+        knowledgeObservationRefs: result.knowledgeObservationRefs,
+        workerReport: result.workerReport,
+      };
+      const canonicalAttemptId = result.attemptId || attempt?.attemptId || null;
+      const replacingStepReceipt = Boolean(
+        canonicalAttemptId
+        && step.resultAttemptId
+        && step.resultAttemptId !== canonicalAttemptId,
+      );
+      if (replacingStepReceipt && step.state === 'passed') {
+        throw Object.assign(new Error(`step ${stepId} already has an immutable passed result`), {
+          code: 'STEP_RESULT_IMMUTABLE_CONFLICT',
+          errorCode: 'STEP_RESULT_IMMUTABLE_CONFLICT',
+          field: 'resultAttemptId',
+        });
+      }
+      let updatedAttempt = attempt;
+      if (attempt) {
+        const attemptPatch = mergeImmutableReceiptFields(attempt, attemptResult, [
+          'changedPaths',
+          'mutationRevision',
+          'workspaceIdentityEnd',
+          'resultWorkspaceIdentity',
+          'resultCommitSha',
+          'patchDigest',
+          'resultDigest',
+          'verificationRefs',
+          'knowledgeObservationRefs',
+          'workerReport',
+        ]);
+        updatedAttempt = Object.keys(attemptPatch).length > 0
+          ? this.updateStepAttempt(attempt.id, attemptPatch)
+          : attempt;
+      }
+
+      const stepResult = {
+        resultAttemptId: canonicalAttemptId,
+        resultWorkspaceIdentity: result.resultWorkspaceIdentity,
+        resultCommitSha: result.resultCommitSha,
+        patchDigest: result.patchDigest,
+        resultDigest,
+        workspaceIdentityEnd: result.resultWorkspaceIdentity,
+      };
+      const stepPatch = replacingStepReceipt
+        ? Object.fromEntries(Object.entries(stepResult).filter(([, value]) => value !== null && value !== undefined))
+        : mergeImmutableReceiptFields(step, stepResult, [
+          'resultAttemptId',
+          'resultWorkspaceIdentity',
+          'resultCommitSha',
+          'patchDigest',
+          'resultDigest',
+          'workspaceIdentityEnd',
+        ]);
+      const updated = Object.keys(stepPatch).length > 0
+        ? this.updateRunStep(runId, stepId, stepPatch)
+        : step;
+
+      if (result.recordMutationProvenance !== false
+        && updatedAttempt && Array.isArray(updatedAttempt.changedPaths) && updatedAttempt.changedPaths.length > 0 && updatedAttempt.resultWorkspaceIdentity) {
         const run = this.getRun(runId);
+        const mutationRevision = result.mutationRevision ?? updatedAttempt.mutationRevision ?? run?.mutationRevision ?? 0;
         this.recordMutationProvenance(runId, {
           projectId: run?.projectId,
-          workspaceId: result.executionWorkspaceId || attempt.workspaceId || run?.workspaceId || null,
+          workspaceId: result.executionWorkspaceId || updatedAttempt.workspaceId || run?.workspaceId || null,
           sourceIdentity: run?.sourceIdentity,
           baseSourceIdentity: run?.sourceIdentity,
-          mutationRevision: run?.mutationRevision || attempt.mutationRevision || 0,
-          changedPaths: result.changedPaths,
-          workspaceIdentity: result.resultWorkspaceIdentity,
-          mutationDigest: result.patchDigest || result.receiptDigest || result.resultDigest || result.resultWorkspaceIdentity,
-          attemptId: attempt.attemptId || null,
+          mutationRevision,
+          changedPaths: updatedAttempt.changedPaths,
+          workspaceIdentity: updatedAttempt.resultWorkspaceIdentity,
+          mutationDigest: result.patchDigest || result.receiptDigest || result.resultDigest || updatedAttempt.resultWorkspaceIdentity,
+          attemptId: updatedAttempt.attemptId || null,
         });
       }
       return updated;
@@ -3957,6 +4163,7 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         resultWorkspaceIdentity: row.result_workspace_identity || null,
         resultCommitSha: row.result_commit_sha || null,
         patchDigest: row.patch_digest || null,
+        resultAttemptId: row.result_attempt_id || null,
         createdAt: row.created_at,
         startedAt: row.started_at || null,
         completedAt: row.completed_at || null,
@@ -3982,6 +4189,7 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         resultWorkspaceIdentity: 'result_workspace_identity',
         resultCommitSha: 'result_commit_sha',
         patchDigest: 'patch_digest',
+        resultAttemptId: 'result_attempt_id',
         startedAt: 'started_at',
         completedAt: 'completed_at',
       };
@@ -4142,20 +4350,60 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
     },
 
     finishStepAttempt(attemptId, { status = 'passed', workspaceIdentityEnd = null, resultWorkspaceIdentity = null, resultCommitSha = null, patchDigest = null, verificationRefs = null, knowledgeObservationRefs = null, resultDigest = null, failureReasons = [], failureCategory = null, retryReason = null, changedPaths = null } = {}) {
-      const assignments = ['status=?', 'finished_at=?', 'workspace_identity_end=?', 'result_workspace_identity=?', 'result_commit_sha=?', 'patch_digest=?', 'result_digest=?', 'failure_reasons_json=?'];
-      const values = [status, now(), workspaceIdentityEnd, resultWorkspaceIdentity || workspaceIdentityEnd, resultCommitSha, patchDigest, resultDigest, JSON.stringify(failureReasons)];
+      const current = this.getStepAttempt(attemptId);
+      if (!current) return null;
+      const immutableResult = mergeImmutableReceiptFields(current, {
+        workspaceIdentityEnd,
+        resultWorkspaceIdentity: resultWorkspaceIdentity || workspaceIdentityEnd,
+        resultCommitSha,
+        patchDigest,
+        resultDigest,
+        changedPaths,
+        verificationRefs,
+        knowledgeObservationRefs,
+      }, [
+        'workspaceIdentityEnd',
+        'resultWorkspaceIdentity',
+        'resultCommitSha',
+        'patchDigest',
+        'resultDigest',
+        'changedPaths',
+        'verificationRefs',
+        'knowledgeObservationRefs',
+      ]);
+      const assignments = ['status=?', 'finished_at=?', 'failure_reasons_json=?'];
+      const values = [status, now(), JSON.stringify(failureReasons)];
+      const immutableColumns = {
+        workspaceIdentityEnd: 'workspace_identity_end',
+        resultWorkspaceIdentity: 'result_workspace_identity',
+        resultCommitSha: 'result_commit_sha',
+        patchDigest: 'patch_digest',
+        resultDigest: 'result_digest',
+        changedPaths: 'changed_paths_json',
+        verificationRefs: 'verification_refs_json',
+        knowledgeObservationRefs: 'knowledge_observation_refs_json',
+      };
+      for (const [key, column] of Object.entries(immutableColumns)) {
+        if (immutableResult[key] === undefined) continue;
+        assignments.push(`${column}=?`);
+        values.push(column.endsWith('_json') ? JSON.stringify(immutableResult[key]) : immutableResult[key]);
+      }
       if (failureCategory !== null) { assignments.push('failure_category=?'); values.push(failureCategory); }
       if (retryReason !== null) { assignments.push('retry_reason=?'); values.push(retryReason); }
-      if (changedPaths) {
-        assignments.push('changed_paths_json=?');
-        values.push(JSON.stringify(changedPaths));
-      }
-      if (verificationRefs) { assignments.push('verification_refs_json=?'); values.push(JSON.stringify(verificationRefs)); }
-      if (knowledgeObservationRefs) { assignments.push('knowledge_observation_refs_json=?'); values.push(JSON.stringify(knowledgeObservationRefs)); }
       db.prepare(`UPDATE run_step_attempts SET ${assignments.join(', ')} WHERE id=?`).run(...values, attemptId);
       const finished = this.getStepAttempt(attemptId);
-      if (finished && status === 'passed' && Array.isArray(finished.changedPaths) && finished.changedPaths.length > 0 && workspaceIdentityEnd) {
-        const run = this.getRun(finished.runId);
+      const run = finished ? this.getRun(finished.runId) : null;
+      // A parallel worker finishes against its execution workspace after the
+      // owner Delivery CAS has already advanced the Run. Its execution-time
+      // revision is intentionally historical, so it must not overwrite the
+      // single canonical owner mutation provenance row with worker paths or
+      // worker identity. Direct owner reports either carry the current
+      // revision or use a legacy null revision and retain the old behavior.
+      const attemptOwnsCurrentRevision = finished
+        && (finished.mutationRevision === null
+          || finished.mutationRevision === undefined
+          || Number(finished.mutationRevision) === Number(run?.mutationRevision));
+      if (finished && attemptOwnsCurrentRevision && status === 'passed' && Array.isArray(finished.changedPaths) && finished.changedPaths.length > 0 && workspaceIdentityEnd) {
         this.recordMutationProvenance(finished.runId, {
           projectId: run?.projectId,
           workspaceId: finished.workspaceId || run?.workspaceId || null,
@@ -4163,8 +4411,8 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
           baseSourceIdentity: run?.sourceIdentity,
           mutationRevision: run?.mutationRevision || finished.mutationRevision || 0,
           changedPaths: finished.changedPaths,
-          workspaceIdentity: workspaceIdentityEnd,
-          mutationDigest: patchDigest || resultDigest || workspaceIdentityEnd,
+          workspaceIdentity: finished.workspaceIdentityEnd || finished.resultWorkspaceIdentity,
+          mutationDigest: finished.patchDigest || finished.resultDigest || finished.workspaceIdentityEnd || finished.resultWorkspaceIdentity,
           attemptId: finished.attemptId || null,
         });
       }
@@ -4172,6 +4420,8 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
     },
 
     updateStepAttempt(attemptId, patch = {}) {
+      const current = this.getStepAttempt(attemptId);
+      if (!current) return null;
       const columns = {
         actorSessionId: 'actor_session_id',
         bindingId: 'binding_id',
@@ -4191,22 +4441,112 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         workspaceId: 'workspace_id',
         workspaceRootHash: 'workspace_root_hash',
         baseWorkspaceIdentity: 'base_workspace_identity',
+        workspaceIdentityEnd: 'workspace_identity_end',
+        changedPaths: 'changed_paths_json',
         resultWorkspaceIdentity: 'result_workspace_identity',
         resultCommitSha: 'result_commit_sha',
         patchDigest: 'patch_digest',
+        resultDigest: 'result_digest',
+        workerReport: 'worker_report_json',
         verificationRefs: 'verification_refs_json',
         knowledgeObservationRefs: 'knowledge_observation_refs_json',
       };
+      // Worker execution facts are write-once at the State Store boundary.
+      // `recordStepResult` is the normal writer, but generic lineage/update
+      // callers must not be able to rewrite a receipt after a Delivery CAS or
+      // make an old attempt appear current during recovery.
+      const immutableFields = [
+        'mutationRevision',
+        'workspaceId',
+        'workspaceRootHash',
+        'baseWorkspaceIdentity',
+        'workspaceIdentityEnd',
+        'changedPaths',
+        'resultWorkspaceIdentity',
+        'resultCommitSha',
+        'patchDigest',
+        'resultDigest',
+        'workerReport',
+        'verificationRefs',
+        'knowledgeObservationRefs',
+      ];
+      // An owner-session report may be created before its direct workspace
+      // observation advances the Run revision. That one pre-receipt binding is
+      // lifecycle metadata, not a worker result replay. Routed attempts always
+      // retain their execution-time revision, and every attempt becomes
+      // write-once for it once a result identity/receipt exists.
+      const hasExecutionReceipt = [
+        'workspaceIdentityEnd',
+        'resultWorkspaceIdentity',
+        'resultCommitSha',
+        'patchDigest',
+        'resultDigest',
+        'workerReport',
+      ].some((field) => !receiptValueIsMissing(field, current[field]));
+      const ownerPreReceiptRevisionAttach = patch.mutationRevision !== undefined
+        && current.provenanceKind !== 'routed'
+        && !hasExecutionReceipt;
+      const immutableInput = { ...patch };
+      if (ownerPreReceiptRevisionAttach) delete immutableInput.mutationRevision;
+      const immutablePatch = mergeImmutableReceiptFields(current, immutableInput, immutableFields);
+      const normalizedPatch = { ...patch };
+      for (const field of immutableFields) delete normalizedPatch[field];
+      if (ownerPreReceiptRevisionAttach) normalizedPatch.mutationRevision = patch.mutationRevision;
+      Object.assign(normalizedPatch, immutablePatch);
       const assignments = [];
       const values = [];
       for (const [key, column] of Object.entries(columns)) {
-        if (patch[key] === undefined) continue;
+        if (normalizedPatch[key] === undefined) continue;
         assignments.push(`${column}=?`);
-        values.push(column.endsWith('_json') ? JSON.stringify(patch[key]) : key === 'actorSessionId' ? hashSessionId(patch[key]) : patch[key]);
+        values.push(column.endsWith('_json') ? JSON.stringify(normalizedPatch[key]) : key === 'actorSessionId' ? hashSessionId(normalizedPatch[key]) : normalizedPatch[key]);
       }
       if (assignments.length === 0) return this.getStepAttempt(attemptId);
       db.prepare(`UPDATE run_step_attempts SET ${assignments.join(', ')} WHERE id=?`).run(...values, attemptId);
       return this.getStepAttempt(attemptId);
+    },
+
+    // A direct owner report can observe and advance the Run after its
+    // pre-report attempt was opened. This narrowly-scoped transition binds
+    // that owner-session lifecycle row before any execution receipt exists;
+    // it cannot be used once result identity or worker evidence is present,
+    // and it is intentionally not part of the generic updater.
+    updateOwnerAttemptMutationRevision(attemptId, { expectedMutationRevision, mutationRevision } = {}) {
+      // Callers hold the stable external attempt id; accept the integer row id
+      // only as a compatibility fallback for older internal callers.
+      const current = this.getStepAttemptByAttemptId(attemptId) || this.getStepAttempt(attemptId);
+      if (!current) return null;
+      const hasExecutionReceipt = [
+        'workspaceIdentityEnd',
+        'resultWorkspaceIdentity',
+        'resultCommitSha',
+        'patchDigest',
+        'resultDigest',
+        'workerReport',
+      ].some((field) => !receiptValueIsMissing(field, current[field]));
+      if (hasExecutionReceipt || Number(current.mutationRevision) !== Number(expectedMutationRevision)) {
+        throw Object.assign(new Error('step result field mutationRevision is immutable for the canonical attempt'), {
+          code: 'STEP_RESULT_IMMUTABLE_CONFLICT',
+          errorCode: 'STEP_RESULT_IMMUTABLE_CONFLICT',
+          field: 'mutationRevision',
+        });
+      }
+      if (!Number.isInteger(Number(mutationRevision)) || Number(mutationRevision) < Number(expectedMutationRevision)) {
+        throw Object.assign(new Error('owner attempt mutation revision must advance monotonically'), {
+          code: 'STEP_RESULT_IMMUTABLE_CONFLICT',
+          errorCode: 'STEP_RESULT_IMMUTABLE_CONFLICT',
+          field: 'mutationRevision',
+        });
+      }
+      const updated = db.prepare(`UPDATE run_step_attempts SET mutation_revision=? WHERE id=? AND mutation_revision=?`)
+        .run(Number(mutationRevision), current.id, Number(expectedMutationRevision));
+      if (updated.changes !== 1) {
+        throw Object.assign(new Error('owner attempt mutation revision changed concurrently'), {
+          code: 'STEP_RESULT_IMMUTABLE_CONFLICT',
+          errorCode: 'STEP_RESULT_IMMUTABLE_CONFLICT',
+          field: 'mutationRevision',
+        });
+      }
+      return this.getStepAttempt(current.id);
     },
 
     // Canonical lineage attachment points. They address the stable external
@@ -4256,6 +4596,7 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         resultWorkspaceIdentity: row.result_workspace_identity || null,
         resultCommitSha: row.result_commit_sha || null,
         patchDigest: row.patch_digest || null,
+        workerReport: row.worker_report_json ? safeJsonParse(row.worker_report_json, null) : null,
         verificationRefs: safeJsonParse(row.verification_refs_json, []),
         knowledgeObservationRefs: safeJsonParse(row.knowledge_observation_refs_json, []),
         startedAt: row.started_at,
@@ -4757,6 +5098,14 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
 
     getVerifications(runId) {
       return db.prepare(`SELECT id, run_id as runId, obligation_id as obligationId, status, evidence_ref as evidenceRef, verified_runtime_revision as verifiedRuntimeRevision, verified_mutation_revision as verifiedMutationRevision, source_identity as sourceIdentity, verified_source_identity as verifiedSourceIdentity, executor, network_isolation as networkIsolation, command_ref as commandRef, command, exit_code as exitCode, evidence_digest as evidenceDigest, acceptance_coverage as acceptanceCoverage, evidence_class as evidenceClass, contract_revision as contractRevision, evidence_identity_json as evidenceIdentityJson, reuse_of_verification_id as reuseOfVerificationId, reuse_receipt_json as reuseReceiptJson, observed_at as observedAt FROM verifications WHERE run_id=? AND id IN (SELECT MAX(v2.id) FROM verifications v2 WHERE v2.run_id=? GROUP BY v2.obligation_id) ORDER BY id ASC`).all(runId, runId).map((v) => ({ ...v, acceptanceCoverage: safeJsonParse(v.acceptanceCoverage), evidenceIdentity: safeJsonParse(v.evidenceIdentityJson, {}), reuseReceipt: v.reuseReceiptJson ? safeJsonParse(v.reuseReceiptJson, null) : null }));
+    },
+
+    // Review capsules need the complete current-revision evidence trail, not
+    // only the latest row per obligation. The completion gate continues to use
+    // getVerifications()'s latest-row projection; this history is presentation
+    // evidence for an independent reviewer and is never itself authoritative.
+    getVerificationHistory(runId) {
+      return db.prepare(`SELECT id, run_id as runId, obligation_id as obligationId, status, evidence_ref as evidenceRef, verified_runtime_revision as verifiedRuntimeRevision, verified_mutation_revision as verifiedMutationRevision, source_identity as sourceIdentity, verified_source_identity as verifiedSourceIdentity, executor, network_isolation as networkIsolation, command_ref as commandRef, command, exit_code as exitCode, evidence_digest as evidenceDigest, acceptance_coverage as acceptanceCoverage, evidence_class as evidenceClass, contract_revision as contractRevision, evidence_identity_json as evidenceIdentityJson, reuse_of_verification_id as reuseOfVerificationId, reuse_receipt_json as reuseReceiptJson, observed_at as observedAt FROM verifications WHERE run_id=? ORDER BY id ASC`).all(runId).map((v) => ({ ...v, acceptanceCoverage: safeJsonParse(v.acceptanceCoverage), evidenceIdentity: safeJsonParse(v.evidenceIdentityJson, {}), reuseReceipt: v.reuseReceiptJson ? safeJsonParse(v.reuseReceiptJson, null) : null }));
     },
 
     findExactReusableVerification({ projectId, obligationId, evidenceIdentity, excludeRunId = null } = {}) {

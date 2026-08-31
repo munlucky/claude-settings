@@ -67,6 +67,23 @@ import { resolveRunArtifactPaths } from './artifact-paths.mjs';
 import { buildStructuredRunSignals, failureFingerprint } from './knowledge/capture.mjs';
 import { buildEvidenceIdentity, buildEvidenceReuseReceipt } from './proof/evidence-reuse.mjs';
 import { assertImplementationWorkUnitScope, workUnitScopeFailure } from './run/work-unit-scope.mjs';
+import { buildReviewCapsule, capsuleStaleness } from './run/execution-capsule.mjs';
+import { digestOfChangedFiles, findScopeViolations } from './run/capsule-selection.mjs';
+import { assertOwnerWorkspaceMutationCAS } from './run/mutation-guard.mjs';
+
+const canonicalChangedPaths = (paths) => [...new Set((Array.isArray(paths) ? paths : [])
+  .map((entry) => String(entry).replaceAll('\\', '/').replace(/^\.\//u, ''))
+  .filter(Boolean))].sort();
+
+const canonicalReceiptValue = (value) => {
+  if (Array.isArray(value)) return value.map((entry) => canonicalReceiptValue(entry));
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalReceiptValue(value[key])]));
+};
+
+const receiptValuesEqual = (left, right, { paths = false } = {}) => JSON.stringify(
+  canonicalReceiptValue(paths ? canonicalChangedPaths(left) : left),
+) === JSON.stringify(canonicalReceiptValue(paths ? canonicalChangedPaths(right) : right));
 
 export const computeKernelSourceIdentity = ({ projectRoot = process.cwd(), objective = '', taskContract = {} } = {}) => {
   const sourceDigest = gitTreeDigest(projectRoot) || sha256Hex({ projectRoot, objective });
@@ -279,6 +296,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
   }
   const effectiveWorkspaceId = registeredWorkspace.workspaceId;
   const effectiveWorktreeId = currentWorktree.worktreeId;
+  let deliveryRecoveryInProgress = false;
   // Reconcile terminal bindings and stale mutation locks at the public Kernel
   // lifecycle boundary. Preserve only a completed binding owned by this host
   // so a successor contract can perform its atomic handoff; blocked bindings
@@ -444,6 +462,33 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     // K1 + K2 live in one module: the current work unit and the bounded context
     // it is executed with. Spread as methods so `this` stays the control plane.
     ...createWorkCursorApi({ store, projectRoot, runtimeHome, worktree: currentWorktree }),
+
+    // Keep the reviewer capsule's public shape in the existing Work Cursor,
+    // but source its evidence from the complete current-revision history. The
+    // store's latest-row projection remains authoritative for completion; a
+    // reviewer must also see distinct package and targeted-suite receipts.
+    async buildReviewerCapsule(runId, { decision = null, step = null, stage = 'engineering', obligationId = null, requiredChecks = [], changedPaths = [] } = {}) {
+      const run = store.getRun(runId);
+      if (!run) throw new Error(`Run ${runId} not found`);
+      const verifications = (store.getVerificationHistory?.(runId) || store.getVerifications(runId))
+        .filter((verification) => verification.evidenceClass !== 'judgment')
+        .filter((verification) => Number(verification.verifiedMutationRevision ?? verification.verifiedRuntimeRevision) === Number(run.mutationRevision))
+        .filter((verification) => Number(verification.contractRevision || 1) === Number(run.contractRevision || 1));
+      const capsule = buildReviewCapsule({
+        run,
+        step,
+        decision,
+        contract: run.taskContract,
+        stage,
+        obligationId,
+        requiredChecks,
+        changedPaths,
+        diffDigest: digestOfChangedFiles({ projectRoot, changedPaths }),
+        verifications,
+        implementationSession: store.getImplementationPrincipal(runId),
+      });
+      return store.recordExecutionCapsule(runId, capsule);
+    },
 
     resolveBoundInvocation({
       explicitRunId = null,
@@ -1344,6 +1389,530 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       });
     },
 
+    // Internal owner authority for parallel Delivery materialization. This is
+    // deliberately a method on the existing Control Plane rather than a new
+    // public command or lifecycle: the owner Worktree lease, workspace fence,
+    // and Run CAS all remain one Kernel mutation boundary.
+    acquireOwnerWorkspaceMutationFence(runId, {
+      expectedMutationRevision,
+      expectedWorkspaceIdentity,
+      expectedHeadCommitSha,
+      expectedProjectId = null,
+      expectedWorktreeId = null,
+      expectedWorkspaceId = null,
+      sessionToken = holder,
+      ttlMs = 120000,
+    } = {}) {
+      const run = store.getRun(runId);
+      const projectId = expectedProjectId || run?.projectId || currentProject.projectId;
+      const worktreeId = expectedWorktreeId || run?.worktreeId || currentWorktree.worktreeId;
+      const workspaceId = expectedWorkspaceId || run?.workspaceId || currentWorktree.workspaceId;
+      const required = [expectedMutationRevision, expectedWorkspaceIdentity, expectedHeadCommitSha, projectId, worktreeId, workspaceId, sessionToken];
+      if (!run || run.status !== 'active') {
+        throw Object.assign(new Error(`delivery_run_inactive: ${runId}`), { code: 'delivery_run_inactive', errorCode: 'delivery_run_inactive' });
+      }
+      if (required.some((value) => value === null || value === undefined || value === '')) {
+        throw Object.assign(new Error('delivery_cas_snapshot_missing'), { code: 'delivery_cas_snapshot_missing', errorCode: 'delivery_cas_snapshot_missing' });
+      }
+      if (projectId !== currentProject.projectId || worktreeId !== currentWorktree.worktreeId || workspaceId !== currentWorktree.workspaceId) {
+        throw Object.assign(new Error('delivery_worktree_authority_lost'), { code: 'delivery_worktree_authority_lost', errorCode: 'delivery_worktree_authority_lost' });
+      }
+
+      let lockResult;
+      try {
+        lockResult = store.acquireWorkspaceMutationLockV2({
+          workspaceId,
+          projectId,
+          runId,
+          sessionToken,
+          ttlMs,
+        });
+      } catch (error) {
+        throw Object.assign(new Error(`delivery_worktree_authority_lost: ${error.message}`), {
+          code: 'delivery_worktree_authority_lost',
+          errorCode: 'delivery_worktree_authority_lost',
+          cause: error,
+        });
+      }
+      if (!lockResult?.acquired) {
+        throw Object.assign(new Error(`delivery_mutation_fence_lost: workspace is held by ${lockResult?.lock?.holderRunId || 'another run'}`), {
+          code: 'delivery_mutation_fence_lost',
+          errorCode: 'delivery_mutation_fence_lost',
+          lock: lockResult?.lock || null,
+        });
+      }
+
+      try {
+        const assertion = assertOwnerWorkspaceMutationCAS({
+          stateStore: store,
+          workspaceRoot: fencingWorkspaceRoot,
+          runId,
+          workspaceId,
+          projectId,
+          worktree: currentWorktree,
+          fencingToken: lockResult.lock.fencingToken,
+          sessionToken,
+          expectedMutationRevision,
+          expectedWorkspaceIdentity,
+          expectedHeadCommitSha,
+          expectedProjectId: projectId,
+          expectedWorktreeId: worktreeId,
+          expectedWorkspaceId: workspaceId,
+          phase: 'pre',
+        });
+        return {
+          lock: lockResult.lock,
+          snapshot: {
+            runId,
+            expectedMutationRevision: Number(expectedMutationRevision),
+            expectedWorkspaceIdentity,
+            expectedHeadCommitSha,
+            expectedProjectId: projectId,
+            expectedWorktreeId: worktreeId,
+            expectedWorkspaceId: workspaceId,
+          },
+          assertion,
+        };
+      } catch (error) {
+        try {
+          store.releaseWorkspaceMutationLockV2({
+            workspaceId,
+            runId,
+            sessionToken,
+            fencingToken: lockResult.lock.fencingToken,
+          });
+        } catch {}
+        throw error;
+      }
+    },
+
+    renewOwnerWorkspaceMutationFence(runId, {
+      expectedMutationRevision,
+      expectedWorkspaceIdentity,
+      expectedHeadCommitSha,
+      expectedProjectId = null,
+      expectedWorktreeId = null,
+      expectedWorkspaceId = null,
+      workspaceId = expectedWorkspaceId,
+      fencingToken,
+      sessionToken = holder,
+      ttlMs = 120000,
+    } = {}) {
+      const run = store.getRun(runId);
+      const projectId = expectedProjectId || run?.projectId || currentProject.projectId;
+      const worktreeId = expectedWorktreeId || run?.worktreeId || currentWorktree.worktreeId;
+      const effectiveWorkspaceId = workspaceId || run?.workspaceId || currentWorktree.workspaceId;
+      const required = [expectedMutationRevision, expectedWorkspaceIdentity, expectedHeadCommitSha, projectId, worktreeId, effectiveWorkspaceId, fencingToken, sessionToken];
+      if (!run || run.status !== 'active') {
+        throw Object.assign(new Error(`delivery_run_inactive: ${runId}`), { code: 'delivery_run_inactive', errorCode: 'delivery_run_inactive' });
+      }
+      if (required.some((value) => value === null || value === undefined || value === '')) {
+        throw Object.assign(new Error('delivery_cas_snapshot_missing'), { code: 'delivery_cas_snapshot_missing', errorCode: 'delivery_cas_snapshot_missing' });
+      }
+      let renewal;
+      try {
+        renewal = store.renewWorkspaceMutationLockV2({
+          workspaceId: effectiveWorkspaceId,
+          projectId,
+          runId,
+          sessionToken,
+          fencingToken,
+          ttlMs,
+        });
+      } catch (error) {
+        throw Object.assign(new Error(`delivery_mutation_fence_lost: ${error.message}`), {
+          code: 'delivery_mutation_fence_lost',
+          errorCode: 'delivery_mutation_fence_lost',
+          cause: error,
+        });
+      }
+      if (!renewal?.renewed) {
+        throw Object.assign(new Error('delivery_mutation_fence_lost: owner mutation fence could not be renewed'), {
+          code: 'delivery_mutation_fence_lost',
+          errorCode: 'delivery_mutation_fence_lost',
+          lock: renewal?.lock || null,
+        });
+      }
+      try {
+        const assertion = assertOwnerWorkspaceMutationCAS({
+          stateStore: store,
+          workspaceRoot: fencingWorkspaceRoot,
+          runId,
+          workspaceId: effectiveWorkspaceId,
+          projectId,
+          worktree: currentWorktree,
+          fencingToken,
+          sessionToken,
+          expectedMutationRevision,
+          expectedWorkspaceIdentity,
+          expectedHeadCommitSha,
+          expectedProjectId: projectId,
+          expectedWorktreeId: worktreeId,
+          expectedWorkspaceId: effectiveWorkspaceId,
+          phase: 'pre',
+        });
+        return {
+          lock: renewal.lock,
+          snapshot: {
+            runId,
+            expectedMutationRevision: Number(expectedMutationRevision),
+            expectedWorkspaceIdentity,
+            expectedHeadCommitSha,
+            expectedProjectId: projectId,
+            expectedWorktreeId: worktreeId,
+            expectedWorkspaceId: effectiveWorkspaceId,
+          },
+          assertion,
+        };
+      } catch (error) {
+        throw error;
+      }
+    },
+
+    // Validate the owner mutation immediately before applying a prepared patch.
+    // The snapshot is deliberately transient: the existing Run mutation
+    // provenance is the only durable owner-mutation record, so this boundary
+    // cannot create a second Delivery lifecycle in the State Store.
+    assertOwnerWorkspaceMutationReady(runId, {
+      expectedMutationRevision,
+      expectedWorkspaceIdentity,
+      expectedHeadCommitSha,
+      expectedProjectId = null,
+      expectedWorktreeId = null,
+      expectedWorkspaceId = null,
+      fencingToken,
+      sessionToken = holder,
+      integrationWorkspaceIdentity,
+      changedPaths = [],
+      patchDigest = null,
+    } = {}) {
+      const run = store.getRun(runId);
+      const projectId = expectedProjectId || run?.projectId || currentProject.projectId;
+      const worktreeId = expectedWorktreeId || run?.worktreeId || currentWorktree.worktreeId;
+      const workspaceId = expectedWorkspaceId || run?.workspaceId || currentWorktree.workspaceId;
+      const committedPaths = canonicalChangedPaths(changedPaths);
+      if (!integrationWorkspaceIdentity || !patchDigest || committedPaths.length === 0) {
+        throw Object.assign(new Error('delivery_mutation_input_incomplete'), {
+          code: 'delivery_mutation_input_incomplete',
+          errorCode: 'delivery_mutation_input_incomplete',
+        });
+      }
+      assertOwnerWorkspaceMutationCAS({
+        stateStore: store,
+        workspaceRoot: fencingWorkspaceRoot,
+        runId,
+        workspaceId,
+        projectId,
+        worktree: currentWorktree,
+        fencingToken,
+        sessionToken,
+        expectedMutationRevision,
+        expectedWorkspaceIdentity,
+        expectedHeadCommitSha,
+        expectedProjectId: projectId,
+        expectedWorktreeId: worktreeId,
+        expectedWorkspaceId: workspaceId,
+        phase: 'pre',
+      });
+      const snapshot = {
+        runId,
+        expectedMutationRevision: Number(expectedMutationRevision),
+        expectedWorkspaceIdentity,
+        expectedHeadCommitSha,
+        expectedProjectId: projectId,
+        expectedWorktreeId: worktreeId,
+        expectedWorkspaceId: workspaceId,
+      };
+      return { snapshot, integrationWorkspaceIdentity, changedPaths: canonicalChangedPaths(changedPaths), patchDigest };
+    },
+
+    recordOwnerWorkspaceMutation(runId, {
+      expectedMutationRevision,
+      expectedWorkspaceIdentity,
+      expectedHeadCommitSha,
+      expectedProjectId = null,
+      expectedWorktreeId = null,
+      expectedWorkspaceId = null,
+      fencingToken,
+      sessionToken = holder,
+      integrationWorkspaceIdentity,
+      changedPaths = [],
+      patchDigest = null,
+    } = {}) {
+      const run = store.getRun(runId);
+      const projectId = expectedProjectId || run?.projectId || currentProject.projectId;
+      const worktreeId = expectedWorktreeId || run?.worktreeId || currentWorktree.worktreeId;
+      const workspaceId = expectedWorkspaceId || run?.workspaceId || currentWorktree.workspaceId;
+      const deliveryWorkspaceIdentity = observeWorkspaceIdentity({ projectRoot: fencingWorkspaceRoot }).identity;
+      const committedPaths = canonicalChangedPaths(changedPaths);
+      assertOwnerWorkspaceMutationCAS({
+        stateStore: store,
+        workspaceRoot: fencingWorkspaceRoot,
+        runId,
+        workspaceId,
+        projectId,
+        worktree: currentWorktree,
+        fencingToken,
+        sessionToken,
+        expectedMutationRevision,
+        expectedWorkspaceIdentity,
+        expectedHeadCommitSha,
+        expectedProjectId: projectId,
+        expectedWorktreeId: worktreeId,
+        expectedWorkspaceId: workspaceId,
+        actualWorkspaceIdentity: deliveryWorkspaceIdentity,
+        phase: 'post',
+      });
+      if (!integrationWorkspaceIdentity || deliveryWorkspaceIdentity !== integrationWorkspaceIdentity) {
+        throw Object.assign(new Error('delivery_materialization_identity_mismatch'), {
+          code: 'delivery_materialization_identity_mismatch',
+          errorCode: 'delivery_materialization_identity_mismatch',
+          integrationWorkspaceIdentity: integrationWorkspaceIdentity || null,
+          deliveryWorkspaceIdentity,
+        });
+      }
+      if (!patchDigest || committedPaths.length === 0) {
+        throw Object.assign(new Error('delivery_mutation_input_incomplete'), {
+          code: 'delivery_mutation_input_incomplete',
+          errorCode: 'delivery_mutation_input_incomplete',
+        });
+      }
+      const observed = store.observeWorkspaceIdentityCAS(runId, {
+        expectedMutationRevision,
+        expectedWorkspaceIdentity,
+        identity: deliveryWorkspaceIdentity,
+        provenance: {
+          projectId,
+          workspaceId,
+          sourceIdentity: run?.sourceIdentity,
+          baseSourceIdentity: run?.sourceIdentity,
+          mutationRevision: Number(expectedMutationRevision) + 1,
+          changedPaths: committedPaths,
+          workspaceIdentity: deliveryWorkspaceIdentity,
+          mutationDigest: patchDigest || deliveryWorkspaceIdentity,
+          attemptId: null,
+        },
+      });
+      const updated = store.getRun(runId);
+      if (!observed.changed || Number(updated?.mutationRevision) !== Number(expectedMutationRevision) + 1 || updated.currentWorkspaceIdentity !== deliveryWorkspaceIdentity) {
+        throw Object.assign(new Error('delivery_mutation_revision_stale'), { code: 'delivery_mutation_revision_stale', errorCode: 'delivery_mutation_revision_stale' });
+      }
+      const committedAssertion = assertOwnerWorkspaceMutationCAS({
+        stateStore: store,
+        workspaceRoot: fencingWorkspaceRoot,
+        runId,
+        workspaceId,
+        projectId,
+        worktree: currentWorktree,
+        fencingToken,
+        sessionToken,
+        expectedMutationRevision: Number(expectedMutationRevision) + 1,
+        expectedWorkspaceIdentity: deliveryWorkspaceIdentity,
+        expectedHeadCommitSha,
+        expectedProjectId: projectId,
+        expectedWorktreeId: worktreeId,
+        expectedWorkspaceId: workspaceId,
+        phase: 'post-commit',
+      });
+      return {
+        status: 'applied',
+        changed: true,
+        run: updated,
+        mutationRevision: Number(updated.mutationRevision),
+        expectedMutationRevision: Number(expectedMutationRevision),
+        deliveryWorkspaceIdentity,
+        integrationWorkspaceIdentity,
+        committedAssertion,
+        changedPaths: committedPaths,
+        patchDigest,
+      };
+    },
+
+    releaseOwnerWorkspaceMutationFence(runId, { workspaceId = currentWorktree.workspaceId, fencingToken, sessionToken = holder } = {}) {
+      return store.releaseWorkspaceMutationLockV2({ workspaceId, runId, sessionToken, fencingToken });
+    },
+
+    async blockDeliveryMaterialization(runId, { reason = 'delivery_materialization_recovery_required', detail = null } = {}) {
+      const run = store.getRun(runId);
+      if (run?.status === 'active') {
+        store.markRunBlocked(runId, reason);
+        if (typeof store.recordRunSignals === 'function') {
+          store.recordRunSignals(runId, buildStructuredRunSignals({
+            runId,
+            blocker: { reason, detail, blockerReceipt: `blocker://${runId}/${reason}` },
+          }));
+        }
+        await projectRunState(store.getRun(runId), { runtimeHome });
+      }
+      return store.getRun(runId);
+    },
+
+    // Restart recovery is derived from the existing Run mutation authority,
+    // provenance, Step Ledger, and execution attempts. No persisted Delivery
+    // intent/status lifecycle is created. A workspace drift or an owner
+    // mutation whose worker Steps were not fully settled is ambiguous after a
+    // crash, so the safe outcome is a blocked Run.
+    async recoverPendingDeliveryMaterialization(runId) {
+      const run = store.getRun(runId);
+      if (!run) return { status: 'not_found', run: null };
+      if (deliveryRecoveryInProgress) return { status: 'in-progress', run };
+      if (run.status !== 'active') return { status: 'none', run };
+
+      // Ordinary owner-direct reports also advance the Run mutationRevision,
+      // but they do not leave a parallel Delivery provenance record behind.
+      // Only a persisted owner-mutation provenance row marks the boundary at
+      // which restart reconciliation is meaningful; without it, a normal
+      // edit between two reports must remain an ordinary next/report cycle.
+      const provenance = typeof store.getMutationProvenance === 'function'
+        ? store.getMutationProvenance(runId)
+        : null;
+      const recoveryReason = 'delivery_materialization_recovery_required';
+      const block = async (detail) => {
+        const blocked = await this.blockDeliveryMaterialization(runId, { reason: recoveryReason, detail });
+        return { status: 'blocked', reason: recoveryReason, detail, run: blocked };
+      };
+
+      // A parallel worker receipt is the existing durable marker for the
+      // otherwise-unpersisted interval between `git apply` and the owner CAS.
+      // Ordinary owner-direct reports have no routed execution attempt, so a
+      // changed owner workspace remains an ordinary report cycle. This closes
+      // the apply-before-observation crash window without adding a Delivery
+      // lifecycle row or marker.
+      const activeStatuses = new Set(['started', 'reported', 'verifying', 'passed', 'failed']);
+      const terminalStepStates = new Set(['passed', 'superseded', 'cancelled']);
+      const steps = store.getRunSteps(runId, { planRevision: run.planRevision });
+      const stepById = new Map(steps.map((step) => [step.stepId, step]));
+      const workerAttempts = store.getStepAttempts(runId)
+        .filter((attempt) => attempt.provenanceKind === 'routed')
+        .filter((attempt) => activeStatuses.has(attempt.status))
+        .filter((attempt) => {
+          const step = stepById.get(attempt.stepId);
+          return step && step.executionWorkspaceId === attempt.workspaceId;
+        });
+      const expectedRevision = provenance
+        ? Number(run.mutationRevision) - 1
+        : Number(run.mutationRevision);
+      const relevantAttempts = workerAttempts
+        .filter((attempt) => Number(attempt.mutationRevision) === expectedRevision);
+
+      // No routed worker receipt means there is no parallel Delivery boundary
+      // to reconcile. In particular, this keeps ordinary direct edits and
+      // future pending Steps from being mistaken for a crashed Delivery.
+      if (!provenance && relevantAttempts.length === 0) return { status: 'none', run };
+
+      let liveDeliveryWorkspaceIdentity;
+      try {
+        liveDeliveryWorkspaceIdentity = observeWorkspaceIdentity({ projectRoot: fencingWorkspaceRoot }).identity;
+      } catch (error) {
+        return block(`Delivery workspace identity could not be observed during recovery: ${error.message}`);
+      }
+
+      // If provenance is absent, a live identity change alongside durable
+      // routed worker receipts is exactly the crash window after apply and
+      // before the owner CAS persisted its provenance. It is ambiguous and
+      // must block rather than silently resume.
+      if (!provenance) {
+        if (liveDeliveryWorkspaceIdentity === run.currentWorkspaceIdentity) return { status: 'none', run };
+        return block('Owner workspace changed after parallel worker receipts but before owner mutation provenance was persisted');
+      }
+      if (!run.currentWorkspaceIdentity || liveDeliveryWorkspaceIdentity !== run.currentWorkspaceIdentity) {
+        return block('Delivery workspace identity diverged from the Run authority; mutation reconciliation is required');
+      }
+
+      if (provenance && (provenance.workspaceIdentity !== liveDeliveryWorkspaceIdentity
+        || Number(provenance.mutationRevision) !== Number(run.mutationRevision))) {
+        return block('Persisted owner mutation provenance no longer matches the live Run workspace identity');
+      }
+
+      if (expectedRevision < 0 || relevantAttempts.length === 0) return { status: 'none', run };
+
+      const incomplete = relevantAttempts.filter((attempt) => !attempt.attemptId
+        || !attempt.workspaceId
+        || !attempt.resultWorkspaceIdentity
+        || !attempt.resultCommitSha
+        || !attempt.patchDigest
+        || !Array.isArray(attempt.changedPaths)
+        || attempt.changedPaths.length === 0
+        || !attempt.workerReport
+        || typeof attempt.workerReport !== 'object');
+      if (incomplete.length > 0) {
+        return block(`Durable worker receipts are incomplete for ${incomplete.map((attempt) => attempt.attemptId || attempt.stepId).join(', ')}`);
+      }
+      const reconstructedPaths = canonicalChangedPaths(relevantAttempts.flatMap((attempt) => attempt.changedPaths || []));
+      if (!provenance || JSON.stringify(reconstructedPaths) !== JSON.stringify(canonicalChangedPaths(provenance.changedPaths))) {
+        return block('Durable parallel worker paths do not reconstruct the recorded owner mutation');
+      }
+      const relevantStepIds = new Set(relevantAttempts.map((attempt) => attempt.stepId));
+      const unresolvedSteps = steps.filter((step) => relevantStepIds.has(step.stepId) && !terminalStepStates.has(step.state));
+      if (unresolvedSteps.length > 0) {
+        return block(`Owner workspace mutation was recorded before these Steps settled: ${unresolvedSteps.map((step) => step.stepId).join(', ')}`);
+      }
+      return { status: 'none', run };
+    },
+
+    // A parallel worker's attempt is intentionally bound to the pre-delivery
+    // revision and its own execution workspace. This resolver accepts that
+    // fixed receipt only when the owner CAS has already advanced exactly once;
+    // it never refreshes the worker capsule to the post-materialization state.
+    resolveParallelSettlementStep(runId, report, {
+      expectedMutationRevision,
+      expectedWorkspaceIdentity,
+      workerWorkspaceId,
+      workerWorkspaceIdentity,
+    } = {}) {
+      const run = store.getRun(runId);
+      const step = report.stepId ? store.getRunStep(runId, report.stepId) : null;
+      const reject = (obligationId, errorSummary, errorCode = null) => ({
+        rejection: [{ obligationId, command: 'kernel report', errorSummary, ...(errorCode ? { errorCode } : {}) }],
+      });
+      if (!run || run.status !== 'active') return reject('run', 'Run is not active', 'delivery_run_inactive');
+      if (!step || step.planRevision !== run.planRevision) return reject('step', `Step "${report.stepId || '<missing>'}" is not a live step for this plan`);
+      if (['passed', 'superseded', 'cancelled'].includes(step.state)) return reject('step', `Step "${step.stepId}" is already ${step.state} and cannot be settled again`);
+      if (Number(run.mutationRevision) !== Number(expectedMutationRevision) + 1 || run.currentWorkspaceIdentity === expectedWorkspaceIdentity) {
+        return reject('attempt', 'Owner Delivery mutation is not at the expected post-materialization revision', 'delivery_mutation_revision_stale');
+      }
+      if (step.executionWorkspaceId !== workerWorkspaceId || report.workspaceId !== workerWorkspaceId) {
+        return reject('workspace', 'Parallel report workspace does not match the Step execution workspace', 'delivery_workspace_mismatch');
+      }
+      const attempt = report.attemptId
+        ? store.getActiveStepAttempt(runId, { stepId: step.stepId, attemptId: report.attemptId, capsuleId: report.capsuleId })
+        : null;
+      if (!attempt) return reject('attempt', `Attempt "${report.attemptId || '<missing>'}" is not an active parallel attempt for step "${step.stepId}"`);
+      if (Number(attempt.mutationRevision) !== Number(expectedMutationRevision)) return reject('attempt', 'Worker attempt revision does not match the pre-delivery snapshot', 'attempt_lineage_incomplete');
+      if (attempt.workspaceId !== workerWorkspaceId || (workerWorkspaceIdentity && attempt.baseWorkspaceIdentity !== workerWorkspaceIdentity)) {
+        return reject('attempt', 'Worker attempt workspace lineage does not match the execution receipt', 'attempt_lineage_incomplete');
+      }
+      if (attempt.capsuleId && attempt.capsuleId !== report.capsuleId) return reject('capsule', 'Report capsule does not match the active parallel attempt');
+      if (attempt.bindingId && attempt.bindingId !== report.bindingId) return reject('binding', 'Report binding does not match the active parallel attempt');
+      return { step, attempt, parallel: true };
+    },
+
+    assertParallelCapsuleScope(runId, report, step, {
+      expectedMutationRevision,
+    } = {}) {
+      const run = store.getRun(runId);
+      const capsule = report.capsuleId ? store.getExecutionCapsule(report.capsuleId, { runId }) : null;
+      if (report.capsuleId && !capsule) return [{ obligationId: 'capsule', command: 'kernel report', errorSummary: `Execution capsule "${report.capsuleId}" was not issued for this run` }];
+      const capsuleRun = {
+        ...run,
+        mutationRevision: Number(expectedMutationRevision),
+        currentWorkspaceIdentity: step?.baseWorkspaceIdentity || run.currentWorkspaceIdentity,
+      };
+      if (capsule) {
+        const stale = capsuleStaleness({ capsule, run: capsuleRun });
+        if (stale.stale) return [{ obligationId: 'capsule', command: 'kernel report', errorSummary: `Execution capsule "${capsule.capsuleId}" no longer describes the worker execution: ${stale.reasons.join(', ')}`, errorCode: 'capsule_lineage_incomplete' }];
+      }
+      const scope = capsule
+        ? { source: 'capsule', label: `work unit ${capsule.capsuleId}`, obligationId: 'capsule', allowedPaths: capsule.workUnit?.allowedPaths || [], forbiddenPaths: capsule.workUnit?.forbiddenPaths || [] }
+        : { source: 'step', label: `step ${step.stepId}`, obligationId: 'step', allowedPaths: step.allowedPaths || [], forbiddenPaths: step.forbiddenPaths || [] };
+      const violations = findScopeViolations({ changedPaths: report.changedPaths, allowedPaths: scope.allowedPaths, forbiddenPaths: scope.forbiddenPaths });
+      return violations.length === 0 ? null : violations.map((violation) => ({
+        obligationId: scope.obligationId,
+        command: 'kernel report',
+        errorSummary: `Changed path "${violation.path}" is ${violation.reason === 'forbidden-path' ? 'inside a forbidden path' : 'outside the allowed paths'} of ${scope.label}`,
+      }));
+    },
+
     // K3: the Host asks for admission between the route decision and the actual
     // dispatch, and the answer is persisted whatever it is. A blocked admission
     // is evidence that a turn was refused, not an absence of a turn.
@@ -1758,6 +2327,14 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       } catch (error) {
         return bindingErrorPayload(error, { projectRoot, provider: hostProvider });
       }
+      const deliveryRecovery = await this.recoverPendingDeliveryMaterialization(runId);
+      if (deliveryRecovery.status === 'blocked') {
+        return buildBlockedResponse({
+          runId,
+          reason: deliveryRecovery.reason,
+          detail: deliveryRecovery.detail,
+        });
+      }
       const run = store.getRun(runId);
       if (!run) return { schemaVersion: 1, runId, status: 'not_found' };
 
@@ -1971,6 +2548,216 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       };
     },
 
+    // Internal Host settlement for a parallel worker. The delivery mutation is
+    // already committed before this method is entered; the worker receipt is
+    // checked against its pre-delivery attempt lineage and is never replayed
+    // through a refreshed capsule.
+    async settleParallelResult(runId, payload = {}, { deliveryMutation = null, result = null } = {}) {
+      try {
+        preflight(runId, 'report');
+      } catch (error) {
+        return bindingErrorPayload(error, { projectRoot, provider: hostProvider });
+      }
+      const snapshot = deliveryMutation?.snapshot || deliveryMutation || null;
+      const deliveryWorkspaceIdentity = deliveryMutation?.deliveryWorkspaceIdentity || snapshot?.deliveryWorkspaceIdentity || null;
+      if (!snapshot || !Number.isInteger(Number(snapshot.expectedMutationRevision))
+        || !snapshot.expectedWorkspaceIdentity || !deliveryWorkspaceIdentity) {
+        return {
+          schemaVersion: 1,
+          runId,
+          status: 'evidence-rejected',
+          failures: [{ obligationId: 'delivery-materialization', command: 'parallel-settlement', errorSummary: 'Parallel settlement requires a committed owner workspace mutation' }],
+        };
+      }
+      const currentRun = store.getRun(runId);
+      const persistedProvenance = typeof store.getMutationProvenance === 'function'
+        ? store.getMutationProvenance(runId)
+        : null;
+      let liveDeliveryWorkspaceIdentity = null;
+      try {
+        liveDeliveryWorkspaceIdentity = observeWorkspaceIdentity({ projectRoot: fencingWorkspaceRoot }).identity;
+      } catch (error) {
+        return {
+          schemaVersion: 1,
+          runId,
+          status: 'evidence-rejected',
+          failures: [{
+            obligationId: 'delivery-materialization',
+            command: 'parallel-settlement',
+            errorSummary: `Delivery workspace identity could not be re-observed: ${error.message}`,
+            errorCode: 'delivery_workspace_identity_stale',
+          }],
+        };
+      }
+      if (liveDeliveryWorkspaceIdentity !== deliveryWorkspaceIdentity) {
+        return {
+          schemaVersion: 1,
+          runId,
+          status: 'evidence-rejected',
+          failures: [{
+            obligationId: 'delivery-materialization',
+            command: 'parallel-settlement',
+            errorSummary: 'Delivery workspace changed after materialization and before worker settlement',
+            errorCode: 'delivery_workspace_identity_stale',
+          }],
+        };
+      }
+      const expectedDeliveryRevision = Number(snapshot.expectedMutationRevision) + 1;
+      const deliveryPaths = canonicalChangedPaths(deliveryMutation?.changedPaths);
+      const persistedPaths = canonicalChangedPaths(persistedProvenance?.changedPaths);
+      const committedOwnerMutationMatchesRun = deliveryMutation?.changed === true
+        && Array.isArray(deliveryMutation?.changedPaths)
+        && deliveryPaths.length > 0
+        && Boolean(deliveryMutation?.patchDigest)
+        && deliveryMutation?.integrationWorkspaceIdentity === deliveryWorkspaceIdentity
+        && Number(deliveryMutation?.mutationRevision) === expectedDeliveryRevision
+        && currentRun?.status === 'active'
+        && currentRun.projectId === (snapshot.expectedProjectId || currentRun.projectId)
+        && currentRun.worktreeId === (snapshot.expectedWorktreeId || currentRun.worktreeId)
+        && currentRun.workspaceId === (snapshot.expectedWorkspaceId || currentRun.workspaceId)
+        && Number(currentRun.mutationRevision) === expectedDeliveryRevision
+        && currentRun.currentWorkspaceIdentity === deliveryWorkspaceIdentity
+        && persistedProvenance?.mutationRevision === expectedDeliveryRevision
+        && persistedProvenance?.projectId === currentRun.projectId
+        && persistedProvenance?.workspaceId === currentRun.workspaceId
+        && persistedProvenance.workspaceIdentity === deliveryWorkspaceIdentity
+        && JSON.stringify(deliveryPaths) === JSON.stringify(persistedPaths)
+        && persistedProvenance.mutationDigest === deliveryMutation.patchDigest;
+      if (!committedOwnerMutationMatchesRun) {
+        return {
+          schemaVersion: 1,
+          runId,
+          status: 'evidence-rejected',
+          failures: [{
+            obligationId: 'delivery-materialization',
+            command: 'parallel-settlement',
+            errorSummary: 'The supplied owner mutation does not match the persisted Run mutation provenance',
+            errorCode: 'delivery_owner_mutation_stale',
+          }],
+        };
+      }
+      const workerPaths = canonicalChangedPaths(payload.changedPaths);
+      const committedPaths = canonicalChangedPaths(result?.changedPaths);
+      if (!result || !Array.isArray(payload.changedPaths) || !Array.isArray(result.changedPaths)
+        || JSON.stringify(workerPaths) !== JSON.stringify(committedPaths)) {
+        return {
+          schemaVersion: 1,
+          runId,
+          status: 'evidence-rejected',
+          failures: [{
+            obligationId: 'delivery-materialization',
+            command: 'parallel-settlement',
+            errorSummary: 'Worker changed paths do not match the committed integrated result',
+            errorCode: 'delivery_worker_paths_mismatch',
+          }],
+        };
+      }
+      const omittedWorkerPaths = workerPaths.filter((workerPath) => !deliveryPaths.includes(workerPath));
+      if (omittedWorkerPaths.length > 0) {
+        return {
+          schemaVersion: 1,
+          runId,
+          status: 'evidence-rejected',
+          failures: [{
+            obligationId: 'delivery-materialization',
+            command: 'parallel-settlement',
+            errorSummary: `Canonical worker receipt paths are omitted from the persisted Delivery mutation: ${omittedWorkerPaths.join(', ')}`,
+            errorCode: 'delivery_worker_paths_omitted',
+          }],
+        };
+      }
+
+      const parallelResolution = this.resolveParallelSettlementStep(runId, payload, {
+        expectedMutationRevision: Number(snapshot.expectedMutationRevision),
+        expectedWorkspaceIdentity: snapshot.expectedWorkspaceIdentity,
+        workerWorkspaceId: result?.executionWorkspaceId || payload.workspaceId || null,
+        workerWorkspaceIdentity: result?.workerWorkspaceIdentity || null,
+      });
+      if (parallelResolution.rejection) {
+        return {
+          schemaVersion: 1,
+          runId,
+          status: 'evidence-rejected',
+          failures: parallelResolution.rejection,
+        };
+      }
+
+      const canonicalAttempt = parallelResolution.attempt;
+      const requiredReceiptFields = [
+        ['attemptId', result?.attemptId],
+        ['executionWorkspaceId', result?.executionWorkspaceId],
+        ['workerWorkspaceIdentity', result?.workerWorkspaceIdentity],
+        ['resultWorkspaceIdentity', result?.resultWorkspaceIdentity],
+        ['resultCommitSha', result?.resultCommitSha],
+        ['patchDigest', result?.patchDigest],
+        ['changedPaths', result?.changedPaths],
+        ['workerReport', result?.workerReport],
+      ];
+      const missingReceiptFields = requiredReceiptFields
+        .filter(([field, value]) => value === null || value === undefined || value === ''
+          || (field === 'changedPaths' && (!Array.isArray(value) || value.length === 0))
+          || (field === 'workerReport' && (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length === 0)))
+        .map(([field]) => field);
+      if (missingReceiptFields.length > 0) {
+        return {
+          schemaVersion: 1,
+          runId,
+          status: 'evidence-rejected',
+          failures: [{
+            obligationId: 'delivery-materialization',
+            command: 'parallel-settlement',
+            errorSummary: `Canonical worker execution receipt is incomplete: ${missingReceiptFields.join(', ')}`,
+            errorCode: 'delivery_worker_receipt_incomplete',
+          }],
+        };
+      }
+      const receiptMismatches = [];
+      const compareReceiptField = (field, incoming, canonical, options = {}) => {
+        if (!receiptValuesEqual(incoming, canonical, options)) receiptMismatches.push(field);
+      };
+      if (result.attemptId !== canonicalAttempt.attemptId || payload.attemptId !== canonicalAttempt.attemptId) receiptMismatches.push('attemptId');
+      if (result.executionWorkspaceId !== canonicalAttempt.workspaceId) receiptMismatches.push('executionWorkspaceId');
+      compareReceiptField('workerWorkspaceIdentity', result.workerWorkspaceIdentity, canonicalAttempt.baseWorkspaceIdentity);
+      compareReceiptField('resultWorkspaceIdentity', result.resultWorkspaceIdentity, canonicalAttempt.resultWorkspaceIdentity);
+      compareReceiptField('resultCommitSha', result.resultCommitSha, canonicalAttempt.resultCommitSha);
+      compareReceiptField('patchDigest', result.patchDigest, canonicalAttempt.patchDigest);
+      compareReceiptField('changedPaths', result.changedPaths, canonicalAttempt.changedPaths, { paths: true });
+      compareReceiptField('workerReport', result.workerReport, canonicalAttempt.workerReport);
+      if (receiptMismatches.length > 0) {
+        return {
+          schemaVersion: 1,
+          runId,
+          status: 'evidence-rejected',
+          failures: [{
+            obligationId: 'delivery-materialization',
+            command: 'parallel-settlement',
+            errorSummary: `Worker execution receipt differs from its canonical attempt: ${[...new Set(receiptMismatches)].join(', ')}`,
+            errorCode: 'delivery_worker_receipt_mismatch',
+          }],
+        };
+      }
+      const leaseResult = store.acquireLease(runId, { holder, ttlMs: REPORT_LEASE_TTL_MS });
+      if (!leaseResult.acquired) {
+        return { schemaVersion: 1, runId, status: 'lease-conflict', lease: leaseResult.lease, next: await this.next(runId) };
+      }
+      const fencingToken = leaseResult.lease.fencingToken;
+      try {
+        return await this.reportUnderLease(runId, payload, {
+          fencingToken,
+          parallelSettlement: {
+            expectedMutationRevision: Number(snapshot.expectedMutationRevision),
+            expectedWorkspaceIdentity: snapshot.expectedWorkspaceIdentity,
+            deliveryWorkspaceIdentity,
+            workerWorkspaceId: result?.executionWorkspaceId || payload.workspaceId || null,
+            workerWorkspaceIdentity: result?.workerWorkspaceIdentity || result?.resultWorkspaceIdentity || null,
+            result,
+          },
+        });
+      } finally {
+        store.releaseLease(runId, { holder, fencingToken });
+      }
+    },
+
     // Model-visible command 2 of 2: submit work. The Kernel re-observes the
     // workspace, executes requested trusted verifications itself, records
     // evidence, advances state, and finalizes when everything required passed.
@@ -2006,7 +2793,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       }
     },
 
-    async reportUnderLease(runId, payload, { fencingToken }) {
+    async reportUnderLease(runId, payload, { fencingToken, parallelSettlement = null }) {
       const run = store.getRun(runId);
       const evidenceRejected = (failures) => {
         const currentRun = store.getRun(runId);
@@ -2091,7 +2878,9 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       // stylistic problem.
       // K2: which unit of work this report answers, resolved from the ledger
       // rather than from whatever the model remembered.
-      const stepResolution = this.resolveReportStep(runId, report);
+      const stepResolution = parallelSettlement
+        ? this.resolveParallelSettlementStep(runId, report, parallelSettlement)
+        : this.resolveReportStep(runId, report);
       const activeStep = stepResolution.step || null;
 
       // A stale named capsule remains a capsule/scope failure even when the
@@ -2103,10 +2892,12 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         && lineageRejection.some((failure) => failure.errorCode === 'attempt_lineage_incomplete');
       const scopeStep = activeStep
         || (report.stepId ? store.getRunStep(runId, report.stepId) : this.getCurrentStep(runId));
-      const capsuleScopeRejection = hasAttemptLineageRejection
-        ? this.assertCapsuleScope(runId, report, scopeStep)
-        : null;
-      const staleCapsuleRejection = hasAttemptLineageRejection
+      const capsuleScopeRejection = parallelSettlement
+        ? this.assertParallelCapsuleScope(runId, report, scopeStep, parallelSettlement)
+        : hasAttemptLineageRejection
+          ? this.assertCapsuleScope(runId, report, scopeStep)
+          : null;
+      const staleCapsuleRejection = !parallelSettlement && hasAttemptLineageRejection
         && (report.capsuleId || capsuleScopeRejection)
         ? capsuleScopeRejection || [{
           obligationId: 'capsule',
@@ -2115,7 +2906,9 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
           errorCode: 'capsule_lineage_incomplete',
         }]
         : null;
-      const capsuleRejection = staleCapsuleRejection || lineageRejection || this.assertCapsuleScope(runId, report, activeStep);
+      const capsuleRejection = parallelSettlement
+        ? (lineageRejection || capsuleScopeRejection)
+        : (staleCapsuleRejection || lineageRejection || this.assertCapsuleScope(runId, report, activeStep));
       if (capsuleRejection) {
         const currentRun = store.getRun(runId);
         return {
@@ -2297,9 +3090,14 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         // and before a later process resumes it; a manually stale attempt with
         // no new workspace observation is still rejected by resolveReportStep.
         if (stepAttempt && observed.changed && !workerWorkspace) {
-          stepAttempt = this.attachAttemptLineage(stepAttempt.attemptId, {
-            mutationRevision: observed.run.mutationRevision,
-          });
+          stepAttempt = typeof store.updateOwnerAttemptMutationRevision === 'function'
+            ? store.updateOwnerAttemptMutationRevision(stepAttempt.attemptId, {
+              expectedMutationRevision: run.mutationRevision,
+              mutationRevision: observed.run.mutationRevision,
+            })
+            : this.attachAttemptLineage(stepAttempt.attemptId, {
+              mutationRevision: observed.run.mutationRevision,
+            });
         }
       }
 
