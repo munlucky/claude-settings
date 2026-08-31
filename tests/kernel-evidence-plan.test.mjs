@@ -32,21 +32,20 @@ test('plain-string acceptance is allowed and normalized to statements', () => {
   assert.doesNotThrow(() => assertEvidencePlans(['returns 401']));
 });
 
-test('structured acceptance requires a valid evidence plan', () => {
-  assert.throws(
+test('structured acceptance may omit an optional evidence plan', () => {
+  assert.doesNotThrow(
     () => assertEvidencePlans([{ acceptance: 'be readable' }]),
-    MissingEvidencePlanError,
   );
   assert.throws(
     () => assertEvidencePlans([{ acceptance: 'x', evidencePlan: { class: 'bogus' } }]),
-    /MISSING_EVIDENCE_PLAN|evidence plan/,
+    MissingEvidencePlanError,
   );
   assert.doesNotThrow(
     () => assertEvidencePlans([{ acceptance: 'locked -> 423', evidencePlan: { class: 'hard', method: 'integration-test', commandRef: 'test:auth' } }]),
   );
 });
 
-test('startRun blocks a structured acceptance that omits its evidence plan', async () => {
+test('startRun accepts unplanned acceptance and preserves explicit plan validation', async () => {
   const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'krn-ep-home-'));
   const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'krn-ep-proj-'));
   spawnSync('git', ['init'], { cwd: projectRoot, encoding: 'utf8' });
@@ -56,10 +55,9 @@ test('startRun blocks a structured acceptance that omits its evidence plan', asy
   }));
   const cp = await createKernelControlPlane({ runtimeHome, projectRoot });
   try {
-    await assert.rejects(
-      cp.startRun({ runId: 'r-ep', objective: 'x', taskContract: { acceptance: [{ acceptance: 'improve readability' }] } }),
-      /MISSING_EVIDENCE_PLAN|evidence plan/,
-    );
+    const unplanned = await cp.startRun({ runId: 'r-ep', objective: 'x', taskContract: { acceptance: [{ acceptance: 'improve readability' }] } });
+    assert.equal(unplanned.acceptanceCriteria[0], 'improve readability');
+    await cp.abandon('r-ep', { reason: 'test_fixture' });
     // Structured acceptance with a plan is accepted and coverage uses the statement.
     const run = await cp.startRun({ runId: 'r-ep-ok', objective: 'x', taskContract: { acceptance: [{ acceptance: 'invalid password returns 401', evidencePlan: { class: 'hard', commandRef: 'test:auth' } }] } });
     assert.deepEqual(run.acceptanceCriteria, ['invalid password returns 401']);
@@ -70,7 +68,7 @@ test('startRun blocks a structured acceptance that omits its evidence plan', asy
   }
 });
 
-test('next explicitly asks for AC-scoped plans before proof of plain acceptance', async () => {
+test('next proceeds directly to implementation for plain acceptance', async () => {
   const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'krn-ep-next-home-'));
   const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'krn-ep-next-proj-'));
   spawnSync('git', ['init'], { cwd: projectRoot, encoding: 'utf8' });
@@ -79,9 +77,10 @@ test('next explicitly asks for AC-scoped plans before proof of plain acceptance'
   try {
     await cp.startRun({ runId: 'r-ep-next', objective: 'x', taskContract: { acceptance: ['works'] } });
     const next = await cp.next('r-ep-next');
-    assert.deepEqual(next.action.evidencePlansRequired, ['AC-1']);
-    assert.match(next.action.guidance, /AC-1/);
+    assert.equal(next.action.type, 'implement');
+    assert.equal(Object.hasOwn(next.action, 'evidencePlansRequired'), false);
     assert.equal(next.acceptancePlans[0].id, 'AC-1');
+    assert.equal(next.acceptancePlans[0].evidencePlan, null);
   } finally {
     await cp.close();
     await rm(runtimeHome, { recursive: true, force: true });

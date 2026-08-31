@@ -24,6 +24,14 @@ test('End-to-End Kernel Product Execution Flow', async () => {
 
   // 1. Install Kernel track in project
   await installKernel({ targetRoot: tmpProject });
+  await writeFile(path.join(tmpProject, 'package.json'), JSON.stringify({
+    name: 'kernel-e2e-fixture',
+    version: '0.0.1',
+    scripts: {
+      lint: 'node -e "process.exit(0)"',
+      test: 'node -e "process.exit(0)"',
+    },
+  }, null, 2));
 
   // 2. Explicit skill resolution for $moon-relay-kernel
   const explicitRes = await resolveExplicitSkillInvocation('$moon-relay-kernel', { repoRoot: process.cwd(), projectRoot: tmpProject });
@@ -51,8 +59,7 @@ test('End-to-End Kernel Product Execution Flow', async () => {
   assert.equal(contextReceipt.receipt.policyRevision, 'kernel-context-policy.v1');
   assert.match(contextReceipt.receipt.policyDigest, /^[a-f0-9]{64}$/);
 
-  // 5. Workflow transitions: FRAME -> SHAPE -> EXECUTE -> PROVE
-  await cp.transition('e2e-run-1', 'SHAPE');
+  // 5. Workflow transitions: FRAME -> EXECUTE -> PROVE
   await cp.transition('e2e-run-1', 'EXECUTE');
   await cp.transition('e2e-run-1', 'PROVE');
 

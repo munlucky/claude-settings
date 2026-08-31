@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { selectProofTier, evidenceTierForProof } from '../scripts/kernel/proof-route.mjs';
-import { classifyRisk, needsShape, routeTask } from '../scripts/kernel/route.mjs';
+import { classifyRisk } from '../scripts/kernel/route.mjs';
 
 test('documentation-only change is T0 while security is hard-floor T3', () => {
   assert.equal(selectProofTier({ behaviorChanging: false }), 'T0');
@@ -28,11 +28,8 @@ test('tier floors only raise, never lower, a requested tier', () => {
   assert.equal(selectProofTier({ requestedTier: 'T1', surfaces: ['public_contract'] }), 'T2');
 });
 
-test('SHAPE is conditional, not a default feature step', () => {
-  assert.equal(needsShape({}), false);
-  assert.equal(needsShape({ behaviorChanging: true }), false);
-  assert.equal(needsShape({ surfaces: ['public_contract'] }), true);
-  assert.equal(needsShape({ risk: { publicContract: true } }), true);
-  assert.equal(needsShape({ migration: true }), true);
-  assert.equal(needsShape({ irreversibleDecision: true }), true);
+test('file count and task duration do not escalate semantic proof tier', () => {
+  assert.equal(classifyRisk({ taskClass: 'long-running', filesChanged: 100 }), 'T0');
+  assert.equal(selectProofTier({ requestedTier: 'T0', taskClass: 'long-running', filesChanged: 100 }), 'T0');
+  assert.equal(selectProofTier({ requestedTier: 'T0', filesChanged: 100 }), 'T0');
 });

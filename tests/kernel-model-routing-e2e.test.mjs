@@ -85,7 +85,7 @@ test('a full routed turn implements on value coding and finishes on kernel evide
   });
 });
 
-test('a value model cannot complete a mutating run on its own say-so', async () => {
+test('a value model report triggers Kernel-owned proof for a mutating run', async () => {
   await withProject({ 'test:ok': 'node -e "process.exit(0)"' }, async (cp, projectRoot) => {
     await cp.startRun({ runId: 'r-claim', objective: 'unproven claim', taskContract: { acceptance: ['works'] } });
     await dispatchKernelTurn({
@@ -95,11 +95,15 @@ test('a value model cannot complete a mutating run on its own say-so', async () 
       registry: createModelRegistry({ surface: 'claude', env: ENV }),
     });
     await writeFile(path.join(projectRoot, 'app.mjs'), 'export const v = 2;\n');
-    // No verification requested: the model just says it is done.
+    // No verification requested: the model reports its result and the Kernel
+    // independently runs the outstanding bound proof.
     const report = await cp.report('r-claim', { summary: 'trust me, it works', changedPaths: ['app.mjs'] });
-    assert.notEqual(report.status, 'completed');
-    assert.notEqual((await cp.getRun('r-claim')).status, 'completed');
-    assert.notEqual((await cp.assessCompletion('r-claim')).decision, 'accepted');
+    assert.equal(report.status, 'completed', JSON.stringify(report.failures));
+    // With no explicit plan or caller hint, the canonical project `test`
+    // command is the highest-authority proof selection.
+    assert.deepEqual(report.executed.map((entry) => entry.commandRef), ['test']);
+    assert.equal((await cp.getRun('r-claim')).status, 'completed');
+    assert.equal((await cp.assessCompletion('r-claim')).decision, 'accepted');
   });
 });
 

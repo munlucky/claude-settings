@@ -1,11 +1,8 @@
-export const STATES = Object.freeze(['FRAME','SHAPE','SLICE','SCHEDULE','EXECUTE','PROVE','CLOSE']);
+export const STATES = Object.freeze(['FRAME','EXECUTE','PROVE','CLOSE']);
 export const TRANSITIONS = Object.freeze({
-  FRAME: ['SHAPE','EXECUTE','CLOSE'],
-  SHAPE: ['SLICE','EXECUTE','FRAME'],
-  SLICE: ['SCHEDULE','EXECUTE','SHAPE'],
-  SCHEDULE: ['EXECUTE','SHAPE'],
-  EXECUTE: ['PROVE','SHAPE','FRAME'],
-  PROVE: ['CLOSE','EXECUTE','SHAPE'],
+  FRAME: ['EXECUTE','CLOSE'],
+  EXECUTE: ['PROVE','FRAME'],
+  PROVE: ['CLOSE','EXECUTE','FRAME'],
   CLOSE: [],
 });
 export const canTransition = (from, to) => Boolean(TRANSITIONS[from]?.includes(to));

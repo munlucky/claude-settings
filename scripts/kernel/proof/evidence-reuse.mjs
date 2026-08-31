@@ -7,7 +7,10 @@ export const EVIDENCE_IDENTITY_FIELDS = Object.freeze([
   'artifactDigest',
   'fixtureDigest',
   'environmentFingerprint',
+  'verificationScopeDigest',
 ]);
+
+export const VERIFICATION_SCOPE_FIELD = 'verificationScopeDigest';
 
 const digest = (value) => `sha256:${createHash('sha256').update(JSON.stringify(value)).digest('hex')}`;
 
@@ -48,6 +51,7 @@ export const buildEvidenceIdentity = ({
   environment = {},
   networkPolicy = 'inherited',
   freshnessInputs = EVIDENCE_IDENTITY_FIELDS,
+  verificationScopeDigest = null,
 } = {}) => normalizeEvidenceIdentity({
   commandDigest: commandDigest({ commandRef, command, args }),
   verifierVersion,
@@ -55,6 +59,7 @@ export const buildEvidenceIdentity = ({
   artifactDigest,
   fixtureDigest,
   environmentFingerprint: environment.fingerprint || environmentFingerprint({ ...environment, networkPolicy, verifierVersion }),
+  verificationScopeDigest,
 }, { freshnessInputs });
 
 export const buildEvidenceReuseReceipt = ({

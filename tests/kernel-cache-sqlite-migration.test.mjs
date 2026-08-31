@@ -121,3 +121,32 @@ test('re-recording the same receipt updates the economics rather than duplicatin
     assert.equal(receipts[0].cacheReadInputTokens, 700);
   });
 });
+
+test('active legacy lifecycle rows are canonicalized to FRAME while terminal history is preserved', async () => {
+  const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'krn-legacy-state-'));
+  const store = await openKernelStateStore({ runtimeHome });
+  try {
+    store.createRun({ runId: 'legacy-active', objective: 'legacy active', sourceIdentity: 'kernel-test-source' });
+    store.createRun({ runId: 'legacy-terminal', objective: 'legacy terminal', sourceIdentity: 'kernel-test-source' });
+    store.close();
+
+    const db = await openSqliteDb(kernelDbPath(runtimeHome));
+    try {
+      db.prepare("UPDATE runs SET state = 'SHAPE' WHERE run_id = ?").run('legacy-active');
+      db.prepare("UPDATE runs SET state = 'SLICE', status = 'completed' WHERE run_id = ?").run('legacy-terminal');
+    } finally {
+      db.close?.();
+    }
+
+    const reopened = await openKernelStateStore({ runtimeHome });
+    try {
+      assert.equal(reopened.getRun('legacy-active').state, 'FRAME');
+      assert.equal(reopened.getRun('legacy-terminal').state, 'SLICE');
+      assert.equal(reopened.getRun('legacy-terminal').status, 'completed');
+    } finally {
+      reopened.close();
+    }
+  } finally {
+    await rm(runtimeHome, { recursive: true, force: true });
+  }
+});

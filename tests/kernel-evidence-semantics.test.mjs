@@ -38,26 +38,49 @@ const plannedContract = (statement = 'the mutation is correct') => ({
   }],
 });
 
-test('planless proof is rejected before any command executes', async () => {
+test('planless proof is automatically bound and executed only when outstanding', async () => {
   const fixture = await setup();
   const cp = await createKernelControlPlane(fixture);
   try {
     await cp.startRun({ runId: 'r-planless-proof', objective: 'x', taskContract: { acceptance: ['works'] } });
-    const rejected = await cp.report('r-planless-proof', {
+    const completed = await cp.report('r-planless-proof', {
       summary: 'proof without an evidence plan',
-      verifications: [{ obligationId: 'default', commandRef: 'test:ok', acceptanceCoverage: ['AC-1'] }],
     });
-    assert.equal(rejected.status, 'evidence-rejected');
-    assert.equal(rejected.executed.length, 0);
-    assert.equal(rejected.failures[0].errorCode, 'MISSING_EVIDENCE_PLAN');
-    assert.equal(cp.stateStore.getVerifications('r-planless-proof').length, 0);
+    assert.equal(completed.status, 'completed');
+    assert.equal(completed.executed.length, 1);
+    assert.equal(completed.executed[0].commandRef, 'test:ok');
+    assert.equal(cp.stateStore.getVerifications('r-planless-proof').length, 1);
   } finally {
     await cp.close();
     await cleanup(fixture);
   }
 });
 
-test('the first proof report must persist all structured plans before executing commands', async () => {
+test('ordinary reports skip an already satisfied obligation unless freshness is explicitly requested', async () => {
+  const fixture = await setup();
+  const cp = await createKernelControlPlane(fixture);
+  try {
+    const runId = 'r-skip-satisfied';
+    await cp.startRun({ runId, objective: 'x', taskContract: { riskTier: 'T2', acceptance: ['works'] } });
+    await cp.transition(runId, 'EXECUTE');
+    await cp.transition(runId, 'PROVE');
+    await cp.executeProof(runId, {
+      obligationId: 'unit-test',
+      commandRef: 'test:ok',
+      acceptanceCoverage: ['AC-1'],
+    });
+
+    const completed = await cp.report(runId, { summary: 'run only the outstanding proof' });
+    assert.equal(completed.status, 'completed');
+    assert.deepEqual(completed.executed.map((entry) => entry.obligationId), ['static-analysis']);
+    assert.equal(cp.stateStore.getVerificationHistory(runId).filter((entry) => entry.obligationId === 'unit-test').length, 1);
+  } finally {
+    await cp.close();
+    await cleanup(fixture);
+  }
+});
+
+test('an optional evidence-plan refinement is persisted before automatic proof', async () => {
   const fixture = await setup();
   const cp = await createKernelControlPlane(fixture);
   try {
@@ -83,7 +106,7 @@ test('the first proof report must persist all structured plans before executing 
   }
 });
 
-test('legacy proof cannot complete through a final report with verifications omitted', async () => {
+test('legacy proof can complete through a final report with verifications omitted', async () => {
   const fixture = await setup();
   const cp = await createKernelControlPlane(fixture);
   try {
@@ -107,10 +130,8 @@ test('legacy proof cannot complete through a final report with verifications omi
       summary: 'legacy final report with no new verification payload',
       verifications: [],
     });
-    assert.notEqual(finalReport.status, 'completed');
-    assert.equal(finalReport.finalization.finalizationStatus, 'incomplete_gates');
-    assert.equal(finalReport.finalization.completionResult.gates.evidencePlansComplete, false);
-    assert.ok(finalReport.finalization.unmetGates.includes('evidencePlansComplete'));
+    assert.equal(finalReport.status, 'completed');
+    assert.equal(finalReport.finalization.completionResult.gates.evidencePlansComplete, true);
   } finally {
     await cp.close();
     await cleanup(fixture);
@@ -186,14 +207,21 @@ test('a persisted proof from an earlier evidence-plan revision cannot satisfy th
       }],
     }, { objective: 'x' }));
 
+    // The old receipt is stale immediately after the revision. The final
+    // report may then run the newly bound command as the outstanding proof.
+    const beforeAutomaticProof = await cp.assessCompletion(runId);
+    assert.equal(beforeAutomaticProof.gates.acceptanceCovered, false);
+    assert.ok(beforeAutomaticProof.unsatisfiedObligations.some((entry) => entry.obligationId === 'acceptance-ac-1'));
+
     const finalReport = await cp.report(runId, {
       summary: 'the old command must not satisfy the new plan',
       verifications: [],
     });
-    assert.notEqual(finalReport.status, 'completed');
+    assert.equal(finalReport.status, 'completed');
     const completion = await cp.assessCompletion(runId);
-    assert.equal(completion.gates.acceptanceCovered, false);
-    assert.ok(completion.unsatisfiedObligations.some((entry) => entry.obligationId === 'acceptance-ac-1'));
+    assert.equal(completion.gates.acceptanceCovered, true);
+    const revisedPlanExecution = finalReport.executed.find((entry) => entry.obligationId === 'acceptance-ac-1');
+    assert.equal(revisedPlanExecution?.commandRef, 'test:other');
   } finally {
     await cp.close();
     await cleanup(fixture);

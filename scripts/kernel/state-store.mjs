@@ -813,6 +813,17 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
   try { db.exec(`ALTER TABLE verifications ADD COLUMN reuse_of_verification_id INTEGER;`); } catch {}
   try { db.exec(`ALTER TABLE verifications ADD COLUMN reuse_receipt_json TEXT;`); } catch {}
 
+  // Canonicalize the retired workflow states once when an existing database is
+  // opened. This is intentionally idempotent and only touches active Runs;
+  // historical/terminal rows remain an audit record of the old schema.
+  try {
+    db.exec(`
+      UPDATE runs
+      SET state='FRAME'
+      WHERE status='active' AND state IN ('SHAPE', 'SLICE', 'SCHEDULE');
+    `);
+  } catch {}
+
   // Fresh state and already-valid legacy state gain database-level owner
   // invariants. If legacy corruption contains duplicate active owners, opening
   // the store fails closed instead of silently selecting one.
@@ -1505,7 +1516,7 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
     },
 
     // Task Contract is the run's authority; a revision bump records that the
-    // model refined it (e.g. supplied a missing evidence plan) mid-run.
+    // model refined it (for example with an optional evidence plan) mid-run.
     updateTaskContract(runId, taskContract, { bumpRevision = true } = {}) {
       const run = this.getRun(runId);
       if (!run) throw new Error(`Run ${runId} not found`);
@@ -5108,22 +5119,33 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       return db.prepare(`SELECT id, run_id as runId, obligation_id as obligationId, status, evidence_ref as evidenceRef, verified_runtime_revision as verifiedRuntimeRevision, verified_mutation_revision as verifiedMutationRevision, source_identity as sourceIdentity, verified_source_identity as verifiedSourceIdentity, executor, network_isolation as networkIsolation, command_ref as commandRef, command, exit_code as exitCode, evidence_digest as evidenceDigest, acceptance_coverage as acceptanceCoverage, evidence_class as evidenceClass, contract_revision as contractRevision, evidence_identity_json as evidenceIdentityJson, reuse_of_verification_id as reuseOfVerificationId, reuse_receipt_json as reuseReceiptJson, observed_at as observedAt FROM verifications WHERE run_id=? ORDER BY id ASC`).all(runId).map((v) => ({ ...v, acceptanceCoverage: safeJsonParse(v.acceptanceCoverage), evidenceIdentity: safeJsonParse(v.evidenceIdentityJson, {}), reuseReceipt: v.reuseReceiptJson ? safeJsonParse(v.reuseReceiptJson, null) : null }));
     },
 
-    findExactReusableVerification({ projectId, obligationId, evidenceIdentity, excludeRunId = null } = {}) {
+    findExactReusableVerification({ projectId, obligationId, evidenceIdentity, contractRevision = null } = {}) {
       if (!projectId || !obligationId || !evidenceIdentity) return null;
+      const contractClause = contractRevision === null || contractRevision === undefined
+        ? ''
+        : ' AND v.contract_revision=?';
+      const params = contractRevision === null || contractRevision === undefined
+        ? [projectId, obligationId]
+        : [projectId, obligationId, Number(contractRevision)];
       const rows = db.prepare(`
         SELECT v.id, v.run_id as runId, v.obligation_id as obligationId, v.status,
                v.evidence_ref as evidenceRef, v.verified_mutation_revision as verifiedMutationRevision,
                v.source_identity as sourceIdentity, v.verified_source_identity as verifiedSourceIdentity,
                v.executor, v.command, v.exit_code as exitCode, v.evidence_digest as evidenceDigest,
-               v.evidence_identity_json as evidenceIdentityJson, v.observed_at as observedAt,
+               v.evidence_identity_json as evidenceIdentityJson, v.contract_revision as contractRevision,
+               v.observed_at as observedAt,
                r.project_id as projectId
         FROM verifications v
         JOIN runs r ON r.run_id=v.run_id
         WHERE r.project_id=? AND v.obligation_id=? AND v.status='passed' AND v.exit_code=0
           AND v.evidence_digest IS NOT NULL
-          ${excludeRunId ? 'AND v.run_id<>?' : ''}
+          ${contractClause}
+          AND v.id IN (
+            SELECT MAX(v2.id) FROM verifications v2
+            WHERE v2.run_id=v.run_id AND v2.obligation_id=v.obligation_id
+          )
         ORDER BY v.id DESC
-      `).all(...(excludeRunId ? [projectId, obligationId, excludeRunId] : [projectId, obligationId]));
+      `).all(...params);
       for (const row of rows) {
         const candidate = { ...row, evidenceIdentity: safeJsonParse(row.evidenceIdentityJson, {}) };
         if (exactEvidenceIdentityMatch(candidate.evidenceIdentity, evidenceIdentity)) return candidate;
@@ -5231,7 +5253,7 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       return db.prepare(`SELECT id, run_id as runId, evidence_digest as evidenceDigest, parent_digest as parentDigest, created_at as createdAt FROM evidence_lineage WHERE run_id=? ORDER BY id ASC`).all(runId);
     },
 
-    evaluateCompletion(runId, { expectedSourceIdentity = null } = {}) {
+    evaluateCompletion(runId, { expectedSourceIdentity = null, verificationScopeIdentities = null } = {}) {
       const run = this.getRun(runId);
       if (!run) {
         return { decision: 'blocked', run: null, verifications: [] };
@@ -5245,11 +5267,16 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
                verified_source_identity as verifiedSourceIdentity,
                executor, network_isolation as networkIsolation, command_ref as commandRef, command, exit_code as exitCode,
                evidence_digest as evidenceDigest, acceptance_coverage as acceptanceCoverage,
-               evidence_class as evidenceClass, contract_revision as contractRevision, observed_at as observedAt
+               evidence_class as evidenceClass, contract_revision as contractRevision,
+               evidence_identity_json as evidenceIdentityJson, observed_at as observedAt
         FROM verifications WHERE run_id=? AND id IN (
           SELECT MAX(v2.id) FROM verifications v2 WHERE v2.run_id=? GROUP BY v2.obligation_id
         ) ORDER BY id ASC
-      `).all(runId, runId).map((v) => ({ ...v, acceptanceCoverage: safeJsonParse(v.acceptanceCoverage) }));
+      `).all(runId, runId).map((v) => ({
+        ...v,
+        acceptanceCoverage: safeJsonParse(v.acceptanceCoverage),
+        evidenceIdentity: safeJsonParse(v.evidenceIdentityJson, {}),
+      }));
 
       const isClosed = Boolean(run.state === 'CLOSE');
 
@@ -5274,15 +5301,26 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         if (!v.evidenceRef) return false;
         if (!v.evidenceDigest || !sha256Regex.test(v.evidenceDigest)) return false;
 
-        const verifiedMutation = v.verifiedMutationRevision ?? v.verifiedRuntimeRevision;
-        if (verifiedMutation !== run.mutationRevision) return false;
-
         if (!v.sourceIdentity || v.sourceIdentity !== run.sourceIdentity) return false;
         if (expectedSourceIdentity && v.sourceIdentity !== expectedSourceIdentity) return false;
 
-        // Evidence proven against a different workspace state than the one the
-        // run currently observes is stale regardless of its other fields.
-        if (v.verifiedSourceIdentity && run.currentWorkspaceIdentity && v.verifiedSourceIdentity !== run.currentWorkspaceIdentity) return false;
+        // A scoped proof is fresh only when the authoritative verification
+        // scope still hashes to the same file contents. The full workspace
+        // identity may change for an unrelated Step, so it is deliberately not
+        // used for this case. Missing scope observations fail closed.
+        const scopedDigest = v.evidenceIdentity?.values?.verificationScopeDigest || null;
+        if (scopedDigest) {
+          const currentScope = verificationScopeIdentities?.[v.obligationId];
+          const currentScopeDigest = typeof currentScope === 'string' ? currentScope : currentScope?.identity;
+          if (!currentScopeDigest || currentScopeDigest !== scopedDigest) return false;
+        } else {
+          const verifiedMutation = v.verifiedMutationRevision ?? v.verifiedRuntimeRevision;
+          if (verifiedMutation !== run.mutationRevision) return false;
+        }
+        if (!scopedDigest && v.verifiedSourceIdentity && run.currentWorkspaceIdentity && v.verifiedSourceIdentity !== run.currentWorkspaceIdentity) {
+          // Evidence proven against a different full workspace state is stale.
+          return false;
+        }
 
         // A contract revision changes the evidence authority. Proof recorded
         // before a plan/binding revision must be rerun, even when its other
@@ -5414,8 +5452,9 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       // Coverage may be declared by acceptance id (AC-1) or by statement.
       const contractAcceptance = Array.isArray(run.taskContract?.acceptance) ? run.taskContract.acceptance : [];
       // Completion must not trust a legacy verification row merely because it
-      // contains coverage. Every acceptance criterion needs a persisted,
-      // structured evidence plan before any final report can close the run.
+      // contains coverage. The persisted acceptance statement still has to
+      // match the current contract, while an explicit evidence plan remains
+      // optional and unplanned criteria use the compiled policy obligation.
       const persistedAcceptance = Array.isArray(run.acceptanceCriteria) ? run.acceptanceCriteria : [];
       const evidencePlansComplete = persistedAcceptance.length === 0
         ? true
@@ -5424,7 +5463,6 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
           && contractAcceptance.every((criterion, index) => (
             Boolean(criterion?.statement)
             && criterion.statement === persistedAcceptance[index]
-            && Boolean(criterion?.evidencePlan?.class)
           ));
       const acceptanceCovered = evidencePlansComplete && persistedAcceptance.every((criterion, index) => {
         const declared = contractAcceptance[index];

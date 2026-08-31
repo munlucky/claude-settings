@@ -11,7 +11,7 @@ export function createRunRepository(db) {
           mutation_revision, knowledge_revision_start, knowledge_revision_close,
           acceptance_criteria_json, release_evidence_required, created_at, updated_at
         )
-        VALUES(?, ?, 'SHAPE', 'active', ?, ?, 0, 0, NULL, ?, ?, ?, ?)
+        VALUES(?, ?, 'FRAME', 'active', ?, ?, 0, 0, NULL, ?, ?, ?, ?)
       `).run(
         runId, projectId, objective, sourceIdentity,
         JSON.stringify(acceptanceCriteria),

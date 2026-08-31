@@ -1,9 +1,10 @@
 // Obligation compilation (P0-2/P0-3/P0-5).
 //
-// A run's obligations are fixed at start from three authorities:
+// A run's obligations are fixed at start from the available authorities:
 //   1. the proof policy's required checks for the resolved tier,
-//   2. the evidence plan of every acceptance criterion,
-//   3. obligations the caller explicitly declared.
+//   2. optional evidence plans for acceptance criteria,
+//   3. committed Project Knowledge required_verification records,
+//   4. obligations the caller explicitly declared.
 //
 // Each compiled obligation records HOW it may be satisfied — its evidence
 // class and the exact set of project command refs that can prove it. Without
@@ -78,6 +79,218 @@ const METHOD_FAMILIES = Object.freeze({
   deployment: ['deployment'],
   'post-deployment-observation': ['post-deployment-observation'],
 });
+
+// Command and freshness scope authority follow the same ordering. The
+// metadata is stored on the existing obligation row, while the selected
+// command and current scope digest remain derived values.
+const SOURCE_PRIORITY = Object.freeze({
+  'evidence-plan': 0,
+  knowledge: 1,
+  caller: 2,
+  'proof-policy': 3,
+  'ad-hoc': 4,
+});
+
+const SCOPE_SOURCE_PRIORITY = Object.freeze({
+  knowledge: 0,
+  caller: 1,
+  'evidence-plan': 2,
+  'proof-policy': 3,
+});
+
+const sourcePriority = (sourceType) => SOURCE_PRIORITY[sourceType] ?? 99;
+const scopeSourcePriority = (sourceType) => SCOPE_SOURCE_PRIORITY[sourceType] ?? 99;
+const normalizeScope = (scope) => (Array.isArray(scope)
+  ? [...new Set(scope.map(String).map((entry) => entry.trim()).filter(Boolean))].sort()
+  : []);
+
+const mergeObligationMetadata = (existing = {}, incoming = {}, {
+  sourceType,
+  sourceRef,
+  allowedCommandRefs = [],
+  addCommandCandidate = false,
+} = {}) => {
+  const merged = { ...(existing || {}) };
+  for (const [key, value] of Object.entries(incoming || {})) {
+    if (key === 'commandCandidates' || key === 'scopeCandidates') continue;
+    if (key === 'outcome' && !value) continue;
+    if (key === 'scope' && normalizeScope(value).length === 0) continue;
+    if (key === 'freshnessInputs' && (!Array.isArray(value) || value.length === 0)) continue;
+    merged[key] = value;
+  }
+
+  const commandCandidates = [
+    ...(Array.isArray(existing?.commandCandidates) ? existing.commandCandidates : []),
+    ...(addCommandCandidate && allowedCommandRefs.length > 0 ? [{
+      sourceType,
+      sourceRef: sourceRef || null,
+      commandRefs: [...new Set(allowedCommandRefs.map(String))],
+    }] : []),
+  ];
+  const uniqueCommands = commandCandidates.filter((candidate, index, all) => (
+    all.findIndex((other) => JSON.stringify({
+      sourceType: other.sourceType,
+      sourceRef: other.sourceRef || null,
+      commandRefs: [...new Set((other.commandRefs || []).map(String))],
+    }) === JSON.stringify({
+      sourceType: candidate.sourceType,
+      sourceRef: candidate.sourceRef || null,
+      commandRefs: [...new Set((candidate.commandRefs || []).map(String))],
+    })) === index
+  ));
+  if (uniqueCommands.length > 0) merged.commandCandidates = uniqueCommands;
+
+  const incomingScope = normalizeScope(incoming?.scope);
+  const scopeCandidates = [
+    ...(Array.isArray(existing?.scopeCandidates) ? existing.scopeCandidates : []),
+    ...(incomingScope.length > 0 ? [{
+      sourceType,
+      sourceRef: sourceRef || null,
+      scope: incomingScope,
+      freshnessInputs: Array.isArray(incoming?.freshnessInputs)
+        ? [...new Set(incoming.freshnessInputs.map(String))]
+        : [],
+    }] : []),
+  ];
+  const uniqueScopes = scopeCandidates.filter((candidate, index, all) => (
+    all.findIndex((other) => JSON.stringify({
+      sourceType: other.sourceType,
+      sourceRef: other.sourceRef || null,
+      scope: normalizeScope(other.scope),
+      freshnessInputs: [...new Set((other.freshnessInputs || []).map(String))].sort(),
+    }) === JSON.stringify({
+      sourceType: candidate.sourceType,
+      sourceRef: candidate.sourceRef || null,
+      scope: normalizeScope(candidate.scope),
+      freshnessInputs: [...new Set((candidate.freshnessInputs || []).map(String))].sort(),
+    })) === index
+  ));
+  if (uniqueScopes.length > 0) merged.scopeCandidates = uniqueScopes;
+
+  const outcomes = new Set([
+    ...(Array.isArray(existing?.outcomes) ? existing.outcomes : []),
+    ...(existing?.outcome ? [existing.outcome] : []),
+    ...(incoming?.outcome ? [incoming.outcome] : []),
+  ]);
+  if (outcomes.size > 0) {
+    merged.outcome = outcomes.size === 1 ? [...outcomes][0] : null;
+    merged.outcomes = [...outcomes];
+  }
+  return merged;
+};
+
+const orderedCandidates = (candidates = []) => [...candidates]
+  .filter((candidate) => candidate && typeof candidate === 'object')
+  .sort((left, right) => (
+    sourcePriority(left.sourceType) - sourcePriority(right.sourceType)
+      || String(left.sourceRef || '').localeCompare(String(right.sourceRef || ''))
+  ));
+
+const projectCommandRefs = (commands) => (Array.isArray(commands)
+  ? new Set(commands.map((command) => String(command?.commandRef || '')).filter(Boolean))
+  : null);
+
+// The selected command is derived at execution time from the highest
+// authority that supplied a usable candidate. `allowedCommandRefs` remains a
+// compatibility/anti-forgery allowlist; it is not the selection policy. A
+// report hint may choose a command only within that highest-authority
+// candidate; it cannot promote a lower-authority command over an explicit
+// evidence plan or Project Knowledge binding.
+export const selectBoundCommandRef = (obligation, { projectCommands = null, preferredCommandRef = null } = {}) => {
+  if (!obligation || obligation.evidenceClass === 'judgment') return null;
+  const allowed = new Set((obligation.allowedCommandRefs || []).map(String));
+  const declaredProjectRefs = projectCommandRefs(projectCommands);
+  const usableCandidates = orderedCandidates(obligation.metadata?.commandCandidates || [])
+    .map((candidate) => (Array.isArray(candidate.commandRefs) ? candidate.commandRefs : [])
+      .map(String)
+      .filter((ref) => allowed.has(ref) && (!declaredProjectRefs || declaredProjectRefs.has(ref))))
+    .filter((commandRefs) => commandRefs.length > 0);
+  if (usableCandidates.length > 0) {
+    const highestAuthority = usableCandidates[0];
+    const preferred = preferredCommandRef === null || preferredCommandRef === undefined
+      ? null
+      : String(preferredCommandRef);
+    return (preferred && highestAuthority.includes(preferred))
+      ? preferred
+      : highestAuthority[0];
+  }
+  const preferred = preferredCommandRef === null || preferredCommandRef === undefined
+    ? null
+    : String(preferredCommandRef);
+  if (preferred && allowed.has(preferred) && (!declaredProjectRefs || declaredProjectRefs.has(preferred))) return preferred;
+  for (const commandRef of obligation.allowedCommandRefs || []) {
+    const ref = String(commandRef);
+    if (!declaredProjectRefs || declaredProjectRefs.has(ref)) return ref;
+  }
+  return null;
+};
+
+// Only an authoritative declared scope can narrow freshness. Step paths and
+// the model's changed-path list are deliberately not accepted here.
+export const authoritativeVerificationScope = (obligation) => {
+  if (!obligation) return null;
+  const candidate = orderedCandidates(obligation.metadata?.scopeCandidates || [])
+    .sort((left, right) => (
+      scopeSourcePriority(left.sourceType) - scopeSourcePriority(right.sourceType)
+        || String(left.sourceRef || '').localeCompare(String(right.sourceRef || ''))
+    ))
+    .find((entry) => normalizeScope(entry.scope).length > 0);
+  if (candidate) {
+    return {
+      scope: normalizeScope(candidate.scope),
+      freshnessInputs: Array.isArray(candidate.freshnessInputs) ? [...new Set(candidate.freshnessInputs.map(String))] : [],
+      sourceType: candidate.sourceType,
+      sourceRef: candidate.sourceRef || null,
+    };
+  }
+  const scope = normalizeScope(obligation.metadata?.scope);
+  return scope.length > 0
+    ? {
+      scope,
+      freshnessInputs: Array.isArray(obligation.metadata?.freshnessInputs)
+        ? [...new Set(obligation.metadata.freshnessInputs.map(String))]
+        : [],
+      sourceType: obligation.sourceType || null,
+      sourceRef: obligation.sourceRef || null,
+    }
+    : null;
+};
+
+// Brownfield commands may be added after a greenfield Run was opened. Refresh
+// only pure proof-policy bindings; caller, knowledge, and evidence-plan
+// bindings retain their explicit authority and are never widened by this
+// helper.
+export const rebindProofPolicyCommands = ({ obligations = [], projectRoot = process.cwd(), commands = null } = {}) => {
+  const projectCommands = commands || discoverProjectCommands({ projectRoot });
+  return obligations.map((obligation) => {
+    if (!obligation
+      || obligation.evidenceClass === 'judgment'
+      || obligation.metadata?.evidencePlanCommandBinding === true
+      || obligation.metadata?.explicitCommandBinding === true) return obligation;
+    const policy = obligationPolicyFor(obligation.obligationId);
+    const allowedCommandRefs = commandRefsForClasses({ projectRoot, classes: policy.commandClasses, commands: projectCommands });
+    const nonPolicyCandidates = (obligation.metadata?.commandCandidates || [])
+      .filter((candidate) => candidate?.sourceType !== 'proof-policy');
+    const nonPolicyRefs = nonPolicyCandidates.flatMap((candidate) => candidate.commandRefs || []);
+    const metadata = mergeObligationMetadata(
+      { ...(obligation.metadata || {}), commandCandidates: nonPolicyCandidates },
+      {},
+      {
+        sourceType: 'proof-policy',
+        sourceRef: 'kernel/proof-policy.yaml',
+        allowedCommandRefs,
+        addCommandCandidate: true,
+      },
+    );
+    return {
+      ...obligation,
+      allowedCommandRefs: [...new Set([...nonPolicyRefs, ...allowedCommandRefs])],
+      rejectedCommandRefs: [],
+      metadata,
+      satisfiable: nonPolicyRefs.length > 0 || allowedCommandRefs.length > 0,
+    };
+  });
+};
 
 export class UnsupportedVerificationError extends Error {
   constructor(unsupported = []) {
@@ -171,6 +384,9 @@ export const compileRunObligations = ({
       && resolvedClass !== 'judgment'
       && Array.isArray(commandRefs)
       && commandRefs.length > 0;
+    const hasExplicitCommandRefs = resolvedClass !== 'judgment'
+      && Array.isArray(commandRefs)
+      && commandRefs.length > 0;
 
     // Command refs requested by an evidence plan are filtered against the
     // catalog and the classes the plan's own method implies. A ref that the
@@ -194,23 +410,27 @@ export const compileRunObligations = ({
         }
       }
     } else {
-      allowed = commandRefsForClasses({ projectRoot, classes: policy.commandClasses, commands: projectCommands });
+      allowed = commandRefsForClasses({
+        projectRoot,
+        classes: method ? classesForEvidenceMethod(method) : policy.commandClasses,
+        commands: projectCommands,
+      });
     }
 
     const existing = compiled.get(obligationId);
     if (existing) {
       existing.acceptanceIds = [...new Set([...existing.acceptanceIds, ...acceptanceIds])];
-      if (metadata?.outcome) {
-        const outcomes = new Set([
-          ...(Array.isArray(existing.metadata?.outcomes) ? existing.metadata.outcomes : []),
-          ...(existing.metadata?.outcome ? [existing.metadata.outcome] : []),
-          metadata.outcome,
-        ]);
-        existing.metadata = {
-          ...(existing.metadata || {}),
-          outcome: outcomes.size === 1 ? [...outcomes][0] : null,
-          outcomes: [...outcomes],
-        };
+      existing.metadata = mergeObligationMetadata(existing.metadata, metadata || {}, {
+        sourceType,
+        sourceRef,
+        allowedCommandRefs: allowed,
+        addCommandCandidate: hasExplicitCommandRefs || sourceType === 'proof-policy',
+      });
+      const currentSourcePriority = sourcePriority(existing.sourceType);
+      if (sourcePriority(sourceType) < currentSourcePriority) {
+        existing.sourceType = sourceType;
+        existing.sourceRef = sourceRef;
+        if (method) existing.verificationMethod = method;
       }
       // A plan that explicitly reuses a policy/caller obligation must narrow
       // that obligation to the commands the plan named. Otherwise the tier's
@@ -228,14 +448,46 @@ export const compileRunObligations = ({
         existing.sourceType = 'evidence-plan';
         existing.sourceRef = existing.sourceRef || sourceRef;
         existing.verificationMethod = method || existing.verificationMethod;
+      } else if (hasExplicitCommandRefs
+        && sourceType !== 'proof-policy'
+        && existing.metadata?.evidencePlanCommandBinding !== true) {
+        const priorSource = existing.metadata?.explicitBindingSourceType || null;
+        const priorPriority = sourcePriority(priorSource);
+        if (!priorSource || sourcePriority(sourceType) < priorPriority) {
+          existing.allowedCommandRefs = [...new Set(allowed)];
+        } else if (sourcePriority(sourceType) === priorPriority) {
+          existing.allowedCommandRefs = [...new Set([...existing.allowedCommandRefs, ...allowed])];
+        }
+        existing.metadata = {
+          ...(existing.metadata || {}),
+          explicitCommandBinding: true,
+          explicitBindingSourceType: !priorSource || sourcePriority(sourceType) <= priorPriority ? sourceType : priorSource,
+        };
+      } else if (existing.metadata?.evidencePlanCommandBinding !== true) {
+        existing.allowedCommandRefs = [...new Set([...existing.allowedCommandRefs, ...allowed])];
       }
+      existing.rejectedCommandRefs = [...new Set([
+        ...(existing.rejectedCommandRefs || []),
+        ...rejectedCommandRefs,
+      ].map((entry) => JSON.stringify(entry)))].map((entry) => JSON.parse(entry));
       return existing;
     }
-    const obligationMetadata = {
-      ...(metadata || {}),
-      ...(metadata?.outcome ? { outcomes: [metadata.outcome] } : {}),
-      ...(hasExplicitPlanCommands ? { evidencePlanCommandBinding: true } : {}),
-    };
+    const obligationMetadata = mergeObligationMetadata(
+      {},
+      {
+        ...(metadata || {}),
+        ...(hasExplicitPlanCommands ? { evidencePlanCommandBinding: true } : {}),
+        ...(hasExplicitCommandRefs && sourceType !== 'proof-policy' && !hasExplicitPlanCommands
+          ? { explicitCommandBinding: true, explicitBindingSourceType: sourceType }
+          : {}),
+      },
+      {
+        sourceType,
+        sourceRef,
+        allowedCommandRefs: allowed,
+        addCommandCandidate: hasExplicitCommandRefs || sourceType === 'proof-policy',
+      },
+    );
     const obligation = {
       obligationId,
       evidenceClass: resolvedClass,
@@ -273,6 +525,8 @@ export const compileRunObligations = ({
         scenarioId: record.scenarioId || null,
         verificationKind: record.kind || record.type || null,
         evidenceDepth: record.evidenceDepth || null,
+        scope: normalizeScope(record.scope),
+        freshnessInputs: Array.isArray(record.freshnessInputs) ? record.freshnessInputs : [],
       },
     });
   }
@@ -294,7 +548,11 @@ export const compileRunObligations = ({
       commandRefs: item.evidencePlan?.commandRefs?.length ? item.evidencePlan.commandRefs : null,
       evidenceClass: item.evidencePlan?.class || null,
       method: item.evidencePlan?.method || null,
-      metadata: { outcome: item.evidencePlan?.outcome || null },
+      metadata: {
+        outcome: item.evidencePlan?.outcome || null,
+        scope: normalizeScope(item.evidencePlan?.scope),
+        freshnessInputs: Array.isArray(item.evidencePlan?.freshnessInputs) ? item.evidencePlan.freshnessInputs : [],
+      },
     });
   }
 
@@ -305,11 +563,15 @@ export const compileRunObligations = ({
   for (const record of Array.isArray(knowledgeRecords) ? knowledgeRecords : []) {
     const type = record?.type || record?.recordType;
     if (type !== 'required_verification' || ['superseded', 'rejected', 'archived'].includes(record.status)) continue;
-    const scope = Array.isArray(record.scope) ? record.scope : [];
+    const verification = record.verification || record.recordJson?.verification || {};
+    const recordScope = normalizeScope(record.scope);
+    const verificationScope = normalizeScope(verification.scope);
+    const scope = recordScope.length > 0 ? recordScope : verificationScope;
     if (!Array.isArray(changedPaths) || changedPaths.length === 0) continue;
     if (scope.length > 0 && !changedPaths.some((changedPath) => matchPathScope(changedPath, scope))) continue;
-    const verification = record.verification || record.recordJson?.verification || {};
-    const commandRefs = Array.isArray(verification.commandRefs) ? verification.commandRefs : [];
+    const commandRefs = Array.isArray(verification.commandRefs)
+      ? verification.commandRefs
+      : (verification.commandRef ? [verification.commandRef] : []);
     const obligationId = String(verification.obligationId || `required-verification-${record.id || record.recordId || 'record'}`);
     declare(obligationId, {
       sourceType: 'knowledge',

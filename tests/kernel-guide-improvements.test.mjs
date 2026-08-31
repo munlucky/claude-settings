@@ -3,7 +3,12 @@ import assert from 'node:assert/strict';
 import { buildEvidenceIdentity, buildEvidenceReuseReceipt, exactEvidenceIdentityMatch } from '../scripts/kernel/proof/evidence-reuse.mjs';
 import { deriveKnowledgeStatus, emptyKnowledgeDoctorFinding, extractStructuredKnowledgeCandidates, failureFingerprint, normalizeFailureSignalText } from '../scripts/kernel/knowledge/capture.mjs';
 import { classifyContractChange } from '../scripts/kernel/change-contract.mjs';
-import { compileRunObligations } from '../scripts/kernel/run/obligation-compiler.mjs';
+import {
+  authoritativeVerificationScope,
+  compileRunObligations,
+  rebindProofPolicyCommands,
+  selectBoundCommandRef,
+} from '../scripts/kernel/run/obligation-compiler.mjs';
 import { readFile } from 'node:fs/promises';
 
 test('structured repeated failures produce a bounded, evidence-bound knowledge candidate', () => {
@@ -78,6 +83,75 @@ test('required verification metadata compiles only for a related changed scope',
   assert.equal(obligations[0].metadata.receiptContractRef, 'project.auth.v1');
   assert.equal(classifyContractChange({ previous: { allowedPaths: ['src/auth/**'] }, next: { allowedPaths: ['src/auth/**'], defectWithinScope: true, taskClass: 'bug' } }), 'defect-within-scope');
   assert.equal(classifyContractChange({ previous: { allowedPaths: ['src/auth/**'] }, next: { allowedPaths: ['src/auth/**', 'src/billing/**'], scopeExtension: true } }), 'scope-extension');
+});
+
+test('command binding follows evidence plan, knowledge, caller, then policy fallback priority', () => {
+  const commands = [
+    { commandRef: 'test:policy', commandClass: 'unit-test' },
+    { commandRef: 'test:caller', commandClass: 'unit-test' },
+    { commandRef: 'test:knowledge', commandClass: 'unit-test' },
+    { commandRef: 'test:plan', commandClass: 'unit-test' },
+  ];
+  const knowledgeRecords = [{
+    id: 'rv-unit',
+    type: 'required_verification',
+    status: 'committed',
+    scope: [],
+    verification: {
+      obligationId: 'unit-test',
+      commandRef: 'test:knowledge',
+      scope: ['src/knowledge/**'],
+    },
+  }];
+  const compile = (acceptance) => compileRunObligations({
+    projectRoot: process.cwd(),
+    requiredChecks: ['unit-test'],
+    contract: {
+      requiredVerifications: [{
+        obligationId: 'unit-test',
+        commandRef: 'test:caller',
+        scope: ['src/caller/**'],
+      }],
+      acceptance,
+    },
+    commands,
+    knowledgeRecords,
+    changedPaths: ['src/knowledge/login.mjs'],
+  });
+
+  const withoutPlan = compile([{ id: 'AC-1', acceptance: 'the unit behavior works' }]);
+  assert.equal(selectBoundCommandRef(withoutPlan[0], { projectCommands: commands }), 'test:knowledge');
+  assert.deepEqual(authoritativeVerificationScope(withoutPlan[0]), {
+    scope: ['src/knowledge/**'],
+    freshnessInputs: [],
+    sourceType: 'knowledge',
+    sourceRef: 'rv-unit',
+  });
+
+  const withPlan = compile([{
+    id: 'AC-2',
+    acceptance: 'the planned unit behavior works',
+    evidencePlan: { obligationId: 'unit-test', class: 'hard', method: 'unit-test', commandRefs: ['test:plan'] },
+  }]);
+  assert.equal(selectBoundCommandRef(withPlan[0], { projectCommands: commands }), 'test:plan');
+});
+
+test('greenfield policy obligations rebind to commands declared before proof', () => {
+  const greenfield = compileRunObligations({
+    projectRoot: process.cwd(),
+    requiredChecks: ['unit-test'],
+    contract: { acceptance: [] },
+    commands: [],
+  });
+  assert.equal(greenfield[0].satisfiable, false);
+  const rebound = rebindProofPolicyCommands({
+    obligations: greenfield,
+    projectRoot: process.cwd(),
+    commands: [{ commandRef: 'test:new', commandClass: 'unit-test' }],
+  });
+  assert.equal(rebound[0].satisfiable, true);
+  assert.deepEqual(rebound[0].allowedCommandRefs, ['test:new']);
+  assert.equal(selectBoundCommandRef(rebound[0], { projectCommands: [{ commandRef: 'test:new', commandClass: 'unit-test' }] }), 'test:new');
 });
 
 test('project knowledge documentation states the required_verification contract convention', async () => {

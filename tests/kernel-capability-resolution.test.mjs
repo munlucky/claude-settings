@@ -85,12 +85,14 @@ test('spec, standards, and complexity review conditions compile into one review 
 test('simplification guidance needs a complexity signal, not a plain behavior change', () => {
   const plain = resolveKernelCapabilities({ taskClass: 'feature', riskTier: 'T1', behaviorChanging: true, filesChanged: 4 });
   assert.equal(plain.selected.some((entry) => entry.id === 'kernel-simplification-check'), false);
-  for (const signal of [{ newAbstraction: true }, { newDependency: true }, { complex: true }, { filesChanged: 12 }]) {
+  for (const signal of [{ newAbstraction: true }, { newDependency: true }, { complex: true }]) {
     const decision = resolveKernelCapabilities({ taskClass: 'feature', riskTier: 'T1', behaviorChanging: true, ...signal });
     const entry = decision.selected.find((item) => item.id === 'kernel-simplification-check');
     assert.ok(entry, `expected simplification guidance for ${JSON.stringify(signal)}`);
     assert.equal(entry.guidance, 'Remove unnecessary abstraction or scope expansion introduced by this change.');
   }
+  const manyFilesOnly = resolveKernelCapabilities({ taskClass: 'feature', riskTier: 'T1', behaviorChanging: true, filesChanged: 12 });
+  assert.equal(manyFilesOnly.selected.some((entry) => entry.id === 'kernel-simplification-check'), false);
 });
 
 test('trust boundary capabilities stay active and are excluded from the instruction budget', () => {

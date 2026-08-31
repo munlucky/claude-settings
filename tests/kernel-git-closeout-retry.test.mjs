@@ -68,7 +68,7 @@ test('public Git retry blocks external mutation after push_failed and records st
         }],
       },
     });
-    for (const state of ['SHAPE', 'SLICE', 'SCHEDULE', 'EXECUTE', 'PROVE']) await cp.transition(runId, state);
+    for (const state of ['EXECUTE', 'PROVE']) await cp.transition(runId, state);
     await cp.recordProof(runId, {
       obligationId: 'default',
       status: 'passed',

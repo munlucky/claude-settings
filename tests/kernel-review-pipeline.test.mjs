@@ -43,7 +43,6 @@ test('recordReview at T3 requires an independent reviewer and records a judgment
     const run = await cp.getRun('r-rev');
     assert.equal(run.proofTier, 'T3');
 
-    await cp.transition('r-rev', 'SHAPE');
     await cp.transition('r-rev', 'EXECUTE');
     await cp.transition('r-rev', 'PROVE');
 

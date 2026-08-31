@@ -8,13 +8,13 @@ import { normalizeWorkUnitAllowedPaths } from './work-unit-scope.mjs';
 const FILES_CHANGED_THRESHOLD = 8;
 
 export const stepLedgerApplies = ({ contract = {}, route = {}, filesChanged = 0 } = {}) => {
-  const stages = route?.stages || [];
   const signals = {
     longRunning: contract.taskClass === 'long-running',
     complex: contract.flags?.complex === true,
     manyFiles: Number(filesChanged || contract.filesChanged || 0) > FILES_CHANGED_THRESHOLD,
-    slicedRoute: stages.includes('SLICE') || stages.includes('SCHEDULE'),
     declaredDecomposition: Array.isArray(contract.steps) && contract.steps.length > 0,
+    safeParallelSplit: contract.flags?.safeParallelSplit === true || contract.safeParallelSplit === true,
+    independentDeliverables: contract.flags?.independentDeliverables === true || contract.independentDeliverables === true,
   };
   return { applies: Object.values(signals).some(Boolean), signals };
 };

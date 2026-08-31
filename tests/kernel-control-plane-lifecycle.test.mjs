@@ -26,7 +26,6 @@ test('KernelControlPlane wires full knowledge lifecycle end-to-end', async () =>
   assert.equal(run.state, 'FRAME');
 
   // Step 2: buildStageContext loads knowledge context for EXECUTE
-  await cp.transition('cp-run-1', 'SHAPE');
   await cp.transition('cp-run-1', 'EXECUTE');
   const executeContext = await cp.buildStageContext('cp-run-1', {
     stage: 'EXECUTE',

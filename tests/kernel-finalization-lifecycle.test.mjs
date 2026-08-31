@@ -22,9 +22,6 @@ test('Kernel finalization orchestration (finalizeRun) executes full accepted lif
 
   assert.equal(run.state, 'FRAME');
 
-  await cp.transition(runId, 'SHAPE');
-  await cp.transition(runId, 'SLICE');
-  await cp.transition(runId, 'SCHEDULE');
   await cp.transition(runId, 'EXECUTE');
   await cp.transition(runId, 'PROVE');
   await cp.recordProof(runId, {
@@ -72,7 +69,7 @@ test('evidence-failed finalization cannot commit or close out Git', async () => 
         acceptance: [{ acceptance: 'acc-failed', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test'], obligationId: 'default' } }],
       },
     });
-    for (const state of ['SHAPE', 'SLICE', 'SCHEDULE', 'EXECUTE', 'PROVE']) await cp.transition(runId, state);
+    for (const state of ['EXECUTE', 'PROVE']) await cp.transition(runId, state);
     await cp.recordProof(runId, {
       obligationId: 'default',
       status: 'failed',
@@ -125,7 +122,7 @@ test('partial Git finalization retry reuses the Kernel commit without creating a
         acceptance: [{ acceptance: 'acc-retry', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test'], obligationId: 'default' } }],
       },
     });
-    for (const state of ['SHAPE', 'SLICE', 'SCHEDULE', 'EXECUTE', 'PROVE']) await cp.transition(runId, state);
+    for (const state of ['EXECUTE', 'PROVE']) await cp.transition(runId, state);
     await cp.recordProof(runId, {
       obligationId: 'default',
       status: 'passed',

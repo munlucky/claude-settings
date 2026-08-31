@@ -16,9 +16,6 @@ test('recordProof does not store proof command line as semantic fact knowledge c
     taskContract: { riskTier: 'T0' },
   });
 
-  await cp.transition(runId, 'SHAPE');
-  await cp.transition(runId, 'SLICE');
-  await cp.transition(runId, 'SCHEDULE');
   await cp.transition(runId, 'EXECUTE');
   await cp.transition(runId, 'PROVE');
   await cp.recordProof(runId, {

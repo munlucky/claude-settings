@@ -12,6 +12,7 @@ import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
 import { openKernelStateStore } from '../scripts/kernel/state-store.mjs';
 import { capsuleStaleness } from '../scripts/kernel/run/execution-capsule.mjs';
 import { hashSessionId } from '../scripts/kernel/run/model-route-contract.mjs';
+import { observeWorkspaceIdentity } from '../scripts/kernel/run/workspace-identity.mjs';
 
 const setup = async () => {
   const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'krn-capfs-home-'));
@@ -79,9 +80,10 @@ test('K1-7: a capsule built before a workspace change is stale afterwards', asyn
     const capsule = await cp.buildCapsule('r-stale-cap');
     assert.equal(capsuleStaleness({ capsule, run: await cp.getRun('r-stale-cap') }).stale, false);
 
-    // The workspace moves; the run observes it on the next report.
+    // The workspace moves; record the new identity without triggering the
+    // final report's automatic proof planner.
     await writeFile(path.join(fixture.projectRoot, 'src', 'auth', 'service.mjs'), 'export const v = 1;\n');
-    await cp.report('r-stale-cap', { summary: 'implemented', changedPaths: ['src/auth/service.mjs'] });
+    cp.stateStore.observeWorkspaceIdentity('r-stale-cap', observeWorkspaceIdentity({ projectRoot: fixture.projectRoot }).identity);
 
     const run = await cp.getRun('r-stale-cap');
     const staleness = capsuleStaleness({ capsule, run });

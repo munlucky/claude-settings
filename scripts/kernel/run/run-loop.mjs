@@ -29,9 +29,9 @@ export const planStatePath = (from, to) => {
   return null;
 };
 
-// Steps along the route fixed at run start (P1-1). Following the stored route
-// keeps conditional stages (SHAPE, SLICE, SCHEDULE) in the path instead of
-// letting the shortest route to PROVE skip them.
+// Steps along the route fixed at run start (P1-1). The route now contains only
+// durable lifecycle states; work decomposition and proof selection stay in the
+// Step Ledger and obligation compiler.
 export const planRouteSteps = (route, from, to) => {
   if (!Array.isArray(route) || route.length === 0) return null;
   const fromIndex = route.indexOf(from);
@@ -47,16 +47,48 @@ export const planRouteSteps = (route, from, to) => {
   return steps;
 };
 
-const summarizeEvidence = (verifications = []) => verifications.map((verification) => ({
-  obligationId: verification.obligationId,
-  status: verification.status,
-  executor: verification.executor || 'caller-attested',
-  evidenceClass: verification.evidenceClass || 'attested',
-  command: verification.command || null,
-  exitCode: verification.exitCode,
-  evidenceDigest: verification.evidenceDigest || null,
-  observedAt: verification.observedAt,
-}));
+// Keep next() small and decision-oriented. Full receipts remain available to
+// Kernel internals and review capsules; the model only needs the three-bucket
+// obligation projection, with details attached to failures.
+export const summarizeVerification = ({
+  verifications = [],
+  requiredObligations = [],
+  satisfiedObligations = null,
+  outstandingObligationIds = null,
+  failures = [],
+} = {}) => {
+  const required = [...new Set((requiredObligations || []).map(String))];
+  const passed = new Set(
+    (satisfiedObligations
+      ? [...satisfiedObligations]
+      : verifications.filter((verification) => verification.status === 'passed').map((verification) => verification.obligationId))
+      .map(String),
+  );
+  const failureRows = [...(failures || [])];
+  const failedById = new Map();
+  for (const verification of verifications.filter((entry) => entry.status === 'failed')) failureRows.push(verification);
+  for (const failure of failureRows) {
+    const obligationId = failure?.obligationId || failure?.commandRef;
+    if (!obligationId || failedById.has(String(obligationId))) continue;
+    failedById.set(String(obligationId), {
+      obligationId: String(obligationId),
+      ...(failure.commandRef ? { commandRef: String(failure.commandRef) } : {}),
+      ...(failure.errorSummary ? { errorSummary: String(failure.errorSummary) } : {}),
+    });
+  }
+  const explicitOutstanding = outstandingObligationIds
+    ? new Set([...outstandingObligationIds].map(String))
+    : null;
+  const pending = (explicitOutstanding
+    ? required.filter((obligationId) => explicitOutstanding.has(obligationId))
+    : required.filter((obligationId) => !passed.has(obligationId)))
+    .filter((obligationId) => !failedById.has(obligationId));
+  return {
+    passed: required.filter((obligationId) => passed.has(obligationId)),
+    pending,
+    failed: [...failedById.values()],
+  };
+};
 
 // What the model needs to satisfy an obligation: the class of evidence that
 // counts and the exact commands that are bound to it. Without this the model
@@ -109,6 +141,8 @@ export const buildNextPayload = ({
   failures = [],
   knowledgePromptBlock = null,
   capabilities = [],
+  satisfiedObligations = null,
+  outstandingObligationIds = null,
 }) => {
   const acceptancePlans = Array.isArray(contract?.acceptance)
     ? contract.acceptance.map((item) => ({
@@ -117,8 +151,13 @@ export const buildNextPayload = ({
       evidencePlan: item.evidencePlan || null,
     }))
     : [];
-  const missingEvidencePlans = acceptancePlans.filter((item) => !item.evidencePlan).map((item) => item.id);
-  const mutationRun = Number(run.mutationRevision || 0) > 0;
+  const verification = summarizeVerification({
+    verifications,
+    requiredObligations,
+    satisfiedObligations,
+    outstandingObligationIds,
+    failures,
+  });
   const base = {
     schemaVersion: 1,
     runId: run.runId,
@@ -130,17 +169,9 @@ export const buildNextPayload = ({
     nonGoals: contract?.nonGoals || [],
     risks: contract?.risks || [],
     completionPredicate: contract?.completionPredicate || { requiredOutcomes: [] },
-    evidence: summarizeEvidence(verifications),
+    verification,
     knowledge: knowledgePromptBlock,
     acceptancePlans,
-    knowledgeCapture: {
-      required: mutationRun,
-      status: run.knowledgeStatus || null,
-      warning: mutationRun && ['no_candidates_submitted', 'no_new_knowledge', 'no_change'].includes(run.knowledgeStatus),
-      guidance: mutationRun
-        ? 'Before final report, include reusable knowledgeObservations with evidenceRefs, or record why this mutation established no reusable project knowledge.'
-        : 'Knowledge observations become required when this run mutates the workspace.',
-    },
     capabilities,
   };
 
@@ -163,16 +194,16 @@ export const buildNextPayload = ({
     return { ...base, action: { type: 'blocked', reason: run.blockedReason, guidance: 'Resolve the blocker with the user, then submit a new report.' } };
   }
 
-  const failing = failures.length > 0 ? failures : verifications.filter((verification) => verification.status === 'failed');
+  const failing = verification.failed;
   if (failing.length > 0) {
     return {
       ...base,
       action: withExecution({
         type: 'fix',
-        guidance: 'Fix the failing verification(s), then submit kernel report again with the verifications to re-run.',
+        guidance: 'Fix the failing verification(s), then submit kernel report again with the summary and changed paths.',
         failures: failing.map((failure) => ({
           obligationId: failure.obligationId,
-          command: failure.command || failure.commandRef || null,
+          commandRef: failure.commandRef || null,
           errorSummary: failure.errorSummary || null,
           allowedCommandRefs: failure.allowedCommandRefs || undefined,
         })),
@@ -180,9 +211,8 @@ export const buildNextPayload = ({
     };
   }
 
-  const passed = new Set(verifications.filter((verification) => verification.status === 'passed').map((verification) => verification.obligationId));
-  const outstanding = requiredObligations.filter((obligation) => !passed.has(obligation));
-  if (missingEvidencePlans.length > 0 || verifications.length === 0 || outstanding.length > 0) {
+  const outstanding = verification.pending;
+  if (outstanding.length > 0) {
     const described = describeObligations(obligations, outstanding);
     if (outstanding.length > 0 && described.every((entry) => entry.evidenceClass === 'judgment')) {
       return {
@@ -202,22 +232,18 @@ export const buildNextPayload = ({
       ...base,
       action: withExecution({
         type: 'implement',
-        guidance: missingEvidencePlans.length > 0
-          ? `Before submitting proof, provide one structured evidencePlan per acceptance criterion (${missingEvidencePlans.join(', ')}), each bound to the real obligation and project commandRef.`
-          : unsatisfiable.length > 0
+        guidance: unsatisfiable.length > 0
           ? 'Implement the objective. Some required evidence has no runnable project command yet — add one to the project manifest, or report an unsupported-verification blocker.'
-          : 'Implement the objective, then submit kernel report with a summary, changed paths, and the verifications to run.',
+          : 'Implement the objective, then submit kernel report with a summary and changed paths. The Kernel will run only outstanding bound proof.',
         outstandingObligations: outstanding,
         obligations: described,
-        evidencePlansRequired: missingEvidencePlans,
-        shapeRequired: Boolean(run.route?.shapeRequired),
       }),
     };
   }
 
   return {
     ...base,
-    action: { type: 'report', guidance: 'All requested evidence passed. Submit kernel report to finalize the run.' },
+    action: { type: 'report', guidance: 'All Kernel evidence obligations passed. Submit kernel report to finalize the run.' },
   };
 };
 

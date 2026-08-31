@@ -60,7 +60,6 @@ test('a routed T3 review passes when a distinct frontier session performed it', 
     const review = await routeAndRun(cp, runId, 'review_engineering', REVIEWER);
     assert.equal(review.decision.modelClass, 'frontier_reasoning');
     assert.equal(review.decision.independentContextRequired, true);
-    await cp.transition(runId, 'SHAPE');
     await cp.transition(runId, 'EXECUTE');
     await cp.transition(runId, 'PROVE');
     const recorded = await cp.recordReview(runId, { stage: 'engineering', verdict: 'pass', reviewerId: 'reviewer-2' }, { implementerId: 'impl-1', reviewReceiptId: review.receipt.receiptId });
@@ -114,7 +113,6 @@ test('a frontier turn that was not routed as a review cannot mint a review recei
 
     // The same session, routed as a review, is accepted.
     const review = await routeAndRun(cp, runId, 'review_engineering', REVIEWER);
-    await cp.transition(runId, 'SHAPE');
     await cp.transition(runId, 'EXECUTE');
     await cp.transition(runId, 'PROVE');
     const recorded = await cp.recordReview(runId, { stage: 'engineering', verdict: 'pass', reviewerId: 'reviewer-2' }, { implementerId: 'impl-1', reviewReceiptId: review.receipt.receiptId, obligationId: 'security-review' });

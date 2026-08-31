@@ -21,7 +21,7 @@
       "ownerCluster": "kernel-control-plane",
       "engineRoute": "kernel-workflow",
       "invocationMode": "user_or_model",
-      "allowedStages": ["FRAME", "SHAPE", "SLICE", "SCHEDULE", "EXECUTE", "PROVE", "CLOSE"],
+      "allowedStages": ["FRAME", "EXECUTE", "PROVE", "CLOSE"],
       "conditionalSkillGroups": {
         "minimalChange": ["kernel-minimal-correct-change"],
         "verificationRequired": ["kernel-verification-before-completion"]
@@ -60,12 +60,12 @@
   "capabilityConditions": {
     "kernel-minimal-correct-change": { "condition": "sourceMutation or behaviorChanging", "priority": 10, "guidance": "Keep the change minimal and contract-shaped." },
     "kernel-domain-modeling": { "condition": "ambiguityChangesOutcome or domainTerminologyConflict", "priority": 20, "guidance": "Resolve domain ambiguity before implementation." },
-    "kernel-tracer-slicing": { "condition": "taskClass=long-running or complex or filesChanged>8", "priority": 30, "guidance": "Trace and slice complex work before execution." },
+    "kernel-tracer-slicing": { "condition": "taskClass=long-running or complex or safeParallelSplit or independentDeliverables", "priority": 30, "guidance": "Trace complex work and use the Step Ledger only when decomposition is explicit." },
     "kernel-test-driven-development": { "condition": "behaviorChanging (internal signal only; model guidance is compiled into kernel-focused-test-guidance)", "priority": 40, "guidance": "Use a failing test and a focused green implementation." },
     "kernel-diagnosing-bugs": { "condition": "taskClass=bug", "priority": 41, "guidance": "Identify the failure boundary before making the fix." },
     "kernel-review-spec": { "condition": "riskTier=T2/T3 or publicContract or acceptanceAmbiguity", "priority": 50, "guidance": "Review the public contract and acceptance semantics." },
     "kernel-review-standards": { "condition": "T1+ behaviorChanging", "priority": 51, "guidance": "Review implementation against applicable engineering standards." },
-    "kernel-review-complexity": { "condition": "complex or newDependency or filesChanged>8", "priority": 60, "guidance": "Review complexity and dependency surface after functional review." },
+    "kernel-review-complexity": { "condition": "complex or newDependency", "priority": 60, "guidance": "Review complexity and dependency surface after functional review." },
     "kernel-commit-closeout": { "condition": "gitCloseoutRequested and completionAccepted and knowledgeCommitReceiptExists", "priority": 100, "guidance": "Run explicit approved Git closeout after knowledge commit." },
     "kernel-verification-before-completion": { "condition": "route includes EXECUTE or explicit completion attempt", "priority": 90, "guidance": "Require fresh, scope-matched evidence before completion." },
     "kernel-requirements-analysis": { "condition": "acceptance unverifiable, objective/non-goal conflict, or outcome-changing ambiguity", "priority": 21, "guidance": "Clarify only the contract details that change a verifiable outcome." },

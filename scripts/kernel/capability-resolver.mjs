@@ -41,7 +41,9 @@ const conditionState = (task = {}) => {
     bug: String(task.taskClass || '') === 'bug',
     reviewSpec: ['T2', 'T3'].includes(riskTier) || task.publicContract === true || task.acceptanceAmbiguity === true,
     reviewStandards: ['T1', 'T2', 'T3'].includes(riskTier) && task.behaviorChanging === true,
-    reviewComplexity: task.complex === true || task.newDependency === true || Number(task.filesChanged || 0) > 8,
+    reviewComplexity: task.complex === true || task.newDependency === true,
+    safeParallelSplit: task.safeParallelSplit === true,
+    independentDeliverables: task.independentDeliverables === true,
     requirements: task.acceptanceUnverifiable === true || task.objectiveNonGoalConflict === true || task.ambiguityChangesOutcome === true,
     design: task.architectureBoundary === true || task.publicContract === true || task.migration === true || task.irreversibleDecision === true,
     planning: task.independentDeliverables === true || task.longLivedResume === true || task.safeParallelSplit === true,
@@ -59,7 +61,10 @@ const conditionState = (task = {}) => {
 const isActive = (id, state) => {
   if (id === 'kernel-minimal-correct-change') return state.sourceMutation;
   if (id === 'kernel-domain-modeling') return state.ambiguityChangesOutcome || state.domainTerminologyConflict;
-  if (id === 'kernel-tracer-slicing') return state.taskClass === 'long-running' || state.complex || state.filesChanged > 8;
+  if (id === 'kernel-tracer-slicing') return state.taskClass === 'long-running'
+    || state.complex
+    || state.safeParallelSplit === true
+    || state.independentDeliverables === true;
   if (id === 'kernel-test-driven-development') return state.behaviorChanging;
   if (id === 'kernel-diagnosing-bugs') return state.bug;
   if (id === 'kernel-review-spec') return state.reviewSpec;

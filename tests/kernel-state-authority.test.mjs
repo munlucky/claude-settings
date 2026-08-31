@@ -16,7 +16,6 @@ test('natural PROVE -> verification -> CLOSE workflow results in accepted comple
   assert.equal(run.currentState, 'FRAME');
   assert.equal(run.mutationRevision, 0);
 
-  s.transition('r1', 'SHAPE');
   s.transition('r1', 'EXECUTE');
   s.transition('r1', 'PROVE');
 
@@ -52,7 +51,6 @@ test('multi-obligation proof contract requires all declared obligations to pass'
     requiredObligations: ['static-analysis', 'unit-test'],
   });
 
-  s.transition('r-t3', 'SHAPE');
   s.transition('r-t3', 'EXECUTE');
   s.transition('r-t3', 'PROVE');
 
@@ -113,8 +111,8 @@ test('multi-connection OCC prevents state conflicts across independent DB handle
   s1.createRun({ runId: 'r-conn', objective: 'concurrency test', sourceIdentity: 'src-conn' });
   const run1 = s1.getRun('r-conn');
 
-  // Connection 1 transitions run to SHAPE
-  s1.transition('r-conn', 'SHAPE');
+  // Connection 1 transitions run to EXECUTE
+  s1.transition('r-conn', 'EXECUTE');
 
   // Connection 2 attempts transition using stale revision 0 from run1
   assert.throws(
@@ -130,7 +128,6 @@ test('latest verification row wins and stale passes cannot produce completion', 
   const h = await mkdtemp(path.join(os.tmpdir(), 'krn-state-latest-'));
   const s = await openKernelStateStore({ runtimeHome: h, relayHome: path.join(h, '..', 'relay') });
   s.createRun({ runId: 'r-latest', objective: 'latest row', sourceIdentity: 'src-latest', requiredObligations: ['unit-test'] });
-  s.transition('r-latest', 'SHAPE');
   s.transition('r-latest', 'EXECUTE');
   s.transition('r-latest', 'PROVE');
   s.recordVerification('r-latest', { obligationId: 'unit-test', status: 'passed', evidenceRef: 'evidence://pass', command: 'npm test', evidenceDigest: validDigest, sourceIdentity: 'src-latest' });
@@ -145,7 +142,6 @@ test('verification is restricted to PROVE and acceptance coverage is required', 
   const s = await openKernelStateStore({ runtimeHome: h, relayHome: path.join(h, '..', 'relay') });
   s.createRun({ runId: 'r-acceptance', objective: 'acceptance', sourceIdentity: 'src-acceptance', requiredObligations: ['unit-test'], acceptanceCriteria: ['criterion-1'] });
   assert.throws(() => s.recordVerification('r-acceptance', { obligationId: 'unit-test', status: 'passed', evidenceRef: 'evidence://x', command: 'npm test', evidenceDigest: validDigest, sourceIdentity: 'src-acceptance' }), /PROVE/);
-  s.transition('r-acceptance', 'SHAPE');
   s.transition('r-acceptance', 'EXECUTE');
   s.transition('r-acceptance', 'PROVE');
   s.recordVerification('r-acceptance', { obligationId: 'unit-test', status: 'passed', evidenceRef: 'evidence://x', command: 'npm test', evidenceDigest: validDigest, sourceIdentity: 'src-acceptance' });
@@ -159,7 +155,6 @@ test('approved waiver can satisfy an obligation and foreign keys are enabled', a
   const s = await openKernelStateStore({ runtimeHome: h, relayHome: path.join(h, '..', 'relay') });
   assert.equal(s.dbPath.endsWith('runtime-state.sqlite'), true);
   s.createRun({ runId: 'r-waiver', objective: 'waiver', sourceIdentity: 'src-waiver', requiredObligations: ['lint-check'] });
-  s.transition('r-waiver', 'SHAPE');
   s.transition('r-waiver', 'EXECUTE');
   s.transition('r-waiver', 'PROVE');
   s.addWaiver('r-waiver', { obligationId: 'lint-check', approvedBy: 'reviewer', reason: 'not applicable', approvalReceipt: 'approval://1' });

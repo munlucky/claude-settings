@@ -14,7 +14,8 @@ import { planReplacementSteps, planRunSteps } from './step-planner.mjs';
 import { scanRepositoryEvidence } from '../task/evidence-scan.mjs';
 import { canonicalDigest } from '../canonical-digest.mjs';
 import { gitLsFiles } from '../../lib/git-safe.mjs';
-import { observeWorkspaceIdentity } from './workspace-identity.mjs';
+import { observeWorkspaceIdentity, observeScopedWorkspaceIdentity } from './workspace-identity.mjs';
+import { authoritativeVerificationScope } from './obligation-compiler.mjs';
 import { projectRunState } from '../state-projector.mjs';
 import { assertAttemptLineage } from './attempt-provenance.mjs';
 import { assertImplementationWorkUnitScope, resolveWorkUnitAllowedPaths } from './work-unit-scope.mjs';
@@ -490,7 +491,16 @@ export const createWorkCursorApi = ({ store, projectRoot, runtimeHome, worktree 
     if (role === 'reviewer') return this.buildReviewerCapsule(runId, { decision, step, changedPaths });
 
     const obligations = store.getRunObligations(runId);
-    const completion = store.evaluateCompletion(runId);
+    const verificationScopeIdentities = {};
+    for (const obligation of obligations) {
+      const authority = authoritativeVerificationScope(obligation);
+      if (!authority) continue;
+      verificationScopeIdentities[obligation.obligationId] = observeScopedWorkspaceIdentity({
+        projectRoot,
+        scopes: authority.scope,
+      });
+    }
+    const completion = store.evaluateCompletion(runId, { verificationScopeIdentities });
     const outstanding = completion.unsatisfiedObligations.map((entry) => entry.obligationId);
     const knowledgeContext = await this.refreshStageKnowledge(runId);
     const contract = run.taskContract;

@@ -79,8 +79,23 @@ export const resolveTurnModelPolicy = ({ decision, hostCapabilities } = {}) => {
 
 // Only the execution contract crosses to the worker (§4.4) — never the
 // planner's reasoning, the conversation, or unrelated repository context.
+export const verificationProjectionToEvidence = (projection) => {
+  if (Array.isArray(projection)) return projection;
+  if (!projection || typeof projection !== 'object') return [];
+  return [
+    ...(Array.isArray(projection.passed) ? projection.passed.map((obligationId) => ({ obligationId: String(obligationId), status: 'passed' })) : []),
+    ...(Array.isArray(projection.pending) ? projection.pending.map((obligationId) => ({ obligationId: String(obligationId), status: 'pending' })) : []),
+    ...(Array.isArray(projection.failed) ? projection.failed.map((failure) => ({
+      ...failure,
+      obligationId: String(failure?.obligationId || failure?.commandRef || ''),
+      status: 'failed',
+    })) : []),
+  ].filter((entry) => entry.obligationId);
+};
+
 export const buildExecutionContract = (modelInput = {}, decision = {}) => {
   const action = modelInput.action || {};
+  const verificationEvidence = verificationProjectionToEvidence(modelInput.verification || modelInput.evidence);
   const base = {
     objective: modelInput.objective || '',
     acceptance: modelInput.acceptance || [],
@@ -105,7 +120,7 @@ export const buildExecutionContract = (modelInput = {}, decision = {}) => {
       // Prior protected judgments are not evidence for a sibling judgment.
       // Passing them here would bypass the review-capsule isolation and can
       // create circular failures between otherwise independent obligations.
-      verificationEvidence: (modelInput.evidence || [])
+      verificationEvidence: verificationEvidence
         .filter((entry) => entry.evidenceClass !== 'judgment'),
       riskTier: decision.riskTier,
     };
@@ -114,7 +129,7 @@ export const buildExecutionContract = (modelInput = {}, decision = {}) => {
     ...base,
     outstandingObligations: action.outstandingObligations || [],
     requiredEvidence: action.obligations || [],
-    currentEvidence: modelInput.evidence || [],
+    currentEvidence: verificationEvidence,
   };
 };
 
@@ -156,7 +171,7 @@ export const buildTurnPromptEnvelope = ({ modelInput = {}, decision, resolution,
       step: { stepId: step.stepId, objective: step.objective },
       allowedPaths: step.allowedPaths || [],
       forbiddenPaths: step.forbiddenPaths || [],
-      evidence: modelInput.evidence || [],
+      evidence: verificationProjectionToEvidence(modelInput.verification || modelInput.evidence),
       // action.obligations is the *outstanding* subset recomputed every turn
       // (run-loop.mjs's buildNextPayload derives it from what has not yet
       // passed) — it shrinks as obligations pass and is absent entirely on a

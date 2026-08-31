@@ -1,7 +1,7 @@
 // Task Contract normalization and persistence (§8, P0-4/P0-5).
 //
-// The contract — objective, acceptance, constraints, non-goals, risks, and the
-// evidence plan for every acceptance criterion — is the run's authority. It is
+// The contract — objective, acceptance, constraints, non-goals, risks, and
+// optional evidence refinements — is the run's authority. It is
 // persisted verbatim in SQLite so a new process can resume without any chat
 // history, and every acceptance criterion carries a stable id (AC-n) so
 // evidence can be bound to it rather than to a free-text string.
@@ -76,23 +76,35 @@ export const normalizeEvidencePlan = (plan) => {
     method: plan.method ? String(plan.method) : null,
     commandRefs: [...new Set(commandRefs)],
     obligationId: plan.obligationId ? String(plan.obligationId) : null,
+    scope: asStringList(plan.scope),
+    freshnessInputs: asStringList(plan.freshnessInputs),
     outcome: normalizeCompletionOutcome(plan.outcome) || outcomeForEvidenceMethod(plan.method),
   };
 };
 
-// Acceptance may arrive as plain strings (allowed: the Kernel derives the plan
-// from the run's proof tier) or as structured objects. A structured criterion
-// that omits its evidence plan is a vague criterion and blocks the run.
+// Acceptance may arrive as plain strings or structured objects. Evidence plans
+// are optional refinements; the Kernel binds an unplanned criterion to the
+// compiled proof-policy obligation.
 export const normalizeAcceptance = (acceptance = []) => (Array.isArray(acceptance) ? acceptance : []).map((item, index) => {
   const id = `AC-${index + 1}`;
   if (typeof item === 'string') {
     return { id, statement: item.trim(), evidencePlan: null, structured: false };
   }
   if (item && typeof item === 'object') {
+    const hasExplicitPlan = Object.prototype.hasOwnProperty.call(item, 'evidencePlan')
+      && item.evidencePlan !== null
+      && item.evidencePlan !== undefined;
+    const evidencePlan = normalizeEvidencePlan(item.evidencePlan);
+    if (hasExplicitPlan && (!evidencePlan || !evidencePlan.class)) {
+      throw new MissingEvidencePlanError(
+        `Evidence plan for ${item.id ? String(item.id) : id} must declare class`,
+        [item.id ? String(item.id) : id],
+      );
+    }
     return {
       id: item.id ? String(item.id) : id,
       statement: String(item.acceptance || item.statement || '').trim(),
-      evidencePlan: normalizeEvidencePlan(item.evidencePlan),
+      evidencePlan,
       structured: true,
     };
   }
@@ -100,15 +112,7 @@ export const normalizeAcceptance = (acceptance = []) => (Array.isArray(acceptanc
 });
 
 export const assertEvidencePlans = (acceptance = []) => {
-  const items = normalizeAcceptance(acceptance);
-  const missing = items.filter((item) => item.structured && (!item.evidencePlan || !item.evidencePlan.class));
-  if (missing.length > 0) {
-    throw new MissingEvidencePlanError(
-      `acceptance without an evidence plan blocks execution: ${missing.map((m) => m.statement || '(empty)').join('; ')}`,
-      missing.map((m) => m.statement),
-    );
-  }
-  return items;
+  return normalizeAcceptance(acceptance);
 };
 
 export const acceptanceStatements = (acceptance = []) => normalizeAcceptance(acceptance).map((item) => item.statement).filter(Boolean);
@@ -169,9 +173,9 @@ export const normalizeAcceptanceCoverage = ({ contract = {}, acceptanceCriteria 
   return canonical;
 };
 
-// Evidence plans arrive after FRAME for contracts that started with compact
-// plain-string acceptance. Do not silently drop an unknown AC or a malformed
-// plan: that leaves the run on the old, statement-only completion path.
+// Evidence plans are optional refinements after FRAME. Do not silently drop an
+// unknown AC or a malformed plan, but do not require a plan for every criterion:
+// unplanned criteria bind to the compiled proof-policy obligation.
 export const assertEvidencePlanSubmission = (contract = {}, evidencePlans = []) => {
   if (!Array.isArray(evidencePlans)) {
     throw new EvidencePlanBindingError('EVIDENCE_PLANS_INVALID', 'evidencePlans must be an array');
@@ -212,13 +216,6 @@ export const assertEvidencePlanSubmission = (contract = {}, evidencePlans = []) 
     );
   }
 
-  const missing = items.filter((item) => !item.evidencePlan && !updates.has(item.id));
-  if (missing.length > 0) {
-    throw new MissingEvidencePlanError(
-      `Evidence plans are required for every acceptance criterion before proof: ${missing.map((item) => item.id).join(', ')}`,
-      missing.map((item) => item.statement),
-    );
-  }
   return [...updates.values()];
 };
 

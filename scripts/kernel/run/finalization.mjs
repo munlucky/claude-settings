@@ -14,7 +14,8 @@ import { executeKernelGitCloseout, isAuthorizedKernelGitCloseoutWorkspace } from
 import { normalizeChangedContract } from '../change-contract.mjs';
 import { resolveRecordType } from '../knowledge/records.mjs';
 import { projectRunState } from '../state-projector.mjs';
-import { observeWorkspaceIdentity } from './workspace-identity.mjs';
+import { observeWorkspaceIdentity, observeScopedWorkspaceIdentity } from './workspace-identity.mjs';
+import { authoritativeVerificationScope } from './obligation-compiler.mjs';
 import { resolveRunArtifactPaths } from '../artifact-paths.mjs';
 import { deduplicateKnowledgeCandidates, deriveKnowledgeStatus, extractStructuredKnowledgeCandidates } from '../knowledge/capture.mjs';
 import { mkdir } from 'node:fs/promises';
@@ -154,6 +155,19 @@ const refreshFinalizationWorkspaceIdentity = ({ store, runId, projectRoot, prior
   return store.getRun(runId);
 };
 
+const buildVerificationScopeIdentities = ({ store, runId, projectRoot }) => {
+  const identities = {};
+  for (const obligation of store.getRunObligations(runId)) {
+    const authority = authoritativeVerificationScope(obligation);
+    if (!authority) continue;
+    identities[obligation.obligationId] = observeScopedWorkspaceIdentity({
+      projectRoot,
+      scopes: authority.scope,
+    });
+  }
+  return identities;
+};
+
 export const finalizeRun = async ({
   store,
   runtimeHome,
@@ -165,6 +179,7 @@ export const finalizeRun = async ({
   knowledgeObservations = [],
   structuredSignals = {},
   approvals = [],
+  verificationScopeIdentities = null,
 }) => {
   let run = store.getRun(runId);
   if (!run) throw new Error(`Run ${runId} not found`);
@@ -179,6 +194,9 @@ export const finalizeRun = async ({
   // Both are recovered here so a retry resumes where the failure happened.
   const priorReceipt = store.getFinalizationReceipt(runId)?.receiptJson;
   const priorGitReceipt = store.getGitCloseoutReceipt(runId);
+  const evaluateCompletion = () => store.evaluateCompletion(runId, {
+    verificationScopeIdentities: verificationScopeIdentities || buildVerificationScopeIdentities({ store, runId, projectRoot }),
+  });
   run = refreshFinalizationWorkspaceIdentity({ store, runId, projectRoot, priorGitReceipt });
   const normalizedChangeSet = normalizeChangedContract({
     changedPaths: changedPaths.length > 0 ? changedPaths : (priorReceipt?.changedPaths || []),
@@ -280,9 +298,9 @@ export const finalizeRun = async ({
   // Step 2: pre-flight completion gates BEFORE closing and on every retry.
   // CLOSE is terminal, so both a legacy proof row and a payload with
   // `verifications: []` must be rechecked here instead of inheriting an old
-  // accepted decision around missing evidence plans.
+  // accepted decision around incomplete evidence.
   run = refreshFinalizationWorkspaceIdentity({ store, runId, projectRoot, priorGitReceipt });
-  const preflight = store.evaluateCompletion(runId);
+  const preflight = evaluateCompletion();
   if (!preflight.readyExceptClose) {
     return blockedReceipt(store, runId, {
       schemaVersion: 1,
@@ -309,8 +327,8 @@ export const finalizeRun = async ({
   const existingDecision = store.getCompletionDecision(runId);
   const isFinalizationRetry = existingDecision?.decision === 'accepted' && run.status === 'completed';
   const completionEval = isFinalizationRetry
-    ? { ...store.evaluateCompletion(runId), decision: 'accepted', digest: existingDecision.evidenceDigest, decisionPayload: existingDecision.decisionJson }
-    : store.evaluateCompletion(runId);
+    ? { ...evaluateCompletion(), decision: 'accepted', digest: existingDecision.evidenceDigest, decisionPayload: existingDecision.decisionJson }
+    : evaluateCompletion();
   if (!isFinalizationRetry) store.persistCompletionDecision(runId, completionEval);
 
   if (completionEval.decision !== 'accepted') {
@@ -369,7 +387,7 @@ export const finalizeRun = async ({
   // after the completion decision changes the mutation revision, so the
   // second completion check below blocks before Git can be trusted.
   run = refreshFinalizationWorkspaceIdentity({ store, runId, projectRoot, priorGitReceipt });
-  const closeoutPreflight = store.evaluateCompletion(runId);
+  const closeoutPreflight = evaluateCompletion();
   if (!closeoutPreflight.readyExceptClose) {
     return blockedReceipt(store, runId, {
       schemaVersion: 1,

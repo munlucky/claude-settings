@@ -331,7 +331,7 @@ test('caller-attested proof alone cannot complete a source-mutating run', async 
 
     // Source mutates after run start.
     await writeFile(path.join(projectRoot, 'app.mjs'), `export const statusForInvalidPassword = () => 401;\n`);
-    await cp.report('host-loop-3', { summary: 'observe mutation' });
+    cp.stateStore.observeWorkspaceIdentity('host-loop-3', observeWorkspaceIdentity({ projectRoot }).identity);
 
     await cp.transition('host-loop-3', 'EXECUTE');
     await cp.transition('host-loop-3', 'PROVE');

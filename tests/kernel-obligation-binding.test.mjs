@@ -915,7 +915,7 @@ test('F4: a requested Git closeout that did not complete keeps finalization part
   }
 });
 
-test('P1-1: the route is fixed at start and includes SHAPE for boundary work', async () => {
+test('P1-1: the route is fixed at start and boundary judgment stays inside FRAME', async () => {
   const fixture = await setup();
   const cp = await createKernelControlPlane(fixture);
   try {
@@ -924,8 +924,8 @@ test('P1-1: the route is fixed at start and includes SHAPE for boundary work', a
     await cp.abandonRun('r-plain');
 
     const boundary = await cp.startRun({ runId: 'r-shape', objective: 'x', taskContract: { publicContract: true } });
-    assert.deepEqual(boundary.route.stages, ['FRAME', 'SHAPE', 'EXECUTE', 'PROVE', 'CLOSE']);
-    assert.equal(boundary.route.shapeRequired, true);
+    assert.deepEqual(boundary.route.stages, ['FRAME', 'EXECUTE', 'PROVE', 'CLOSE']);
+    assert.deepEqual(Object.keys(boundary.route).sort(), ['riskTier', 'stages']);
     // A public-contract surface also raises the proof tier floor.
     assert.equal(boundary.proofTier, 'T2');
     await cp.abandonRun('r-shape');
@@ -963,8 +963,8 @@ test('P1-1: report follows the stored route instead of the shortest path to PROV
     });
     const attempts = (await cp.status('r-route')).run;
     assert.ok(attempts.state === 'CLOSE' || attempts.state === 'PROVE');
-    // SHAPE was traversed rather than skipped.
-    const receipt = await cp.buildStageContext('r-route', { stage: 'SHAPE' });
+    // The boundary judgment no longer creates a separate lifecycle state.
+    const receipt = await cp.buildStageContext('r-route', { stage: 'EXECUTE' });
     assert.equal(receipt.schemaVersion, 1);
   } finally {
     await cp.close();

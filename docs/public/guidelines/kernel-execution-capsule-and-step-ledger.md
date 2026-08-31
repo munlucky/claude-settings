@@ -25,8 +25,10 @@ The work cursor is persisted, not remembered.
 - Ordinary work gets **one synthetic step** covering the whole run, so the
   model-visible loop is exactly what it was.
 - The ledger decomposes only when the contract or route says the work is large:
-  `taskClass: long-running`, `complex: true`, more than eight changed files, a
-  route containing `SLICE`/`SCHEDULE`, or an explicit `steps:` decomposition.
+  `taskClass: long-running`, `complex: true`, many changed files,
+  `safeParallelSplit`, `independentDeliverables`, or an explicit `steps:`
+  decomposition. File count is an organization signal, never a proof-risk
+  escalation.
 - `next` returns **one** step: `{ stepId, objective, acceptanceIds,
   allowedPaths, forbiddenPaths }`. `report` answers it; with a decomposed plan
   and more than one runnable unit, the `stepId` is required rather than guessed.

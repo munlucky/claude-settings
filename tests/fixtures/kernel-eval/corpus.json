@@ -82,7 +82,6 @@
       "objective": "bug representative task 6 with verifiable outcome",
       "expectedRoute": [
         "FRAME",
-        "SHAPE",
         "EXECUTE",
         "PROVE",
         "CLOSE"
@@ -103,7 +102,6 @@
       "objective": "bug representative task 7 with verifiable outcome",
       "expectedRoute": [
         "FRAME",
-        "SHAPE",
         "EXECUTE",
         "PROVE",
         "CLOSE"
@@ -209,7 +207,6 @@
       "objective": "feature representative task 13 with verifiable outcome",
       "expectedRoute": [
         "FRAME",
-        "SHAPE",
         "EXECUTE",
         "PROVE",
         "CLOSE"
@@ -230,7 +227,6 @@
       "objective": "feature representative task 14 with verifiable outcome",
       "expectedRoute": [
         "FRAME",
-        "SHAPE",
         "EXECUTE",
         "PROVE",
         "CLOSE"
@@ -268,7 +264,6 @@
       "objective": "refactor representative task 16 with verifiable outcome",
       "expectedRoute": [
         "FRAME",
-        "SHAPE",
         "EXECUTE",
         "PROVE",
         "CLOSE"
@@ -289,7 +284,6 @@
       "objective": "refactor representative task 17 with verifiable outcome",
       "expectedRoute": [
         "FRAME",
-        "SHAPE",
         "EXECUTE",
         "PROVE",
         "CLOSE"
@@ -412,7 +406,6 @@
       "objective": "ui representative task 24 with verifiable outcome",
       "expectedRoute": [
         "FRAME",
-        "SHAPE",
         "EXECUTE",
         "PROVE",
         "CLOSE"
@@ -450,9 +443,6 @@
       "objective": "long-running representative task 26 with verifiable outcome",
       "expectedRoute": [
         "FRAME",
-        "SHAPE",
-        "SLICE",
-        "SCHEDULE",
         "EXECUTE",
         "PROVE",
         "CLOSE"
@@ -470,9 +460,6 @@
       "objective": "long-running representative task 27 with verifiable outcome",
       "expectedRoute": [
         "FRAME",
-        "SHAPE",
-        "SLICE",
-        "SCHEDULE",
         "EXECUTE",
         "PROVE",
         "CLOSE"
@@ -490,9 +477,6 @@
       "objective": "long-running representative task 28 with verifiable outcome",
       "expectedRoute": [
         "FRAME",
-        "SHAPE",
-        "SLICE",
-        "SCHEDULE",
         "EXECUTE",
         "PROVE",
         "CLOSE"
@@ -510,9 +494,6 @@
       "objective": "long-running representative task 29 with verifiable outcome",
       "expectedRoute": [
         "FRAME",
-        "SHAPE",
-        "SLICE",
-        "SCHEDULE",
         "EXECUTE",
         "PROVE",
         "CLOSE"
@@ -530,9 +511,6 @@
       "objective": "long-running representative task 30 with verifiable outcome",
       "expectedRoute": [
         "FRAME",
-        "SHAPE",
-        "SLICE",
-        "SCHEDULE",
         "EXECUTE",
         "PROVE",
         "CLOSE"

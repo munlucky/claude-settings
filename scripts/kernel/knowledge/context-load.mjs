@@ -8,9 +8,6 @@ import { cheapReVerify } from './freshness.mjs';
 
 export const VALID_STAGES = [
   'FRAME',
-  'SHAPE',
-  'SLICE',
-  'SCHEDULE',
   'EXECUTE',
   'PROVE',
   'CLOSE',
@@ -18,9 +15,6 @@ export const VALID_STAGES = [
 
 export const STAGE_BUDGETS = {
   FRAME: 1200,
-  SHAPE: 1500,
-  SLICE: 1500,
-  SCHEDULE: 1200,
   EXECUTE: 2000,
   PROVE: 1500,
   CLOSE: 1000,
@@ -28,9 +22,6 @@ export const STAGE_BUDGETS = {
 
 export const STAGE_TYPE_POLICY = {
   FRAME: ['policy_anchor', 'semantic_fact', 'architecture_decision', 'domain_term', 'ontology_constraint', 'tacit_practice', 'episodic_observation'],
-  SHAPE: ['policy_anchor', 'semantic_fact', 'architecture_decision', 'component_boundary', 'api_contract', 'ontology_constraint', 'known_failure_pattern'],
-  SLICE: ['policy_anchor', 'semantic_fact', 'architecture_decision', 'component_boundary', 'api_contract'],
-  SCHEDULE: ['policy_anchor', 'semantic_fact', 'component_boundary', 'api_contract', 'required_verification'],
   EXECUTE: ['policy_anchor', 'semantic_fact', 'component_boundary', 'api_contract', 'tacit_practice', 'episodic_observation', 'required_verification'],
   PROVE: ['policy_anchor', 'semantic_fact', 'ontology_constraint', 'required_verification', 'known_failure_pattern'],
   CLOSE: ['policy_anchor', 'semantic_fact', 'ontology_constraint', 'required_verification'],

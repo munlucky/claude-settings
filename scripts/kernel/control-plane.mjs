@@ -18,7 +18,7 @@ import { buildProjectKnowledgeContext } from './knowledge/context-load.mjs';
 import { retryGitCloseout as retryGitCloseoutHelper } from './git/closeout.mjs';
 import { finalizeRun, recordKnowledgeObservations } from './run/finalization.mjs';
 import { normalizeChangedContract } from './change-contract.mjs';
-import { observeWorkspaceIdentity } from './run/workspace-identity.mjs';
+import { observeWorkspaceIdentity, observeScopedWorkspaceIdentity } from './run/workspace-identity.mjs';
 import { executeTrustedProof, executeApprovedProof, executeWithFlakyRerun, UntrustedCommandError, CommandApprovalRequiredError } from './proof/proof-executor.mjs';
 import { NetworkPolicyUnenforceableError } from './proof/network-policy.mjs';
 import { buildNextPayload, normalizeReport, planStatePath, planRouteSteps } from './run/run-loop.mjs';
@@ -36,10 +36,12 @@ import {
   compileRunObligations,
   assertCommandBinding,
   assertVerificationSupport,
+  selectBoundCommandRef,
+  authoritativeVerificationScope,
+  rebindProofPolicyCommands,
   ObligationBindingError,
 } from './run/obligation-compiler.mjs';
 import { discoverProjectCommands } from './proof/command-catalog.mjs';
-import { needsShape } from './route.mjs';
 import { resolveHostSessionHolder, REPORT_LEASE_TTL_MS, SESSION_LEASE_TTL_MS } from './run/session-holder.mjs';
 import { planWalkingSkeleton } from './task/greenfield-bootstrap.mjs';
 import { buildImpactAnalysis } from './task/migration-workflow.mjs';
@@ -65,7 +67,7 @@ import { buildSuccessorKey } from './run/successor-key.mjs';
 import { registerKernelWorktreeBinding, assertRunWorktreeMutationAuthority } from './run/worktree-binding.mjs';
 import { resolveRunArtifactPaths } from './artifact-paths.mjs';
 import { buildStructuredRunSignals, failureFingerprint } from './knowledge/capture.mjs';
-import { buildEvidenceIdentity, buildEvidenceReuseReceipt } from './proof/evidence-reuse.mjs';
+import { buildEvidenceIdentity, buildEvidenceReuseReceipt, VERIFICATION_SCOPE_FIELD, EVIDENCE_IDENTITY_FIELDS } from './proof/evidence-reuse.mjs';
 import { assertImplementationWorkUnitScope, workUnitScopeFailure } from './run/work-unit-scope.mjs';
 import { buildReviewCapsule, capsuleStaleness } from './run/execution-capsule.mjs';
 import { digestOfChangedFiles, findScopeViolations } from './run/capsule-selection.mjs';
@@ -117,7 +119,44 @@ const providerUsageMeasurement = (receipts = []) => {
   };
 };
 
-export const buildKernelMeasurement = ({ run, completion, principles = loadKernelPrinciples(), verifications = [], attempts = [], routeDecisions = [], usageReceipts = [] }) => ({
+const workflowEfficiencyMeasurement = ({ run, verifications = [], verificationHistory = [], attempts = [], usageReceipts = [], reviewReceipts = [] }) => {
+  const stages = Array.isArray(run.route?.stages) ? run.route.stages : [];
+  const currentStageIndex = stages.indexOf(run.state);
+  const durationByStage = Object.fromEntries(['FRAME', 'EXECUTE', 'PROVE', 'CLOSE'].map((stage) => [stage, 0]));
+  for (const attempt of attempts) {
+    const started = Date.parse(attempt.startedAt || '');
+    const finished = Date.parse(attempt.finishedAt || '');
+    if (!Number.isFinite(started) || !Number.isFinite(finished) || finished < started) continue;
+    if (Object.prototype.hasOwnProperty.call(durationByStage, attempt.state)) {
+      durationByStage[attempt.state] += finished - started;
+    }
+  }
+  const history = verificationHistory.length > 0 ? verificationHistory : verifications;
+  return observed({
+    // The route is persisted, so this count remains available without adding
+    // a transition-history table. It counts the reached route positions,
+    // including the initial FRAME position (CLOSE on a completed standard
+    // route therefore reports four).
+    transitions: currentStageIndex >= 0 ? currentStageIndex + 1 : stages.length,
+    modelTurns: usageReceipts.length,
+    proofExecutions: history.filter((verification) => verification.executor === 'kernel-runtime' && !verification.reuseOfVerificationId).length,
+    proofReuses: history.filter((verification) => Boolean(verification.reuseOfVerificationId)).length,
+    reviewExecutions: reviewReceipts.length,
+    frameMs: durationByStage.FRAME,
+    executeMs: durationByStage.EXECUTE,
+    proveMs: durationByStage.PROVE,
+    closeMs: durationByStage.CLOSE,
+    // These values have no persisted start/lock/payload receipt in the
+    // current schema; zero is the explicit observed baseline, not an
+    // invented duration or byte count.
+    proofWallMs: 0,
+    reviewWallMs: 0,
+    lockWaitMs: 0,
+    nextPayloadBytes: 0,
+  });
+};
+
+export const buildKernelMeasurement = ({ run, completion, principles = loadKernelPrinciples(), verifications = [], verificationHistory = [], attempts = [], routeDecisions = [], usageReceipts = [], reviewReceipts = [] }) => ({
   schemaVersion: 2,
   harnessIdentity: 'moon-relay-kernel',
   sourceIdentity: run.sourceIdentity,
@@ -142,6 +181,7 @@ export const buildKernelMeasurement = ({ run, completion, principles = loadKerne
   replanCount: observed(run.replanCount || 0),
   userInterventionCount: observed(run.interventionCount || 0),
   evidenceCoverage: observed({ passed: verifications.filter((verification) => verification.status === 'passed').length, total: verifications.length, required: run.requiredObligations.length }),
+  workflowEfficiency: workflowEfficiencyMeasurement({ run, verifications, verificationHistory, attempts, usageReceipts, reviewReceipts }),
   contaminationSignals: observed({ relayStateMutation: false, profileMutation: false, source: 'kernel-runtime-boundary' }),
 });
 
@@ -157,8 +197,8 @@ const ACTION_FOR_MODEL_ACTION = Object.freeze({
   blocked: 'understand',
 });
 
-// The route a run follows is fixed at start (P1-1) so SHAPE is never skipped
-// for contract/boundary/migration work just because PROVE is reachable sooner.
+// The route a run follows is fixed at start (P1-1). Structural planning is an
+// internal judgment of the work unit, not a persisted workflow state.
 const refreshedTier = (store, runId) => store.getRun(runId)?.proofTier;
 
 const FINDING_CLASS_RANK = Object.freeze({ critical: 3, important: 2, minor: 1 });
@@ -182,8 +222,6 @@ const reviewReceiptRequired = ({ obligationId, declared, proofTier, independentR
 
 const buildRunRoute = (contract, riskSummary) => {
   if (contract.taskClass === 'analysis') return ['FRAME', 'CLOSE'];
-  if (contract.taskClass === 'long-running' || contract.flags.complex === true) return ['FRAME', 'SHAPE', 'SLICE', 'SCHEDULE', 'EXECUTE', 'PROVE', 'CLOSE'];
-  if (needsShape(riskSummary)) return ['FRAME', 'SHAPE', 'EXECUTE', 'PROVE', 'CLOSE'];
   return ['FRAME', 'EXECUTE', 'PROVE', 'CLOSE'];
 };
 
@@ -362,8 +400,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
   const buildUnboundNextPayload = (runId) => {
     const run = store.getRun(runId);
     if (!run) return { schemaVersion: 1, runId, status: 'not_found' };
-    return buildNextPayload({
-      run,
+    return buildNextForRun(run, {
       verifications: store.getVerifications(runId),
       requiredObligations: run.requiredObligations,
       obligations: store.getRunObligations(runId),
@@ -378,6 +415,11 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     blockedDetail: detail,
     next: buildUnboundNextPayload(runId),
   });
+  const reportHintObligationId = (request, obligations = []) => {
+    if (request?.obligationId) return String(request.obligationId);
+    if (obligations.some((obligation) => String(obligation?.obligationId || '') === 'default')) return 'default';
+    return String(request?.commandRef || '');
+  };
   const buildWorkUnitScopeRejection = ({ runId, modelInput, capabilities, error }) => {
     const failure = workUnitScopeFailure(error);
     const workUnitScope = {
@@ -453,6 +495,154 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     store.recordEvidencePack(runId, { tier: 'E2', pack, digest, mutationRevision: updated.mutationRevision });
   };
 
+  const refreshProofPolicyBindings = (runId) => {
+    const before = store.getRunObligations(runId);
+    const rebound = rebindProofPolicyCommands({
+      obligations: before,
+      projectRoot,
+      commands: discoverProjectCommands({ projectRoot }),
+    });
+    const bindingShape = (obligation) => JSON.stringify({
+      obligationId: obligation.obligationId,
+      allowedCommandRefs: obligation.allowedCommandRefs || [],
+      rejectedCommandRefs: obligation.rejectedCommandRefs || [],
+      metadata: obligation.metadata || {},
+    });
+    const changed = rebound.some((obligation, index) => bindingShape(obligation) !== bindingShape(before[index]));
+    if (changed) store.declareRunObligations(runId, rebound);
+    return changed ? store.getRunObligations(runId) : before;
+  };
+
+  const verificationScopeIdentities = (runId, obligations = store.getRunObligations(runId)) => {
+    const identities = {};
+    for (const obligation of obligations) {
+      const authority = authoritativeVerificationScope(obligation);
+      if (!authority) continue;
+      identities[obligation.obligationId] = observeScopedWorkspaceIdentity({
+        projectRoot,
+        scopes: authority.scope,
+      });
+    }
+    return identities;
+  };
+
+  const evaluateRunCompletion = (runId, { obligations = null } = {}) => store.evaluateCompletion(runId, {
+    verificationScopeIdentities: verificationScopeIdentities(runId, obligations || store.getRunObligations(runId)),
+  });
+
+  const buildNextForRun = (run, options = {}) => {
+    const currentRun = run || store.getRun(options.runId);
+    if (!currentRun) return buildNextPayload({ run: currentRun, ...options });
+    const obligations = options.obligations || refreshProofPolicyBindings(currentRun.runId);
+    const completion = options.completion || evaluateRunCompletion(currentRun.runId, { obligations });
+    return buildNextPayload({
+      ...options,
+      run: currentRun,
+      verifications: options.verifications || store.getVerifications(currentRun.runId),
+      requiredObligations: options.requiredObligations || currentRun.requiredObligations,
+      obligations,
+      satisfiedObligations: completion.obligationStatuses.filter((entry) => entry.satisfied).map((entry) => entry.obligationId),
+      outstandingObligationIds: completion.unsatisfiedObligations.map((entry) => entry.obligationId),
+      contract: options.contract || (currentRun.taskContract ? contractBriefing(currentRun.taskContract) : null),
+    });
+  };
+
+  const proofRequestsForReport = ({ runId, report, completion, step = null }) => {
+    const projectCommands = discoverProjectCommands({ projectRoot });
+    const currentRun = store.getRun(runId);
+    const obligations = store.getRunObligations(runId);
+    const byId = new Map(obligations.map((obligation) => [obligation.obligationId, obligation]));
+    const outstanding = new Set((completion?.unsatisfiedObligations || []).map((entry) => entry.obligationId));
+    const acceptedCoverage = new Set((completion?.acceptanceCovered || []).map(String));
+    const requested = new Map((report?.verifications || []).map((request) => [reportHintObligationId(request, obligations), request]));
+    const stepAcceptanceIds = new Set((step?.acceptanceIds || []).map(String));
+    const stepObligationIds = step && !step.synthetic
+      ? new Set([
+        ...(step.obligationIds || []).map(String),
+        ...obligations
+          .filter((obligation) => (obligation.acceptanceIds || []).some((acceptanceId) => stepAcceptanceIds.has(String(acceptanceId))))
+          .map((obligation) => String(obligation.obligationId)),
+      ])
+      : null;
+    const freshRequests = (report?.verifications || []).filter((request) => (
+      request.forceFresh === true
+      || request.freshnessPolicy === 'fresh'
+      || request.stalePolicy === 'rerun'
+    ));
+    const requests = [];
+    const addRequest = (obligation, hint = {}, { forceFresh = false, automatic = false } = {}) => {
+      if (!obligation || obligation.evidenceClass !== 'hard') return;
+      const commandRef = selectBoundCommandRef(obligation, {
+        projectCommands,
+        preferredCommandRef: automatic ? null : hint.commandRef,
+      });
+      if (!commandRef) return;
+      const existing = requests.find((request) => request.obligationId === obligation.obligationId);
+      if (existing) {
+        if (forceFresh) existing.allowEvidenceReuse = false;
+        return;
+      }
+      requests.push({
+        obligationId: obligation.obligationId,
+        commandRef,
+        timeoutMs: hint.timeoutMs,
+        // A model-supplied verification hint is not itself acceptance proof.
+        // Only the no-hint, Kernel-planned path may use the obligation's
+        // declared acceptance binding; explicit hints must carry their own
+        // coverage or the Step Ledger will keep the unit failed.
+        acceptanceCoverage: automatic
+          ? (obligation.acceptanceIds || [])
+          : (Array.isArray(hint.acceptanceCoverage) ? hint.acceptanceCoverage : []),
+        networkPolicy: hint.networkPolicy || 'inherited',
+        flakyRerun: hint.flakyRerun === true,
+        allowEvidenceReuse: !forceFresh,
+      });
+    };
+
+    const coverageNeedsProof = (obligation, hint) => {
+      if (!obligation || !Array.isArray(hint?.acceptanceCoverage) || hint.acceptanceCoverage.length === 0) return false;
+      try {
+        const canonicalCoverage = normalizeAcceptanceCoverage({
+          contract: currentRun?.taskContract || {},
+          acceptanceCriteria: currentRun?.acceptanceCriteria || [],
+          obligation,
+          coverage: hint.acceptanceCoverage,
+        });
+        return canonicalCoverage.some((acceptanceId) => !acceptedCoverage.has(String(acceptanceId)));
+      } catch {
+        return false;
+      }
+    };
+
+    for (const obligationId of outstanding) {
+      const obligation = byId.get(obligationId);
+      const hasHint = requested.has(obligationId);
+      // A report bound to a declared Step settles that unit. Do not spend the
+      // settlement on an unrelated later Step's automatic proof (which can
+      // fail intentionally while the current Step is still being completed).
+      // An explicit hint remains authoritative and is still honored below.
+      if (!hasHint && stepObligationIds && !stepObligationIds.has(String(obligationId))) continue;
+      addRequest(obligation, requested.get(obligationId) || {}, { forceFresh: false, automatic: !hasHint });
+    }
+    // An obligation can have a valid receipt while the report explicitly
+    // supplies coverage for an acceptance criterion that is still uncovered.
+    // Keep that obligation in the proof queue so a revised or partial
+    // acceptance binding cannot be mistaken for complete coverage.
+    for (const [obligationId, hint] of requested) {
+      const obligation = byId.get(obligationId);
+      if (!outstanding.has(obligationId) && coverageNeedsProof(obligation, hint)) {
+        addRequest(obligation, hint);
+      }
+    }
+    // Re-running a satisfied or unrelated obligation is opt-in. Even then the
+    // command is still Kernel-selected from the authority ordering above.
+    for (const request of freshRequests) {
+      const obligationId = reportHintObligationId(request, obligations);
+      addRequest(byId.get(obligationId), request, { forceFresh: true });
+    }
+    return requests;
+  };
+
   return {
     // Internal Host hooks. They do not add a model-visible command or stage;
     // the Host derives any parallel selection behind next/report.
@@ -470,9 +660,18 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     async buildReviewerCapsule(runId, { decision = null, step = null, stage = 'engineering', obligationId = null, requiredChecks = [], changedPaths = [] } = {}) {
       const run = store.getRun(runId);
       if (!run) throw new Error(`Run ${runId} not found`);
+      const scopedIdentities = verificationScopeIdentities(runId);
       const verifications = (store.getVerificationHistory?.(runId) || store.getVerifications(runId))
         .filter((verification) => verification.evidenceClass !== 'judgment')
-        .filter((verification) => Number(verification.verifiedMutationRevision ?? verification.verifiedRuntimeRevision) === Number(run.mutationRevision))
+        .filter((verification) => {
+          const scopedDigest = verification.evidenceIdentity?.values?.verificationScopeDigest || null;
+          if (scopedDigest) {
+            const current = scopedIdentities[verification.obligationId];
+            const currentDigest = typeof current === 'string' ? current : current?.identity;
+            return Boolean(currentDigest && currentDigest === scopedDigest);
+          }
+          return Number(verification.verifiedMutationRevision ?? verification.verifiedRuntimeRevision) === Number(run.mutationRevision);
+        })
         .filter((verification) => Number(verification.contractRevision || 1) === Number(run.contractRevision || 1));
       const capsule = buildReviewCapsule({
         run,
@@ -514,10 +713,9 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         throw new Error('sourceIdentity is computed by Kernel and cannot be caller-authored');
       }
 
-      // Evidence-plan gate (§8): a structured acceptance criterion without a
-      // plan for how it will be proven blocks the run before execution. The
-      // normalized contract is what gets persisted, so constraints, non-goals,
-      // risks, and evidence plans survive a process restart (P0-4/P0-5).
+      // Evidence plans are optional refinements. The normalized contract is
+      // what gets persisted, so constraints, non-goals, risks, and any
+      // explicitly supplied plan survive a process restart (P0-4/P0-5).
       const contract = normalizeTaskContract(taskContract, { objective: objective || taskContract.objective });
       if (hostCapabilities) assertRequiredHostCapabilities(contract, hostCapabilities);
 
@@ -578,7 +776,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         projectMode: projectMode.mode,
         taskContract: contract,
         contractRevision: 1,
-        route: { stages: route, riskTier: proofRoute.proofTier, shapeRequired: route.includes('SHAPE') },
+        route: { stages: route, riskTier: proofRoute.proofTier },
         implementationContext,
         workspaceId: effectiveWorkspaceId,
         worktreeId: effectiveWorktreeId,
@@ -698,7 +896,6 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         route: {
           stages: route,
           riskTier: proofRoute.proofTier,
-          shapeRequired: route.includes('SHAPE'),
         },
         implementationContext,
         workspaceId: effectiveWorkspaceId,
@@ -885,8 +1082,8 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       }
       preflight(runId, 'next');
       const existing = store.getRun(runId);
-      // An existing run may still be refined: a contract that now carries
-      // evidence plans or new constraints is a revision, never a new run.
+      // An existing run may still be refined: a contract that now carries an
+      // optional evidence plan or new constraints is a revision, never a new run.
       if (objective || (taskContract && Object.keys(taskContract).length > 0)) {
         // A revision may only refine the contract; scope it already carries is
         // never dropped, so a later turn cannot shrink the completion gate.
@@ -939,6 +1136,11 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         requiredChecks: KERNEL_POLICY.requiredChecks[run.proofTier] || ['default'],
         contract,
         contractRevision: nextContractRevision,
+        commands: discoverProjectCommands({ projectRoot }),
+        knowledgeRecords: run.projectId
+          ? store.listKnowledgeRecords({ projectId: run.projectId, statuses: ['committed'] })
+          : [],
+        changedPaths: contract.changedPaths || [],
       });
       assertVerificationSupport(obligations, contract, { projectMode: run.projectMode });
       // The contract already contains canonicalized successor references. Keep
@@ -2157,18 +2359,41 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       const observation = observeWorkspaceIdentity({ projectRoot });
       store.observeWorkspaceIdentity(runId, observation.identity);
 
-      const evidenceIdentity = requestedEvidenceIdentity || buildEvidenceIdentity({
-        commandRef,
-        sourceInputDigest: observation.identity,
-        networkPolicy,
-        freshnessInputs: freshnessInputs || undefined,
-      });
+      const scopeAuthority = authoritativeVerificationScope(declaredObligation);
+      const scopedObservation = scopeAuthority
+        ? observeScopedWorkspaceIdentity({ projectRoot, scopes: scopeAuthority.scope })
+        : null;
+      const scopedProof = scopedObservation?.status === 'observed';
+      const declaredFreshnessInputs = Array.isArray(scopeAuthority?.freshnessInputs) && scopeAuthority.freshnessInputs.length > 0
+        ? scopeAuthority.freshnessInputs
+        : null;
+      const requestedFreshnessInputs = Array.isArray(freshnessInputs) && freshnessInputs.length > 0
+        ? freshnessInputs
+        : declaredFreshnessInputs;
+      const scopedFreshnessInputs = scopedProof
+        ? [...new Set([
+          ...(requestedFreshnessInputs || EVIDENCE_IDENTITY_FIELDS.filter((field) => field !== 'sourceInputDigest')),
+          VERIFICATION_SCOPE_FIELD,
+        ].filter((field) => field !== 'sourceInputDigest'))]
+        : (requestedFreshnessInputs || undefined);
+      // Caller-provided identity values cannot replace an authoritative scope
+      // digest. If scoped observation is unavailable, the global workspace
+      // identity is the fail-safe freshness boundary.
+      const evidenceIdentity = !scopeAuthority && requestedEvidenceIdentity
+        ? requestedEvidenceIdentity
+        : buildEvidenceIdentity({
+          commandRef,
+          sourceInputDigest: observation.identity,
+          networkPolicy,
+          freshnessInputs: scopedFreshnessInputs,
+          verificationScopeDigest: scopedProof ? scopedObservation.identity : null,
+        });
       const reusable = allowEvidenceReuse && !discovered && typeof store.findExactReusableVerification === 'function'
         ? store.findExactReusableVerification({
           projectId: run.projectId,
           obligationId,
           evidenceIdentity,
-          excludeRunId: runId,
+          contractRevision: run.contractRevision,
         })
         : null;
       if (reusable) {
@@ -2346,7 +2571,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         stageContext = store.getKnowledgeContextReceipt(runId, 'FRAME')?.receiptJson || null;
       }
 
-      const obligations = store.getRunObligations(runId);
+      const obligations = refreshProofPolicyBindings(runId);
       const capabilityDecision = resolveKernelCapabilities({
         ...(run.taskContract?.flags || {}),
         taskClass: run.taskContract?.taskClass || 'feature',
@@ -2356,12 +2581,13 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         filesChanged: run.taskContract?.filesChanged || 0,
       });
 
-      const payload = buildNextPayload({
-        run,
+      const completion = evaluateRunCompletion(runId, { obligations });
+      const payload = buildNextForRun(run, {
         verifications: store.getVerifications(runId),
         requiredObligations: run.requiredObligations,
         obligations,
         contract: run.taskContract ? contractBriefing(run.taskContract) : null,
+        completion,
         knowledgePromptBlock: stageContext?.promptBlock || null,
         capabilities: capabilityDecision.selected.map((entry) => ({ id: entry.id, guidance: entry.guidance })),
       });
@@ -2804,11 +3030,9 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
           executed: [],
           failures,
           finalization: null,
-          next: buildNextPayload({
-            run: currentRun,
+          next: buildNextForRun(currentRun, {
             verifications: store.getVerifications(runId),
             requiredObligations: currentRun.requiredObligations,
-            obligations: store.getRunObligations(runId),
             contract: currentRun.taskContract ? contractBriefing(currentRun.taskContract) : null,
             failures,
           }),
@@ -2918,36 +3142,25 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
           executed: [],
           failures: capsuleRejection,
           finalization: null,
-          next: buildNextPayload({
-            run: currentRun,
+          next: buildNextForRun(currentRun, {
             verifications: store.getVerifications(runId),
             requiredObligations: currentRun.requiredObligations,
-            obligations: store.getRunObligations(runId),
             contract: currentRun.taskContract ? contractBriefing(currentRun.taskContract) : null,
             failures: capsuleRejection,
           }),
         };
       }
 
-      // A refined contract (new constraints, or the evidence plan the model
-      // produced in FRAME) is persisted before any execution (P0-5). A plain
-      // acceptance string is allowed at bootstrap, but proof cannot begin
-      // until every unplanned criterion is bound to an AC-specific plan. Scope
-      // and capsule admission are checked first so an invalid work-unit
-      // report remains a scope/step rejection even though it also lacks proof
-      // plans; neither path executes a command.
-      const hasProofSubmission = report.verifications.length > 0 || report.judgments.length > 0;
+      // A refined contract (new constraints, or an optional evidence-plan
+      // refinement produced in FRAME) is persisted before any execution
+      // (P0-5). Plain and structured acceptance criteria both bind to the
+      // compiled proof policy when no explicit plan is supplied.
       const currentRunForEvidence = store.getRun(runId);
-      const missingEvidencePlanIds = (currentRunForEvidence.taskContract?.acceptance || [])
-        .filter((item) => !item.evidencePlan)
-        .map((item) => item.id);
       try {
         if (report.evidencePlans.length > 0) {
           assertEvidencePlanSubmission(currentRunForEvidence.taskContract || {}, report.evidencePlans);
           const revised = applyEvidencePlans(currentRunForEvidence.taskContract, report.evidencePlans);
           if (revised) await this.reviseContract(runId, revised);
-        } else if (hasProofSubmission && missingEvidencePlanIds.length > 0) {
-          throw new Error(`MISSING_EVIDENCE_PLAN: proof requires plans for ${missingEvidencePlanIds.join(', ')}`);
         }
       } catch (error) {
         return evidenceRejected([{
@@ -2958,33 +3171,6 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
           ...(error.detail ? { detail: error.detail } : {}),
         }]);
       }
-
-      // Canonicalize legacy statement coverage and reject coverage that is
-      // unknown or belongs to a different acceptance-bound obligation before
-      // any command can execute.
-      const currentContractRun = store.getRun(runId);
-      const coverageFailures = [];
-      for (const request of report.verifications) {
-        const obligationId = request.obligationId || request.commandRef;
-        const declared = store.getRunObligation(runId, obligationId);
-        try {
-          request.acceptanceCoverage = normalizeAcceptanceCoverage({
-            contract: currentContractRun.taskContract || {},
-            acceptanceCriteria: currentContractRun.acceptanceCriteria || [],
-            obligation: declared,
-            coverage: request.acceptanceCoverage || [],
-          });
-        } catch (error) {
-          coverageFailures.push({
-            obligationId,
-            commandRef: request.commandRef,
-            errorSummary: error.message,
-            errorCode: error.code || 'ACCEPTANCE_COVERAGE_INVALID',
-            ...(error.detail ? { detail: error.detail } : {}),
-          });
-        }
-      }
-      if (coverageFailures.length > 0) return evidenceRejected(coverageFailures);
 
       // Each report is a durable attempt; the number is derived from persisted
       // rows so retry counting survives restarts.
@@ -3019,47 +3205,6 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
 
       const failures = [];
       const executed = [];
-
-      // Binding pre-check (P0-2): a requested verification whose command is not
-      // bound to its obligation is rejected BEFORE anything runs, so a passing
-      // unrelated command can never be filed under a required obligation.
-      const bindingFailures = [];
-      for (const request of report.verifications) {
-        const obligationId = request.obligationId || request.commandRef;
-        const declared = store.getRunObligation(runId, obligationId);
-        if (!declared || declared.sourceType === 'ad-hoc') continue;
-        try {
-          assertCommandBinding(declared, request.commandRef);
-        } catch (error) {
-          if (!(error instanceof ObligationBindingError)) throw error;
-          bindingFailures.push({
-            obligationId,
-            commandRef: request.commandRef,
-            errorSummary: error.message,
-            allowedCommandRefs: declared.allowedCommandRefs,
-            requiredEvidenceClass: declared.evidenceClass,
-          });
-        }
-      }
-      if (bindingFailures.length > 0) {
-        const currentRun = store.getRun(runId);
-        return {
-          schemaVersion: 1,
-          runId,
-          status: 'evidence-rejected',
-          executed: [],
-          failures: bindingFailures,
-          finalization: null,
-          next: buildNextPayload({
-            run: currentRun,
-            verifications: store.getVerifications(runId),
-            requiredObligations: currentRun.requiredObligations,
-            obligations: store.getRunObligations(runId),
-            contract: currentRun.taskContract ? contractBriefing(currentRun.taskContract) : null,
-            failures: bindingFailures,
-          }),
-        };
-      }
 
       if (activeStep) {
         const boundCapsule = report.capsuleId ? store.getExecutionCapsule(report.capsuleId, { runId }) : null;
@@ -3101,17 +3246,121 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         }
       }
 
-      if (report.verifications.length > 0 || report.judgments.length > 0) {
+      // A report hint is still an explicit claim about an obligation. Reject
+      // an unbound command before the Kernel can fall back to an automatic
+      // proof for the same obligation; otherwise a forged hint could be
+      // silently replaced by a passing command and hide the caller's invalid
+      // evidence claim. This check intentionally follows the workspace
+      // observation above: a rejected proof must not execute, but the
+      // mutation it reports must still advance the authoritative workspace
+      // lineage so a capsule issued for the old revision cannot be reused.
+      const bindingFailures = [];
+      const declaredProjectCommandRefs = new Set(discoverProjectCommands({ projectRoot })
+        .map((command) => String(command?.commandRef || ''))
+        .filter(Boolean));
+      const declaredObligations = store.getRunObligations(runId);
+      for (const request of report.verifications) {
+        // A commandRef-only report is a legacy shorthand for the default hard
+        // obligation. If the command is not declared by the project, fail
+        // closed before the outstanding-proof planner can substitute a
+        // different passing command.
+        if (!request.obligationId && !declaredProjectCommandRefs.has(String(request.commandRef))) {
+          const detail = `Verification command "${request.commandRef}" is not declared by the project command catalog`;
+          store.markRunBlocked(runId, 'unsafe-command');
+          await projectRunState(store.getRun(runId), { runtimeHome });
+          return buildBlockedResponse({ runId, reason: 'unsafe-command', detail });
+        }
+        const obligationId = reportHintObligationId(request, declaredObligations);
+        const declared = store.getRunObligation(runId, obligationId);
+        if (!declared || declared.sourceType === 'ad-hoc') continue;
+        try {
+          assertCommandBinding(declared, request.commandRef);
+        } catch (error) {
+          if (!(error instanceof ObligationBindingError)) throw error;
+          bindingFailures.push({
+            obligationId,
+            commandRef: request.commandRef,
+            errorSummary: error.message,
+            allowedCommandRefs: declared.allowedCommandRefs,
+            requiredEvidenceClass: declared.evidenceClass,
+          });
+        }
+      }
+      if (bindingFailures.length > 0) return evidenceRejected(bindingFailures);
+
+      // Proof is Kernel-planned. A model report may contain verification hints,
+      // but only an explicit fresh request is allowed to rerun a satisfied or
+      // unrelated obligation; ordinary reports run the outstanding bound hard
+      // obligations exactly once in this settlement.
+      const proofObligations = refreshProofPolicyBindings(runId);
+      const preProofCompletion = evaluateRunCompletion(runId, { obligations: proofObligations });
+      // A structured judgment is never a valid substitute for an executable
+      // obligation. Reject that hint explicitly and keep the same obligation
+      // out of this settlement's automatic proof selection; otherwise the
+      // report would both claim invalid evidence and silently replace it with
+      // a passing command, masking the caller's forgery.
+      const invalidHardJudgmentIds = new Set();
+      const invalidHardJudgmentFailures = [];
+      for (const judgment of report.judgments) {
+        const obligationId = String(judgment.obligationId || '');
+        const declared = obligationId ? store.getRunObligation(runId, obligationId) : null;
+        if (!declared || declared.evidenceClass === 'judgment') continue;
+        invalidHardJudgmentIds.add(obligationId);
+        invalidHardJudgmentFailures.push({
+          obligationId,
+          command: 'structured-judgment',
+          errorSummary: `Obligation "${obligationId}" is executable and cannot be satisfied by a structured judgment`,
+          errorCode: 'OBLIGATION_REQUIRES_EXECUTABLE_PROOF',
+          requiredEvidenceClass: declared.evidenceClass,
+        });
+      }
+      failures.push(...invalidHardJudgmentFailures);
+      const proofRequests = proofRequestsForReport({ runId, report, completion: preProofCompletion, step: activeStep })
+        .filter((request) => !invalidHardJudgmentIds.has(String(request.obligationId || '')));
+      const outstandingJudgmentIds = new Set(preProofCompletion.unsatisfiedObligations
+        .filter((entry) => entry.requiredEvidenceClass === 'judgment')
+        .map((entry) => entry.obligationId));
+      const judgmentRequests = report.judgments.filter((judgment) => (
+        outstandingJudgmentIds.has(String(judgment.obligationId))
+        || judgment.forceFresh === true
+        || judgment.freshnessPolicy === 'fresh'
+        || judgment.stalePolicy === 'rerun'
+      ));
+
+      const coverageFailures = [];
+      for (const request of proofRequests) {
+        const obligationId = request.obligationId;
+        const declared = store.getRunObligation(runId, obligationId);
+        try {
+          request.acceptanceCoverage = normalizeAcceptanceCoverage({
+            contract: store.getRun(runId).taskContract || {},
+            acceptanceCriteria: store.getRun(runId).acceptanceCriteria || [],
+            obligation: declared,
+            coverage: request.acceptanceCoverage || [],
+          });
+          assertCommandBinding(declared, request.commandRef);
+        } catch (error) {
+          coverageFailures.push({
+            obligationId,
+            commandRef: request.commandRef,
+            errorSummary: error.message,
+            errorCode: error.code || 'ACCEPTANCE_COVERAGE_INVALID',
+            ...(error.detail ? { detail: error.detail } : {}),
+          });
+        }
+      }
+      if (coverageFailures.length > 0) return evidenceRejected(coverageFailures);
+
+      if (proofRequests.length > 0 || judgmentRequests.length > 0) {
         const current = store.getRun(runId);
-        // Follow the route fixed at run start rather than the shortest path to
-        // PROVE, so SHAPE is not silently skipped for boundary work (P1-1).
+        // Follow the four-state route fixed at run start.
         const pathToProve = planRouteSteps(current.route?.stages, current.state, 'PROVE') ?? planStatePath(current.state, 'PROVE');
         if (pathToProve === null) throw new Error(`Cannot advance run ${runId} from ${current.state} to verification`);
         for (const stateStep of pathToProve) {
           await this.transition(runId, stateStep);
         }
 
-        for (const request of report.verifications) {
+        for (const request of proofRequests) {
           const obligationId = request.obligationId || request.commandRef;
           try {
             const declaredObligation = store.getRunObligation(runId, obligationId);
@@ -3121,8 +3370,6 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
               timeoutMs: request.timeoutMs,
               acceptanceCoverage: request.acceptanceCoverage || [],
               networkPolicy: request.networkPolicy || 'inherited',
-              evidenceIdentity: request.evidenceIdentity || null,
-              freshnessInputs: request.freshnessInputs || declaredObligation?.metadata?.freshnessInputs || null,
               allowEvidenceReuse: request.allowEvidenceReuse !== false,
             });
             // recordedStatus reflects flaky/self-mutation blocking policy, not
@@ -3152,7 +3399,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
           }
         }
 
-        for (const judgment of report.judgments) {
+        for (const judgment of judgmentRequests) {
           // A judgment standing in for a protected obligation (security, auth,
           // payment, migration) must name its reviewer and its reasoning, and
           // at T3 that reviewer may not be the implementer (§31).
@@ -3258,7 +3505,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         .filter((observation) => Array.isArray(observation?.supersedes) || observation?.supersedes || observation?.supersedesId)
         .map((observation) => ({ ...observation, evidenceRefs: observation.evidenceRefs || observation.evidenceRef || observation.evidenceDigest, scope: observation.scope || report.changedPaths }));
       if (typeof store.recordRunSignals === 'function') store.recordRunSignals(runId, structuredSignals);
-      const completionPreview = store.evaluateCompletion(runId);
+      const completionPreview = evaluateRunCompletion(runId);
       const outstanding = completionPreview.unsatisfiedObligations.map((entry) => entry.obligationId);
 
       // Settle the step BEFORE completion is considered: a step that passed
@@ -3271,7 +3518,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       const stepsSettled = allStepsPassed(currentSteps, refreshed.planRevision);
 
       let finalization = null;
-      if (failures.length === 0 && outstanding.length === 0 && stepsSettled && verifications.length > 0 && refreshed.state === 'PROVE') {
+      if (failures.length === 0 && outstanding.length === 0 && stepsSettled && refreshed.state === 'PROVE') {
         // Only the runner that still holds the lease it acquired may finalize.
         if (!store.isLeaseHeld(runId, { holder, fencingToken })) {
           return { schemaVersion: 1, runId, status: 'lease-conflict', lease: store.getLease(runId), next: await this.next(runId) };
@@ -3310,11 +3557,9 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         failureClassification,
         step: stepOutcome,
         finalization,
-        next: buildNextPayload({
-          run: finalRun,
+        next: buildNextForRun(finalRun, {
           verifications: store.getVerifications(runId),
           requiredObligations: finalRun.requiredObligations,
-          obligations: store.getRunObligations(runId),
           contract: finalRun.taskContract ? contractBriefing(finalRun.taskContract) : null,
           failures,
         }),
@@ -3341,14 +3586,14 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     },
 
     async assessCompletion(runId) {
-      return store.evaluateCompletion(runId);
+      return evaluateRunCompletion(runId);
     },
 
     async status(runId) {
       try { preflight(runId, 'status'); } catch (error) { return bindingErrorPayload(error, { projectRoot, provider: hostProvider }); }
       const run = store.getRun(runId);
       if (!run) return null;
-      const completion = store.evaluateCompletion(runId);
+      const completion = evaluateRunCompletion(runId);
       return {
         run,
         completion,
@@ -3356,9 +3601,11 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
           run,
           completion,
           verifications: store.getVerifications(runId),
+          verificationHistory: store.getVerificationHistory?.(runId) || [],
           attempts: store.getAttempts(runId),
           routeDecisions: store.listModelRouteDecisions(runId),
           usageReceipts: store.listModelUsageReceipts(runId),
+          reviewReceipts: store.listReviewReceipts(runId),
         }),
       };
     },

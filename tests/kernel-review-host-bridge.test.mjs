@@ -106,7 +106,6 @@ test('the native Host review bridge ingests the observed outcome into a Kernel r
       stepId: implementation.executionCapsule.stepId,
       changedPaths: ['app.mjs'],
     });
-    await cp.transition('native-review-chain', 'SHAPE');
     await cp.transition('native-review-chain', 'EXECUTE');
     await cp.transition('native-review-chain', 'PROVE');
     const reviewedRun = await cp.getRun('native-review-chain');

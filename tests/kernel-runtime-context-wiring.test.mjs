@@ -14,7 +14,6 @@ test('Control Plane wires five context layers and persisted evidence lineage', a
   const objective = 'wire runtime context layers';
   const cp = await createKernelControlPlane({ runtimeHome, projectRoot });
   await cp.startRun({ runId: 'context-layers', objective, taskContract: { acceptanceCriteria: ['receipt'] } });
-  await cp.transition('context-layers', 'SHAPE');
   await cp.transition('context-layers', 'EXECUTE');
   await cp.transition('context-layers', 'PROVE');
   await cp.recordProof('context-layers', {

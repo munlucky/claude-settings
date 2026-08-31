@@ -157,7 +157,12 @@ export const evaluateStepCompletion = ({
       continue;
     }
     const verifiedMutation = verification.verifiedMutationRevision ?? verification.verifiedRuntimeRevision;
-    if (run && verifiedMutation !== run.mutationRevision) reasons.push(`obligation-stale:${obligationId}`);
+    const hasAuthoritativeScope = Boolean(verification.evidenceIdentity?.values?.verificationScopeDigest);
+    // Run-level completion validates a scoped receipt against the current
+    // content digest. Its full-workspace mutation revision may legitimately be
+    // newer because an unrelated Step changed outside that declared scope.
+    // Do not reintroduce the old run-wide staleness gate at the Step boundary.
+    if (run && verifiedMutation !== run.mutationRevision && !hasAuthoritativeScope) reasons.push(`obligation-stale:${obligationId}`);
   }
 
   // Coverage may be declared by acceptance id or by statement, exactly as the

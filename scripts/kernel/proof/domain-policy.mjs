@@ -119,24 +119,20 @@ export const chooseDebugTactic = ({ failureClass = 'unknown_failure', priorAttem
   return { failureClass, repeated: sameClass, tactic, stagnated: sameClass >= 2, authority: 'kernel-debug-policy' };
 };
 
-// Behavior change alone is not a simplification signal; only added structure or
-// a broad change surface is.
+// Behavior change alone is not a simplification signal; only added structure
+// or an explicit complexity signal is.
 export const resolveSimplificationGuidance = ({
-  filesChanged = 0,
   complex = false,
-  changedPaths = [],
   newDependency = false,
   newAbstraction = false,
   duplicateImplementation = false,
   configurationSurfaceIncreased = false,
 } = {}) => {
-  const broadScope = Number(filesChanged) > 8 || normalizeChangedPaths(changedPaths).length > 8;
   const active = complex === true
     || newDependency === true
     || newAbstraction === true
     || duplicateImplementation === true
-    || configurationSurfaceIncreased === true
-    || broadScope;
+    || configurationSurfaceIncreased === true;
   return {
     active,
     checks: active ? ['unnecessary-abstraction', 'duplicate-logic', 'scope-expansion', 'speculative-configuration'] : [],

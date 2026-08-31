@@ -11,6 +11,11 @@ import { resolveKernelProjectIdentity } from '../scripts/kernel/project-identity
 
 const unavailableFields = ['providerModelIdentity', 'actualInputTokens', 'actualOutputTokens', 'falseCompletionDecision', 'wallClockMs', 'modelRouting'];
 const observedFields = ['retryCount', 'replanCount', 'userInterventionCount', 'hardEvidenceCoverage', 'promptTokenBudget'];
+const workflowEfficiencyFields = [
+  'transitions', 'modelTurns', 'proofExecutions', 'proofReuses', 'reviewExecutions',
+  'frameMs', 'executeMs', 'proveMs', 'closeMs', 'proofWallMs', 'reviewWallMs',
+  'lockWaitMs', 'nextPayloadBytes',
+];
 
 test('measurement schema is closed and status exposes typed unavailable fields', async () => {
   const schema = JSON.parse(await readFile(new URL('../schemas/kernel.measurement.schema.json', import.meta.url), 'utf8'));
@@ -35,6 +40,12 @@ test('measurement schema is closed and status exposes typed unavailable fields',
   assert.equal(status.measurement.retryCount.value, 0);
   assert.equal(status.measurement.userInterventionCount.value, 0);
   assert.equal(status.measurement.contaminationSignals.status, 'observed');
+  assert.equal(status.measurement.workflowEfficiency.status, 'observed');
+  assert.deepEqual(Object.keys(status.measurement.workflowEfficiency.value).sort(), [...workflowEfficiencyFields].sort());
+  for (const field of workflowEfficiencyFields) {
+    assert.equal(typeof status.measurement.workflowEfficiency.value[field], 'number', field);
+    assert.ok(Number.isInteger(status.measurement.workflowEfficiency.value[field]), field);
+  }
   await cp.close();
 });
 

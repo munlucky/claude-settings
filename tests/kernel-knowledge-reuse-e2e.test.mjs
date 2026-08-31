@@ -179,7 +179,7 @@ test('Cross-Run Knowledge Reuse E2E: verifies direct SQLite knowledge context re
     objective: 'Unrelated payment service work',
   });
 
-  const otherContext = await controlPlaneOther.buildStageContext('run-e2e-other', { stage: 'SHAPE' });
+  const otherContext = await controlPlaneOther.buildStageContext('run-e2e-other', { stage: 'FRAME' });
   const otherPromptBlock = otherContext.knowledgeContext.promptBlock;
   assert.equal(otherPromptBlock.includes('Use JWT stateless session tokens for auth service'), false);
   assert.equal(otherPromptBlock.includes('Authentication service runs on port 4000'), false);

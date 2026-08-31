@@ -19,9 +19,6 @@
     "state": {
       "enum": [
         "FRAME",
-        "SHAPE",
-        "SLICE",
-        "SCHEDULE",
         "EXECUTE",
         "PROVE",
         "CLOSE"

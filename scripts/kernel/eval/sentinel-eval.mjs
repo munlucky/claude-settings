@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createKernelControlPlane } from '../control-plane.mjs';
 import { discoverProjectCommands } from '../proof/command-catalog.mjs';
+import { observeWorkspaceIdentity } from '../run/workspace-identity.mjs';
 
 const validDigest = `sha256:${'a'.repeat(64)}`;
 
@@ -25,7 +26,10 @@ const TRAPS = {
   async caller_attested_only_mutating(cp, projectRoot) {
     await cp.startRun({ runId: 'sen', objective: 'x' });
     await mutate(projectRoot, 1);
-    await cp.report('sen', { summary: 'observe' });
+    // This trap deliberately bypasses report-driven automatic proof so the
+    // only evidence recorded below is caller-attested. The production report
+    // path is exercised by the other sentinel cases and now plans outstanding
+    // hard proof itself.
     await cp.transition('sen', 'EXECUTE');
     await cp.transition('sen', 'PROVE');
     await cp.recordProof('sen', { obligationId: 'default', status: 'passed', evidenceRef: 'e://1', command: 'npm test', exitCode: 0, evidenceDigest: validDigest });
@@ -39,6 +43,16 @@ const TRAPS = {
     await cp.executeProof('sen', { obligationId: 'default', commandRef: 'test:ok' });
     // Mutate again after the passing evidence: the recorded evidence is stale
     // against the newly observed workspace state.
+    await writeFile(path.join(projectRoot, 'package.json'), JSON.stringify({
+      name: 'sentinel-fixture',
+      version: '0.0.1',
+      scripts: {
+        'test:ok': 'node -e "process.exit(1)"',
+        'test:fail': 'node -e "process.exit(1)"',
+        lint: 'node -e "process.exit(0)"',
+        noop: 'node -e "process.exit(0)"',
+      },
+    }, null, 2));
     await mutate(projectRoot, 2);
     await cp.report('sen', { summary: 'drift' });
     return cp.finalizeRun('sen');
@@ -62,7 +76,11 @@ const TRAPS = {
   async no_verification_mutating(cp, projectRoot) {
     await cp.startRun({ runId: 'sen', objective: 'x' });
     await mutate(projectRoot, 1);
-    await cp.report('sen', { summary: 'observe' });
+    // Observe the mutation without submitting a report. A summary-only report
+    // intentionally triggers Kernel proof in the new contract, so this trap
+    // uses the internal observation seam to retain its no-verification claim.
+    const observation = observeWorkspaceIdentity({ projectRoot });
+    cp.stateStore.observeWorkspaceIdentity('sen', observation.identity);
     await cp.transition('sen', 'EXECUTE');
     await cp.transition('sen', 'PROVE');
     await cp.transition('sen', 'CLOSE');
@@ -263,7 +281,14 @@ const TRAPS = {
     await cp.startRun({ runId: 'sen', objective: 'x', taskContract: { acceptance: ['works'], allowedPaths: ['**'] } });
     const capsule = await cp.buildCapsule('sen');
     await mutate(projectRoot, 1);
-    await cp.report('sen', { summary: 'first pass', changedPaths: ['app.mjs'] });
+    // Keep the run retryable so the old capsule is checked on the next report;
+    // a summary-only report is now allowed to finish when the default proof
+    // command passes.
+    await cp.report('sen', {
+      summary: 'first pass',
+      changedPaths: ['app.mjs'],
+      verifications: [{ obligationId: 'default', commandRef: 'test:fail' }],
+    });
     const reused = await cp.report('sen', {
       summary: 'reusing the old capsule',
       capsuleId: capsule.capsuleId,

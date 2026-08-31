@@ -52,7 +52,6 @@ test('analyzeMigration escalates a required migration to T3 with the protected o
     assert.ok(res.run.requiredObligations.includes(MIGRATION_SMOKE_OBLIGATION));
 
     // A waiver on the migration obligation is refused.
-    await cp.transition('r-mig', 'SHAPE');
     await cp.transition('r-mig', 'EXECUTE');
     await cp.transition('r-mig', 'PROVE');
     await assert.rejects(
