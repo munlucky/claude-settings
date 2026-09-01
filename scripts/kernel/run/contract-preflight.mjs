@@ -16,8 +16,7 @@ export const CONTRACT_PREFLIGHT_ERROR_CODES = Object.freeze({
   verificationCommandMissing: 'verification-command-missing',
 });
 
-const NEXT_ACTION = 'revise-task-contract-before-run-creation';
-const IMPLEMENTATION_TASK_CLASSES = new Set(['analysis', 'review', 'read-only', 'readonly']);
+const READ_ONLY_TASK_CLASSES = new Set(['analysis', 'review', 'read-only', 'readonly']);
 const DETAILED_STEP_BINDING_FLAGS = new Set([
   'behaviorChanging',
   'crossLayer',
@@ -152,8 +151,9 @@ export const validateDeclaredSteps = ({
   const declared = Array.isArray(contract.steps) ? contract.steps : [];
   if (declared.length === 0) return { valid: true, steps: [] };
 
+  const isImplementationTask = !READ_ONLY_TASK_CLASSES.has(String(contract?.taskClass || '').toLowerCase());
   const detailedBindings = requireDetailedBindings === null
-    ? requiresDetailedStepBindings(contract)
+    ? (requiresDetailedStepBindings(contract) || (isImplementationTask && requiresImplementationWorkUnitScope({ contract })))
     : Boolean(requireDetailedBindings);
   const acceptanceIds = acceptanceIdsFor(contract);
   const obligationIds = obligationIdsFor(obligations, contract);
@@ -181,26 +181,19 @@ export const validateDeclaredSteps = ({
     seenStepIds.add(stepId);
 
     const hasStepScope = Object.prototype.hasOwnProperty.call(raw, 'allowedPaths');
-    if (detailedBindings && !hasStepScope) {
-      throw fail(
-        CONTRACT_PREFLIGHT_ERROR_CODES.stepBindingInvalid,
-        `Declared step ${stepId} must bind its own allowedPaths`,
-        { ...details, stepId, reason: 'step-scope-missing' },
-      );
-    }
-    const allowedPaths = normalizeBoundedPaths({
-      paths: hasStepScope ? raw.allowedPaths : contract.allowedPaths,
-      projectRoot,
-    });
+    const rawPaths = hasStepScope ? raw.allowedPaths : contract.allowedPaths;
+    const allowedPaths = Array.isArray(rawPaths)
+      ? normalizeBoundedPaths({ paths: rawPaths, projectRoot })
+      : [];
     const scope = classifyWorkUnitScope({ allowedPaths });
-    if (detailedBindings && !scope.valid) {
+    if (isImplementationTask && !scope.valid) {
       throw fail(scope.errorCode, scope.message, { ...details, stepId, scope }, scope.nextAction);
     }
 
     const stepAcceptanceIds = Array.isArray(raw.acceptanceIds)
       ? assertNonEmptyStringList(raw.acceptanceIds, 'acceptanceIds', { ...details, stepId })
       : [];
-    if (detailedBindings && stepAcceptanceIds.length === 0) {
+    if (detailedBindings && stepAcceptanceIds.length === 0 && acceptanceIds.size > 0) {
       throw fail(
         CONTRACT_PREFLIGHT_ERROR_CODES.stepBindingInvalid,
         `Each declared step requires a non-empty acceptanceIds list`,
@@ -220,13 +213,6 @@ export const validateDeclaredSteps = ({
     const stepObligationIds = Array.isArray(raw.obligationIds)
       ? assertNonEmptyStringList(raw.obligationIds, 'obligationIds', { ...details, stepId })
       : [];
-    if (detailedBindings && stepObligationIds.length === 0) {
-      throw fail(
-        CONTRACT_PREFLIGHT_ERROR_CODES.stepBindingInvalid,
-        `Each declared step requires a non-empty obligationIds list`,
-        { ...details, stepId, field: 'obligationIds' },
-      );
-    }
     const unknownObligationIds = stepObligationIds.filter((id) => obligationIds.size > 0 && !obligationIds.has(id));
     if (unknownObligationIds.length > 0) {
       throw fail(
@@ -239,7 +225,7 @@ export const validateDeclaredSteps = ({
     const expectedOutputs = Object.prototype.hasOwnProperty.call(raw, 'expectedOutputs')
       ? assertNonEmptyStringList(raw.expectedOutputs, 'expectedOutputs', { ...details, stepId })
       : [];
-    if (detailedBindings && expectedOutputs.length === 0) {
+    if (detailedBindings && Object.prototype.hasOwnProperty.call(raw, 'expectedOutputs') && expectedOutputs.length === 0) {
       throw fail(
         CONTRACT_PREFLIGHT_ERROR_CODES.stepBindingInvalid,
         `Each declared step requires a non-empty expectedOutputs list`,
@@ -250,7 +236,7 @@ export const validateDeclaredSteps = ({
   }
 
   const unclaimedAcceptanceIds = [...acceptanceIds].filter((id) => !claimedAcceptanceIds.has(id));
-  if (detailedBindings && unclaimedAcceptanceIds.length > 0) {
+  if (detailedBindings && acceptanceIds.size > 0 && unclaimedAcceptanceIds.length > 0) {
     throw fail(
       CONTRACT_PREFLIGHT_ERROR_CODES.stepBindingInvalid,
       `Declared steps do not bind acceptance ids: ${unclaimedAcceptanceIds.join(', ')}`,
@@ -258,8 +244,6 @@ export const validateDeclaredSteps = ({
     );
   }
 
-  // A step contract may be checked with the same command catalog as the run;
-  // this keeps command existence validation at the pre-create boundary too.
   validateVerificationCommands({ contract, commands });
   return { valid: true, steps: normalizedSteps, detailedBindings };
 };
@@ -306,10 +290,10 @@ export const preflightTaskContract = ({
   }
 
   const declaredSteps = Array.isArray(contract.steps) && contract.steps.length > 0;
-  const implementationScopeRequired = requireImplementationScope === null
-    ? !IMPLEMENTATION_TASK_CLASSES.has(String(contract.taskClass || '').toLowerCase())
+  const isImplementationTask = requireImplementationScope === null
+    ? !READ_ONLY_TASK_CLASSES.has(String(contract.taskClass || '').toLowerCase())
     : Boolean(requireImplementationScope);
-  const requiresScope = implementationScopeRequired && requiresImplementationWorkUnitScope({ contract });
+  const requiresScope = isImplementationTask && requiresImplementationWorkUnitScope({ contract });
   let allowedPaths = [];
   if (Array.isArray(contract.allowedPaths)) {
     allowedPaths = normalizeBoundedPaths({ paths: contract.allowedPaths, projectRoot });
@@ -322,7 +306,13 @@ export const preflightTaskContract = ({
     throw fail(scope.errorCode, scope.message, { scope }, scope.nextAction);
   }
 
-  const stepResult = validateDeclaredSteps({ contract, commands, obligations, projectRoot });
+  const stepResult = validateDeclaredSteps({
+    contract,
+    commands,
+    obligations,
+    projectRoot,
+    requireDetailedBindings: requiresScope ? true : null,
+  });
   const verification = validateVerificationCommands({ contract, commands });
   return {
     valid: true,

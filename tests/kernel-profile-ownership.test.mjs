@@ -330,3 +330,80 @@ test('absolute MCP launcher uses the selected installed Node and speaks stdio MC
   assert.equal(responses[0].result.serverInfo.name, 'moon-relay-kernel-bridge');
   assert.ok(responses[1].result.tools.some((tool) => tool.name === 'kernel_next'));
 });
+
+test('antigravity profile with external skillsRoot uninstalls external skill files cleanly', async () => {
+  const home = await mkdtemp(path.join(os.tmpdir(), 'kernel-external-skills-uninstall-'));
+  tempRoots.push(home);
+  const targetRoot = path.join(home, 'antigravity');
+  const skillsRoot = path.join(home, 'external-skills');
+  const runtimeHome = path.join(home, 'runtime');
+
+  const installed = await installKernelProfile({
+    sourceRoot: process.cwd(),
+    runtime: 'antigravity',
+    targetRoot,
+    skillsRoot,
+    runtimeHome,
+  });
+  assert.equal(installed.status, 'installed');
+  const externalSkillFile = path.join(skillsRoot, 'skills', 'moon-relay-kernel', 'SKILL.md');
+  assert.equal(await readFile(externalSkillFile, 'utf8') !== '', true);
+
+  const uninstalled = await uninstallKernelProfile({ targetRoot });
+  assert.equal(uninstalled.status, 'uninstalled');
+  await assert.rejects(readFile(externalSkillFile), /ENOENT/);
+});
+
+test('antigravity profile reinstall with different skillsRoot updates location instead of already_current', async () => {
+  const home = await mkdtemp(path.join(os.tmpdir(), 'kernel-external-skills-change-'));
+  tempRoots.push(home);
+  const targetRoot = path.join(home, 'antigravity');
+  const skillsRootA = path.join(home, 'skills-a');
+  const skillsRootB = path.join(home, 'skills-b');
+  const runtimeHome = path.join(home, 'runtime');
+
+  const first = await installKernelProfile({
+    sourceRoot: process.cwd(),
+    runtime: 'antigravity',
+    targetRoot,
+    skillsRoot: skillsRootA,
+    runtimeHome,
+  });
+  assert.equal(first.status, 'installed');
+  assert.equal(await readFile(path.join(skillsRootA, 'skills', 'moon-relay-kernel', 'SKILL.md'), 'utf8') !== '', true);
+
+  const second = await installKernelProfile({
+    sourceRoot: process.cwd(),
+    runtime: 'antigravity',
+    targetRoot,
+    skillsRoot: skillsRootB,
+    runtimeHome,
+  });
+  assert.equal(second.status, 'reinstalled');
+  assert.equal(await readFile(path.join(skillsRootB, 'skills', 'moon-relay-kernel', 'SKILL.md'), 'utf8') !== '', true);
+});
+
+test('installing account-root layout over provider profile fails closed and rejects layout collision', async () => {
+  const home = await mkdtemp(path.join(os.tmpdir(), 'kernel-layout-collision-'));
+  tempRoots.push(home);
+  const targetRoot = path.join(home, '.codex');
+  const runtimeHome = path.join(home, 'runtime');
+
+  const providerInstall = await installKernelProfile({
+    sourceRoot: process.cwd(),
+    runtime: 'codex',
+    targetRoot,
+    runtimeHome,
+  });
+  assert.equal(providerInstall.status, 'installed');
+
+  await assert.rejects(
+    installKernelAccountRoot({
+      sourceRoot: process.cwd(),
+      runtime: 'codex',
+      targetRoot,
+      runtimeHome,
+    }),
+    /target_collision: foreign or non-account-root Kernel profile manifest/,
+  );
+});

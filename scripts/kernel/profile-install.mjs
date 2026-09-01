@@ -434,8 +434,23 @@ const kernelHookCommands = (value) => {
     .flatMap(([, child]) => kernelHookCommands(child))];
 };
 
+export const resolveProfileEntryRoot = ({ root, entry = null, manifest = null, runtime = null, skillsRoot = null }) => {
+  const effectiveProvider = manifest?.provider || manifest?.runtime || runtime;
+  const effectiveSkillsRoot = manifest?.skillsRoot || skillsRoot;
+  const relPath = typeof entry === 'string' ? entry : entry?.path;
+  if (effectiveProvider === 'antigravity' && effectiveSkillsRoot && relPath && String(relPath).startsWith('skills/')) {
+    return canonicalPath(effectiveSkillsRoot);
+  }
+  return canonicalPath(root);
+};
+
 const profileProjectionIsCurrent = async ({ root, sourceRoot, runtime, runtimeHome, skillsRoot = null, manifest }) => {
   if (!manifest || manifest.sourceRoot !== path.resolve(sourceRoot) || manifest.provider !== runtime) return false;
+  if (runtime === 'antigravity') {
+    const desiredSkillsRoot = skillsRoot ? canonicalPath(skillsRoot) : null;
+    const manifestSkillsRoot = manifest.skillsRoot ? canonicalPath(manifest.skillsRoot) : null;
+    if (desiredSkillsRoot !== manifestSkillsRoot) return false;
+  }
   if ((await inspectProfile(root)).status !== 'ready') return false;
   const sourceMap = await buildSourceFileMap(sourceRoot, runtime);
   const desiredPaths = new Set([...sourceMap.keys(), PROFILE_MARKER_NAME]);
@@ -475,7 +490,8 @@ const readPriorManifest = async (root) => {
   return await exists(manifestPath) ? JSON.parse(await readFile(manifestPath, 'utf8')) : null;
 };
 
-const preflightOwnedEntry = async (root, entry, entryRoot = root) => {
+const preflightOwnedEntry = async (root, entry, { manifest = null, runtime = null, skillsRoot = null } = {}) => {
+  const entryRoot = resolveProfileEntryRoot({ root, entry, manifest, runtime, skillsRoot });
   const file = safeJoin(entryRoot, entry.path);
   await rejectSymlink(file);
   if (!(await exists(file))) return null;
@@ -513,9 +529,7 @@ export async function inspectProfile(targetRoot) {
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
   const checks = [];
   for (const entry of manifest.files || []) {
-    const entryRoot = (manifest.provider === 'antigravity' && manifest.skillsRoot && entry.path.startsWith('skills/'))
-      ? manifest.skillsRoot
-      : root;
+    const entryRoot = resolveProfileEntryRoot({ root, entry, manifest });
     const file = safeJoin(entryRoot, entry.path);
     const present = await exists(file);
     const ownership = ownershipFor(entry);
@@ -524,7 +538,7 @@ export async function inspectProfile(targetRoot) {
     let reason = null;
     let ownedPath = null;
     if (present && ownership === PROFILE_OWNERSHIP.OWNED_DIRECTORY) {
-      const inspected = await inspectOwnedDirectory(root, entry);
+      const inspected = await inspectOwnedDirectory(entryRoot, entry);
       isOk = inspected.status === 'ok';
       checksum = inspected.checksum || null;
       reason = isOk ? null : inspected.reason || 'modified-owned-directory';
@@ -572,7 +586,7 @@ const prepareProfilePlan = async ({ root, skillsRoot = null, item, runtime, runt
   if (isManagedTextPath(rel)) {
     const incoming = await readFile(item.sourcePath, 'utf8');
     if (priorEntry && !force) {
-      const problem = await preflightOwnedEntry(root, priorEntry, planRoot);
+      const problem = await preflightOwnedEntry(root, priorEntry, { manifest: prior, runtime, skillsRoot });
       if (problem) return { collision: problem };
     }
     const existing = present ? await readFile(target, 'utf8') : '';
@@ -596,7 +610,7 @@ const prepareProfilePlan = async ({ root, skillsRoot = null, item, runtime, runt
     if (present) {
       try { existing = await parseJsonFile(target); } catch { return { collision: collision(root, rel, PROFILE_OWNERSHIP.JSON_PATHS, 'invalid-shared-json') }; }
       if (priorEntry && !force) {
-        const problem = await preflightOwnedEntry(root, priorEntry, planRoot);
+        const problem = await preflightOwnedEntry(root, priorEntry, { manifest: prior, runtime, skillsRoot });
         if (problem) return { collision: problem };
       } else if (!priorEntry) {
         const problem = checkUnmanagedJsonCollision({ existing, incoming, rel });
@@ -614,7 +628,7 @@ const prepareProfilePlan = async ({ root, skillsRoot = null, item, runtime, runt
   }
 
   if (priorEntry) {
-    const problem = await preflightOwnedEntry(root, priorEntry, planRoot);
+    const problem = await preflightOwnedEntry(root, priorEntry, { manifest: prior, runtime, skillsRoot });
     if (problem && !force) return { collision: problem };
   } else if (present) {
     const actual = await sha256(target);
@@ -639,7 +653,8 @@ const applyProfilePlans = async (plans) => {
 const backupManifestEntries = async ({ root, prior, backupPath }) => {
   if (!prior || !backupPath) return;
   for (const entry of prior.files || []) {
-    const source = safeJoin(root, entry.path);
+    const sourceRoot = resolveProfileEntryRoot({ root, entry, manifest: prior });
+    const source = safeJoin(sourceRoot, entry.path);
     if (await exists(source)) await copyTree(source, safeJoin(backupPath, entry.path));
   }
   await mkdir(backupPath, { recursive: true });
@@ -666,21 +681,31 @@ const markerFor = (runtime, layout = null) => ({
   ownership: Object.values(PROFILE_OWNERSHIP),
 });
 
-const isCompatibleProfileMarker = ({ marker, runtime, layout }) => {
+const isCompatibleProfileMarker = ({ marker, runtime, layout = null }) => {
   if (!marker || marker.productId !== PROFILE_PRODUCT_ID) return false;
-  if (marker.runtime === 'moon-relay-kernel') {
-    return (marker.provider === runtime || marker.runtime === runtime) && (layout ? (marker.layout === layout || !marker.layout) : !marker.layout);
+  if (layout) {
+    if (marker.layout !== layout) return false;
+    if (marker.runtime === 'moon-relay-kernel') {
+      return marker.provider === runtime || marker.runtime === runtime;
+    }
+    return marker.track === 'kernel' && marker.runtime === runtime;
   }
-  return marker.track === 'kernel' && marker.runtime === runtime && (layout ? (marker.layout === layout || !marker.layout) : !marker.layout);
+  if (marker.layout) return false;
+  if (marker.runtime === 'moon-relay-kernel') {
+    return marker.provider === runtime;
+  }
+  return marker.track === 'kernel' && marker.runtime === runtime;
 };
 
-const isCompatibleProfileManifest = ({ manifest, runtime, layout }) => {
+const isCompatibleProfileManifest = ({ manifest, runtime, layout = null }) => {
+  if (!manifest || manifest.productId !== PROFILE_PRODUCT_ID) return false;
   if (layout) {
-    return (manifest.layout === layout || !manifest.layout)
-      && (manifest.runtime === runtime || manifest.provider === runtime)
-      && (manifest.kernelRuntime === 'moon-relay-kernel' || manifest.track === 'kernel' || manifest.runtime === 'moon-relay-kernel');
+    if (manifest.layout !== layout) return false;
+    return (manifest.runtime === runtime || manifest.provider === runtime)
+      && (manifest.kernelRuntime === 'moon-relay-kernel' || manifest.track === 'kernel');
   }
-  return (manifest.runtime === 'moon-relay-kernel' && manifest.provider === runtime && !manifest.layout)
+  if (manifest.layout) return false;
+  return (manifest.runtime === 'moon-relay-kernel' && manifest.provider === runtime)
     || (manifest.track === 'kernel' && manifest.runtime === runtime);
 };
 
@@ -710,7 +735,7 @@ const markerPlan = async ({ root, runtime, prior, force, layout = null }) => {
   const present = await exists(target);
   const priorEntry = priorEntryFor(prior, rel);
   if (priorEntry && !force) {
-    const problem = await preflightOwnedEntry(root, priorEntry);
+    const problem = await preflightOwnedEntry(root, priorEntry, { manifest: prior, runtime });
     if (problem) return { collision: problem };
   } else if (present && !priorEntry) {
     return { collision: collision(root, rel, PROFILE_OWNERSHIP.OWNED_FILE, 'marker-without-trusted-manifest') };
@@ -904,7 +929,7 @@ export async function installKernelAccountRoot({ sourceRoot = process.cwd(), run
   const markerPath = profileMarkerPath(root);
   const priorManifest = await readPriorManifest(root);
   if (priorManifest && priorManifest.productId !== PROFILE_PRODUCT_ID) throw new Error('target_collision: foreign profile manifest');
-  if (priorManifest && priorManifest.layout && priorManifest.layout !== ACCOUNT_ROOT_PROFILE_LAYOUT) throw new Error('target_collision: foreign or non-account-root Kernel profile manifest');
+  if (priorManifest && priorManifest.layout !== ACCOUNT_ROOT_PROFILE_LAYOUT) throw new Error('target_collision: foreign or non-account-root Kernel profile manifest');
   const prior = await trustedPriorManifest({ root, manifest: priorManifest, runtime, layout: ACCOUNT_ROOT_PROFILE_LAYOUT });
   if (await exists(markerPath) && !prior) throw new Error('target_collision: marker without trusted manifest');
   const effectiveRuntimeHome = runtimeHome || resolveKernelRuntimeHome();
@@ -978,26 +1003,27 @@ const pruneEmptyJsonContainers = (value) => {
   return value;
 };
 
-const removeManagedEntry = async (root, entry) => {
-  const file = safeJoin(root, entry.path);
+const removeManagedEntry = async (root, entry, { manifest = null, runtime = null, skillsRoot = null } = {}) => {
+  const entryRoot = resolveProfileEntryRoot({ root, entry, manifest, runtime, skillsRoot });
+  const file = safeJoin(entryRoot, entry.path);
   if (!(await exists(file))) return { changed: false };
   const ownership = ownershipFor(entry);
   if (ownership === PROFILE_OWNERSHIP.MANAGED_SECTION) {
     const text = await readFile(file, 'utf8');
     if (entry.format === 'toml-developer-instructions') {
       const assignment = parseDeveloperAssignment(text);
-      if (!assignment) return { collision: collision(root, entry.path, ownership, 'managed-section-container-missing') };
+      if (!assignment) return { collision: collision(entryRoot, entry.path, ownership, 'managed-section-container-missing') };
       const inspected = inspectManagedSection(assignment.body, entry.sectionId || MANAGED_SECTION_ID);
-      if (inspected.status !== 'present') return { collision: collision(root, entry.path, ownership, inspected.reason || 'managed-section-missing') };
-      if (entry.managedChecksum && inspected.digest !== entry.managedChecksum) return { collision: collision(root, entry.path, ownership, 'modified-managed-section') };
+      if (inspected.status !== 'present') return { collision: collision(entryRoot, entry.path, ownership, inspected.reason || 'managed-section-missing') };
+      if (entry.managedChecksum && inspected.digest !== entry.managedChecksum) return { collision: collision(entryRoot, entry.path, ownership, 'modified-managed-section') };
       const removed = removeManagedSection(assignment.body, entry.sectionId || MANAGED_SECTION_ID);
       if (entry.createdByKernel && !removed.text.trim()) await rm(file, { force: true });
       else await atomicWrite(file, `${text.slice(0, assignment.start)}${assignment.prefix}${assignment.delimiter}${removed.text}${assignment.delimiter}${text.slice(assignment.end)}`);
       return { changed: true };
     }
     const inspected = inspectManagedSection(text, entry.sectionId || MANAGED_SECTION_ID);
-    if (inspected.status !== 'present') return { collision: collision(root, entry.path, ownership, inspected.reason || 'managed-section-missing') };
-    if (entry.managedChecksum && inspected.digest !== entry.managedChecksum) return { collision: collision(root, entry.path, ownership, 'modified-managed-section') };
+    if (inspected.status !== 'present') return { collision: collision(entryRoot, entry.path, ownership, inspected.reason || 'managed-section-missing') };
+    if (entry.managedChecksum && inspected.digest !== entry.managedChecksum) return { collision: collision(entryRoot, entry.path, ownership, 'modified-managed-section') };
     const removed = removeManagedSection(text, entry.sectionId || MANAGED_SECTION_ID);
     if (entry.createdByKernel && !removed.text.trim()) await rm(file, { force: true });
     else await atomicWrite(file, removed.text);
@@ -1005,9 +1031,9 @@ const removeManagedEntry = async (root, entry) => {
   }
   if (ownership === PROFILE_OWNERSHIP.JSON_PATHS) {
     let value;
-    try { value = await parseJsonFile(file); } catch { return { collision: collision(root, entry.path, ownership, 'invalid-shared-json') }; }
+    try { value = await parseJsonFile(file); } catch { return { collision: collision(entryRoot, entry.path, ownership, 'invalid-shared-json') }; }
     const result = removeJsonOwnership(value, entry);
-    if (result.failures.length > 0) return { collision: collision(root, entry.path, ownership, result.failures[0].reason, result.failures[0]) };
+    if (result.failures.length > 0) return { collision: collision(entryRoot, entry.path, ownership, result.failures[0].reason, result.failures[0]) };
     if (!result.changed) return { changed: false };
     if (entry.createdByKernel) pruneEmptyJsonContainers(result.value);
     if (entry.createdByKernel && Object.keys(result.value || {}).length === 0) await rm(file, { force: true });
@@ -1015,18 +1041,18 @@ const removeManagedEntry = async (root, entry) => {
     return { changed: true };
   }
   if (ownership === PROFILE_OWNERSHIP.OWNED_DIRECTORY) {
-    const problem = await preflightOwnedEntry(root, entry);
+    const problem = await preflightOwnedEntry(root, entry, { manifest, runtime, skillsRoot });
     if (problem) return { collision: problem };
     if (entry.createdByKernel === false) return { changed: false, preserved: true };
     await rm(file, { force: true, recursive: true });
-    await removeEmptyParents(root, file);
+    await removeEmptyParents(entryRoot, file);
     return { changed: true };
   }
   const checksum = await sha256(file);
-  if (entry.checksum && checksum !== entry.checksum) return { collision: collision(root, entry.path, ownership, 'modified-owned-file') };
+  if (entry.checksum && checksum !== entry.checksum) return { collision: collision(entryRoot, entry.path, ownership, 'modified-owned-file') };
   if (entry.createdByKernel === false && entry.path !== PROFILE_MARKER_NAME) return { changed: false, preserved: true };
   await rm(file, { force: true, recursive: true });
-  await removeEmptyParents(root, file);
+  await removeEmptyParents(entryRoot, file);
   return { changed: true };
 };
 
@@ -1048,12 +1074,12 @@ export async function uninstallKernelProfile({ targetRoot } = {}) {
   }
   const collisions = [];
   for (const entry of manifest.files || []) {
-    const problem = await preflightOwnedEntry(root, entry);
+    const problem = await preflightOwnedEntry(root, entry, { manifest });
     if (problem) collisions.push(problem);
   }
   if (collisions.length > 0) return { status: 'collision', targetRoot: root, path: collisions[0].path, ownership: collisions[0].ownership, reason: collisions[0].reason, collisions };
   for (const entry of manifest.files || []) {
-    const result = await removeManagedEntry(root, entry);
+    const result = await removeManagedEntry(root, entry, { manifest });
     if (result.collision) return { status: 'collision', targetRoot: root, ...result.collision, collisions: [result.collision] };
   }
   await rm(manifestPath, { force: true });
@@ -1072,17 +1098,19 @@ export async function rollbackKernelProfile({ targetRoot, backupPath } = {}) {
   const priorFiles = new Set((priorManifest.files || []).map((entry) => entry.path));
   const introducedEntries = (currentManifest?.files || []).filter((entry) => !priorFiles.has(entry.path));
   for (const entry of introducedEntries) {
-    const problem = await preflightOwnedEntry(root, entry);
+    const problem = await preflightOwnedEntry(root, entry, { manifest: currentManifest });
     if (problem) return { status: 'collision', targetRoot: root, path: problem.path, ownership: problem.ownership, reason: problem.reason };
   }
   for (const entry of introducedEntries) {
-    const file = safeJoin(root, entry.path);
+    const entryRoot = resolveProfileEntryRoot({ root, entry, manifest: currentManifest });
+    const file = safeJoin(entryRoot, entry.path);
     await rm(file, { force: true, recursive: true });
-    await removeEmptyParents(root, file);
+    await removeEmptyParents(entryRoot, file);
   }
   for (const rel of await files(backup)) {
     if (PROFILE_BACKUP_METADATA.has(rel)) continue;
-    await copyTree(safeJoin(backup, rel), safeJoin(root, rel));
+    const targetRoot = resolveProfileEntryRoot({ root, entry: rel, manifest: priorManifest });
+    await copyTree(safeJoin(backup, rel), safeJoin(targetRoot, rel));
   }
   await atomicWrite(profileManifestPath(root), JSON.stringify(priorManifest, null, 2));
   const postVerification = await inspectProfile(root);

@@ -399,3 +399,82 @@ const incompleteFinalizationBlocksSuccessor = async () => {
   }
 };
 test('a completed Run with incomplete finalization blocks successor creation with a stable recovery action', incompleteFinalizationBlocksSuccessor);
+
+test('declared multi-step task contract without work-unit scope is rejected by preflight before Run creation', async () => {
+  const fixture = await makeProject('kernel-multi-step-preflight');
+  const sessionId = 'codex:thread-multi-step';
+  const contractPath = path.join(fixture.projectRoot, 'contract-multi-step.json');
+  try {
+    await writeFile(contractPath, JSON.stringify({
+      objective: 'multi-step feature implementation',
+      taskClass: 'feature',
+      steps: [
+        { stepId: 'step-1', objective: 'first step without scope' },
+      ],
+      acceptance: ['feature is implemented'],
+    }));
+
+    const result = invokeNext({ ...fixture, sessionId, contractPath });
+    assert.notEqual(result.status, 0);
+    const payload = parseCliJson(result);
+    assert.equal(payload.errorCode, 'work-unit-scope-missing');
+    assert.equal(payload.nextAction, 'revise-task-contract-with-scoped-allowedPaths');
+
+    const store = await openKernelStateStore({ runtimeHome: fixture.runtimeHome });
+    try {
+      assert.equal(store.getRun('run-multi-step'), null);
+      assert.equal(store.getActiveOwnerBinding({ projectId: fixture.projectId, sessionId }), null);
+    } finally {
+      store.close();
+    }
+  } finally {
+    await rm(fixture.projectRoot, { recursive: true, force: true });
+    await rm(fixture.runtimeHome, { recursive: true, force: true });
+  }
+});
+
+test('rollbackRunInitialization deletes child tables first and succeeds with nested foreign key data', async () => {
+  const fixture = await makeProject('kernel-fk-rollback');
+  const sessionId = 'codex:thread-fk-rollback';
+  const runId = 'run-fk-test';
+  try {
+    await startOwnedRun({
+      ...fixture,
+      sessionId,
+      runId,
+      objective: 'fk test',
+    });
+    const store = await openKernelStateStore({ runtimeHome: fixture.runtimeHome });
+    try {
+      const run = store.getRun(runId);
+      store.recordKnowledgeCandidate('cand-fk-test', runId, {
+        projectId: run.projectId,
+        proposedType: 'semantic_fact',
+        status: 'pending',
+        candidateJson: { statement: 'fact statement' },
+      });
+      store.recordCandidateEvidenceBinding({
+        candidateId: 'cand-fk-test',
+        runId,
+        evidenceDigest: 'sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+        obligationId: 'default',
+        sourceIdentity: sessionId,
+        mutationRevision: 0,
+        bindingType: 'verification',
+      });
+
+      const rollback = store.rollbackRunInitialization(runId, {
+        projectId: run.projectId,
+        sourceIdentity: run.sourceIdentity,
+      });
+      assert.equal(rollback.status, 'rolled-back');
+      assert.equal(rollback.rolledBack, true);
+      assert.equal(store.getRun(runId), null);
+    } finally {
+      store.close();
+    }
+  } finally {
+    await rm(fixture.projectRoot, { recursive: true, force: true });
+    await rm(fixture.runtimeHome, { recursive: true, force: true });
+  }
+});

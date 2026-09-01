@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import os from 'node:os';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { canonicalPath } from '../scripts/kernel/runtime-home.mjs';
 import { resolveCodexDesktop } from '../scripts/switcher/app-resolver/codex.mjs';
 import { resolveAntigravity } from '../scripts/switcher/app-resolver/antigravity.mjs';
 import { buildCodexDesktopLaunch, verifyCodexChild } from '../scripts/switcher/providers/codex.mjs';
@@ -18,7 +19,7 @@ test('Kernel launch exports the Kernel home without rewriting Provider homes', (
     roots: { runtimeHome, providerHome },
     baseEnv: { CLAUDE_CONFIG_DIR: providerHome },
   });
-  assert.equal(env.MOON_RELAY_KERNEL_HOME, runtimeHome);
+  assert.equal(env.MOON_RELAY_KERNEL_HOME, canonicalPath(runtimeHome));
   assert.equal(env.CLAUDE_CONFIG_DIR, providerHome);
   assert.equal(env.MOON_RELAY_KERNEL_RUNTIME, 'moon-relay-kernel');
 });
@@ -27,13 +28,13 @@ test('Codex launch uses the native user Provider HOME and Kernel runtime metadat
   const spec = buildCodexDesktopLaunch({ roots, executable: 'ChatGPT.exe' });
   assert.equal(spec.env.CODEX_HOME, roots.providerHome); assert.equal(spec.args.includes(roots.appDataRoot), false);
   assert.equal(verifyCodexChild({ expectedProviderHome: roots.providerHome, childEnvironment: spec.env, childExecutable: 'ChatGPT.exe', expectedExecutable: 'ChatGPT.exe' }).status, 'verified');
-  assert.equal(spec.env.MOON_RELAY_KERNEL_HOME, roots.runtimeHome);
+  assert.equal(spec.env.MOON_RELAY_KERNEL_HOME, canonicalPath(roots.runtimeHome));
 });
 test('Antigravity launch uses the native Gemini HOME and user data dir', () => {
   const roots = { runtimeHome: path.join(os.tmpdir(), 'kernel'), providerHome: path.join(os.homedir(), '.gemini', 'antigravity'), appDataRoot: path.join(os.tmpdir(), 'ag-app') };
   const spec = buildAntigravityLaunch({ roots, executable: 'Antigravity.exe' });
   assert.equal(spec.env.GEMINI_HOME, roots.providerHome); assert.equal(verifyAntigravityChild({ expectedProviderHome: roots.providerHome, childEnvironment: spec.env, childArgs: spec.args, expectedAppDataRoot: roots.appDataRoot }).status, 'verified');
-  assert.equal(spec.env.MOON_RELAY_KERNEL_HOME, roots.runtimeHome);
+  assert.equal(spec.env.MOON_RELAY_KERNEL_HOME, canonicalPath(roots.runtimeHome));
 });
 test('provider parity matrix keeps all native surfaces disjoint from Kernel state', () => {
   const result = providerParityMatrix({ kernelHome: path.join(os.tmpdir(), 'kernel') });

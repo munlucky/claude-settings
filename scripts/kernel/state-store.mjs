@@ -1549,7 +1549,9 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
 
         const pending = new Map(tables.map((table) => [table.name, table]));
         while (pending.size > 0) {
-          const deletable = [...pending.values()].find((table) => !table.references.some((reference) => pending.has(reference)));
+          const deletable = [...pending.values()].find((candidate) => (
+            ![...pending.values()].some((other) => other.name !== candidate.name && other.references.includes(candidate.name))
+          ));
           const table = deletable || pending.values().next().value;
           const clauses = [];
           const values = [];
