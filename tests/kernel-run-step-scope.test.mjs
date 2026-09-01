@@ -19,8 +19,21 @@ const CONTRACT = {
     { acceptance: 'the suite stays clean', evidencePlan: { class: 'hard', method: 'static-analysis', commandRefs: ['lint'], obligationId: 'static-analysis' } },
   ],
   steps: [
-    { objective: 'Implement token expiry', allowedPaths: ['src/auth/**'], forbiddenPaths: ['src/billing/**'], acceptanceIds: ['AC-1'], obligationIds: ['unit-test'] },
-    { objective: 'Cover it', allowedPaths: ['tests/**'], acceptanceIds: ['AC-2'], obligationIds: ['static-analysis'] },
+    {
+      objective: 'Implement token expiry',
+      allowedPaths: ['src/auth/**'],
+      forbiddenPaths: ['src/billing/**'],
+      acceptanceIds: ['AC-1'],
+      obligationIds: ['unit-test'],
+      expectedOutputs: ['token expiry implementation'],
+    },
+    {
+      objective: 'Cover it',
+      allowedPaths: ['tests/**'],
+      acceptanceIds: ['AC-2'],
+      obligationIds: ['static-analysis'],
+      expectedOutputs: ['regression coverage'],
+    },
   ],
 };
 

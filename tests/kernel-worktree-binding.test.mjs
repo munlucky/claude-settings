@@ -224,6 +224,30 @@ test('a worktree mutation lease survives reopen, rejects a second mutable Run at
     });
     assert.equal(blockedResume.mode, 'resume');
     assert.equal(blockedResume.runId, 'run-lease-a');
+    assert.throws(
+      () => resolveBoundInvocation({
+        stateStore: store,
+        projectId: worktree.projectId,
+        provider: 'codex',
+        sessionId: 'codex:new-task-session',
+        workspaceId: worktree.workspaceId,
+        worktreeId: worktree.worktreeId,
+        taskContract: {
+          objective: 'independent blocked task',
+          acceptance: ['independent blocked task completes'],
+          invocationIntent: 'new-task',
+        },
+      }),
+      (error) => {
+        assert.equal(error.code, 'worktree_run_conflict');
+        assert.equal(error.details.reason, 'new-task-cannot-revise-mutable-run');
+        assert.equal(error.details.holderRunId, 'run-lease-a');
+        assert.equal(error.details.holder.runId, 'run-lease-a');
+        assert.equal(error.details.holder.status, 'blocked');
+        assert.equal(error.details.lease.holderRunId, 'run-lease-a');
+        return true;
+      },
+    );
     assert.equal(store.resumeBlockedRun('run-lease-a').status, 'active');
     const active = store.getRun('run-lease-a');
     store.persistCompletionDecision('run-lease-a', {
@@ -252,6 +276,21 @@ test('unleased historical blocked Runs do not conflict with the current active w
     const raw = await openSqliteDb(kernelDbPath(fixture.runtimeHome));
     raw.prepare('DELETE FROM worktree_mutation_leases WHERE worktree_id=?').run(worktree.worktreeId);
     raw.close();
+
+    const newTask = resolveBoundInvocation({
+      stateStore: store,
+      projectId: worktree.projectId,
+      provider: 'codex',
+      sessionId: 'codex:new-task-session',
+      workspaceId: worktree.workspaceId,
+      worktreeId: worktree.worktreeId,
+      taskContract: {
+        objective: 'new task after historical blocker',
+        acceptance: ['new task starts independently'],
+        invocationIntent: 'new-task',
+      },
+    });
+    assert.equal(newTask.mode, 'create');
 
     createBoundRun(store, 'run-current-active', worktree);
     assert.equal(store.getWorktreeMutationLease(worktree.worktreeId).holderRunId, 'run-current-active');

@@ -65,6 +65,7 @@ test('contract-first invocation resolver deterministically selects every lifecyc
     taskContract: contractA,
   };
   assert.equal(resolve(contractA).mode, 'resume');
+  assert.equal(resolve(contractA, { explicitRunId: 'run-a' }).mode, 'resume');
   assert.equal(resolve(contractB).mode, 'revise');
 
   run = { ...run, status: 'completed', finalizationStatus: 'partial' };
@@ -73,11 +74,75 @@ test('contract-first invocation resolver deterministically selects every lifecyc
   run = { ...run, finalizationStatus: 'completed' };
   assert.equal(resolve().mode, 'done');
   assert.equal(resolve(contractA).mode, 'done');
+  assert.equal(resolve({ ...contractA, invocationIntent: 'new-task' }).mode, 'successor');
   const successor = resolve(contractB);
   assert.equal(successor.mode, 'successor');
   assert.equal(successor.predecessorRunId, 'run-a');
   assert.match(successor.runId, /^run-[0-9a-f-]{36}$/i);
   assert.equal(resolve(contractB, { workspaceId: 'workspace-next' }).mode, 'create');
+});
+
+test('explicit new-task intent fails closed instead of revising an active worktree Run and preserves its holder', () => {
+  const projectId = 'new-task-project';
+  const worktreeId = 'worktree-new-task';
+  const workspaceId = 'workspace-new-task';
+  const contract = normalizeTaskContract({
+    objective: 'existing task',
+    acceptance: ['existing task is complete'],
+  });
+  const holderRun = {
+    runId: 'run-holder',
+    projectId,
+    workspaceId,
+    worktreeId,
+    status: 'active',
+    taskContract: contract,
+  };
+  const stateStore = {
+    getActiveOwnerBinding: () => ({
+      bindingId: 'binding-holder',
+      runId: holderRun.runId,
+      projectId,
+      sessionId: 'codex:new-task-session',
+      workspaceId,
+    }),
+    getRun: (runId) => runId === holderRun.runId ? holderRun : null,
+    listRuns: () => [holderRun],
+    getWorktreeMutationLease: () => null,
+  };
+
+  assert.throws(
+    () => resolveBoundInvocation({
+      stateStore,
+      projectId,
+      provider: 'codex',
+      sessionId: 'codex:new-task-session',
+      workspaceId,
+      worktreeId,
+      taskContract: {
+        objective: 'independent task',
+        acceptance: ['independent task is complete'],
+        invocationIntent: 'new-task',
+      },
+    }),
+    (error) => {
+      assert.equal(error.code, 'worktree_run_conflict');
+      assert.equal(error.nextAction, 'resume-the-worktree-bound-run');
+      assert.equal(error.details.reason, 'new-task-cannot-revise-mutable-run');
+      assert.equal(error.details.holderRunId, holderRun.runId);
+      assert.deepEqual(error.details.holder, {
+        runId: holderRun.runId,
+        projectId,
+        workspaceId,
+        worktreeId,
+        status: 'active',
+        blockedReason: null,
+      });
+      assert.deepEqual(error.details.holders, [error.details.holder]);
+      return true;
+    },
+  );
+  assert.equal(holderRun.taskContract.digest, contract.digest);
 });
 
 test('contract-first invocation resolver fails closed on explicit, provider, and workspace mismatches', () => {
@@ -177,7 +242,7 @@ const markTerminal = async ({ runtimeHome, runId, finalizationStatus }) => {
   }
 };
 
-const invokeNext = ({ projectRoot, runtimeHome, sessionId, contractPath }) =>
+const invokeNext = ({ projectRoot, runtimeHome, sessionId, contractPath, invocationIntent = null }) =>
   spawnSync(process.execPath, [
     kernelCli,
     'next',
@@ -189,6 +254,7 @@ const invokeNext = ({ projectRoot, runtimeHome, sessionId, contractPath }) =>
     projectRoot,
     '--runtime-home',
     runtimeHome,
+    ...(invocationIntent ? ['--invocation-intent', invocationIntent] : []),
     '--json',
   ], {
     cwd: projectRoot,
@@ -256,6 +322,47 @@ const successorAfterCompletedFinalization = async () => {
   }
 };
 test('a new contract after completed finalization creates an opaque successor and preserves its predecessor', successorAfterCompletedFinalization);
+
+const explicitNewTaskAgainstActiveRun = async () => {
+  const fixture = await makeProject('kernel-session-new-task');
+  const sessionId = 'codex:thread-new-task';
+  const holderRunId = 'codex-thread-holder';
+  const contractPath = path.join(fixture.projectRoot, 'contract-new-task.json');
+  try {
+    await startOwnedRun({
+      ...fixture,
+      sessionId,
+      runId: holderRunId,
+      objective: 'existing active task',
+    });
+    await writeFile(contractPath, JSON.stringify({
+      objective: 'independent task',
+      acceptance: ['independent task has its own Run'],
+    }));
+
+    const result = invokeNext({ ...fixture, sessionId, contractPath, invocationIntent: 'new-task' });
+
+    assert.notEqual(result.status, 0);
+    const payload = parseCliJson(result);
+    assert.equal(payload.errorCode, 'worktree_run_conflict');
+    assert.equal(payload.diagnostics.reason, 'new-task-cannot-revise-mutable-run');
+    assert.equal(payload.diagnostics.holderRunId, holderRunId);
+    assert.equal(payload.diagnostics.holder.runId, holderRunId);
+
+    const store = await openKernelStateStore({ runtimeHome: fixture.runtimeHome });
+    try {
+      const holder = store.getRun(holderRunId);
+      assert.equal(holder.status, 'active');
+      assert.equal(holder.objective, 'existing active task');
+    } finally {
+      store.close();
+    }
+  } finally {
+    await rm(fixture.projectRoot, { recursive: true, force: true });
+    await rm(fixture.runtimeHome, { recursive: true, force: true });
+  }
+};
+test('the contract boundary carries explicit new-task intent through CLI resolution without mutating the active Run', explicitNewTaskAgainstActiveRun);
 
 const incompleteFinalizationBlocksSuccessor = async () => {
   const fixture = await makeProject('kernel-session-finalization');

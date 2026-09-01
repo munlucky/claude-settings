@@ -1501,6 +1501,80 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       return this.getRun(runId);
     },
 
+    // Remove only a Run that was created by a failed pre-dispatch bootstrap.
+    // This is deliberately stricter than abandon: an initialized or mutated
+    // Run is durable user history and must never be erased as cleanup. The
+    // child-table order is derived from SQLite foreign keys so rollback remains
+    // valid as lifecycle receipts gain new references.
+    rollbackRunInitialization(runId, { projectId = null, sourceIdentity = null } = {}) {
+      if (!runId) throw new Error('rollbackRunInitialization requires runId');
+      return db.transaction(() => {
+        const run = db.prepare(`
+          SELECT run_id AS runId, project_id AS projectId, worktree_id AS worktreeId,
+                 source_identity AS sourceIdentity, status, mutation_revision AS mutationRevision
+          FROM runs WHERE run_id=?
+        `).get(runId);
+        if (!run) return { status: 'not-found', runId, rolledBack: false };
+        if (projectId && run.projectId !== projectId) {
+          throw Object.assign(new Error('run_project_mismatch'), { code: 'run_project_mismatch', errorCode: 'run_project_mismatch' });
+        }
+        if (sourceIdentity && run.sourceIdentity !== sourceIdentity) {
+          throw Object.assign(new Error('run_source_identity_mismatch'), { code: 'run_source_identity_mismatch', errorCode: 'run_source_identity_mismatch' });
+        }
+        if (!['active', 'blocked'].includes(run.status) || Number(run.mutationRevision || 0) !== 0) {
+          throw Object.assign(new Error('run_initialization_rollback_not_safe'), {
+            code: 'run_initialization_rollback_not_safe',
+            errorCode: 'run_initialization_rollback_not_safe',
+            nextAction: 'preserve-run-and-resolve-lifecycle-state',
+            details: { runId, status: run.status, mutationRevision: Number(run.mutationRevision || 0) },
+          });
+        }
+
+        const quoteIdentifier = (value) => `"${String(value).replaceAll('"', '""')}"`;
+        const tableRows = db.prepare(`
+          SELECT name FROM sqlite_master
+          WHERE type='table' AND name NOT LIKE 'sqlite_%'
+        `).all();
+        const tables = tableRows.map((row) => row.name).filter((name) => name !== 'runs').map((name) => {
+          const quoted = quoteIdentifier(name);
+          const columns = db.prepare(`PRAGMA table_info(${quoted})`).all().map((column) => column.name);
+          const references = db.prepare(`PRAGMA foreign_key_list(${quoted})`).all().map((foreignKey) => foreignKey.table);
+          return {
+            name,
+            hasRunId: columns.includes('run_id'),
+            hasHolderRunId: columns.includes('holder_run_id'),
+            references,
+          };
+        }).filter((table) => table.hasRunId || table.hasHolderRunId);
+
+        const pending = new Map(tables.map((table) => [table.name, table]));
+        while (pending.size > 0) {
+          const deletable = [...pending.values()].find((table) => !table.references.some((reference) => pending.has(reference)));
+          const table = deletable || pending.values().next().value;
+          const clauses = [];
+          const values = [];
+          if (table.hasRunId) {
+            clauses.push('run_id=?');
+            values.push(runId);
+          }
+          if (table.hasHolderRunId) {
+            clauses.push('holder_run_id=?');
+            values.push(runId);
+          }
+          db.prepare(`DELETE FROM ${quoteIdentifier(table.name)} WHERE ${clauses.join(' OR ')}`).run(...values);
+          pending.delete(table.name);
+        }
+        const deleted = db.prepare('DELETE FROM runs WHERE run_id=? AND status IN (\'active\', \'blocked\') AND mutation_revision=0').run(runId);
+        if (deleted.changes !== 1) {
+          throw Object.assign(new Error('run_initialization_rollback_race'), {
+            code: 'run_initialization_rollback_race',
+            errorCode: 'run_initialization_rollback_race',
+          });
+        }
+        return { status: 'rolled-back', runId, rolledBack: true };
+      })();
+    },
+
     abandonRun(runId) {
       const run = this.getRun(runId);
       if (!run) throw new Error(`Run ${runId} not found`);

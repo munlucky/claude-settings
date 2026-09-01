@@ -6,6 +6,7 @@ import { test } from 'node:test';
 
 import { collectRetroRecord } from '../tools/retro/collect.mjs';
 import { importCollectRecords, readCollectRecord, resolveRetroRoot } from '../tools/retro/retro-store.mjs';
+import { canonicalPath } from '../scripts/kernel/runtime-home.mjs';
 
 const root = process.cwd();
 
@@ -21,7 +22,7 @@ test('retro root defaults to Kernel runtime home and ignores retired Relay home'
         MOONSHOT_RELAY_HOME: legacyHome,
       },
     }),
-    path.join(kernelHome, 'state', 'projects', 'fixture', 'retro'),
+    path.join(canonicalPath(kernelHome), 'state', 'projects', 'fixture', 'retro'),
   );
 });
 

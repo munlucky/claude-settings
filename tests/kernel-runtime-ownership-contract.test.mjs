@@ -8,6 +8,7 @@ import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
 import { resolveSurfaceRoots } from '../scripts/switcher/paths.mjs';
 import { buildCodexDesktopLaunch } from '../scripts/switcher/providers/codex.mjs';
 import { resolveKernelWorktreeIdentity } from '../scripts/kernel/run/worktree-binding.mjs';
+import { canonicalPath } from '../scripts/kernel/runtime-home.mjs';
 
 const safeClean = async (dirs) => {
   for (const dir of dirs) {
@@ -78,13 +79,13 @@ test('Invariant 2: Kernel does not own or override Provider HOME (Kernel State !
   const kernelHome = path.join(os.tmpdir(), 'kernel-home');
 
   const roots = resolveSurfaceRoots({ surface: 'codex_desktop', sourceRoot: process.cwd(), kernelHome });
-  assert.equal(roots.runtimeHome, kernelHome);
+  assert.equal(roots.runtimeHome, canonicalPath(kernelHome));
   // Provider home points to native user codex home, not inside kernelHome
   assert.ok(!roots.providerHome.startsWith(kernelHome));
 
   const launchSpec = buildCodexDesktopLaunch({ sourceRoot: process.cwd(), roots, executable: 'ChatGPT.exe' });
   assert.equal(launchSpec.env.CODEX_HOME, roots.providerHome);
-  assert.equal(launchSpec.env.MOON_RELAY_KERNEL_HOME, kernelHome);
+  assert.equal(launchSpec.env.MOON_RELAY_KERNEL_HOME, roots.runtimeHome);
   assert.equal(launchSpec.env.MOON_RELAY_KERNEL_SURFACE, 'codex_desktop');
 });
 

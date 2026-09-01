@@ -329,6 +329,7 @@ try {
     const positionalRunId = args[1] && !args[1].startsWith('--') ? args[1] : null;
     const contractFile = getArgValue('--contract-json') || getArgValue('--objective-json');
     const explicitRunId = getArgValue('--run-id') || positionalRunId;
+    const invocationIntent = getArgValue('--invocation-intent');
     const taskContract = contractFile
       ? JSON.parse(readFileSync(path.resolve(contractFile), 'utf8'))
       : null;
@@ -338,6 +339,7 @@ try {
         explicitRunId,
         envRunId: kernelEnv.MOON_RELAY_KERNEL_RUN_ID || null,
         taskContract,
+        invocationIntent,
       });
     } else {
       const runId = await cp.resolveRunId({

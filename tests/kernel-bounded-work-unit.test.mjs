@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
-import { dispatchKernelTurn } from '../scripts/host/kernel/turn-dispatcher.mjs';
+import { openSqliteDb } from '../scripts/kernel/sqlite-adapter.mjs';
 
 const HOST = {
   surface: 'claude',
@@ -48,13 +48,22 @@ const broadContract = (allowedPaths) => ({
   ...(allowedPaths === undefined ? {} : { allowedPaths }),
 });
 
-const assertNoDispatchState = (cp, runId, run) => {
-  assert.equal(cp.stateStore.getWorkspaceMutationLockV2(run.workspaceId), null);
+const assertNoDispatchState = async (cp, runId, run = null) => {
+  if (run?.workspaceId) assert.equal(cp.stateStore.getWorkspaceMutationLockV2(run.workspaceId), null);
+  assert.equal(cp.stateStore.getRun(runId), null);
   assert.deepEqual(cp.stateStore.listModelRouteDecisions(runId), []);
   assert.deepEqual(cp.listRouteAdmissions(runId), []);
   assert.deepEqual(cp.stateStore.listExecutionCapsules(runId), []);
   assert.deepEqual(cp.stateStore.getStepAttempts(runId), []);
   assert.deepEqual(cp.stateStore.getAttempts(runId), []);
+  const raw = await openSqliteDb(cp.stateStore.dbPath);
+  try {
+    assert.equal(raw.prepare('SELECT COUNT(*) AS count FROM worktree_mutation_leases WHERE holder_run_id=?').get(runId).count, 0);
+    assert.equal(raw.prepare('SELECT COUNT(*) AS count FROM workspace_mutation_locks_v2 WHERE holder_run_id=?').get(runId).count, 0);
+    assert.equal(raw.prepare('SELECT COUNT(*) AS count FROM workspace_mutation_locks WHERE holder_run_id=?').get(runId).count, 0);
+  } finally {
+    raw.close();
+  }
 };
 
 test('control-plane rejects an unbounded implementation before any dispatch state is created', async () => {
@@ -69,38 +78,65 @@ test('control-plane rejects an unbounded implementation before any dispatch stat
     ];
 
     for (const entry of cases) {
-      if (cases.indexOf(entry) > 0) await cp.abandonRun(cases[cases.indexOf(entry) - 1].runId);
-      await cp.startRun({ runId: entry.runId, objective: 'bounded implementation', taskContract: entry.taskContract });
-      const run = await cp.getRun(entry.runId);
-      const host = await cp.hostNext(entry.runId, { hostCapabilities: HOST });
-
-      assert.equal(host.status, 'scope-rejected');
-      assert.equal(host.errorCode, entry.errorCode);
-      assert.equal(host.hostDirective.mutationLock, null);
-      assert.equal(host.hostDirective.attemptId, null);
-      assert.equal(host.hostDirective.executionCapsule, null);
-      assert.equal(host.hostDirective.executionAssignment, null);
-      assertNoDispatchState(cp, entry.runId, run);
+      await assert.rejects(
+        cp.startRun({ runId: entry.runId, objective: 'bounded implementation', taskContract: entry.taskContract }),
+        (error) => error.errorCode === entry.errorCode,
+      );
+      await assertNoDispatchState(cp, entry.runId);
     }
 
-    let providerCalls = 0;
-    const dispatched = await dispatchKernelTurn({
-      controlPlane: cp,
-      runId: 'r-star',
-      adapter: {
-        capabilities: HOST,
-        dispatch: async () => {
-          providerCalls += 1;
-          throw new Error('provider dispatch must not be reached');
+    await assert.rejects(
+      cp.ensureRun({
+        runId: 'r-ensure',
+        objective: 'bounded implementation',
+        taskContract: broadContract(['**']),
+      }),
+      (error) => error.errorCode === 'work-unit-scope-unbounded',
+    );
+    await assertNoDispatchState(cp, 'r-ensure');
+  } finally {
+    await cp.close();
+    await cleanup(fixture);
+  }
+});
+
+test('contract preflight rejects missing verification commands and incomplete detailed step bindings before Run creation', async () => {
+  const fixture = await setup();
+  const cp = await createKernelControlPlane(fixture);
+  try {
+    await assert.rejects(
+      cp.startRun({
+        runId: 'r-missing-command',
+        objective: 'bounded implementation',
+        taskContract: {
+          acceptance: [{
+            acceptance: 'the change is tested',
+            evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:missing'], obligationId: 'unit-test' },
+          }],
+          allowedPaths: ['app.mjs'],
         },
-      },
-      env: { MOON_RELAY_KERNEL_WAYFINDER_MODE: 'off' },
-      runtimeHome: fixture.runtimeHome,
-    });
-    assert.equal(providerCalls, 0);
-    assert.equal(dispatched.dispatched, false);
-    assert.equal(dispatched.modelInput.status, 'scope-rejected');
-    assertNoDispatchState(cp, 'r-star', await cp.getRun('r-star'));
+      }),
+      (error) => error.errorCode === 'verification-command-missing',
+    );
+    await assertNoDispatchState(cp, 'r-missing-command');
+
+    await assert.rejects(
+      cp.startRun({
+        runId: 'r-missing-output',
+        objective: 'detailed bounded implementation',
+        taskContract: {
+          behaviorChanging: true,
+          acceptance: structuredAcceptance().slice(0, 2),
+          steps: [
+            { objective: 'change', allowedPaths: ['app.mjs'], acceptanceIds: ['AC-1'], obligationIds: ['criterion-1'] },
+            { objective: 'verify', allowedPaths: ['tests/**'], acceptanceIds: ['AC-2'], obligationIds: ['criterion-2'] },
+          ],
+        },
+      }),
+      (error) => error.errorCode === 'contract-step-binding-invalid'
+        && error.details?.field === 'expectedOutputs',
+    );
+    await assertNoDispatchState(cp, 'r-missing-output');
   } finally {
     await cp.close();
     await cleanup(fixture);

@@ -194,3 +194,64 @@ test('lifecycle diagnostics expose stale untouched active Runs with deterministi
     await rm(runtimeHome, { recursive: true, force: true });
   }
 });
+
+test('initialization rollback removes all pre-dispatch Run state and leaves the doctor clean', async () => {
+  const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-initialization-rollback-'));
+  const store = await openKernelStateStore({ runtimeHome });
+  const projectId = 'rollback-project';
+  const workspaceId = 'rollback-workspace';
+  const runId = 'run-rollback';
+  try {
+    const workspace = register(store, projectId, workspaceId);
+    createRun(store, { runId, projectId, workspaceId });
+    store.declareRunObligations(runId, [{
+      obligationId: 'bootstrap-check',
+      sourceType: 'contract',
+      evidenceClass: 'hard',
+      verificationMethod: 'unit-test',
+      allowedCommandRefs: ['test:ok'],
+    }]);
+    store.createRunSteps(runId, [{
+      stepId: 'bootstrap-step',
+      sequence: 1,
+      objective: 'bootstrap',
+      state: 'ready',
+      planRevision: 1,
+      dependencyIds: [],
+      allowedPaths: ['app.mjs'],
+      acceptanceIds: ['AC-1'],
+      obligationIds: ['bootstrap-check'],
+      expectedOutputs: ['bootstrap output'],
+    }]);
+    store.createSessionBinding(normalizeSessionBinding({
+      bindingId: 'binding-rollback',
+      provider: 'codex',
+      sessionId: 'codex:rollback',
+      runId,
+      projectId,
+      workspaceId,
+      accessMode: 'owner',
+    }));
+    store.acquireWorkspaceMutationLockV2({
+      workspaceId,
+      projectId,
+      runId,
+      sessionToken: 'binding-rollback',
+    });
+
+    const rolledBack = store.rollbackRunInitialization(runId, {
+      projectId,
+      sourceIdentity,
+    });
+    assert.deepEqual(rolledBack, { status: 'rolled-back', runId, rolledBack: true });
+    assert.equal(store.getRun(runId), null);
+    assert.equal(store.getWorktreeMutationLease(workspace.worktreeId), null);
+    assert.equal(store.getWorkspaceMutationLockV2(workspaceId), null);
+    assert.deepEqual(store.getRunObligations(runId), []);
+    assert.deepEqual(store.getRunSteps(runId), []);
+    assert.equal(store.diagnoseLifecycleState({ projectId }).status, 'ready');
+  } finally {
+    store.close();
+    await rm(runtimeHome, { recursive: true, force: true });
+  }
+});

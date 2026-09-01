@@ -3,10 +3,47 @@ import { createOpaqueRunId } from './run-identity.mjs';
 import { normalizeTaskContract } from '../task/task-contract.mjs';
 import { classifyContractChange } from '../change-contract.mjs';
 
-const codedError = (code, nextAction) => Object.assign(new Error(code), {
+export const NEW_TASK_INVOCATION_INTENT = 'new-task';
+
+const codedError = (code, nextAction, details = {}) => Object.assign(new Error(code), {
   code,
   errorCode: code,
   nextAction,
+  ...(Object.keys(details).length > 0 ? { details } : {}),
+});
+
+const resolveInvocationIntent = ({ taskContract, invocationIntent, intent }) => {
+  const requested = invocationIntent || intent || taskContract?.invocationIntent || taskContract?.intent || null;
+  if (!requested) return null;
+  if (requested === NEW_TASK_INVOCATION_INTENT) return requested;
+  throw codedError('invocation_intent_invalid', 'use-supported-invocation-intent', {
+    invocationIntent: requested,
+    supported: [NEW_TASK_INVOCATION_INTENT],
+  });
+};
+
+const runHolder = (run) => run ? {
+  runId: run.runId,
+  projectId: run.projectId || null,
+  workspaceId: run.workspaceId || null,
+  worktreeId: run.worktreeId || null,
+  status: run.status || null,
+  blockedReason: run.blockedReason || null,
+} : null;
+
+const worktreeConflictDetails = ({ projectId, worktreeId, mutableRuns, worktreeLease, reason }) => ({
+  projectId,
+  worktreeId: worktreeId || null,
+  holderRunId: mutableRuns[0]?.runId || worktreeLease?.holderRunId || null,
+  holder: runHolder(mutableRuns[0]),
+  holders: mutableRuns.map(runHolder),
+  lease: worktreeLease ? {
+    worktreeId: worktreeLease.worktreeId || worktreeId || null,
+    projectId: worktreeLease.projectId || projectId,
+    holderRunId: worktreeLease.holderRunId || null,
+    acquiredAt: worktreeLease.acquiredAt || null,
+  } : null,
+  reason,
 });
 
 const normalizedContract = (taskContract) => {
@@ -27,6 +64,8 @@ export const resolveBoundInvocation = ({
   explicitRunId = null,
   envRunId = null,
   taskContract = null,
+  invocationIntent = null,
+  intent = null,
 } = {}) => {
   if (!stateStore || !projectId || (!worktreeId && !workspaceId)) {
     throw codedError('host_binding_missing', 'reopen-from-correct-worktree');
@@ -38,6 +77,8 @@ export const resolveBoundInvocation = ({
     throw codedError('provider_session_invalid', 'reopen-from-correct-worktree');
   }
   const contract = normalizedContract(taskContract);
+  const resolvedIntent = resolveInvocationIntent({ taskContract, invocationIntent, intent });
+  const isNewTask = resolvedIntent === NEW_TASK_INVOCATION_INTENT;
   const requestedRunId = explicitRunId || envRunId || null;
   const registeredWorkspace = workspaceId
     ? stateStore.getProjectWorkspace?.(workspaceId) || null
@@ -87,14 +128,48 @@ export const resolveBoundInvocation = ({
       && worktreeLease?.projectId === projectId
       && worktreeLease?.holderRunId === run.runId));
   if (mutableRuns.length > 1) {
-    throw codedError('worktree_run_conflict', 'resolve-conflicting-active-runs');
+    throw codedError(
+      'worktree_run_conflict',
+      'resolve-conflicting-active-runs',
+      worktreeConflictDetails({
+        projectId,
+        worktreeId: effectiveWorktreeId,
+        mutableRuns,
+        worktreeLease,
+        reason: 'multiple-mutable-worktree-runs',
+      }),
+    );
   }
   const mutableRun = mutableRuns[0] || null;
   const requestedRun = requestedRunId ? stateStore.getRun(requestedRunId) : null;
   if (requestedRun) assertRunBinding(requestedRun);
 
+  if (isNewTask && mutableRun) {
+    throw codedError(
+      'worktree_run_conflict',
+      'resume-the-worktree-bound-run',
+      worktreeConflictDetails({
+        projectId,
+        worktreeId: effectiveWorktreeId,
+        mutableRuns,
+        worktreeLease,
+        reason: 'new-task-cannot-revise-mutable-run',
+      }),
+    );
+  }
+
   if (requestedRunId && mutableRun && requestedRunId !== mutableRun.runId) {
-    throw codedError('worktree_run_conflict', 'resume-the-worktree-bound-run');
+    throw codedError(
+      'worktree_run_conflict',
+      'resume-the-worktree-bound-run',
+      worktreeConflictDetails({
+        projectId,
+        worktreeId: effectiveWorktreeId,
+        mutableRuns,
+        worktreeLease,
+        reason: 'requested-run-is-not-worktree-holder',
+      }),
+    );
   }
 
   const latestRun = typeof stateStore.getLatestRunForWorktree === 'function'
@@ -115,9 +190,26 @@ export const resolveBoundInvocation = ({
     && compatibleBoundRun?.status === 'active'
     && compatibleBoundRun.runId !== requestedRunId
   ) {
-    throw codedError('worktree_run_conflict', 'resume-the-worktree-bound-run');
+    throw codedError(
+      'worktree_run_conflict',
+      'resume-the-worktree-bound-run',
+      worktreeConflictDetails({
+        projectId,
+        worktreeId: effectiveWorktreeId,
+        mutableRuns,
+        worktreeLease,
+        reason: 'requested-run-is-not-session-holder',
+      }),
+    );
   }
-  const cursorRun = requestedRun || mutableRun || latestRun || compatibleBoundRun;
+  // A new task is allowed to start only after the mutable owner is absent.
+  // Historical blocked Runs without a lease are not mutable owners and must
+  // not become an implicit resume/revise cursor for the new task, while a
+  // completed or abandoned cursor still carries the normal successor lineage.
+  const newTaskCursor = isNewTask
+    ? [latestRun, compatibleBoundRun].find((run) => run?.status === 'completed' || run?.status === 'abandoned') || null
+    : latestRun || compatibleBoundRun;
+  const cursorRun = requestedRun || mutableRun || newTaskCursor;
 
   if (!cursorRun) {
     if (!contract) throw codedError('host_binding_missing', 'supply-a-task-contract');
@@ -161,7 +253,7 @@ export const resolveBoundInvocation = ({
         changeClass: contract ? classifyContractChange({ previous: cursorRun.taskContract, next: contract }) : null,
       };
     }
-    if (!contract || cursorRun.taskContract?.digest === contract.digest) {
+    if (!isNewTask && (!contract || cursorRun.taskContract?.digest === contract.digest)) {
       return {
         mode: 'done',
         runId: cursorRun.runId,

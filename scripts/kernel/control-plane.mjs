@@ -69,6 +69,7 @@ import { resolveRunArtifactPaths } from './artifact-paths.mjs';
 import { buildStructuredRunSignals, failureFingerprint } from './knowledge/capture.mjs';
 import { buildEvidenceIdentity, buildEvidenceReuseReceipt, VERIFICATION_SCOPE_FIELD, EVIDENCE_IDENTITY_FIELDS } from './proof/evidence-reuse.mjs';
 import { assertImplementationWorkUnitScope, workUnitScopeFailure } from './run/work-unit-scope.mjs';
+import { preflightTaskContract } from './run/contract-preflight.mjs';
 import { buildReviewCapsule, capsuleStaleness } from './run/execution-capsule.mjs';
 import { digestOfChangedFiles, findScopeViolations } from './run/capsule-selection.mjs';
 import { assertOwnerWorkspaceMutationCAS } from './run/mutation-guard.mjs';
@@ -479,6 +480,60 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       },
     };
   };
+  const buildContractPreflightRejection = ({ runId, error }) => {
+    const errorCode = error?.errorCode || error?.code || 'contract-preflight-invalid';
+    const errorSummary = error?.message || String(error);
+    const nextAction = error?.nextAction || 'revise-task-contract-before-run-creation';
+    const action = {
+      type: 'blocked',
+      reason: errorCode,
+      guidance: errorSummary,
+    };
+    const modelInput = {
+      schemaVersion: 1,
+      runId,
+      status: 'contract-rejected',
+      errorCode,
+      errorSummary,
+      nextAction,
+      action,
+    };
+    return {
+      schemaVersion: 1,
+      runId,
+      status: 'contract-rejected',
+      errorCode,
+      failureCode: errorCode,
+      errorSummary,
+      nextAction,
+      diagnostics: error?.details || {},
+      action,
+      modelInput,
+      executionCapsule: null,
+      hostDirective: {
+        modelRouteDecision: {
+          schemaVersion: 1,
+          runId,
+          actionKind: 'contract-preflight',
+          role: 'implementer',
+          modelClass: 'kernel',
+          permissions: 'workspace_write',
+          reasonCodes: [errorCode],
+        },
+        executionAssignment: null,
+        executionCapsule: null,
+        attemptId: null,
+        attempt: null,
+        mutationLock: null,
+        rejection: {
+          errorCode,
+          errorSummary,
+          nextAction,
+          diagnostics: error?.details || {},
+        },
+      },
+    };
+  };
 
   const persistReleaseEvidenceIfNeeded = (runId, updated) => {
     if (updated.evidenceTier !== 'E2') return;
@@ -693,6 +748,8 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       explicitRunId = null,
       envRunId = null,
       taskContract = null,
+      invocationIntent = null,
+      intent = null,
     } = {}) {
       return resolveInvocation({
         stateStore: store,
@@ -704,6 +761,8 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         explicitRunId,
         envRunId,
         taskContract,
+        invocationIntent,
+        intent,
       });
     },
 
@@ -758,63 +817,84 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         knowledgeRecords: store.listKnowledgeRecords({ projectId, statuses: ['committed'] }),
         changedPaths: normalizedChangeSet.changedPaths,
       });
+      preflightTaskContract({
+        contract,
+        projectRoot,
+        commands: projectCommands,
+        obligations,
+      });
       assertVerificationSupport(obligations, contract, { projectMode: projectMode.mode });
 
       const workspaceObservation = observeWorkspaceIdentity({ projectRoot });
-      const run = store.createRun({
-        runId,
-        objective: contract.objective,
-        sourceIdentity: trustedSourceIdentity,
-        workspaceIdentity: workspaceObservation.identity,
-        proofTier: proofRoute.proofTier,
-        evidenceTier: proofRoute.evidenceTier,
-        requiredObligations: obligations.map((obligation) => obligation.obligationId),
-        acceptanceCriteria: contract.acceptance.map((item) => item.statement).filter(Boolean),
-        requireReleaseEvidence: proofRoute.evidenceTier === 'E2',
-        projectId,
-        knowledgeRevisionStart,
-        projectMode: projectMode.mode,
-        taskContract: contract,
-        contractRevision: 1,
-        route: { stages: route, riskTier: proofRoute.proofTier },
-        implementationContext,
-        workspaceId: effectiveWorkspaceId,
-        worktreeId: effectiveWorktreeId,
-      });
-      store.declareRunObligations(runId, obligations);
+      let run = null;
+      try {
+        run = store.createRun({
+          runId,
+          objective: contract.objective,
+          sourceIdentity: trustedSourceIdentity,
+          workspaceIdentity: workspaceObservation.identity,
+          proofTier: proofRoute.proofTier,
+          evidenceTier: proofRoute.evidenceTier,
+          requiredObligations: obligations.map((obligation) => obligation.obligationId),
+          acceptanceCriteria: contract.acceptance.map((item) => item.statement).filter(Boolean),
+          requireReleaseEvidence: proofRoute.evidenceTier === 'E2',
+          projectId,
+          knowledgeRevisionStart,
+          projectMode: projectMode.mode,
+          taskContract: contract,
+          contractRevision: 1,
+          route: { stages: route, riskTier: proofRoute.proofTier },
+          implementationContext,
+          workspaceId: effectiveWorkspaceId,
+          worktreeId: effectiveWorktreeId,
+        });
+        store.declareRunObligations(runId, obligations);
 
-      // K2: every run gets a durable work cursor. Ordinary work is one synthetic
-      // step — the model-visible loop is unchanged — while long or complex work
-      // is decomposed into units the ledger can resume, retry, and replan.
-      const planned = planRunSteps({
-        run,
-        contract,
-        obligations,
-        route: { stages: route },
-        planRevision: 1,
-      });
-      store.createRunSteps(runId, planned.steps);
+        // K2: every run gets a durable work cursor. Ordinary work is one synthetic
+        // step — the model-visible loop is unchanged — while long or complex work
+        // is decomposed into units the ledger can resume, retry, and replan.
+        const planned = planRunSteps({
+          run,
+          contract,
+          obligations,
+          route: { stages: route },
+          planRevision: 1,
+        });
+        store.createRunSteps(runId, planned.steps);
 
-      // Automatically load FRAME knowledge context and record receipt
-      const frameKnowledgeCtx = await buildProjectKnowledgeContext({
-        projectId,
-        stage: 'FRAME',
-        runId,
-        objective: run.objective,
-        changedPaths: normalizedChangeSet.changedPaths,
-        projectRoot,
-        stateStore: store,
-        env: { MOON_RELAY_KERNEL_HOME: runtimeHome },
-      });
-      store.recordKnowledgeContextReceipt(runId, {
-        stage: 'FRAME',
-        knowledgeRevision: frameKnowledgeCtx.knowledgeRevision,
-        digest: frameKnowledgeCtx.digest,
-        receiptJson: frameKnowledgeCtx,
-      });
+        // Automatically load FRAME knowledge context and record receipt
+        const frameKnowledgeCtx = await buildProjectKnowledgeContext({
+          projectId,
+          stage: 'FRAME',
+          runId,
+          objective: run.objective,
+          changedPaths: normalizedChangeSet.changedPaths,
+          projectRoot,
+          stateStore: store,
+          env: { MOON_RELAY_KERNEL_HOME: runtimeHome },
+        });
+        store.recordKnowledgeContextReceipt(runId, {
+          stage: 'FRAME',
+          knowledgeRevision: frameKnowledgeCtx.knowledgeRevision,
+          digest: frameKnowledgeCtx.digest,
+          receiptJson: frameKnowledgeCtx,
+        });
 
-      await projectRunState(run, { runtimeHome });
-      return run;
+        await projectRunState(run, { runtimeHome });
+        return run;
+      } catch (error) {
+        if (run && typeof store.rollbackRunInitialization === 'function') {
+          try {
+            store.rollbackRunInitialization(runId, { projectId, sourceIdentity: trustedSourceIdentity });
+          } catch (rollbackError) {
+            error.lifecycleRollback = {
+              errorCode: rollbackError.code || rollbackError.message,
+              message: rollbackError.message,
+            };
+          }
+        }
+        throw error;
+      }
     },
 
     async startSuccessor({ invocation, objective, taskContract = {}, hostCapabilities = null } = {}) {
@@ -867,14 +947,21 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       };
       const proofRoute = resolveProofRoute(riskSummary);
       const route = buildRunRoute(contract, riskSummary);
+      const projectCommands = discoverProjectCommands({ projectRoot });
       const obligations = compileRunObligations({
         projectRoot,
         requiredChecks: proofRoute.requiredChecks || ['default'],
         contract,
         contractRevision: 1,
-        commands: discoverProjectCommands({ projectRoot }),
+        commands: projectCommands,
         knowledgeRecords: store.listKnowledgeRecords({ projectId, statuses: ['committed'] }),
         changedPaths: normalizedChangeSet.changedPaths,
+      });
+      preflightTaskContract({
+        contract,
+        projectRoot,
+        commands: projectCommands,
+        obligations,
       });
       assertVerificationSupport(obligations, contract, { projectMode: projectMode.mode });
       const workspaceObservation = observeWorkspaceIdentity({ projectRoot });
@@ -1029,21 +1116,39 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       if (!runId) throw new Error('ensureRun requires a runId');
       const metadata = store.getRunMetadata(runId);
       if (!metadata) {
-        const run = await this.startRun({ runId, objective, taskContract });
-        if (hostSessionId) {
-          const binding = normalizeSessionBinding({
-            sessionId: hostSessionId,
-            runId,
-            projectId: currentProject.projectId,
-            workspaceId: effectiveWorkspaceId,
-            workspaceRoot: path.resolve(projectRoot),
-            provider: env.MOON_RELAY_KERNEL_PROVIDER || 'unknown',
-            surface: env.MOON_RELAY_KERNEL_SURFACE || null,
-            accessMode: 'owner',
-          });
-          store.createSessionBinding(binding);
+        let createdRun = null;
+        try {
+          createdRun = await this.startRun({ runId, objective, taskContract });
+          if (hostSessionId) {
+            const binding = normalizeSessionBinding({
+              sessionId: hostSessionId,
+              runId,
+              projectId: currentProject.projectId,
+              workspaceId: effectiveWorkspaceId,
+              workspaceRoot: path.resolve(projectRoot),
+              provider: env.MOON_RELAY_KERNEL_PROVIDER || 'unknown',
+              surface: env.MOON_RELAY_KERNEL_SURFACE || null,
+              accessMode: 'owner',
+            });
+            store.createSessionBinding(binding);
+          }
+          return { status: 'created', run: createdRun, next: await this.next(runId) };
+        } catch (error) {
+          if (createdRun && typeof store.rollbackRunInitialization === 'function') {
+            try {
+              store.rollbackRunInitialization(runId, {
+                projectId: currentProject.projectId,
+                sourceIdentity: createdRun.sourceIdentity,
+              });
+            } catch (rollbackError) {
+              error.lifecycleRollback = {
+                errorCode: rollbackError.code || rollbackError.message,
+                message: rollbackError.message,
+              };
+            }
+          }
+          throw error;
         }
-        return { status: 'created', run, next: await this.next(runId) };
       }
       if (hostSessionId && !getHostBinding({ runId })) {
         if (metadata.status === 'blocked' && metadata.ownerBindingId) {
@@ -1141,6 +1246,12 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
           ? store.listKnowledgeRecords({ projectId: run.projectId, statuses: ['committed'] })
           : [],
         changedPaths: contract.changedPaths || [],
+      });
+      preflightTaskContract({
+        contract,
+        projectRoot,
+        commands: discoverProjectCommands({ projectRoot }),
+        obligations,
       });
       assertVerificationSupport(obligations, contract, { projectMode: run.projectMode });
       // The contract already contains canonicalized successor references. Keep
@@ -1424,6 +1535,10 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         });
         modelInput = await this.next(runId, { stepId: actionContext.stepId || null });
       }
+      // Contract admission is a pre-dispatch boundary. A malformed persisted
+      // contract must not acquire a mutation lock, route decision, capsule,
+      // attempt, or provider admission while the Host is recovering it.
+      if (modelInput.status === 'contract-rejected') return modelInput;
       const reviewerTurn = String(actionContext.actionKind || '').startsWith('review');
       if (['implement', 'fix'].includes(modelInput.action?.type) && !reviewerTurn) {
         const capsuleStep = actionContext.stepId
@@ -2552,6 +2667,18 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       } catch (error) {
         return bindingErrorPayload(error, { projectRoot, provider: hostProvider });
       }
+      const run = store.getRun(runId);
+      if (!run) return { schemaVersion: 1, runId, status: 'not_found' };
+      try {
+        preflightTaskContract({
+          contract: run.taskContract || {},
+          projectRoot,
+          commands: discoverProjectCommands({ projectRoot }),
+          obligations: store.getRunObligations(runId),
+        });
+      } catch (error) {
+        return buildContractPreflightRejection({ runId, error });
+      }
       const deliveryRecovery = await this.recoverPendingDeliveryMaterialization(runId);
       if (deliveryRecovery.status === 'blocked') {
         return buildBlockedResponse({
@@ -2560,9 +2687,6 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
           detail: deliveryRecovery.detail,
         });
       }
-      const run = store.getRun(runId);
-      if (!run) return { schemaVersion: 1, runId, status: 'not_found' };
-
       let stageContext = store.getKnowledgeContextReceipt(runId, run.state)?.receiptJson;
       if (!stageContext) {
         stageContext = await this.refreshStageKnowledge(runId, { stage: run.state });
