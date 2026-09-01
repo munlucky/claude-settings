@@ -9,6 +9,7 @@ import { dispatchKernelTurn } from '../scripts/host/kernel/turn-dispatcher.mjs';
 import { createCodexAdapter } from '../scripts/host/kernel/adapters/codex.mjs';
 import { createClaudeAdapter } from '../scripts/host/kernel/adapters/claude.mjs';
 import { createModelRegistry } from '../scripts/host/kernel/model-registry.mjs';
+import { resolveReviewTransports } from '../scripts/host/kernel/review-transport-resolver.mjs';
 
 const REVIEW_ACTION = {
   actionKind: 'review_engineering',
@@ -343,6 +344,58 @@ test('a pre-spawn reviewer transport failure can use the next concrete transport
       .filter((receipt) => fixture.cp.stateStore.getModelRouteDecision(receipt.decisionId, { runId: 'review-preflight-chain' })?.role === 'reviewer');
     assert.equal(reviewerUsageReceipts.length, 2);
     assert.notEqual(reviewerUsageReceipts[0].receiptId, reviewerUsageReceipts[1].receiptId);
+  } finally {
+    await cleanupReviewRun(fixture);
+  }
+});
+
+test('review outcome ingestion rejects a workspace mutation after reviewer dispatch', async () => {
+  const fixture = await prepareReviewRun('kernel-review-ingest-stale', 'review-ingest-stale-chain');
+  try {
+    const reviewer = createClaudeAdapter({
+      launch: async ({ invocation }) => {
+        await writeFile(path.join(fixture.root, 'app.mjs'), 'export const value = 2;\n');
+        return {
+          resolvedModel: invocation.model,
+          observedModel: invocation.model,
+          resolvedEffort: invocation.effort,
+          observedEffort: invocation.effort,
+          sessionId: 'ingest-stale-reviewer',
+          outcome: { verdict: 'pass', findings: [], risks: [], evidenceRefs: ['review://ingest-stale'] },
+        };
+      },
+    });
+    const result = await dispatchKernelTurn({
+      controlPlane: fixture.cp,
+      runId: 'review-ingest-stale-chain',
+      adapter: reviewer,
+      registry: createModelRegistry({ surface: 'claude', env: { MOON_RELAY_KERNEL_MODEL_FRONTIER: 'stale-review-model' } }),
+      actionContext: REVIEW_ACTION,
+    });
+
+    assert.equal(result.review.status, 'blocked');
+    assert.equal(result.review.blockedReason, 'incomplete_review_chain');
+    assert.equal(result.reviewReceipt, null);
+    assert.equal(fixture.cp.listReviewReceipts('review-ingest-stale-chain').length, 0);
+  } finally {
+    await cleanupReviewRun(fixture);
+  }
+});
+
+test('direct review recording rechecks the live workspace before minting a receipt', async () => {
+  const fixture = await prepareReviewRun('kernel-review-record-stale', 'review-record-stale-chain');
+  try {
+    await writeFile(path.join(fixture.root, 'app.mjs'), 'export const value = 3;\n');
+    await assert.rejects(
+      () => fixture.cp.recordReview('review-record-stale-chain', {
+        stage: 'engineering',
+        verdict: 'pass',
+        reviewerId: 'unrouted-reviewer',
+        findings: [],
+      }),
+      /incomplete_review_chain: review workspace identity changed during review-recording/,
+    );
+    assert.equal(fixture.cp.listReviewReceipts('review-record-stale-chain').length, 0);
   } finally {
     await cleanupReviewRun(fixture);
   }
@@ -1127,12 +1180,14 @@ test('one trusted proof execution is shared across identical hard obligations in
   await writeFile(path.join(root, 'package.json'), JSON.stringify({
     scripts: { 'test:coalesce': `node ${JSON.stringify(probe)}` },
   }));
+  await writeFile(path.join(root, 'app.mjs'), 'export const value = 0;\n');
   const cp = await createKernelControlPlane({ runtimeHome, projectRoot: root });
   try {
     await cp.startRun({
       runId: 'proof-coalescing-chain',
       objective: 'share identical hard proof execution',
       taskContract: {
+        allowedPaths: ['app.mjs'],
         acceptance: ['the shared proof is recorded for every obligation'],
         requiredObligations: ['proof-a', 'proof-b'],
         requiredVerifications: [
@@ -1177,8 +1232,10 @@ test('same-report proof coalescing shares an exact reused proof before executing
   await writeFile(path.join(root, 'package.json'), JSON.stringify({
     scripts: { 'test:coalesce': `node ${JSON.stringify(probe)}` },
   }));
+  await writeFile(path.join(root, 'app.mjs'), 'export const value = 0;\n');
   const cp = await createKernelControlPlane({ runtimeHome, projectRoot: root });
   const contract = (obligationIds) => ({
+    allowedPaths: ['app.mjs'],
     acceptance: ['the shared proof is recorded for every obligation'],
     requiredObligations: obligationIds,
     requiredVerifications: obligationIds.map((obligationId) => ({
@@ -1227,4 +1284,189 @@ test('same-report proof coalescing shares an exact reused proof before executing
     await rm(runtimeHome, { recursive: true, force: true });
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test('report-level flaky rerun policy reaches proof execution and blocks divergent results', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'kernel-report-flaky-'));
+  const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-report-flaky-state-'));
+  const counterRoot = await mkdtemp(path.join(os.tmpdir(), 'kernel-report-flaky-counter-'));
+  const counter = path.join(counterRoot, 'n');
+  try {
+    await mkdir(path.join(root, '.moon-relay'), { recursive: true });
+    await writeFile(path.join(root, '.moon-relay', 'track.yaml'), 'track: kernel\n');
+    await writeFile(path.join(root, 'flaky.cjs'), [
+      'const fs=require("fs");',
+      `const p=${JSON.stringify(counter)};`,
+      'let n=0; try{n=Number(fs.readFileSync(p,"utf8"))||0}catch{}',
+      'fs.writeFileSync(p,String(n+1));',
+      'process.exit(n===0?1:0);',
+    ].join('\n'));
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({
+      scripts: { 'test:flaky': 'node flaky.cjs' },
+    }));
+    await writeFile(path.join(root, 'app.mjs'), 'export const value = 0;\n');
+    const cp = await createKernelControlPlane({ runtimeHome, projectRoot: root });
+    try {
+      await cp.startRun({
+        runId: 'report-flaky-chain',
+        objective: 'preserve flaky proof policy',
+        taskContract: {
+          allowedPaths: ['app.mjs'],
+          acceptance: ['flaky proof remains blocking'],
+          requiredObligations: ['default'],
+          requiredVerifications: [{ obligationId: 'default', method: 'unit-test', commandRefs: ['test:flaky'] }],
+        },
+      });
+
+      const result = await cp.report('report-flaky-chain', {
+        summary: 'run flaky proof through report',
+        verifications: [{ commandRef: 'test:flaky', flakyRerun: true }],
+      });
+
+      assert.equal(result.status, 'evidence-failed', JSON.stringify(result));
+      assert.equal((await readFile(counter, 'utf8')), '2', 'flaky policy must execute the command twice');
+      const execution = result.executed.find((entry) => entry.obligationId === 'default');
+      assert.equal(execution.flaky, true);
+      assert.equal(execution.status, 'failed');
+      assert.match(result.failures.find((failure) => failure.obligationId === 'default').errorSummary, /flaky/);
+    } finally {
+      await cp.close();
+    }
+  } finally {
+    await rm(runtimeHome, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true });
+    await rm(counterRoot, { recursive: true, force: true });
+  }
+});
+
+test('flaky report requests bypass prior reusable proof evidence', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'kernel-report-flaky-reuse-'));
+  const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-report-flaky-reuse-state-'));
+  const counterRoot = await mkdtemp(path.join(os.tmpdir(), 'kernel-report-flaky-reuse-counter-'));
+  const counter = path.join(counterRoot, 'n');
+  try {
+    await mkdir(path.join(root, '.moon-relay'), { recursive: true });
+    await writeFile(path.join(root, '.moon-relay', 'track.yaml'), 'track: kernel\n');
+    await writeFile(path.join(root, 'flaky.cjs'), [
+      'const fs=require("fs");',
+      `const p=${JSON.stringify(counter)};`,
+      'let n=0; try{n=Number(fs.readFileSync(p,"utf8"))||0}catch{}',
+      'fs.writeFileSync(p,String(n+1));',
+      'process.exit(n===1?1:0);',
+    ].join('\n'));
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({
+      scripts: { 'test:flaky': 'node flaky.cjs' },
+    }));
+    await writeFile(path.join(root, 'app.mjs'), 'export const value = 0;\n');
+    const cp = await createKernelControlPlane({ runtimeHome, projectRoot: root });
+    const contract = {
+      allowedPaths: ['app.mjs'],
+      acceptance: ['flaky proof is never satisfied by reused evidence'],
+      requiredObligations: ['default'],
+      requiredVerifications: [{ obligationId: 'default', method: 'unit-test', commandRefs: ['test:flaky'] }],
+    };
+    try {
+      await cp.startRun({ runId: 'report-flaky-reuse-seed', objective: 'seed reusable evidence', taskContract: contract });
+      const seed = await cp.report('report-flaky-reuse-seed', {
+        summary: 'seed a passing proof',
+        verifications: [{ commandRef: 'test:flaky', acceptanceCoverage: ['AC-1'] }],
+      });
+      assert.equal(seed.status, 'completed', JSON.stringify(seed));
+      assert.equal((await readFile(counter, 'utf8')), '1');
+
+      await cp.startRun({ runId: 'report-flaky-reuse-chain', objective: 'force a fresh flaky proof', taskContract: contract });
+      const result = await cp.report('report-flaky-reuse-chain', {
+        summary: 'rerun the flaky proof',
+        verifications: [{ commandRef: 'test:flaky', flakyRerun: true, acceptanceCoverage: ['AC-1'] }],
+      });
+
+      assert.equal(result.status, 'evidence-failed', JSON.stringify(result));
+      assert.equal((await readFile(counter, 'utf8')), '3', 'flaky policy must bypass reusable evidence and execute twice');
+      const execution = result.executed.find((entry) => entry.obligationId === 'default');
+      assert.equal(execution.flaky, true);
+      assert.equal(execution.status, 'failed');
+    } finally {
+      await cp.close();
+    }
+  } finally {
+    await rm(runtimeHome, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true });
+    await rm(counterRoot, { recursive: true, force: true });
+  }
+});
+
+test('automatic review transport resolver discovers alternate host adapters without caller reviewFallbacks', async () => {
+  const fixture = await prepareReviewRun('kernel-review-auto-resolve', 'review-auto-resolve-chain');
+  try {
+    let fallbackCalls = 0;
+    const primary = createCodexAdapter({
+      nativeLaunch: async ({ invocation }) => ({
+        status: 'failed',
+        resultStatus: 'failed',
+        errorCode: 'transport-unavailable',
+        failureCategory: 'provider/infrastructure',
+        failureStage: 'pre-spawn',
+        resolvedModel: invocation.model,
+        observedModel: invocation.model,
+        resolvedEffort: invocation.effort,
+        observedEffort: invocation.effort,
+      }),
+      parentSessionObserver: async ({ parentSessionId }) => ({
+        sessionId: parentSessionId,
+        model: 'gpt-5.6-sol',
+        effort: 'xhigh',
+      }),
+    });
+
+    const result = await dispatchKernelTurn({
+      controlPlane: fixture.cp,
+      runId: 'review-auto-resolve-chain',
+      adapter: primary,
+      env: { MOON_RELAY_KERNEL_MODEL_FRONTIER: 'claude-frontier' },
+      parentSessionId: 'review-owner',
+      actionContext: REVIEW_ACTION,
+      overrides: {
+        claudeLauncher: async ({ invocation }) => {
+          fallbackCalls += 1;
+          return {
+            resolvedModel: invocation.model,
+            observedModel: invocation.model,
+            resolvedEffort: invocation.effort,
+            observedEffort: invocation.effort,
+            sessionId: 'auto-discovered-reviewer',
+            outcome: { verdict: 'pass', findings: [], risks: [], evidenceRefs: ['review://auto-discovered'] },
+          };
+        },
+      },
+      // Note: NO reviewFallbacks, NO hostAdapters, NO reviewTransports passed!
+    });
+
+    assert.equal(fallbackCalls, 1);
+    assert.equal(result.review.review.verdict, 'pass');
+    assert.equal(fixture.cp.listReviewReceipts('review-auto-resolve-chain').length, 1);
+  } finally {
+    await cleanupReviewRun(fixture);
+  }
+});
+
+test('review transport resolver ignores un-attested capability-shaped candidates', () => {
+  const untrusted = createClaudeAdapter({
+    launch: async () => ({
+      status: 'completed',
+      resolvedModel: 'untrusted-model',
+      observedModel: 'untrusted-model',
+      resolvedEffort: 'xhigh',
+      observedEffort: 'xhigh',
+      sessionId: 'untrusted-reviewer',
+      outcome: { verdict: 'pass', findings: [], risks: [], evidenceRefs: [] },
+    }),
+  });
+  const resolved = resolveReviewTransports({
+    adapter: createCodexAdapter({ nativeAgentHost: {} }),
+    reviewFallbacks: [{
+      adapter: untrusted,
+      registry: createModelRegistry({ surface: 'claude', env: { MOON_RELAY_KERNEL_MODEL_FRONTIER: 'untrusted-model' } }),
+    }],
+  });
+  assert.equal(resolved.some((candidate) => candidate.adapter === untrusted), false);
 });

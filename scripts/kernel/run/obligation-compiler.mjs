@@ -108,6 +108,7 @@ const mergeObligationMetadata = (existing = {}, incoming = {}, {
   sourceType,
   sourceRef,
   allowedCommandRefs = [],
+  candidateCommandRefs = null,
   addCommandCandidate = false,
 } = {}) => {
   const merged = { ...(existing || {}) };
@@ -121,10 +122,10 @@ const mergeObligationMetadata = (existing = {}, incoming = {}, {
 
   const commandCandidates = [
     ...(Array.isArray(existing?.commandCandidates) ? existing.commandCandidates : []),
-    ...(addCommandCandidate && allowedCommandRefs.length > 0 ? [{
+    ...(addCommandCandidate && (candidateCommandRefs || allowedCommandRefs).length > 0 ? [{
       sourceType,
       sourceRef: sourceRef || null,
-      commandRefs: [...new Set(allowedCommandRefs.map(String))],
+      commandRefs: [...new Set((candidateCommandRefs || allowedCommandRefs).map(String))],
     }] : []),
   ];
   const uniqueCommands = commandCandidates.filter((candidate, index, all) => (
@@ -256,41 +257,105 @@ export const authoritativeVerificationScope = (obligation) => {
     : null;
 };
 
-// Brownfield commands may be added after a greenfield Run was opened. Refresh
-// only pure proof-policy bindings; caller, knowledge, and evidence-plan
-// bindings retain their explicit authority and are never widened by this
-// helper.
-export const rebindProofPolicyCommands = ({ obligations = [], projectRoot = process.cwd(), commands = null } = {}) => {
+// Commands may be added or updated during EXECUTE before PROVE is entered.
+// Refresh proof-policy bindings as well as deferred explicit/evidence-plan
+// command candidates against the current project command catalog.
+export const refreshVerificationBindings = ({ obligations = [], projectRoot = process.cwd(), commands = null } = {}) => {
   const projectCommands = commands || discoverProjectCommands({ projectRoot });
   return obligations.map((obligation) => {
-    if (!obligation
-      || obligation.evidenceClass === 'judgment'
-      || obligation.metadata?.evidencePlanCommandBinding === true
-      || obligation.metadata?.explicitCommandBinding === true) return obligation;
+    if (!obligation || obligation.evidenceClass === 'judgment') return obligation;
     const policy = obligationPolicyFor(obligation.obligationId);
-    const allowedCommandRefs = commandRefsForClasses({ projectRoot, classes: policy.commandClasses, commands: projectCommands });
-    const nonPolicyCandidates = (obligation.metadata?.commandCandidates || [])
-      .filter((candidate) => candidate?.sourceType !== 'proof-policy');
-    const nonPolicyRefs = nonPolicyCandidates.flatMap((candidate) => candidate.commandRefs || []);
-    const metadata = mergeObligationMetadata(
-      { ...(obligation.metadata || {}), commandCandidates: nonPolicyCandidates },
-      {},
-      {
-        sourceType: 'proof-policy',
-        sourceRef: 'kernel/proof-policy.yaml',
-        allowedCommandRefs,
-        addCommandCandidate: true,
-      },
-    );
+
+    // 1. Proof-policy obligation without explicit narrowing
+    if (obligation.sourceType === 'proof-policy' && obligation.metadata?.evidencePlanCommandBinding !== true && obligation.metadata?.explicitCommandBinding !== true) {
+      const allowedCommandRefs = commandRefsForClasses({ projectRoot, classes: policy.commandClasses, commands: projectCommands });
+      const nonPolicyCandidates = (obligation.metadata?.commandCandidates || [])
+        .filter((candidate) => candidate?.sourceType !== 'proof-policy');
+      const nonPolicyRefs = nonPolicyCandidates.flatMap((candidate) => candidate.commandRefs || []);
+      const metadata = mergeObligationMetadata(
+        { ...(obligation.metadata || {}), commandCandidates: nonPolicyCandidates },
+        {},
+        {
+          sourceType: 'proof-policy',
+          sourceRef: 'kernel/proof-policy.yaml',
+          allowedCommandRefs,
+          addCommandCandidate: true,
+        },
+      );
+      return {
+        ...obligation,
+        allowedCommandRefs: [...new Set([...nonPolicyRefs, ...allowedCommandRefs])],
+        rejectedCommandRefs: [],
+        metadata,
+        satisfiable: nonPolicyRefs.length > 0 || allowedCommandRefs.length > 0,
+      };
+    }
+
+    // 2. Explicit command candidates (from evidence-plan or caller requiredVerifications)
+    const candidates = obligation.metadata?.commandCandidates || [];
+    if (candidates.length > 0) {
+      // A reused obligation can retain candidates from a lower-authority
+      // proof-policy/caller declaration. Once an evidence plan (or another
+      // higher-authority explicit binding) exists, refresh only candidates at
+      // that highest source priority; otherwise a late refresh would widen a
+      // deliberately narrowed obligation back to an unrelated command.
+      const highestPriority = Math.min(...candidates.map((candidate) => sourcePriority(candidate?.sourceType)));
+      const authoritativeCandidates = candidates.filter((candidate) => sourcePriority(candidate?.sourceType) === highestPriority);
+      const permitted = new Set(classesForEvidenceMethod(obligation.verificationMethod));
+      const newlyAllowed = [];
+      const rejectedCommandRefs = [];
+      for (const candidate of authoritativeCandidates) {
+        for (const ref of candidate.commandRefs || []) {
+          const command = projectCommands.find((entry) => entry.commandRef === ref);
+          if (!command) {
+            rejectedCommandRefs.push({ commandRef: ref, reason: 'not-declared-by-project' });
+          } else if (!permitted.has(command.commandClass)) {
+            rejectedCommandRefs.push({ commandRef: ref, reason: `class-${command.commandClass}-does-not-prove-${obligation.verificationMethod || 'this-obligation'}` });
+          } else {
+            newlyAllowed.push(ref);
+          }
+        }
+      }
+      const uniqueAllowed = [...new Set(newlyAllowed)];
+      return {
+        ...obligation,
+        allowedCommandRefs: uniqueAllowed,
+        rejectedCommandRefs,
+        satisfiable: uniqueAllowed.length > 0,
+      };
+    }
+
+    // An explicit evidence-plan/caller binding with no surviving candidate is
+    // still an authoritative binding. This happens when every declared ref
+    // was missing or had the wrong semantic class at Run creation. Do not
+    // reinterpret that empty result as an implicit proof-policy obligation:
+    // doing so would let a later, unrelated project command satisfy a plan
+    // that explicitly named no usable command.
+    if (obligation.metadata?.evidencePlanCommandBinding === true
+      || obligation.metadata?.explicitCommandBinding === true) {
+      return {
+        ...obligation,
+        allowedCommandRefs: [],
+        satisfiable: false,
+      };
+    }
+
+    // 3. Fallback for obligations without explicit candidates
+    const allowedCommandRefs = commandRefsForClasses({
+      projectRoot,
+      classes: obligation.verificationMethod ? classesForEvidenceMethod(obligation.verificationMethod) : policy.commandClasses,
+      commands: projectCommands,
+    });
     return {
       ...obligation,
-      allowedCommandRefs: [...new Set([...nonPolicyRefs, ...allowedCommandRefs])],
+      allowedCommandRefs: [...new Set(allowedCommandRefs)],
       rejectedCommandRefs: [],
-      metadata,
-      satisfiable: nonPolicyRefs.length > 0 || allowedCommandRefs.length > 0,
+      satisfiable: allowedCommandRefs.length > 0,
     };
   });
 };
+
+export const rebindProofPolicyCommands = refreshVerificationBindings;
 
 export class UnsupportedVerificationError extends Error {
   constructor(unsupported = []) {
@@ -424,6 +489,7 @@ export const compileRunObligations = ({
         sourceType,
         sourceRef,
         allowedCommandRefs: allowed,
+        candidateCommandRefs: hasExplicitCommandRefs ? commandRefs : null,
         addCommandCandidate: hasExplicitCommandRefs || sourceType === 'proof-policy',
       });
       const currentSourcePriority = sourcePriority(existing.sourceType);
@@ -482,10 +548,11 @@ export const compileRunObligations = ({
           : {}),
       },
       {
-        sourceType,
-        sourceRef,
-        allowedCommandRefs: allowed,
-        addCommandCandidate: hasExplicitCommandRefs || sourceType === 'proof-policy',
+      sourceType,
+      sourceRef,
+      allowedCommandRefs: allowed,
+      candidateCommandRefs: hasExplicitCommandRefs ? commandRefs : null,
+      addCommandCandidate: hasExplicitCommandRefs || sourceType === 'proof-policy',
       },
     );
     const obligation = {

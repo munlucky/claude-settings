@@ -191,7 +191,16 @@ export const buildNextPayload = ({
     };
   }
   if (run.status === 'blocked' && run.blockedReason) {
-    return { ...base, action: { type: 'blocked', reason: run.blockedReason, guidance: 'Resolve the blocker with the user, then submit a new report.' } };
+    return {
+      ...base,
+      action: {
+        type: 'blocked',
+        reason: run.blockedReason,
+        guidance: run.blockedReason === 'unsupported-verification'
+          ? 'Required verification commands are missing or unsatisfiable. Add the required verification script to the project manifest or package.json, then run next again.'
+          : 'Resolve the blocker with the user, then submit a new report.',
+      },
+    };
   }
 
   const failing = verification.failed;

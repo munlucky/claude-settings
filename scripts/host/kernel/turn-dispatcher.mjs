@@ -17,6 +17,7 @@ import { dispatchKernelRun } from './parallel-dispatcher.mjs';
 import { isNativeDelegationRequested } from './codex-actor-router.mjs';
 import { resolveEnforcementStrategy } from '../../kernel/run/model-route-contract.mjs';
 import { observeWorkspaceIdentity } from '../../kernel/run/workspace-identity.mjs';
+import { attestReviewTransport, resolveReviewTransports } from './review-transport-resolver.mjs';
 
 const REVIEW_ATTEMPT_META = Symbol('reviewAttemptMeta');
 
@@ -1065,9 +1066,25 @@ export const dispatchKernelTurn = async ({
   economics = {},
   now = () => new Date().toISOString(),
   reviewFallbacks = [],
+  hostAdapters = [],
+  reviewTransports = [],
 } = {}) => {
   if (!adapter) throw new Error('dispatchKernelTurn requires a Host adapter');
-  const fallbackEntries = Array.isArray(reviewFallbacks) ? reviewFallbacks : [];
+  const fallbackEntries = resolveReviewTransports({
+    adapter,
+    reviewFallbacks: (Array.isArray(reviewFallbacks) ? reviewFallbacks : [])
+      .map((entry) => attestReviewTransport(entry, 'dispatcher:explicit-fallback'))
+      .filter(Boolean),
+    hostAdapters: (Array.isArray(hostAdapters) ? hostAdapters : [])
+      .map((entry) => attestReviewTransport(entry, 'dispatcher:host-adapter'))
+      .filter(Boolean),
+    reviewTransports: (Array.isArray(reviewTransports) ? reviewTransports : [])
+      .map((entry) => attestReviewTransport(entry, 'dispatcher:review-transport'))
+      .filter(Boolean),
+    env,
+    runtimeHome,
+    overrides,
+  });
   const reviewIntent = isReviewActionContext(actionContext);
 
   // Preserve the original owner-direct and parallel paths byte-for-byte for

@@ -25,13 +25,16 @@ const DETAILED_STEP_BINDING_FLAGS = new Set([
   'longRunning',
 ]);
 
-const fail = (errorCode, message, details = {}, nextAction = NEXT_ACTION) => {
+export const CONTRACT_PREFLIGHT_NEXT_ACTION = 'revise-task-contract';
+
+const fail = (errorCode, message, details = {}, nextAction = CONTRACT_PREFLIGHT_NEXT_ACTION, recoverable = true) => {
   const error = new Error(message);
   error.name = 'ContractPreflightError';
   error.code = errorCode;
   error.errorCode = errorCode;
   error.nextAction = nextAction;
   error.details = details;
+  error.recoverable = recoverable;
   return error;
 };
 
@@ -48,6 +51,8 @@ const normalizeRepositoryPath = (entry, projectRoot) => {
       CONTRACT_PREFLIGHT_ERROR_CODES.pathInvalid,
       'allowedPaths entries must be repository-relative strings',
       { entry, reason: 'non-string' },
+      CONTRACT_PREFLIGHT_NEXT_ACTION,
+      false,
     );
   }
   const value = entry.trim().replaceAll('\\', '/');
@@ -56,6 +61,8 @@ const normalizeRepositoryPath = (entry, projectRoot) => {
       CONTRACT_PREFLIGHT_ERROR_CODES.pathInvalid,
       'allowedPaths entries must name a bounded repository path',
       { entry, reason: 'empty-or-root' },
+      CONTRACT_PREFLIGHT_NEXT_ACTION,
+      true,
     );
   }
   if (value.includes('\u0000') || isAbsoluteRepositoryPath(value)) {
@@ -63,6 +70,8 @@ const normalizeRepositoryPath = (entry, projectRoot) => {
       CONTRACT_PREFLIGHT_ERROR_CODES.pathInvalid,
       `allowedPaths entry is not repository-relative: ${entry}`,
       { entry, reason: 'absolute-or-invalid-root' },
+      CONTRACT_PREFLIGHT_NEXT_ACTION,
+      false,
     );
   }
   const segments = value.split('/');
@@ -71,6 +80,8 @@ const normalizeRepositoryPath = (entry, projectRoot) => {
       CONTRACT_PREFLIGHT_ERROR_CODES.pathInvalid,
       `allowedPaths entry may not traverse outside the repository: ${entry}`,
       { entry, reason: 'path-traversal' },
+      CONTRACT_PREFLIGHT_NEXT_ACTION,
+      false,
     );
   }
   const normalized = segments.filter((segment) => segment && segment !== '.').join('/');
@@ -79,6 +90,8 @@ const normalizeRepositoryPath = (entry, projectRoot) => {
       CONTRACT_PREFLIGHT_ERROR_CODES.pathInvalid,
       `allowedPaths entry is empty after normalization: ${entry}`,
       { entry, reason: 'empty-after-normalization' },
+      CONTRACT_PREFLIGHT_NEXT_ACTION,
+      true,
     );
   }
 
@@ -89,6 +102,8 @@ const normalizeRepositoryPath = (entry, projectRoot) => {
       CONTRACT_PREFLIGHT_ERROR_CODES.pathInvalid,
       `allowedPaths entry escapes the repository: ${entry}`,
       { entry, reason: 'out-of-root', projectRoot: root },
+      CONTRACT_PREFLIGHT_NEXT_ACTION,
+      false,
     );
   }
   return normalized;
@@ -147,6 +162,7 @@ export const validateDeclaredSteps = ({
   obligations = [],
   projectRoot = process.cwd(),
   requireDetailedBindings = null,
+  acceptanceIdMap = null,
 } = {}) => {
   const declared = Array.isArray(contract.steps) ? contract.steps : [];
   if (declared.length === 0) return { valid: true, steps: [] };
@@ -156,6 +172,9 @@ export const validateDeclaredSteps = ({
     ? (requiresDetailedStepBindings(contract) || (isImplementationTask && requiresImplementationWorkUnitScope({ contract })))
     : Boolean(requireDetailedBindings);
   const acceptanceIds = acceptanceIdsFor(contract);
+  const targetAcceptanceIds = acceptanceIdMap
+    ? new Set(Object.values(acceptanceIdMap))
+    : acceptanceIds;
   const obligationIds = obligationIdsFor(obligations, contract);
   const seenStepIds = new Set();
   const claimedAcceptanceIds = new Set();
@@ -193,7 +212,7 @@ export const validateDeclaredSteps = ({
     const stepAcceptanceIds = Array.isArray(raw.acceptanceIds)
       ? assertNonEmptyStringList(raw.acceptanceIds, 'acceptanceIds', { ...details, stepId })
       : [];
-    if (detailedBindings && stepAcceptanceIds.length === 0 && acceptanceIds.size > 0) {
+    if (detailedBindings && stepAcceptanceIds.length === 0 && targetAcceptanceIds.size > 0) {
       throw fail(
         CONTRACT_PREFLIGHT_ERROR_CODES.stepBindingInvalid,
         `Each declared step requires a non-empty acceptanceIds list`,
@@ -235,8 +254,8 @@ export const validateDeclaredSteps = ({
     normalizedSteps.push({ stepId, allowedPaths, acceptanceIds: stepAcceptanceIds, obligationIds: stepObligationIds, expectedOutputs });
   }
 
-  const unclaimedAcceptanceIds = [...acceptanceIds].filter((id) => !claimedAcceptanceIds.has(id));
-  if (detailedBindings && acceptanceIds.size > 0 && unclaimedAcceptanceIds.length > 0) {
+  const unclaimedAcceptanceIds = [...targetAcceptanceIds].filter((id) => !claimedAcceptanceIds.has(id));
+  if (detailedBindings && targetAcceptanceIds.size > 0 && unclaimedAcceptanceIds.length > 0) {
     throw fail(
       CONTRACT_PREFLIGHT_ERROR_CODES.stepBindingInvalid,
       `Declared steps do not bind acceptance ids: ${unclaimedAcceptanceIds.join(', ')}`,
@@ -244,7 +263,6 @@ export const validateDeclaredSteps = ({
     );
   }
 
-  validateVerificationCommands({ contract, commands });
   return { valid: true, steps: normalizedSteps, detailedBindings };
 };
 
@@ -263,19 +281,22 @@ const commandReferencesFor = (contract) => {
   return [...new Set(refs.map(String).map((entry) => entry.trim()).filter(Boolean))];
 };
 
-export const validateVerificationCommands = ({ contract = {}, commands = null } = {}) => {
-  if (!Array.isArray(commands)) return { valid: true, commandRefs: commandReferencesFor(contract), missing: [] };
-  const known = new Set(commands.map((entry) => entry?.commandRef).filter(Boolean).map(String));
+export const validateVerificationCommands = ({ contract = {}, commands = null, strict = false } = {}) => {
   const commandRefs = commandReferencesFor(contract);
+  if (!Array.isArray(commands)) return { valid: true, commandRefs, declared: [], deferred: commandRefs, missing: [] };
+  const known = new Set(commands.map((entry) => entry?.commandRef).filter(Boolean).map(String));
+  const declared = commandRefs.filter((ref) => known.has(ref));
   const missing = commandRefs.filter((ref) => !known.has(ref));
-  if (missing.length > 0) {
+  if (strict && missing.length > 0) {
     throw fail(
       CONTRACT_PREFLIGHT_ERROR_CODES.verificationCommandMissing,
       `Task contract references verification commands not declared by the project: ${missing.join(', ')}`,
       { missing, commandRefs },
+      'declare-project-verification-command',
+      true,
     );
   }
-  return { valid: true, commandRefs, missing: [] };
+  return { valid: true, commandRefs, declared, deferred: missing, missing };
 };
 
 export const preflightTaskContract = ({
@@ -284,9 +305,11 @@ export const preflightTaskContract = ({
   commands = null,
   obligations = [],
   requireImplementationScope = null,
+  strictVerificationCommands = false,
+  acceptanceIdMap = null,
 } = {}) => {
   if (!contract || typeof contract !== 'object' || Array.isArray(contract)) {
-    throw fail(CONTRACT_PREFLIGHT_ERROR_CODES.invalid, 'Task contract must be an object', { reason: 'not-object' });
+    throw fail(CONTRACT_PREFLIGHT_ERROR_CODES.invalid, 'Task contract must be an object', { reason: 'not-object' }, CONTRACT_PREFLIGHT_NEXT_ACTION, false);
   }
 
   const declaredSteps = Array.isArray(contract.steps) && contract.steps.length > 0;
@@ -299,21 +322,25 @@ export const preflightTaskContract = ({
     allowedPaths = normalizeBoundedPaths({ paths: contract.allowedPaths, projectRoot });
     const scope = classifyWorkUnitScope({ allowedPaths });
     if (requiresScope && !declaredSteps && !scope.valid) {
-      throw fail(scope.errorCode, scope.message, { scope }, scope.nextAction);
+      throw fail(scope.errorCode, scope.message, { scope }, scope.nextAction, true);
     }
   } else if (requiresScope && !declaredSteps) {
     const scope = classifyWorkUnitScope({ allowedPaths: [] });
-    throw fail(scope.errorCode, scope.message, { scope }, scope.nextAction);
+    throw fail(scope.errorCode, scope.message, { scope }, scope.nextAction, true);
   }
 
   const stepResult = validateDeclaredSteps({
     contract,
-    commands,
     obligations,
     projectRoot,
     requireDetailedBindings: requiresScope ? true : null,
+    acceptanceIdMap,
   });
-  const verification = validateVerificationCommands({ contract, commands });
+  const verification = validateVerificationCommands({
+    contract,
+    commands,
+    strict: strictVerificationCommands,
+  });
   return {
     valid: true,
     required: requiresScope,

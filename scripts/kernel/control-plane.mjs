@@ -532,10 +532,12 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     const errorCode = error?.errorCode || error?.code || 'contract-preflight-invalid';
     const errorSummary = error?.message || String(error);
     const nextAction = error?.nextAction || 'revise-task-contract-before-run-creation';
+    const recoverable = error?.recoverable ?? (errorCode !== 'contract-preflight-unauthorized-path-escape' && errorCode !== 'contract-preflight-worktree-escape');
     const action = {
       type: 'blocked',
       reason: errorCode,
       guidance: errorSummary,
+      recoverable,
     };
     const modelInput = {
       schemaVersion: 1,
@@ -544,6 +546,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       errorCode,
       errorSummary,
       nextAction,
+      recoverable,
       action,
     };
     return {
@@ -554,6 +557,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       failureCode: errorCode,
       errorSummary,
       nextAction,
+      recoverable,
       diagnostics: error?.details || {},
       action,
       modelInput,
@@ -577,6 +581,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
           errorCode,
           errorSummary,
           nextAction,
+          recoverable,
           diagnostics: error?.details || {},
         },
       },
@@ -610,6 +615,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       allowedCommandRefs: obligation.allowedCommandRefs || [],
       rejectedCommandRefs: obligation.rejectedCommandRefs || [],
       metadata: obligation.metadata || {},
+      satisfiable: obligation.satisfiable,
     });
     const changed = rebound.some((obligation, index) => bindingShape(obligation) !== bindingShape(before[index]));
     if (changed) store.declareRunObligations(runId, rebound);
@@ -698,7 +704,10 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
           : (Array.isArray(hint.acceptanceCoverage) ? hint.acceptanceCoverage : []),
         networkPolicy: hint.networkPolicy || 'inherited',
         flakyRerun: hint.flakyRerun === true,
-        allowEvidenceReuse: !forceFresh,
+        // A flaky request must execute the command twice at the current
+        // workspace identity. Reusing an older pass would bypass the
+        // divergence check entirely.
+        allowEvidenceReuse: !forceFresh && hint.flakyRerun !== true,
       });
     };
 
@@ -744,6 +753,27 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       addRequest(byId.get(obligationId), request, { forceFresh: true });
     }
     return requests;
+  };
+
+  const assertLiveReviewWorkspace = (runId, expectedRun, phase = 'review') => {
+    let observation;
+    try {
+      observation = observeWorkspaceIdentity({ projectRoot });
+    } catch {
+      throw new Error(`incomplete_review_chain: live workspace observation failed during ${phase}`);
+    }
+    if (!observation?.identity) {
+      throw new Error(`incomplete_review_chain: live workspace identity unavailable during ${phase}`);
+    }
+    if (observation.identity !== expectedRun?.currentWorkspaceIdentity) {
+      try {
+        store.observeWorkspaceIdentity(runId, observation.identity);
+      } catch {
+        throw new Error(`incomplete_review_chain: live workspace observation could not be persisted during ${phase}`);
+      }
+      throw new Error(`incomplete_review_chain: review workspace identity changed during ${phase}`);
+    }
+    return { identity: observation.identity, run: store.getRun(runId) || expectedRun };
   };
 
   return {
@@ -824,7 +854,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       // what gets persisted, so constraints, non-goals, risks, and any
       // explicitly supplied plan survive a process restart (P0-4/P0-5).
       const contract = normalizeTaskContract(taskContract, { objective: objective || taskContract.objective });
-      if (hostCapabilities) assertRequiredHostCapabilities(contract, hostCapabilities);
+      if (hostCapabilities) assertRequiredHostCapabilities(contract, hostCapabilities, { stage: 'FRAME' });
 
       const identity = currentProject;
       const projectId = identity.projectId;
@@ -871,7 +901,6 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         commands: projectCommands,
         obligations,
       });
-      assertVerificationSupport(obligations, contract, { projectMode: projectMode.mode });
 
       const workspaceObservation = observeWorkspaceIdentity({ projectRoot });
       let run = null;
@@ -957,7 +986,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       const contract = normalizeTaskContract(taskContract, {
         objective: objective || taskContract.objective,
       });
-      if (hostCapabilities) assertRequiredHostCapabilities(contract, hostCapabilities);
+      if (hostCapabilities) assertRequiredHostCapabilities(contract, hostCapabilities, { stage: 'FRAME' });
       const trustedSourceIdentity = computeKernelSourceIdentity({
         projectRoot,
         objective: contract.objective,
@@ -1011,7 +1040,6 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         commands: projectCommands,
         obligations,
       });
-      assertVerificationSupport(obligations, contract, { projectMode: projectMode.mode });
       const workspaceObservation = observeWorkspaceIdentity({ projectRoot });
       const successorRun = {
         runId,
@@ -1300,8 +1328,8 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         projectRoot,
         commands: discoverProjectCommands({ projectRoot }),
         obligations,
+        acceptanceIdMap,
       });
-      assertVerificationSupport(obligations, contract, { projectMode: run.projectMode });
       // The contract already contains canonicalized successor references. Keep
       // the mapping visible to this boundary for lineage, but never rewrite
       // predecessor proof from an old AC namespace using successor-local IDs.
@@ -1414,7 +1442,28 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       return this.refreshStageKnowledge(runId, { stage, strict });
     },
 
+    refreshVerificationBindings(runId) {
+      return refreshProofPolicyBindings(runId);
+    },
+
     async transition(runId, nextState, options = {}) {
+      if (String(nextState || '').toUpperCase() === 'PROVE') {
+        const obligations = this.refreshVerificationBindings(runId);
+        const currentRun = store.getRun(runId);
+        if (options.hostCapabilities) {
+          assertRequiredHostCapabilities(currentRun?.taskContract || {}, options.hostCapabilities, {
+            stage: 'PROVE',
+            obligations,
+          });
+        }
+        try {
+          assertVerificationSupport(obligations, { completionPredicate: currentRun?.taskContract?.completionPredicate }, { projectMode: currentRun?.projectMode });
+        } catch (error) {
+          store.markRunBlocked(runId, 'unsupported-verification');
+          await projectRunState(store.getRun(runId), { runtimeHome });
+          throw error;
+        }
+      }
       await this.materializeStageKnowledge(runId, {
         stage: nextState,
         strict: true,
@@ -2163,7 +2212,16 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       // No routed worker receipt means there is no parallel Delivery boundary
       // to reconcile. In particular, this keeps ordinary direct edits and
       // future pending Steps from being mistaken for a crashed Delivery.
-      if (!provenance && relevantAttempts.length === 0) return { status: 'none', run };
+      // `mutation_provenance` is also updated by ordinary owner-direct step
+      // settlement, so its presence alone cannot distinguish the apply-before
+      // owner-CAS window from a normal direct report. An owner-direct receipt
+      // carries its canonical attempt id; only a provenance row without that
+      // id is the explicit prepared-Delivery marker, while a routed worker
+      // receipt is the other durable marker for the crash window. This keeps
+      // the incomplete-marker guard fail-closed without repeatedly blocking on
+      // a stale historical owner mutation during a normal PROVE retry.
+      const preparedDeliveryMarker = Boolean(provenance && !provenance.attemptId);
+      if (relevantAttempts.length === 0 && !preparedDeliveryMarker) return { status: 'none', run };
 
       let liveDeliveryWorkspaceIdentity;
       try {
@@ -2356,8 +2414,9 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       changedPaths = [],
       rationale = null,
     } = {}) {
-      const run = store.getRun(runId);
+      let run = store.getRun(runId);
       if (!run) throw new Error(`Run ${runId} not found`);
+      run = assertLiveReviewWorkspace(runId, run, 'review-recording').run;
       const normalized = normalizeReviewVerdict(verdict);
       const implementationSession = store.getImplementationPrincipal(runId);
       const usageReceipt = reviewReceiptId ? store.getModelUsageReceipt(reviewReceiptId, { runId }) : null;
@@ -2373,6 +2432,11 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       }
 
       const targetObligation = obligationId || `review-${normalized.stage}`;
+      // Keep the final filesystem observation adjacent to receipt creation.
+      // The earlier check protects the route/capsule validation below; this
+      // second check prevents that validation work from becoming a stale
+      // review subject before the Kernel writes its receipt.
+      run = assertLiveReviewWorkspace(runId, run, 'review-receipt').run;
       const reviewReceipt = store.recordReviewReceipt(runId, {
         runId,
         obligationId: targetObligation,
@@ -2444,13 +2508,17 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       reviewerSessionId,
       outcome,
     } = {}) {
-      const run = store.getRun(runId);
+      let run = store.getRun(runId);
       if (!run) throw new Error(`incomplete_review_chain: run ${runId} not found`);
       if (!outcome || !['pass', 'fail', 'blocked'].includes(outcome.verdict)
         || !Array.isArray(outcome.findings) || !Array.isArray(outcome.evidenceRefs)
         || !Number.isInteger(outcome.reviewedMutationRevision)) {
         throw new Error('incomplete_review_chain: invalid reviewer outcome schema');
       }
+      // A reviewer outcome is accepted only for the workspace that is live at
+      // ingestion time. The helper advances the authoritative observation when
+      // drift is found, then fails closed without minting a ReviewReceipt.
+      run = assertLiveReviewWorkspace(runId, run, 'review-outcome-ingestion').run;
       const capsule = store.getExecutionCapsule(capsuleId, { runId });
       const usage = store.getModelUsageReceipt(usageReceiptId, { runId });
       const decision = store.getModelRouteDecision(routeDecisionId, { runId });
@@ -2646,7 +2714,10 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         };
       }
 
-      const reusable = allowEvidenceReuse && !discovered && typeof store.findExactReusableVerification === 'function'
+      const reusable = allowEvidenceReuse
+        && !flakyRerun
+        && !discovered
+        && typeof store.findExactReusableVerification === 'function'
         ? store.findExactReusableVerification({
           projectId: run.projectId,
           obligationId,
@@ -2841,7 +2912,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       } catch (error) {
         return bindingErrorPayload(error, { projectRoot, provider: hostProvider });
       }
-      const run = store.getRun(runId);
+      let run = store.getRun(runId);
       if (!run) return { schemaVersion: 1, runId, status: 'not_found' };
       try {
         preflightTaskContract({
@@ -2870,6 +2941,26 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       }
 
       const obligations = refreshProofPolicyBindings(runId);
+      const isProve = String(run.state || '').toUpperCase() === 'PROVE';
+
+      if (run.status === 'blocked' && run.blockedReason === 'unsupported-verification') {
+        try {
+          assertVerificationSupport(obligations, { completionPredicate: run.taskContract?.completionPredicate }, { projectMode: run.projectMode });
+          store.resumeBlockedRun(runId);
+          run = store.getRun(runId);
+        } catch {
+          // Still blocked
+        }
+      } else if (isProve) {
+        try {
+          assertVerificationSupport(obligations, { completionPredicate: run.taskContract?.completionPredicate }, { projectMode: run.projectMode });
+        } catch (error) {
+          store.markRunBlocked(runId, 'unsupported-verification');
+          await projectRunState(store.getRun(runId), { runtimeHome });
+          run = store.getRun(runId);
+        }
+      }
+
       const capabilityDecision = resolveKernelCapabilities({
         ...(run.taskContract?.flags || {}),
         taskClass: run.taskContract?.taskClass || 'feature',
@@ -3648,13 +3739,35 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       }
       if (coverageFailures.length > 0) return evidenceRejected(coverageFailures);
 
+      if (proofRequests.length === 0 && judgmentRequests.length === 0 && preProofCompletion.unsatisfiedObligations.some((o) => o.requiredEvidenceClass === 'hard')) {
+        const current = store.getRun(runId);
+        try {
+          assertVerificationSupport(proofObligations, { completionPredicate: current.taskContract?.completionPredicate }, { projectMode: current.projectMode });
+        } catch (error) {
+          store.markRunBlocked(runId, 'unsupported-verification');
+          await projectRunState(store.getRun(runId), { runtimeHome });
+          return buildBlockedResponse({ runId, reason: 'unsupported-verification', detail: error.message });
+        }
+      }
+
       if (proofRequests.length > 0 || judgmentRequests.length > 0) {
         const current = store.getRun(runId);
         // Follow the four-state route fixed at run start.
         const pathToProve = planRouteSteps(current.route?.stages, current.state, 'PROVE') ?? planStatePath(current.state, 'PROVE');
         if (pathToProve === null) throw new Error(`Cannot advance run ${runId} from ${current.state} to verification`);
         for (const stateStep of pathToProve) {
-          await this.transition(runId, stateStep);
+          try {
+            await this.transition(runId, stateStep);
+          } catch (error) {
+            if (error?.code === 'unsupported-verification') {
+              return buildBlockedResponse({
+                runId,
+                reason: 'unsupported-verification',
+                detail: error.message,
+              });
+            }
+            throw error;
+          }
         }
 
         const proofExecutionCache = new Map();
@@ -3692,6 +3805,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
                   obligationId,
                   commandRef: request.commandRef,
                   timeoutMs: request.timeoutMs,
+                  flakyRerun: request.flakyRerun === true,
                   acceptanceCoverage: request.acceptanceCoverage || [],
                   networkPolicy: request.networkPolicy || 'inherited',
                   allowEvidenceReuse: request.allowEvidenceReuse !== false,
@@ -3710,6 +3824,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
                 obligationId,
                 commandRef: request.commandRef,
                 timeoutMs: request.timeoutMs,
+                flakyRerun: request.flakyRerun === true,
                 acceptanceCoverage: request.acceptanceCoverage || [],
                 networkPolicy: request.networkPolicy || 'inherited',
                 allowEvidenceReuse: request.allowEvidenceReuse !== false,

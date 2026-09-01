@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
-import { compileRunObligations } from '../scripts/kernel/run/obligation-compiler.mjs';
+import { compileRunObligations, assertVerificationSupport } from '../scripts/kernel/run/obligation-compiler.mjs';
 import { mergeContractRevisionWithBindings, normalizeTaskContract } from '../scripts/kernel/task/task-contract.mjs';
 import { discoverProjectCommands, classifyCommandName } from '../scripts/kernel/proof/command-catalog.mjs';
 
@@ -58,25 +58,34 @@ test('P1-4: project commands are discovered per ecosystem and classified semanti
   }
 });
 
-test('P0: an explicit evidence plan with no usable project command fails before a Run is created', async () => {
+test('P0: an explicit evidence plan with no usable project command is compiled with rejected reason', async () => {
   const fixture = await setup();
   const cp = await createKernelControlPlane(fixture);
   try {
-    await assert.rejects(
-      cp.startRun({
-        runId: 'r-unsupported-preflight',
-        objective: 'observe production behavior',
-        taskContract: {
-          acceptance: [{
-            acceptance: 'the deployed runtime is observed',
-            evidencePlan: {
-              class: 'hard',
-              method: 'post-deployment-observation',
-              commandRefs: ['observe:production'],
-            },
-          }],
-        },
-      }),
+    const started = await cp.startRun({
+      runId: 'r-unsupported-preflight',
+      objective: 'observe production behavior',
+      taskContract: {
+        acceptance: [{
+          acceptance: 'the deployed runtime is observed',
+          evidencePlan: {
+            class: 'hard',
+            method: 'post-deployment-observation',
+            commandRefs: ['observe:production'],
+          },
+        }],
+      },
+    });
+    assert.equal(started.runId, 'r-unsupported-preflight');
+    const obligations = cp.stateStore.getRunObligations('r-unsupported-preflight');
+    assert.deepEqual(obligations[0].rejectedCommandRefs, [{
+      commandRef: 'observe:production',
+      reason: 'not-declared-by-project',
+    }]);
+    assert.equal(obligations[0].satisfiable, false);
+
+    assert.throws(
+      () => assertVerificationSupport(obligations, started.taskContract),
       (error) => {
         assert.equal(error.code, 'unsupported-verification');
         assert.equal(error.nextAction, 'declare-project-verification-command');
@@ -87,30 +96,31 @@ test('P0: an explicit evidence plan with no usable project command fails before 
         return true;
       },
     );
-    assert.equal(cp.stateStore.getRun('r-unsupported-preflight'), null);
   } finally {
     await cp.close();
     await cleanup(fixture);
   }
 });
 
-test('P0: a tier-required hard obligation with no project command fails before a Run is created', async () => {
+test('P0: a tier-required hard obligation with no project command fails when verification support is required', async () => {
   const fixture = await setup({ scripts: { noop: 'node -e "process.exit(0)"' } });
   const cp = await createKernelControlPlane(fixture);
   try {
-    await assert.rejects(
-      cp.startRun({
-        runId: 'r-unsupported-proof-policy',
-        objective: 'change behavior without a test command',
-        taskContract: { behaviorChanging: true, acceptance: ['the behavior changes safely'] },
-      }),
+    const started = await cp.startRun({
+      runId: 'r-unsupported-proof-policy',
+      objective: 'change behavior without a test command',
+      taskContract: { behaviorChanging: true, acceptance: ['the behavior changes safely'] },
+    });
+    assert.equal(started.runId, 'r-unsupported-proof-policy');
+    const obligations = cp.stateStore.getRunObligations('r-unsupported-proof-policy');
+    assert.throws(
+      () => assertVerificationSupport(obligations, started.taskContract),
       (error) => error.code === 'unsupported-verification'
         && error.details.unsupported.some((item) => (
           item.obligationId === 'unit-test'
           && item.sourceType === 'proof-policy'
         )),
     );
-    assert.equal(cp.stateStore.getRun('r-unsupported-proof-policy'), null);
   } finally {
     await cp.close();
     await cleanup(fixture);
@@ -165,25 +175,27 @@ test('P0: a required resolved outcome without resolution evidence fails completi
   });
   const cp = await createKernelControlPlane(fixture);
   try {
-    await assert.rejects(
-      cp.startRun({
-        runId: 'r-build-is-not-resolution',
-        objective: 'resolve a runtime incident',
-        taskContract: {
-          completionPredicate: { requiredOutcomes: ['implemented', 'verified', 'resolved'] },
-          acceptance: [{
-            acceptance: 'the code builds',
-            evidencePlan: { class: 'hard', method: 'build', commandRefs: ['build'] },
-          }],
-        },
-      }),
+    const started = await cp.startRun({
+      runId: 'r-build-is-not-resolution',
+      objective: 'resolve a runtime incident',
+      taskContract: {
+        completionPredicate: { requiredOutcomes: ['implemented', 'verified', 'resolved'] },
+        acceptance: [{
+          acceptance: 'the code builds',
+          evidencePlan: { class: 'hard', method: 'build', commandRefs: ['build'] },
+        }],
+      },
+    });
+    assert.equal(started.runId, 'r-build-is-not-resolution');
+    const obligations = cp.stateStore.getRunObligations('r-build-is-not-resolution');
+    assert.throws(
+      () => assertVerificationSupport(obligations, started.taskContract),
       (error) => error.code === 'unsupported-verification'
         && error.details.unsupported.some((item) => (
           item.outcome === 'resolved'
           && item.reason === 'required-outcome-has-no-bound-evidence-plan'
         )),
     );
-    assert.equal(cp.stateStore.getRun('r-build-is-not-resolution'), null);
   } finally {
     await cp.close();
     await cleanup(fixture);
@@ -298,32 +310,29 @@ test('F1: an evidence plan cannot bind a command that proves nothing', async () 
   const cp = await createKernelControlPlane(fixture);
   try {
     // `noop` is a declared script, but its name carries no semantic claim, so
-    // it cannot stand as the proof of a criterion planned as a test. The
-    // support preflight rejects this before implementation begins.
-    await assert.rejects(
-      cp.startRun({
-        runId: 'r-f1',
-        objective: 'x',
-        taskContract: {
-          acceptance: [{ acceptance: 'login must be secure', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['noop'] } }],
-        },
-      }),
-      (error) => error.code === 'unsupported-verification'
-        && error.details.unsupported[0].rejectedCommandRefs[0].reason === 'class-script-does-not-prove-unit-test',
-    );
-    assert.equal(cp.stateStore.getRun('r-f1'), null);
+    // it cannot stand as the proof of a criterion planned as a test.
+    // Progressive admission compiles this with rejected reason 'class-script-does-not-prove-unit-test'.
+    await cp.startRun({
+      runId: 'r-f1',
+      objective: 'x',
+      taskContract: {
+        acceptance: [{ acceptance: 'login must be secure', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['noop'] } }],
+      },
+    });
+    const obligationsF1 = cp.stateStore.getRunObligations('r-f1');
+    assert.equal(obligationsF1[0].rejectedCommandRefs[0].reason, 'class-script-does-not-prove-unit-test');
+    assert.equal(obligationsF1[0].satisfiable, false);
+    await cp.abandonRun('r-f1');
 
-    // A ref the project never declared is refused the same way.
-    await assert.rejects(
-      cp.startRun({
-        runId: 'r-f1b',
-        objective: 'x',
-        taskContract: { acceptance: [{ acceptance: 'y', evidencePlan: { class: 'hard', commandRefs: ['test:does-not-exist'] } }] },
-      }),
-      (error) => error.code === 'unsupported-verification'
-        && error.details.unsupported[0].rejectedCommandRefs[0].reason === 'not-declared-by-project',
-    );
-    assert.equal(cp.stateStore.getRun('r-f1b'), null);
+    // A ref the project never declared is recorded as 'not-declared-by-project'.
+    await cp.startRun({
+      runId: 'r-f1b',
+      objective: 'x',
+      taskContract: { acceptance: [{ acceptance: 'y', evidencePlan: { class: 'hard', commandRefs: ['test:does-not-exist'] } }] },
+    });
+    const obligationsF1b = cp.stateStore.getRunObligations('r-f1b');
+    assert.equal(obligationsF1b[0].rejectedCommandRefs[0].reason, 'not-declared-by-project');
+    assert.equal(obligationsF1b[0].satisfiable, false);
   } finally {
     await cp.close();
     await cleanup(fixture);
@@ -396,6 +405,56 @@ test('P0-2: an explicit AC plan narrows a reused obligation to its named command
       verifications: [{ obligationId: 'unit-test', commandRef: 'test:b', acceptanceCoverage: ['AC-1'] }],
     });
     assert.equal(planned.executed[0].status, 'passed');
+  } finally {
+    await cp.close();
+    await cleanup(fixture);
+  }
+});
+
+test('P0-2: PROVE refresh preserves the highest-authority binding on a reused obligation', async () => {
+  const fixture = await setup({
+    scripts: {
+      ...SCRIPTS,
+      'test:policy': 'node -e "process.exit(0)"',
+    },
+  });
+  const cp = await createKernelControlPlane(fixture);
+  try {
+    await cp.startRun({
+      runId: 'r-refresh-authority',
+      objective: 'preserve explicit authority during deferred refresh',
+      taskContract: {
+        acceptance: [{
+          id: 'AC-1',
+          acceptance: 'works',
+          evidencePlan: {
+            class: 'hard',
+            method: 'unit-test',
+            commandRefs: ['test:explicit'],
+            obligationId: 'unit-test',
+          },
+        }],
+      },
+    });
+
+    const before = cp.stateStore.getRunObligation('r-refresh-authority', 'unit-test');
+    assert.deepEqual(before.allowedCommandRefs, []);
+    assert.ok(before.metadata.commandCandidates.some((candidate) => candidate.sourceType === 'evidence-plan'));
+
+    await writeFile(path.join(fixture.projectRoot, 'package.json'), JSON.stringify({
+      name: 'kernel-fixture',
+      version: '0.0.1',
+      scripts: {
+        'test:policy': 'node -e "process.exit(0)"',
+        'test:explicit': 'node -e "process.exit(0)"',
+      },
+    }));
+    await cp.transition('r-refresh-authority', 'EXECUTE');
+    await cp.transition('r-refresh-authority', 'PROVE');
+
+    const after = cp.stateStore.getRunObligation('r-refresh-authority', 'unit-test');
+    assert.deepEqual(after.allowedCommandRefs, ['test:explicit']);
+    assert.equal(after.satisfiable, true);
   } finally {
     await cp.close();
     await cleanup(fixture);
@@ -480,10 +539,10 @@ test('F2: a shorter revision cannot overwrite an earlier criterion in place', as
   const fixture = await setup();
   const cp = await createKernelControlPlane(fixture);
   try {
-    await cp.ensureRun({ runId: 'r-f2', objective: 'x', taskContract: { acceptance: ['A must hold', 'B must hold'] } });
+    await cp.ensureRun({ runId: 'r-f2', objective: 'x', taskContract: { allowedPaths: ['app.mjs'], acceptance: ['A must hold', 'B must hold'] } });
     // Plain acceptance is numbered positionally, so revising with a single
     // different statement previously replaced AC-1 and dropped A.
-    await cp.ensureRun({ runId: 'r-f2', objective: 'x', taskContract: { acceptance: ['C must hold'] } });
+    await cp.ensureRun({ runId: 'r-f2', objective: 'x', taskContract: { allowedPaths: ['app.mjs'], acceptance: ['C must hold'] } });
 
     const run = await cp.getRun('r-f2');
     assert.deepEqual(run.acceptanceCriteria, ['A must hold', 'B must hold', 'C must hold']);
@@ -674,6 +733,7 @@ test('P0-2: AC coverage is canonicalized and cannot cross obligation boundaries'
       runId: 'r-coverage-binding',
       objective: 'x',
       taskContract: {
+        allowedPaths: ['app.mjs'],
         acceptance: [
           { id: 'AC-1', acceptance: 'auth behavior holds', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'] } },
           { id: 'AC-2', acceptance: 'static contract holds', evidencePlan: { class: 'hard', method: 'static-analysis', commandRefs: ['lint'] } },
@@ -706,7 +766,7 @@ test('P0-5: an unknown AC in a late evidence-plan submission is rejected, not ig
   const fixture = await setup();
   const cp = await createKernelControlPlane(fixture);
   try {
-    await cp.startRun({ runId: 'r-unknown-plan', objective: 'x', taskContract: { acceptance: ['works'] } });
+    await cp.startRun({ runId: 'r-unknown-plan', objective: 'x', taskContract: { allowedPaths: ['app.mjs'], acceptance: ['works'] } });
     const rejected = await cp.report('r-unknown-plan', {
       summary: 'unknown plan',
       evidencePlans: [{ acceptanceId: 'AC-404', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'] } }],
@@ -726,12 +786,12 @@ test('P0-4: a contract revision can refine scope but never shrink it', async () 
     await cp.ensureRun({
       runId: 'r-shrink',
       objective: 'x',
-      taskContract: { acceptance: ['A must hold', 'B must hold'], constraints: ['keep the response shape'] },
+      taskContract: { allowedPaths: ['app.mjs'], acceptance: ['A must hold', 'B must hold'], constraints: ['keep the response shape'] },
     });
 
     // A later turn submits a narrower contract. Dropping an acceptance
     // criterion mid-run would quietly shrink the completion gate.
-    await cp.ensureRun({ runId: 'r-shrink', objective: 'x', taskContract: { acceptance: ['A must hold'] } });
+    await cp.ensureRun({ runId: 'r-shrink', objective: 'x', taskContract: { allowedPaths: ['app.mjs'], acceptance: ['A must hold'] } });
 
     const run = await cp.getRun('r-shrink');
     assert.deepEqual(run.acceptanceCriteria, ['A must hold', 'B must hold']);
@@ -741,7 +801,7 @@ test('P0-4: a contract revision can refine scope but never shrink it', async () 
     await cp.ensureRun({
       runId: 'r-shrink',
       objective: 'x',
-      taskContract: { acceptance: ['C must hold'], nonGoals: ['no redesign'] },
+      taskContract: { allowedPaths: ['app.mjs'], acceptance: ['C must hold'], nonGoals: ['no redesign'] },
     });
     const refined = await cp.getRun('r-shrink');
     assert.ok(refined.acceptanceCriteria.includes('B must hold'), 'existing acceptance survives');
@@ -1112,9 +1172,10 @@ test('contract revision rolls back when persisted coverage cannot be rebound', a
       runId: 'r-merge-rollback',
       objective: 'predecessor',
       taskContract: {
+        allowedPaths: ['app.mjs'],
         acceptance: [{ acceptance: 'old', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'], obligationId: 'old-check' } }],
         requiredObligations: ['old-check'],
-        steps: [{ objective: 'predecessor', acceptanceIds: ['AC-1'], obligationIds: ['old-check'] }],
+        steps: [{ objective: 'predecessor', allowedPaths: ['app.mjs'], acceptanceIds: ['AC-1'], obligationIds: ['old-check'] }],
       },
     });
     cp.stateStore.addWaiver('r-merge-rollback', {
@@ -1130,9 +1191,10 @@ test('contract revision rolls back when persisted coverage cannot be rebound', a
         runId: 'r-merge-rollback',
         objective: 'successor',
         taskContract: {
+          allowedPaths: ['app.mjs'],
           acceptance: [{ acceptance: 'new', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'], obligationId: 'new-check' } }],
           requiredObligations: ['new-check'],
-          steps: [{ objective: 'successor', acceptanceIds: ['AC-1'], obligationIds: ['new-check'] }],
+          steps: [{ objective: 'successor', allowedPaths: ['app.mjs'], acceptanceIds: ['AC-1'], obligationIds: ['new-check'] }],
         },
       }),
       (error) => error.code === 'CONTRACT_COVERAGE_REBASE_FAILED',

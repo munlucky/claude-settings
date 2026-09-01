@@ -100,25 +100,23 @@ test('control-plane rejects an unbounded implementation before any dispatch stat
   }
 });
 
-test('contract preflight rejects missing verification commands and incomplete detailed step bindings before Run creation', async () => {
+test('contract preflight admits missing verification commands at start but rejects incomplete detailed step bindings before Run creation', async () => {
   const fixture = await setup();
   const cp = await createKernelControlPlane(fixture);
   try {
-    await assert.rejects(
-      cp.startRun({
-        runId: 'r-missing-command',
-        objective: 'bounded implementation',
-        taskContract: {
-          acceptance: [{
-            acceptance: 'the change is tested',
-            evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:missing'], obligationId: 'unit-test' },
-          }],
-          allowedPaths: ['app.mjs'],
-        },
-      }),
-      (error) => error.errorCode === 'verification-command-missing',
-    );
-    await assertNoDispatchState(cp, 'r-missing-command');
+    const started = await cp.startRun({
+      runId: 'r-missing-command',
+      objective: 'bounded implementation',
+      taskContract: {
+        acceptance: [{
+          acceptance: 'the change is tested',
+          evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:missing'], obligationId: 'unit-test' },
+        }],
+        allowedPaths: ['app.mjs'],
+      },
+    });
+    assert.equal(started.runId, 'r-missing-command');
+    await cp.abandonRun('r-missing-command');
 
     await assert.rejects(
       cp.startRun({
@@ -128,8 +126,8 @@ test('contract preflight rejects missing verification commands and incomplete de
           behaviorChanging: true,
           acceptance: structuredAcceptance().slice(0, 2),
           steps: [
-            { objective: 'change', allowedPaths: ['app.mjs'], acceptanceIds: ['AC-1'], obligationIds: ['criterion-1'] },
-            { objective: 'verify', allowedPaths: ['tests/**'], acceptanceIds: ['AC-2'], obligationIds: ['criterion-2'] },
+            { objective: 'change', allowedPaths: ['app.mjs'], acceptanceIds: ['AC-1'], obligationIds: ['criterion-1'], expectedOutputs: [] },
+            { objective: 'verify', allowedPaths: ['tests/**'], acceptanceIds: ['AC-2'], obligationIds: ['criterion-2'], expectedOutputs: [] },
           ],
         },
       }),

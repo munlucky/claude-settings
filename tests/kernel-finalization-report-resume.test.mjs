@@ -18,6 +18,7 @@ test('a passed step accepts an unchanged PROVE report when completion coverage r
       runId: 'final-report',
       objective: 'finish',
       taskContract: {
+        allowedPaths: ['app.mjs'],
         acceptance: [
           { acceptance: 'A', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'], obligationId: 'default' } },
           { acceptance: 'B', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'], obligationId: 'default' } },
