@@ -12,6 +12,7 @@ import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
 import { dispatchKernelTurn } from '../scripts/host/kernel/turn-dispatcher.mjs';
 import { createModelRegistry } from '../scripts/host/kernel/model-registry.mjs';
 import { createClaudeAdapter } from '../scripts/host/kernel/adapters/claude.mjs';
+import { createCodexAdapter } from '../scripts/host/kernel/adapters/codex.mjs';
 import { REJECTION_CODES } from '../scripts/kernel/routing/route-admission.mjs';
 
 const CONFIGURED = { MOON_RELAY_KERNEL_MODEL_FRONTIER: 'configured-frontier', MOON_RELAY_KERNEL_MODEL_VALUE: 'configured-value' };
@@ -38,6 +39,20 @@ const reviewContext = {
   executionMode: 'native-subagent',
   delegationRequested: true,
 };
+
+test('review capability describes the concrete launcher and never claims cross-surface support', () => {
+  const claudeWithoutLauncher = createClaudeAdapter();
+  const claudeWithLauncher = createClaudeAdapter({ launch: async () => ({}) });
+  const codexWithoutLauncher = createCodexAdapter({ nativeAgentHost: {} });
+  const codexWithLauncher = createCodexAdapter({ nativeAgentHost: { spawn_agent: async () => ({}) } });
+
+  assert.equal(claudeWithoutLauncher.capabilities.supportsIndependentContext, false);
+  assert.equal(claudeWithLauncher.capabilities.supportsIndependentContext, true);
+  assert.equal(codexWithoutLauncher.capabilities.supportsIndependentContext, false);
+  assert.equal(codexWithLauncher.capabilities.supportsIndependentContext, true);
+  assert.equal(claudeWithLauncher.capabilities.supportsCrossSurfaceReview, false);
+  assert.equal(codexWithLauncher.capabilities.supportsCrossSurfaceReview, false);
+});
 
 test('K3: a configured frontier reviewer session is admitted and dispatched', async () => {
   await withT3Run(async (cp, runId) => {
@@ -113,7 +128,11 @@ test('K3: a Host with no independent context cannot dispatch the review at all',
     assert.equal(result.dispatched, false);
     // The enforcement strategy already reports `unsupported` for an independent
     // turn this Host cannot isolate; admission refuses it explicitly.
-    assert.ok([REJECTION_CODES.REVIEW_NO_INDEPENDENT_CONTEXT, REJECTION_CODES.REVIEW_NOT_ADVISORY].includes(result.reason), result.reason);
+    assert.ok([
+      REJECTION_CODES.REVIEW_NO_INDEPENDENT_CONTEXT,
+      REJECTION_CODES.REVIEW_NOT_ADVISORY,
+      'no-independent-review-capability',
+    ].includes(result.reason), result.reason);
     assert.equal(result.receipt, null);
   });
 });

@@ -14,8 +14,11 @@ export const CLAUDE_CAPABILITIES = Object.freeze({
   surface: 'claude',
   supportsSubagentModel: true,
   supportsSessionModelOverride: false,
-  supportsIndependentContext: true,
-  supportsCrossSurfaceReview: true,
+  // A capability describes this concrete adapter, not every Host surface the
+  // caller might be able to reach.  The constructor below enables independent
+  // context only when an actual launcher was supplied.
+  supportsIndependentContext: false,
+  supportsCrossSurfaceReview: false,
   supportsReadOnlyReview: true,
   supportsUsageTokens: true,
   supportsResolvedModelIdentity: true,
@@ -65,6 +68,52 @@ const ownerDirectDispatch = ({ decision, resolution, parentSessionId = null } = 
   report: null,
 });
 
+// Model/effort fields can be copied from the request even when a launcher
+// fails before spawning a provider. Only concrete session, request, terminal,
+// usage, or timing evidence makes a pre-spawn result contradictory.
+const CLAUDE_PROVIDER_EXECUTION_EVIDENCE_FIELDS = Object.freeze([
+  'providerExecutionEvidence',
+  'sessionId',
+  'actorSessionId',
+  'childSessionId',
+  'providerRequestId',
+  'requestId',
+  'responseId',
+  'turnId',
+  'terminalEvents',
+  'events',
+  'observedSessionConfig',
+  'observedConfig',
+  'observed_session_config',
+  'observed_config',
+  'inputTokens',
+  'cachedInputTokens',
+  'cacheReadInputTokens',
+  'cacheWriteInputTokens',
+  'outputTokens',
+  'reasoningTokens',
+  'costMicros',
+  'wallClockMs',
+  'durationMs',
+  'previousResponseId',
+  'startedAt',
+  'finishedAt',
+  'usage',
+]);
+
+const hasMeaningfulEvidenceValue = (value) => {
+  if (value === null || value === undefined || value === '') return false;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === 'object') return Object.values(value).some(hasMeaningfulEvidenceValue);
+  if (typeof value === 'boolean') return value;
+  return true;
+};
+
+const hasClaudeProviderExecutionEvidence = (value) => {
+  if (!value || typeof value !== 'object') return false;
+  return CLAUDE_PROVIDER_EXECUTION_EVIDENCE_FIELDS.some((field) => hasMeaningfulEvidenceValue(value[field]));
+};
+
 const reviewPendingDispatch = ({ decision, resolution, parentSessionId = null } = {}) => ({
   status: 'review-required',
   resultStatus: 'interrupted',
@@ -75,44 +124,68 @@ const reviewPendingDispatch = ({ decision, resolution, parentSessionId = null } 
   actorRole: decision?.role || 'reviewer',
   actorSessionId: null,
   parentSessionId,
-  review: { required: true, status: 'pending', independent: true, crossSurface: true },
+  review: { required: true, status: 'pending', independent: true, crossSurface: false },
   outcome: null,
   report: null,
 });
 
-export const createClaudeAdapter = ({ launch = null, capabilities = {} } = {}) => ({
+export const createClaudeAdapter = ({ launch = null, capabilities = {} } = {}) => {
+  const hasLauncher = typeof launch === 'function';
+  const resolvedCapabilities = {
+    ...CLAUDE_CAPABILITIES,
+    ...capabilities,
+    supportsIndependentContext: hasLauncher,
+    supportsCrossSurfaceReview: false,
+  };
+  return {
   surface: 'claude',
-  capabilities: { ...CLAUDE_CAPABILITIES, ...capabilities },
+  capabilities: resolvedCapabilities,
   ownerDirectAvailable: true,
   ownerDirectDefault: true,
-  nativeDelegationAvailable: Boolean(launch),
+  nativeDelegationAvailable: hasLauncher,
   async dispatch({ decision, resolution, strategy, executionCapsule = null, executionContract, envelope = null, workingDirectory = null, environment = null, parentSessionId = null, concurrencyGroup = null, childSession = null, executionMode = null, delegationRequested = false, actionContext = null }) {
     const invocation = buildClaudeInvocation({ decision, resolution });
     const nativeRequested = isNativeDelegationRequested({ executionMode, delegationRequested, actionContext, executionContract });
     const independentReviewRequired = decision.role === 'reviewer' && decision.independentContextRequired === true;
-    if (independentReviewRequired && !launch) {
+    if (independentReviewRequired && !hasLauncher) {
       // Independent review cannot silently fall back to the owner's context,
       // even when a caller explicitly requested optional native delegation.
       return { ...reviewPendingDispatch({ decision, resolution, parentSessionId }), invocation };
     }
-    if (!nativeRequested || !launch) {
+    if (!nativeRequested || !hasLauncher) {
       return { ...ownerDirectDispatch({ decision, resolution, parentSessionId }), invocation };
     }
     // The envelope carries the cache-stable segments and breakpoint digests
     // (Wave 3/5); a launcher that speaks the Claude API reads it for
     // cache_control placement, but this adapter still owns no provider SDK.
     const result = (await launch({ invocation, executionCapsule, executionContract, decision, strategy, envelope, workingDirectory, environment, parentSessionId, concurrencyGroup, childSession })) || {};
+    const preSpawnFailure = (result.status === 'failed' || result.resultStatus === 'failed')
+      && result.failureStage === 'pre-spawn';
+    const providerExecutionEvidence = hasClaudeProviderExecutionEvidence(result);
     return {
       status: result.status || 'completed',
       resultStatus: result.resultStatus || (result.status === 'failed' ? 'failed' : 'completed'),
-      resolvedModel: result.resolvedModel ?? null,
-      resolvedEffort: result.resolvedEffort ?? invocation.effort ?? null,
+      resolvedModel: preSpawnFailure ? null : result.resolvedModel ?? null,
+      // The requested effort is not provider telemetry. Do not echo it as a
+      // resolved/observed value when the launcher explicitly failed before a
+      // provider process could exist.
+      resolvedEffort: result.resolvedEffort ?? (preSpawnFailure ? null : invocation.effort ?? null),
       // The Claude Host launcher exposes the provider identity it observed;
       // keeping these separate lets the common receipt builder fail closed
       // when a launcher omits terminal/session telemetry.
-      observedModel: result.observedModel ?? result.resolvedModel ?? null,
-      observedEffort: result.observedEffort ?? result.resolvedEffort ?? invocation.effort ?? null,
-      actorSessionId: result.sessionId || null,
+      observedModel: preSpawnFailure ? null : result.observedModel ?? result.resolvedModel ?? null,
+      observedEffort: preSpawnFailure ? null : result.observedEffort ?? result.resolvedEffort ?? invocation.effort ?? null,
+      actorSessionId: preSpawnFailure ? null : result.sessionId || null,
+      observedSessionConfig: result.observedSessionConfig
+        ?? result.observed_session_config
+        ?? result.observedConfig
+        ?? result.observed_config
+        ?? null,
+      observedConfig: result.observedConfig
+        ?? result.observed_config
+        ?? result.observedSessionConfig
+        ?? result.observed_session_config
+        ?? null,
       inputTokens: result.inputTokens ?? null,
       cachedInputTokens: result.cachedInputTokens ?? result.cacheReadInputTokens ?? null,
       cacheReadInputTokens: result.cacheReadInputTokens ?? result.cachedInputTokens ?? null,
@@ -121,7 +194,22 @@ export const createClaudeAdapter = ({ launch = null, capabilities = {} } = {}) =
       outputTokens: result.outputTokens ?? null,
       reasoningTokens: result.reasoningTokens ?? null,
       wallClockMs: result.wallClockMs ?? null,
+      errorCode: result.errorCode ?? null,
+      errorSummary: result.errorSummary ?? null,
+      failureCategory: result.failureCategory ?? null,
+      failureStage: result.failureStage ?? null,
+      runtimePreflight: result.runtimePreflight ?? null,
+      launcherFailure: result.launcherFailure ?? (preSpawnFailure && providerExecutionEvidence ? {
+        status: 'failed',
+        errorCode: result.errorCode ?? 'claude-launch-failed',
+        failureStage: 'pre-spawn',
+        providerExecutionEvidence: true,
+      } : null),
+      remediation: result.remediation ?? null,
+      outcome: result.outcome ?? (decision.role === 'reviewer' ? result.report ?? null : null),
+      report: result.report ?? (decision.role === 'reviewer' ? null : result.outcome ?? null),
       invocation,
     };
   },
-});
+  };
+};

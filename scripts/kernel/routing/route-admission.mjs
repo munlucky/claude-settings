@@ -77,7 +77,7 @@ const checkRoleRules = ({ decision, resolution, capabilities, capsule, riskTier 
     if (decision.permissions !== 'read_only') return REJECTION_CODES.REVIEW_NOT_READ_ONLY;
     if (rank[riskTier] >= rank.T3 || independent) {
       if (decision.modelClass !== 'frontier_reasoning') return REJECTION_CODES.REVIEW_NOT_FRONTIER;
-      if (!(capabilities.supportsCrossSurfaceReview === true || capabilities.supportsIndependentContext === true)) return REJECTION_CODES.REVIEW_NO_INDEPENDENT_CONTEXT;
+      if (capabilities.supportsIndependentContext !== true) return REJECTION_CODES.REVIEW_NO_INDEPENDENT_CONTEXT;
       if (resolution.source === 'host-default' || resolution.enforcementIntent !== 'enforced') return REJECTION_CODES.REVIEW_NOT_ADVISORY;
     }
     return null;

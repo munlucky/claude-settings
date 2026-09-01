@@ -479,6 +479,32 @@ test('a Codex adapter without a native launcher blocks only a required independe
   assert.equal(dispatch.errorCode, null);
   assert.equal(dispatch.capability, null);
   assert.equal(dispatch.executionMode, 'independent-review');
-  assert.deepEqual(dispatch.delegation, { mode: 'required', available: true, requested: false, actorRole: 'reviewer' });
+  assert.deepEqual(dispatch.delegation, { mode: 'required', available: false, requested: false, actorRole: 'reviewer' });
   assert.equal(dispatch.review.status, 'pending');
+});
+
+test('pre-spawn observed session config counts as provider execution evidence', async () => {
+  const adapter = createCodexAdapter({
+    parentSessionObserver: stableParentObserver,
+    nativeLaunch: async () => ({
+      status: 'failed',
+      resultStatus: 'failed',
+      errorCode: 'transport-unavailable',
+      failureCategory: 'provider/infrastructure',
+      failureStage: 'pre-spawn',
+      observedSessionConfig: { model: 'gpt-5.6-sol', effort: 'xhigh' },
+    }),
+  });
+  const dispatch = await adapter.dispatch({
+    decision: decisionFor('review_engineering', 'T3'),
+    resolution: { model: 'gpt-5.6-sol', effort: 'xhigh', enforcementIntent: 'enforced' },
+    parentSessionId: 'review-owner',
+    executionContract: { role: 'reviewer', permissions: 'read_only', independentReviewRequired: true },
+    executionMode: 'native-subagent',
+    delegationRequested: true,
+  });
+  assert.equal(dispatch.status, 'failed');
+  assert.equal(dispatch.errorCode, 'transport-unavailable');
+  assert.equal(dispatch.launcherFailure?.providerExecutionEvidence, true);
+  assert.equal(dispatch.runtimePreflight, null);
 });

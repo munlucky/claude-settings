@@ -10,13 +10,11 @@ test('start-time admission checks only capabilities that make completion impossi
     flags: {},
     surfaces: [],
   };
-  assert.throws(
-    () => assertRequiredHostCapabilities(contract, { supportsProofExecution: true }),
-    /independent-reviewer, read-only-review/,
-  );
-  assert.equal(assertRequiredHostCapabilities(contract, {
-    supportsProofExecution: true,
-    supportsIndependentContext: true,
-    supportsReadOnlyReview: true,
-  }).admitted, true);
+  const admitted = assertRequiredHostCapabilities(contract, { supportsProofExecution: true });
+  assert.equal(admitted.admitted, true);
+  assert.deepEqual(admitted.required, {
+    proofExecution: true,
+    independentReviewer: false,
+    readOnlyReview: false,
+  });
 });

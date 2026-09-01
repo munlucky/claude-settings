@@ -88,6 +88,54 @@ const receiptValuesEqual = (left, right, { paths = false } = {}) => JSON.stringi
   canonicalReceiptValue(paths ? canonicalChangedPaths(left) : left),
 ) === JSON.stringify(canonicalReceiptValue(paths ? canonicalChangedPaths(right) : right));
 
+// Only executions produced by this module may enter the report-local cache.
+// The WeakMap is deliberately private: a public caller cannot manufacture the
+// cache entry or replay one from another report/run through executeProof().
+const proofExecutionCacheContexts = new WeakMap();
+const proofExecutionCacheRequest = Symbol('kernel-proof-execution-cache-request');
+
+const rememberProofExecutionCacheEntry = (execution, context) => {
+  if (execution && typeof execution === 'object' && context) {
+    proofExecutionCacheContexts.set(execution, context);
+  }
+  return execution;
+};
+
+// A single report may need the same trusted command for several hard
+// obligations. Keep that execution in-memory only, and key it by every
+// freshness and execution property that can change the meaning of the result.
+// The individual obligation receipts are still recorded separately below.
+const proofExecutionCacheKey = ({ run, obligation, request, scopeObservation = null } = {}) => JSON.stringify(canonicalReceiptValue({
+  commandRef: request?.commandRef || null,
+  // Approved/discovered executions intentionally have no trusted commandRef.
+  // Keep their concrete argv and approval identity in the in-memory key so
+  // two different discovered commands can never share one execution.
+  command: request?.command || request?.discovered?.command || null,
+  args: request?.args || request?.discovered?.args || [],
+  approval: request?.approval || request?.discovered?.approval || null,
+  timeoutMs: Number.isFinite(request?.timeoutMs) ? Number(request.timeoutMs) : null,
+  networkPolicy: request?.networkPolicy || 'inherited',
+  flakyRerun: request?.flakyRerun === true,
+  allowEvidenceReuse: request?.allowEvidenceReuse !== false,
+  sourceIdentity: run?.sourceIdentity || null,
+  currentWorkspaceIdentity: run?.currentWorkspaceIdentity || null,
+  mutationRevision: run?.mutationRevision ?? null,
+  contractRevision: run?.contractRevision ?? null,
+  scopeAuthority: authoritativeVerificationScope(obligation) || null,
+  // The authoritative scope's current content identity is part of the
+  // lookup key as well as the later executeProof guard. This prevents two
+  // same-command obligations with different scope snapshots from sharing a
+  // cache entry and then falling through to a duplicate execution only after
+  // the guard rejects the mismatch.
+  scopeIdentity: scopeObservation
+    ? {
+      status: scopeObservation.status || null,
+      identity: scopeObservation.identity || null,
+      reason: scopeObservation.reason || null,
+    }
+    : null,
+}));
+
 export const computeKernelSourceIdentity = ({ projectRoot = process.cwd(), objective = '', taskContract = {} } = {}) => {
   const sourceDigest = gitTreeDigest(projectRoot) || sha256Hex({ projectRoot, objective });
   return buildCandidateIdentity({
@@ -2459,7 +2507,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     // Hard evidence path: the Kernel runtime resolves a trusted manifest
     // command, executes it itself, and binds the result to the workspace
     // identity observed immediately before execution.
-    async executeProof(runId, { obligationId = 'default', commandRef, timeoutMs, acceptanceCoverage = [], flakyRerun = false, discovered = null, networkPolicy = 'inherited', evidenceIdentity: requestedEvidenceIdentity = null, freshnessInputs = null, allowEvidenceReuse = true } = {}) {
+    async executeProof(runId, { obligationId = 'default', commandRef, timeoutMs, acceptanceCoverage = [], flakyRerun = false, discovered = null, networkPolicy = 'inherited', evidenceIdentity: requestedEvidenceIdentity = null, freshnessInputs = null, allowEvidenceReuse = true, sharedExecution = null, [proofExecutionCacheRequest]: proofExecutionCacheContext = null } = {}) {
       const run = store.getRun(runId);
       if (!run) throw new Error(`Run ${runId} not found`);
 
@@ -2503,6 +2551,101 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
           freshnessInputs: scopedFreshnessInputs,
           verificationScopeDigest: scopedProof ? scopedObservation.identity : null,
         });
+
+      // A shared execution is an in-memory same-report optimization, not a
+      // caller-supplied proof. Revalidate its complete freshness boundary and
+      // command identity before recording another Kernel-runtime receipt.
+      if (sharedExecution) {
+        const currentRun = store.getRun(runId);
+        const sharedStatus = sharedExecution.recordedStatus || sharedExecution.status;
+        const sharedExitCode = Number.isInteger(sharedExecution.recordedExitCode)
+          ? sharedExecution.recordedExitCode
+          : (Number.isInteger(sharedExecution.exitCode) ? sharedExecution.exitCode : 1);
+        const sharedIdentityDigest = sharedExecution.evidenceIdentity?.digest || null;
+        const sharedCommandRef = discovered ? null : commandRef;
+        const sharedExactReuse = sharedExecution.actualCommandExecution === false
+          && sharedExecution.reused === true
+          && sharedExecution.reuseReceipt?.priorRunId
+          && Number.isInteger(Number(sharedExecution.reuseOfVerificationId || sharedExecution.reuseReceipt?.priorVerificationId));
+        const cacheContextMatches = proofExecutionCacheContext
+          && proofExecutionCacheContexts.get(sharedExecution) === proofExecutionCacheContext
+          && proofExecutionCacheContext.runId === runId
+          && proofExecutionCacheContext.sourceIdentity === currentRun?.sourceIdentity
+          && proofExecutionCacheContext.contractRevision === currentRun?.contractRevision
+          && proofExecutionCacheContext.mutationRevision === currentRun?.mutationRevision;
+        const reusable = cacheContextMatches
+          && (sharedExecution.actualCommandExecution === true || sharedExactReuse)
+          && sharedExecution.workspaceMutatedByProof !== true
+          && sharedExecution.mutationRevision === currentRun?.mutationRevision
+          && sharedExecution.workspaceIdentity === observation.identity
+          && sharedExecution.commandRef === sharedCommandRef
+          && sharedExecution.networkPolicy === networkPolicy
+          && sharedIdentityDigest
+          && sharedIdentityDigest === evidenceIdentity.digest
+          && ['passed', 'failed'].includes(sharedStatus);
+        if (!reusable) {
+          throw Object.assign(new Error('Shared proof execution is no longer safe to reuse at the current workspace identity'), {
+            code: 'PROOF_EXECUTION_REUSE_UNSAFE',
+          });
+        }
+        const sharedReuseReceipt = sharedExactReuse
+          ? buildEvidenceReuseReceipt({
+            runId,
+            obligationId,
+            priorRunId: sharedExecution.reuseReceipt.priorRunId,
+            priorVerificationId: Number(sharedExecution.reuseOfVerificationId || sharedExecution.reuseReceipt.priorVerificationId),
+            mutationRevision: currentRun.mutationRevision,
+            identity: evidenceIdentity,
+            evidenceDigest: sharedExecution.outputDigest,
+          })
+          : null;
+        const updated = store.recordVerification(runId, {
+          obligationId,
+          status: sharedStatus,
+          evidenceRef: sharedReuseReceipt
+            ? `evidence://reuse/${sharedReuseReceipt.receiptId}`
+            : sharedExecution.evidenceRef,
+          commandRef: sharedCommandRef,
+          command: [sharedExecution.command, ...(sharedExecution.args || [])].filter(Boolean).join(' ') || commandRef,
+          exitCode: sharedExitCode,
+          evidenceDigest: sharedExecution.outputDigest,
+          acceptanceCoverage,
+          verifiedSourceIdentity: observation.identity,
+          executor: 'kernel-runtime',
+          networkIsolation: sharedExecution.networkIsolation,
+          evidenceIdentity,
+          reuseOfVerificationId: sharedExactReuse
+            ? Number(sharedExecution.reuseOfVerificationId || sharedExecution.reuseReceipt.priorVerificationId)
+            : null,
+          reuseReceipt: sharedReuseReceipt,
+        });
+        persistReleaseEvidenceIfNeeded(runId, updated);
+        await projectRunState(updated, { runtimeHome });
+        const verification = store.getVerifications(runId).find((entry) => entry.obligationId === obligationId);
+        return {
+          run: updated,
+          execution: {
+            ...sharedExecution,
+            status: sharedExecution.status || sharedStatus,
+            recordedStatus: sharedStatus,
+            reused: true,
+            shared: true,
+            actualCommandExecution: false,
+            evidenceIdentity,
+            ...(sharedReuseReceipt ? {
+              reuseOfVerificationId: Number(sharedExecution.reuseOfVerificationId || sharedExecution.reuseReceipt.priorVerificationId),
+              reuseReceipt: sharedReuseReceipt,
+              evidenceRef: `evidence://reuse/${sharedReuseReceipt.receiptId}`,
+            } : {}),
+            verifiedSourceIdentity: observation.identity,
+            workspaceIdentity: observation.identity,
+            mutationRevision: updated.mutationRevision,
+            verificationId: verification?.id,
+            recordedExitCode: sharedExitCode,
+          },
+        };
+      }
+
       const reusable = allowEvidenceReuse && !discovered && typeof store.findExactReusableVerification === 'function'
         ? store.findExactReusableVerification({
           projectId: run.projectId,
@@ -2539,21 +2682,32 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         });
         persistReleaseEvidenceIfNeeded(runId, updated);
         await projectRunState(updated, { runtimeHome });
+        const cacheExecution = {
+          status: 'passed',
+          recordedStatus: 'passed',
+          reused: true,
+          reuseReceipt,
+          outputDigest: reusable.evidenceDigest,
+          evidenceIdentity,
+          evidenceRef: `evidence://reuse/${reuseReceipt.receiptId}`,
+          command: reusable.command || commandRef,
+          commandRef,
+          args: [],
+          exitCode: 0,
+          flaky: false,
+          workspaceMutatedByProof: false,
+          actualCommandExecution: false,
+          networkPolicy,
+          workspaceIdentity: observation.identity,
+          verifiedSourceIdentity: observation.identity,
+          mutationRevision: updated.mutationRevision,
+          recordedExitCode: 0,
+          reuseOfVerificationId: reusable.id,
+        };
+        rememberProofExecutionCacheEntry(cacheExecution, proofExecutionCacheContext);
         return {
           run: updated,
-          execution: {
-            status: 'passed',
-            recordedStatus: 'passed',
-            reused: true,
-            reuseReceipt,
-            outputDigest: reusable.evidenceDigest,
-            evidenceRef: `evidence://reuse/${reuseReceipt.receiptId}`,
-            command: reusable.command || commandRef,
-            args: [],
-            exitCode: 0,
-            flaky: false,
-            workspaceMutatedByProof: false,
-          },
+          execution: cacheExecution,
         };
       }
 
@@ -2602,7 +2756,27 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       persistReleaseEvidenceIfNeeded(runId, updated);
 
       await projectRunState(updated, { runtimeHome });
-      return { run: updated, execution: { ...execution, recordedStatus, flaky: blockedForFlaky, workspaceMutatedByProof } };
+      const verification = store.getVerifications(runId).find((entry) => entry.obligationId === obligationId);
+      const recordedExitCode = recordedStatus === 'failed' && execution.exitCode === 0 ? 1 : execution.exitCode;
+      const cacheExecution = {
+        ...execution,
+        recordedStatus,
+        flaky: blockedForFlaky,
+        workspaceMutatedByProof,
+        actualCommandExecution: true,
+        commandRef: discovered ? null : commandRef,
+        evidenceIdentity,
+        verifiedSourceIdentity: workspaceMutatedByProof ? postObservation.identity : observation.identity,
+        workspaceIdentity: workspaceMutatedByProof ? postObservation.identity : observation.identity,
+        mutationRevision: updated.mutationRevision,
+        verificationId: verification?.id,
+        recordedExitCode,
+      };
+      rememberProofExecutionCacheEntry(cacheExecution, proofExecutionCacheContext);
+      return {
+        run: updated,
+        execution: cacheExecution,
+      };
     },
 
     // Builds (and records a receipt for) the knowledge context of the run's
@@ -3329,7 +3503,6 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
 
       const failures = [];
       const executed = [];
-
       if (activeStep) {
         const boundCapsule = report.capsuleId ? store.getExecutionCapsule(report.capsuleId, { runId }) : null;
         stepAttempt = boundAttempt || store.getActiveStepAttempt(runId, {
@@ -3484,23 +3657,81 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
           await this.transition(runId, stateStep);
         }
 
+        const proofExecutionCache = new Map();
+        const proofExecutionCacheContext = (() => {
+          const cacheRun = store.getRun(runId);
+          return Object.freeze({
+            reportNonce: Symbol('kernel-proof-report-cache'),
+            runId,
+            sourceIdentity: cacheRun?.sourceIdentity || null,
+            contractRevision: cacheRun?.contractRevision ?? null,
+            mutationRevision: cacheRun?.mutationRevision ?? null,
+          });
+        })();
+
         for (const request of proofRequests) {
           const obligationId = request.obligationId || request.commandRef;
           try {
             const declaredObligation = store.getRunObligation(runId, obligationId);
-            const { execution } = await this.executeProof(runId, {
-              obligationId,
-              commandRef: request.commandRef,
-              timeoutMs: request.timeoutMs,
-              acceptanceCoverage: request.acceptanceCoverage || [],
-              networkPolicy: request.networkPolicy || 'inherited',
-              allowEvidenceReuse: request.allowEvidenceReuse !== false,
+            const scopeAuthority = authoritativeVerificationScope(declaredObligation);
+            const scopeObservation = scopeAuthority
+              ? observeScopedWorkspaceIdentity({ projectRoot, scopes: scopeAuthority.scope })
+              : null;
+            const cacheKey = proofExecutionCacheKey({
+              run: store.getRun(runId),
+              obligation: declaredObligation,
+              request,
+              scopeObservation,
             });
+            let cachedExecution = proofExecutionCache.get(cacheKey) || null;
+            let sharedExecutionUsed = Boolean(cachedExecution);
+            let execution;
+            if (cachedExecution) {
+              try {
+                ({ execution } = await this.executeProof(runId, {
+                  obligationId,
+                  commandRef: request.commandRef,
+                  timeoutMs: request.timeoutMs,
+                  acceptanceCoverage: request.acceptanceCoverage || [],
+                  networkPolicy: request.networkPolicy || 'inherited',
+                  allowEvidenceReuse: request.allowEvidenceReuse !== false,
+                  sharedExecution: cachedExecution,
+                  [proofExecutionCacheRequest]: proofExecutionCacheContext,
+                }));
+              } catch (error) {
+                if (error?.code !== 'PROOF_EXECUTION_REUSE_UNSAFE') throw error;
+                proofExecutionCache.delete(cacheKey);
+                cachedExecution = null;
+                sharedExecutionUsed = false;
+              }
+            }
+            if (!cachedExecution) {
+              ({ execution } = await this.executeProof(runId, {
+                obligationId,
+                commandRef: request.commandRef,
+                timeoutMs: request.timeoutMs,
+                acceptanceCoverage: request.acceptanceCoverage || [],
+                networkPolicy: request.networkPolicy || 'inherited',
+                allowEvidenceReuse: request.allowEvidenceReuse !== false,
+                [proofExecutionCacheRequest]: proofExecutionCacheContext,
+              }));
+            }
+            if (!sharedExecutionUsed
+              && proofExecutionCacheContexts.get(execution) === proofExecutionCacheContext
+              && execution.workspaceMutatedByProof !== true
+              && (execution.actualCommandExecution === true || execution.reused === true)) {
+              proofExecutionCache.set(proofExecutionCacheKey({
+                run: store.getRun(runId),
+                obligation: declaredObligation,
+                request,
+                scopeObservation,
+              }), execution);
+            }
             // recordedStatus reflects flaky/self-mutation blocking policy, not
             // just the raw command exit; use it so the report is consistent
             // with what completion authority actually sees.
             const effectiveStatus = execution.recordedStatus || execution.status;
-            executed.push({ obligationId, commandRef: request.commandRef, status: effectiveStatus, exitCode: execution.exitCode, evidenceDigest: execution.outputDigest, newRegression: request.newRegression === true, flaky: Boolean(execution.flaky), workspaceMutatedByProof: Boolean(execution.workspaceMutatedByProof) });
+            executed.push({ obligationId, commandRef: request.commandRef, status: effectiveStatus, exitCode: execution.exitCode, evidenceDigest: execution.outputDigest, newRegression: request.newRegression === true, flaky: Boolean(execution.flaky), workspaceMutatedByProof: Boolean(execution.workspaceMutatedByProof), shared: Boolean(execution.shared) });
             if (effectiveStatus !== 'passed') {
               const flakyNote = execution.flaky ? ' (flaky: divergent pass/fail — requires a waiver to pass)' : '';
               const mutationNote = execution.workspaceMutatedByProof ? ' (verification command mutated tracked source; evidence invalid)' : '';

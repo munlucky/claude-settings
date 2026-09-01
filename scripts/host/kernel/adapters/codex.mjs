@@ -159,6 +159,52 @@ const resolveNativeSpawnAgent = ({ spawnAgent = null, host = globalThis } = {}) 
 
 const firstNativeValue = (values) => values.find((value) => value !== undefined && value !== null && String(value).trim()) ?? null;
 
+const CODEX_PROVIDER_EXECUTION_EVIDENCE_FIELDS = Object.freeze([
+  'actorSessionId', 'actor_session_id', 'sessionId', 'session_id', 'childSessionId', 'child_session_id',
+  'providerRequestId', 'provider_request_id', 'requestId', 'request_id', 'responseId', 'response_id',
+  'turnId', 'turn_id',
+  'terminalEvents', 'terminal_events', 'events', 'observedSessionConfig', 'observedConfig',
+  'observed_session_config', 'observed_config', 'inputTokens', 'input_tokens', 'cachedInputTokens',
+  'cached_input_tokens', 'cacheReadInputTokens', 'cache_read_input_tokens', 'cacheWriteInputTokens',
+  'cache_write_input_tokens', 'outputTokens', 'output_tokens', 'reasoningTokens', 'reasoning_tokens',
+  'costMicros', 'cost_micros', 'wallClockMs', 'wall_clock_ms', 'durationMs', 'duration_ms',
+  'previousResponseId', 'previous_response_id', 'startedAt', 'started_at', 'finishedAt', 'finished_at', 'usage',
+]);
+
+const hasMeaningfulEvidenceValue = (value) => {
+  if (value === null || value === undefined || value === '') return false;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === 'object') return Object.values(value).some(hasMeaningfulEvidenceValue);
+  if (typeof value === 'boolean') return value;
+  return true;
+};
+
+const hasCodexProviderExecutionEvidence = (value) => {
+  if (!value || typeof value !== 'object') return false;
+  return CODEX_PROVIDER_EXECUTION_EVIDENCE_FIELDS.some((field) => hasMeaningfulEvidenceValue(value[field]));
+};
+
+const CODEX_REVIEWER_RESULT_FIELDS = Object.freeze([
+  'outcome',
+  'report',
+  'reviewerOutcome',
+  'review',
+  'reviewReceipt',
+  'reviewReceiptId',
+  'verdict',
+  'reviewVerdict',
+  'findings',
+  'evidenceRefs',
+  'risks',
+]);
+
+const codexReviewerResultFields = (source) => {
+  if (!source || typeof source !== 'object') return {};
+  return Object.fromEntries(CODEX_REVIEWER_RESULT_FIELDS
+    .filter((field) => source[field] !== undefined && source[field] !== null)
+    .map((field) => [field, source[field]]));
+};
+
 export const createCodexNativeAgentLauncher = ({ spawnAgent = null, host = globalThis } = {}) => {
   const dispatch = resolveNativeSpawnAgent({ spawnAgent, host });
   if (!dispatch) return null;
@@ -200,7 +246,11 @@ export const createCodexNativeAgentLauncher = ({ spawnAgent = null, host = globa
       ? candidate.terminalEvents
       : Array.isArray(candidate.events) ? candidate.events : [];
     const terminalConfig = resolveObservedCodexSessionConfigFromEvents(terminalEvents);
-    const observedConfig = candidate.observedSessionConfig || candidate.observedConfig || terminalConfig;
+    const observedConfig = candidate.observedSessionConfig
+      || candidate.observedConfig
+      || candidate.observed_session_config
+      || candidate.observed_config
+      || terminalConfig;
     const resolvedModel = firstNativeValue([
       observedConfig?.model,
     ]);
@@ -217,13 +267,19 @@ export const createCodexNativeAgentLauncher = ({ spawnAgent = null, host = globa
       candidate.threadId,
       candidate.thread_id,
     ]);
+    const observedSessionConfig = resolvedModel || resolvedEffort
+      ? { model: resolvedModel, effort: resolvedEffort }
+      : null;
     return {
       ...candidate,
       status: candidate.status || (outcome?.status === 'completed' ? 'completed' : outcome?.status || 'completed'),
       resultStatus: candidate.resultStatus || (candidate.status === 'failed' || outcome?.status === 'failed' ? 'failed' : 'completed'),
       resolvedModel,
       resolvedEffort,
-      observedSessionConfig: { model: resolvedModel, effort: resolvedEffort },
+      observedSessionConfig,
+      observedConfig: observedSessionConfig,
+      observed_session_config: observedSessionConfig,
+      observed_config: observedSessionConfig,
       observedModel: resolvedModel,
       observedEffort: resolvedEffort,
       effortObserved: Boolean(resolvedEffort),
@@ -252,8 +308,11 @@ export const CODEX_CAPABILITIES = Object.freeze({
   supportsSubagentModel: false,
   supportsSessionModelOverride: true,
   supportsLaunchProfile: true,
-  supportsIndependentContext: true,
-  supportsCrossSurfaceReview: true,
+  // Cross-surface review belongs to Host orchestration, not to one Codex
+  // adapter.  Independent context is enabled on the concrete instance below
+  // only when its native worker launcher is actually usable.
+  supportsIndependentContext: false,
+  supportsCrossSurfaceReview: false,
   supportsReadOnlyReview: true,
   supportsUsageTokens: false,
   supportsResolvedModelIdentity: true,
@@ -488,6 +547,9 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
     ...capabilities,
     ...(capabilities.supportsSubagentModel === undefined && effectiveNativeLaunch ? { supportsSubagentModel: true } : {}),
   };
+  const nativeDelegationAvailable = Boolean(effectiveNativeLaunch && resolved.supportsSubagentModel === true);
+  resolved.supportsIndependentContext = nativeDelegationAvailable;
+  resolved.supportsCrossSurfaceReview = false;
   const observeParentSession = parentSessionObserver || defaultParentSessionObserver;
   const configuredParentSessionEnvironment = parentSessionEnvironment || parentEnvironment || null;
   return {
@@ -495,7 +557,7 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
     capabilities: resolved,
     ownerDirectAvailable: true,
     ownerDirectDefault: true,
-    nativeDelegationAvailable: Boolean(effectiveNativeLaunch && resolved.supportsSubagentModel === true),
+    nativeDelegationAvailable,
     async dispatch({ decision, resolution, strategy, executionCapsule = null, executionContract, envelope = null, workingDirectory = null, environment = null, parentSessionId = null, parentSessionConfig = defaultParentSessionConfig, parentSessionEnvironment: dispatchParentSessionEnvironment = null, parentEnvironment: dispatchParentEnvironment = null, concurrencyGroup = null, childSession = null, executionMode = null, delegationRequested = false, actionContext = null }) {
       const invocation = buildCodexInvocation({ decision, resolution, capabilities: resolved });
       const nativeAvailable = Boolean(effectiveNativeLaunch && resolved.supportsSubagentModel === true);
@@ -634,6 +696,16 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
       try {
         invocationResult = await invoke(selectedLaunch, dispatchMechanism);
       } catch (error) {
+        const failureStage = error?.failureStage || error?.details?.failureStage || 'launch';
+        const failureDetails = error?.details && typeof error.details === 'object' ? error.details : null;
+        const providerExecutionEvidence = hasCodexProviderExecutionEvidence(error)
+          || hasCodexProviderExecutionEvidence(failureDetails);
+        const semanticErrorPayload = {
+          ...codexReviewerResultFields(failureDetails?.result),
+          ...codexReviewerResultFields(failureDetails),
+          ...codexReviewerResultFields(error),
+        };
+        const errorLauncherFailure = error?.launcherFailure || failureDetails?.launcherFailure || null;
         invocationResult = {
           result: {
             status: 'failed',
@@ -641,13 +713,14 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
             errorCode: error?.code || 'codex-launch-failed',
             errorSummary: error?.message || String(error),
             failureCategory: error?.failureCategory || error?.details?.failureCategory || 'provider/infrastructure',
-            failureStage: error?.failureStage || error?.details?.failureStage || 'launch',
+            failureStage,
             remediation: error?.details?.remediation || null,
-            runtimePreflight: error?.details && (error?.failureStage || error?.details?.failureStage) === 'pre-spawn' ? {
+            ...semanticErrorPayload,
+            runtimePreflight: failureDetails && failureStage === 'pre-spawn' && !providerExecutionEvidence ? {
               status: 'failed',
               errorCode: error?.code || 'codex-launch-failed',
               failureCategory: error?.details?.failureCategory || 'provider/infrastructure',
-              failureStage: error?.details?.failureStage || 'pre-spawn',
+              failureStage,
               remediation: error?.details?.remediation || null,
               credentialContentsInspected: error?.details?.credentialContentsInspected ?? null,
               userHomeAuthAvailable: error?.details?.userHomeAuthAvailable ?? null,
@@ -658,16 +731,21 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
               effectiveSandbox: error?.details?.effectiveSandbox || null,
               effectiveApprovalPolicy: error?.details?.effectiveApprovalPolicy || null,
               effectivePermissionProfile: error?.details?.effectivePermissionProfile || null,
+              ...codexReviewerResultFields(failureDetails?.runtimePreflight),
             } : null,
-            launcherFailure: error?.details && (error?.failureStage || error?.details?.failureStage) !== 'pre-spawn' ? {
+            // Provider execution evidence makes a claimed pre-spawn failure
+            // contradictory. Preserve that fact as a terminal launcher failure
+            // so the review dispatcher cannot safely retry another reviewer.
+            launcherFailure: errorLauncherFailure || ((providerExecutionEvidence || (failureDetails && failureStage !== 'pre-spawn')) ? {
               status: 'failed',
               errorCode: error?.code || 'codex-launch-failed',
-              failureStage: error?.failureStage || error?.details?.failureStage || 'launch',
+              failureStage,
+              providerExecutionEvidence,
               cleanupStatus: error?.details?.cleanupStatus || null,
               cleanupClassification: error?.details?.cleanupClassification || null,
               lineageSource: error?.details?.lineageSource || null,
               survivorCount: error?.details?.survivors ?? null,
-            } : null,
+            } : null),
           },
           dispatchMechanism,
           fallbackReason,
@@ -675,6 +753,15 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
       }
       let result = invocationResult.result;
       const actualLauncher = Boolean(selectedLaunch);
+      const preSpawnFailure = (result.status === 'failed' || result.resultStatus === 'failed')
+        && result.failureStage === 'pre-spawn';
+      const providerExecutionEvidence = hasCodexProviderExecutionEvidence(result);
+      const launcherFailure = result.launcherFailure ?? (preSpawnFailure && providerExecutionEvidence ? {
+        status: 'failed',
+        errorCode: result.errorCode || 'codex-launch-failed',
+        failureStage: 'pre-spawn',
+        providerExecutionEvidence: true,
+      } : null);
       const identityRequired = Boolean(invocation.model || invocation.effort);
       const observeResult = (candidate, mechanism) => {
         const terminalEvents = Array.isArray(candidate?.terminalEvents)
@@ -682,6 +769,8 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
           : Array.isArray(candidate?.events) ? candidate.events : [];
         const observedConfig = candidate?.observedSessionConfig
           || candidate?.observedConfig
+          || candidate?.observed_session_config
+          || candidate?.observed_config
           || (terminalEvents.length > 0 ? resolveObservedCodexSessionConfigFromEvents(terminalEvents) : null);
         const requiresTerminalTelemetry = mechanism === 'native-subagent';
         const observedModel = requiresTerminalTelemetry
@@ -706,6 +795,16 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
         return { observedModel, observedEffort, observation, lineageReason };
       };
       let observedResult = observeResult(result, dispatchMechanism);
+      if (preSpawnFailure && !providerExecutionEvidence) {
+        // A failed launcher may echo the requested model/config even though
+        // no provider process existed. Keep that echo out of the receipt and
+        // out of any later enforcement interpretation.
+        observedResult = {
+          ...observedResult,
+          observedModel: null,
+          observedEffort: null,
+        };
+      }
       let resolvedModel = observedResult.observedModel;
       let resolvedEffort = observedResult.observedEffort;
       let observation = observedResult.observation;
@@ -780,7 +879,7 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
         failureCategory: result.failureCategory ?? null,
         failureStage: result.failureStage ?? null,
         remediation: result.remediation ?? null,
-        launcherFailure: result.launcherFailure ?? null,
+        launcherFailure,
         capability: capabilityUnavailable
           ? buildUnsupportedCapability({
             capability: unsupportedCapability,

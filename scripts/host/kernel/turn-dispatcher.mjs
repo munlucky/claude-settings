@@ -15,6 +15,217 @@ import { resolveClaudeEffort } from './claude-effort-policy.mjs';
 import { buildModelCapsuleView } from './model-capsule-view.mjs';
 import { dispatchKernelRun } from './parallel-dispatcher.mjs';
 import { isNativeDelegationRequested } from './codex-actor-router.mjs';
+import { resolveEnforcementStrategy } from '../../kernel/run/model-route-contract.mjs';
+import { observeWorkspaceIdentity } from '../../kernel/run/workspace-identity.mjs';
+
+const REVIEW_ATTEMPT_META = Symbol('reviewAttemptMeta');
+
+// Fallback is deliberately narrower than "the adapter did not complete".
+// Only an explicit, pre-spawn provider/transport classification proves that no
+// reviewer result was produced and that trying another transport is safe.
+const REVIEW_PRESPAWN_TRANSPORT_CODES = new Set([
+  'provider-unavailable',
+  'transport-unavailable',
+  'launcher-unavailable',
+  'cli-version-mismatch',
+  'pre-spawn-incompatible',
+  'isolated-cli-incompatible',
+]);
+
+const REVIEW_TRANSPORT_CATEGORIES = new Set([
+  'provider/infrastructure',
+  'provider/transport',
+  'transport',
+  'transport/infrastructure',
+  'infrastructure',
+]);
+
+const REVIEW_PROVIDER_EXECUTION_EVIDENCE_FIELDS = Object.freeze([
+  'actorSessionId',
+  'sessionId',
+  'childSessionId',
+  'providerRequestId',
+  'requestId',
+  'responseId',
+  'turnId',
+  'terminalEvents',
+  'events',
+  'observedSessionConfig',
+  'observedConfig',
+  'observed_session_config',
+  'observed_config',
+  'inputTokens',
+  'cachedInputTokens',
+  'cacheReadInputTokens',
+  'cacheWriteInputTokens',
+  'uncachedInputTokens',
+  'outputTokens',
+  'reasoningTokens',
+  'costMicros',
+  'wallClockMs',
+  'durationMs',
+  'previousResponseId',
+  'startedAt',
+  'finishedAt',
+  'usage',
+]);
+
+const hasMeaningfulEvidenceValue = (value) => {
+  if (value === null || value === undefined || value === '') return false;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === 'object') return Object.values(value).some(hasMeaningfulEvidenceValue);
+  if (typeof value === 'boolean') return value;
+  return true;
+};
+
+const hasProviderExecutionEvidence = (source) => {
+  if (!source || typeof source !== 'object') return false;
+  return REVIEW_PROVIDER_EXECUTION_EVIDENCE_FIELDS.some((field) => hasMeaningfulEvidenceValue(source[field]));
+};
+
+const REVIEWER_RESULT_FIELDS = Object.freeze([
+  'outcome',
+  'report',
+  'reviewerOutcome',
+  'review',
+  'reviewReceipt',
+  'reviewReceiptId',
+  'verdict',
+  'reviewVerdict',
+  'findings',
+  'evidenceRefs',
+  'risks',
+]);
+
+const reviewerResultFields = (source) => {
+  if (!source || typeof source !== 'object') return {};
+  return Object.fromEntries(REVIEWER_RESULT_FIELDS
+    .filter((field) => source[field] !== undefined && source[field] !== null)
+    .map((field) => [field, source[field]]));
+};
+
+const hasReviewerSemanticPayload = (source, seen = new Set()) => {
+  if (!source || typeof source !== 'object' || seen.has(source)) return false;
+  seen.add(source);
+  if (['outcome', 'report', 'reviewerOutcome', 'review', 'reviewReceipt', 'reviewReceiptId']
+    .some((field) => source[field] !== null && source[field] !== undefined)) return true;
+  if (['verdict', 'reviewVerdict'].some((field) => ['pass', 'fail', 'blocked'].includes(String(source[field] || '').toLowerCase()))) return true;
+  if (['findings', 'evidenceRefs', 'risks'].some((field) => Array.isArray(source[field]))) return true;
+  return ['details', 'cause', 'error', 'launcherFailure', 'runtimePreflight', 'result', 'response', 'payload']
+    .some((field) => hasReviewerSemanticPayload(source[field], seen));
+};
+
+const withoutReviewAttemptMeta = (response) => {
+  if (!response || typeof response !== 'object') return response;
+  const publicResponse = { ...response };
+  delete publicResponse[REVIEW_ATTEMPT_META];
+  return publicResponse;
+};
+
+const withReviewAttemptMeta = (response, meta) => ({ ...response, [REVIEW_ATTEMPT_META]: meta });
+
+const isReviewTransportFailure = ({ dispatch = {}, dispatchError = null } = {}) => {
+  // An outcome is semantic evidence, even when the surrounding provider
+  // status is imperfect.  It must never trigger reviewer shopping.
+  if (dispatch?.outcome !== null && dispatch?.outcome !== undefined) return false;
+  // A pre-spawn marker is not enough once the Host also reports evidence that
+  // a provider process or session existed.  Such a contradictory result is a
+  // terminal integrity/telemetry failure, not a safe transport retry.
+  if ([dispatch, dispatch?.runtimePreflight, dispatch?.launcherFailure, dispatchError, dispatchError?.details]
+    .some(hasProviderExecutionEvidence)) return false;
+  // A thrown transport error may carry a reviewer outcome/report in an Error,
+  // its nested details, or its launcher failure payload. That is semantic
+  // evidence even when the adapter could not return a normal dispatch object;
+  // preserve the result and fail closed instead of shopping for another
+  // reviewer.
+  if ([dispatch, dispatch?.runtimePreflight, dispatch?.launcherFailure, dispatchError, dispatchError?.details]
+    .some((source) => hasReviewerSemanticPayload(source))) return false;
+  if (dispatch?.launcherFailure) return false;
+  const dispatchStage = String(dispatch?.failureStage || '').trim().toLowerCase();
+  if (dispatchStage && dispatchStage !== 'pre-spawn') return false;
+  if (!['failed', 'unsupported'].includes(String(dispatch?.status || '').toLowerCase())) return false;
+  if (dispatch.resultStatus && dispatch.resultStatus !== 'failed') return false;
+
+  const sources = [
+    dispatch?.runtimePreflight,
+    dispatchError?.details,
+    dispatch,
+  ].filter((source) => source && typeof source === 'object');
+  return sources.some((source) => {
+    const code = String(source.errorCode || dispatchError?.code || '').trim();
+    const failureStage = String(source.failureStage || '').trim().toLowerCase();
+    const failureCategory = String(source.failureCategory || '').trim().toLowerCase();
+    return source.status === 'failed'
+      && failureStage === 'pre-spawn'
+      && REVIEW_PRESPAWN_TRANSPORT_CODES.has(code)
+      && REVIEW_TRANSPORT_CATEGORIES.has(failureCategory);
+  });
+};
+
+const isReviewActionContext = (actionContext = {}) => Boolean(
+  String(actionContext.actionKind || '').startsWith('review')
+  || actionContext.independentReviewRequired === true,
+);
+
+const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
+
+const normalizeReviewCandidate = (candidate, defaults) => {
+  const source = candidate && candidate.adapter ? candidate : { adapter: candidate };
+  const adapter = source.adapter;
+  const surface = adapter?.capabilities?.surface || adapter?.surface || null;
+  const primarySurface = defaults.adapter?.capabilities?.surface || defaults.adapter?.surface || null;
+  const primaryRegistry = defaults.registry || (primarySurface
+    ? createModelRegistry({
+      surface: primarySurface,
+      runtimeHome: defaults.runtimeHome,
+      env: defaults.env,
+      overrides: defaults.overrides,
+    })
+    : null);
+  // A same-surface fallback is only another transport for the already
+  // selected provider route; it cannot bring a second model/effort registry
+  // that silently changes that route. A different surface needs its existing
+  // provider registry to map the same Kernel model class to that provider's
+  // concrete model. Caller overrides are still inherited below, never taken
+  // from the fallback entry.
+  const registry = surface && surface === primarySurface
+    ? primaryRegistry
+    : hasOwn(source, 'registry') && source.registry
+      ? source.registry
+      : createModelRegistry({
+        surface,
+        runtimeHome: defaults.runtimeHome,
+        env: defaults.env,
+        overrides: defaults.overrides,
+      });
+  return {
+    controlPlane: defaults.controlPlane,
+    adapter,
+    // A fallback may choose its own provider registry, but every other
+    // authority input is inherited from the original Kernel turn below.
+    registry,
+    runtimeHome: defaults.runtimeHome,
+    env: defaults.env,
+    overrides: defaults.overrides,
+    actionContext: defaults.actionContext,
+    parentSessionId: defaults.parentSessionId,
+    parentSessionConfig: defaults.parentSessionConfig,
+    toolPolicy: defaults.toolPolicy,
+    permissionPolicy: defaults.permissionPolicy,
+    economics: defaults.economics,
+  };
+};
+
+const reviewCandidateUnavailableReason = (candidate) => {
+  const adapter = candidate?.adapter;
+  if (!adapter || typeof adapter.dispatch !== 'function') return 'adapter-unavailable';
+  if (adapter.nativeDelegationAvailable !== true) return 'reviewer-launcher-unavailable';
+  if (adapter.capabilities?.supportsIndependentContext !== true) return 'independent-context-unavailable';
+  if (adapter.capabilities?.supportsReadOnlyReview !== true) return 'read-only-review-unavailable';
+  const surface = adapter.capabilities?.surface || adapter.surface || null;
+  if (!surface || candidate.registry?.surface !== surface || typeof candidate.registry?.resolve !== 'function') return 'reviewer-registry-unavailable';
+  return null;
+};
 
 // A decision carries no risk-shape data (security/migration/...) to the Host
 // today, only actionKind/riskTier/reasonCodes, so the recommendation below is
@@ -293,7 +504,7 @@ export const prepareParallelWorkerDispatch = async ({
   };
 };
 
-export const dispatchKernelTurn = async ({
+const dispatchKernelTurnAttempt = async ({
   controlPlane,
   runId,
   adapter,
@@ -308,6 +519,11 @@ export const dispatchKernelTurn = async ({
   permissionPolicy = {},
   economics = {},
   now = () => new Date().toISOString(),
+  turn: preloadedTurn = null,
+  attemptOverride = null,
+  suppressOwnerDirect = false,
+  suppressParallel = false,
+  useHostDirectiveStrategy = true,
 } = {}) => {
   if (!adapter) throw new Error('dispatchKernelTurn requires a Host adapter');
   const hostCapabilities = adapter.capabilities || {};
@@ -320,6 +536,7 @@ export const dispatchKernelTurn = async ({
   // delegated attempt that an owner-direct turn cannot close.
   const ownerDirectRequested = ['codex', 'claude'].includes(hostCapabilities.surface)
     && adapter.ownerDirectDefault === true
+    && suppressOwnerDirect !== true
     && !['prove', 'close'].includes(actionContext.actionKind)
     && (!nativeDelegationRequested || adapter.nativeDelegationAvailable !== true);
   if (ownerDirectRequested) {
@@ -360,7 +577,7 @@ export const dispatchKernelTurn = async ({
     };
   }
   const parallelMode = String(env.MOON_RELAY_KERNEL_PARALLEL_MODE || 'shadow').toLowerCase();
-  if (parallelMode === 'on' && actionContext.skipParallel !== true && controlPlane?.getExecutableSteps) {
+  if (parallelMode === 'on' && suppressParallel !== true && actionContext.skipParallel !== true && controlPlane?.getExecutableSteps) {
     return dispatchKernelRun({
       controlPlane,
       runId,
@@ -404,11 +621,24 @@ export const dispatchKernelTurn = async ({
       }),
     });
   }
-  const turn = await controlPlane.hostNext(runId, { hostCapabilities, actionContext });
+  const turn = preloadedTurn || await controlPlane.hostNext(runId, { hostCapabilities, actionContext });
   if (turn.status === 'not_found') return turn;
 
   const { modelInput, hostDirective } = turn;
+  if (!hostDirective?.modelRouteDecision) return turn;
   const decision = hostDirective.modelRouteDecision;
+  const boundAttempt = attemptOverride || hostDirective.attempt || null;
+  const attemptId = boundAttempt?.attemptId || hostDirective.attemptId || null;
+  const enforcementStrategy = useHostDirectiveStrategy
+    ? hostDirective.enforcementStrategy
+    : resolveEnforcementStrategy(hostCapabilities, decision);
+  const candidateHostDirective = {
+    ...hostDirective,
+    hostCapabilities,
+    enforcementStrategy,
+    attemptId,
+    attempt: boundAttempt,
+  };
   // prove/close belong to the trusted proof runtime; dispatching a model for
   // them would hand completion authority to a provider.
   if (decision.modelClass === 'kernel') {
@@ -448,8 +678,7 @@ export const dispatchKernelTurn = async ({
   // K1: the capsule is the authority for what the worker may see and touch.
   // The flat contract is still passed for adapters that have not moved yet.
   const executionCapsule = turn.executionCapsule || hostDirective.executionCapsule || null;
-  const attemptId = hostDirective.attemptId || null;
-  const attempt = hostDirective.attempt || null;
+  const attempt = boundAttempt;
 
   // K3: admission sits between the decision and the dispatch. A blocked or
   // drifted admission stops the turn here — no worker runs, and the refusal is
@@ -465,7 +694,7 @@ export const dispatchKernelTurn = async ({
     economics,
   });
   if (admission.decision === 'blocked' || admission.decision === 'redecision_required') {
-    return { schemaVersion: 1, runId, dispatched: false, reason: admission.rejectionCode || admission.decision, admission, modelInput, hostDirective, executionCapsule, receipt: null };
+    return { schemaVersion: 1, runId, dispatched: false, reason: admission.rejectionCode || admission.decision, admission, modelInput, hostDirective: candidateHostDirective, executionCapsule, receipt: null };
   }
   const revalidated = revalidateBeforeDispatch({
     admission,
@@ -484,7 +713,7 @@ export const dispatchKernelTurn = async ({
       policies: currentHostPolicies({ registry: modelRegistry, capabilities: adapter.capabilities, toolPolicy, permissionPolicy }),
       economics,
     });
-    return { schemaVersion: 1, runId, dispatched: false, reason: revalidated.rejectionCode, admission: drifted, drift: revalidated.drift, modelInput, hostDirective, executionCapsule, receipt: null };
+    return { schemaVersion: 1, runId, dispatched: false, reason: revalidated.rejectionCode, admission: drifted, drift: revalidated.drift, modelInput, hostDirective: candidateHostDirective, executionCapsule, receipt: null };
   }
 
   // Wave 3/7: the envelope is computed on every real turn — not only in the
@@ -512,11 +741,12 @@ export const dispatchKernelTurn = async ({
 
   const startedAt = now();
   let dispatch;
+  let dispatchError = null;
   try {
     dispatch = await adapter.dispatch({
       decision,
       resolution,
-      strategy: hostDirective.enforcementStrategy,
+      strategy: enforcementStrategy,
       executionCapsule: modelVisibleCapsule,
       executionContract: buildExecutionContract(modelInput, decision),
       envelope,
@@ -536,20 +766,50 @@ export const dispatchKernelTurn = async ({
       },
     }) || {};
   } catch (error) {
-    dispatch = { status: 'failed', resultStatus: 'failed', errorSummary: error.message };
+    dispatchError = error;
+    const failureStage = error?.failureStage || error?.details?.failureStage || null;
+    const failureCategory = error?.failureCategory || error?.details?.failureCategory || null;
+    const semanticErrorPayload = {
+      ...reviewerResultFields(error?.details?.result),
+      ...reviewerResultFields(error?.details),
+      ...reviewerResultFields(error),
+    };
+    const launcherFailure = error?.launcherFailure || error?.details?.launcherFailure || null;
+    dispatch = {
+      status: 'failed',
+      resultStatus: 'failed',
+      errorCode: error?.code || error?.errorCode || null,
+      errorSummary: error?.message || String(error),
+      failureCategory,
+      failureStage,
+      ...semanticErrorPayload,
+      ...(launcherFailure ? { launcherFailure } : {}),
+      ...(failureStage === 'pre-spawn' ? {
+        runtimePreflight: {
+          status: 'failed',
+          errorCode: error?.code || error?.errorCode || null,
+          failureCategory,
+          failureStage,
+          ...reviewerResultFields(error?.details?.runtimePreflight),
+        },
+      } : {}),
+    };
   }
 
   const receipt = buildUsageReceipt({
     decision,
     capabilities: hostCapabilities,
-    strategy: hostDirective.enforcementStrategy,
+    strategy: enforcementStrategy,
     resolution,
     dispatch,
     capsule: executionCapsule,
     admission,
     attemptId,
     bindingId: attempt?.bindingId || null,
-    actorSessionId: dispatch.actorSessionId || `${hostCapabilities.surface}:${decision.decisionId}`,
+    // A pre-spawn refusal has no provider session. Include the canonical
+    // attempt in its synthetic Host identity so retry receipts cannot collide
+    // when a caller supplies a fixed clock or retries the same route.
+    actorSessionId: dispatch.actorSessionId || `${hostCapabilities.surface}:${decision.decisionId}:${attemptId || startedAt || 'unbound'}`,
     parentSessionId,
     startedAt,
     finishedAt: now(),
@@ -576,7 +836,7 @@ export const dispatchKernelTurn = async ({
     runId,
     dispatched: true,
     modelInput,
-    hostDirective,
+    hostDirective: candidateHostDirective,
     resolution,
     dispatch,
     executionCapsule,
@@ -589,7 +849,7 @@ export const dispatchKernelTurn = async ({
         ...dispatch.report,
         attemptId,
         bindingId: attempt?.bindingId || dispatch.report.bindingId,
-        assignmentId: dispatch.report.assignmentId || hostDirective.executionAssignment?.assignmentId || null,
+        assignmentId: dispatch.report.assignmentId || candidateHostDirective.executionAssignment?.assignmentId || null,
         actorSessionId: dispatch.report.actorSessionId || dispatch.actorSessionId || null,
       }
       : null,
@@ -597,20 +857,22 @@ export const dispatchKernelTurn = async ({
   if (decision.role !== 'reviewer') return response;
 
   if (dispatch.status !== 'completed' || !dispatch.outcome) {
-    return {
+    return withReviewAttemptMeta({
       ...response,
       review: {
         required: true,
         independent: true,
-        status: dispatch.status === 'failed' || dispatch.status === 'unsupported' ? 'blocked' : 'pending',
+        status: dispatch.status === 'failed' || dispatch.status === 'unsupported' || !dispatch.outcome ? 'blocked' : 'pending',
         blockedReason: dispatch.status === 'failed' || dispatch.status === 'unsupported'
           ? dispatch.errorCode || 'reviewer-dispatch-failed'
-          : null,
+          : 'reviewer-outcome-missing',
         errorSummary: dispatch.errorSummary || null,
       },
       reviewReceipt: null,
       reviewReceiptId: null,
-    };
+    }, {
+      fallbackEligible: isReviewTransportFailure({ dispatch, dispatchError }),
+    });
   }
 
   const reviewerOutcome = buildReviewerOutcomeForIngestion({
@@ -618,13 +880,13 @@ export const dispatchKernelTurn = async ({
     executionCapsule,
   });
   if (!reviewerOutcome) {
-    return {
+    return withReviewAttemptMeta({
       ...response,
       review: { required: true, independent: true, status: 'blocked', blockedReason: 'reviewer-provenance-missing' },
       reviewReceipt: null,
       reviewReceiptId: null,
       blocker: { reason: 'reviewer-provenance-missing', detail: 'The Host could not bind the reviewer outcome to the current capsule mutation revision.' },
-    };
+    }, { fallbackEligible: false });
   }
 
   try {
@@ -637,17 +899,17 @@ export const dispatchKernelTurn = async ({
       reviewerSessionId: dispatch.actorSessionId,
       outcome: reviewerOutcome,
     });
-    return {
+    return withReviewAttemptMeta({
       ...response,
       review,
       reviewReceipt: review.reviewReceipt || null,
       reviewReceiptId: review.reviewReceipt?.receiptId || null,
-    };
+    }, { fallbackEligible: false });
   } catch (error) {
     // A usage receipt may exist even when the review chain is incomplete. It
     // remains observable, but it can never be promoted to a review receipt by
     // the Host or by the model.
-    return {
+    return withReviewAttemptMeta({
       ...response,
       review: {
         required: true,
@@ -659,6 +921,313 @@ export const dispatchKernelTurn = async ({
       reviewReceipt: null,
       reviewReceiptId: null,
       blocker: { reason: 'incomplete_review_chain', detail: error?.message || String(error) },
-    };
+    }, { fallbackEligible: false });
   }
+};
+
+const finishUnusableReviewAttempt = ({ controlPlane, attempt, reason }) => {
+  const stateStore = controlPlane?.stateStore;
+  if (!stateStore || !attempt?.id || typeof stateStore.finishStepAttempt !== 'function') return;
+  const current = typeof stateStore.getStepAttempt === 'function' ? stateStore.getStepAttempt(attempt.id) : attempt;
+  if (!current || !['started', 'reported', 'verifying'].includes(current.status)) return;
+  stateStore.finishStepAttempt(attempt.id, {
+    status: 'interrupted',
+    failureReasons: [reason],
+    failureCategory: reason,
+  });
+};
+
+const beginReviewFallbackAttempt = ({ controlPlane, runId, turn, decision, previousAttempt }) => {
+  const executionCapsule = turn?.executionCapsule || turn?.hostDirective?.executionCapsule || null;
+  if (!previousAttempt?.attemptId || !executionCapsule?.stepId || typeof controlPlane?.beginAttempt !== 'function') return null;
+  try {
+    return controlPlane.beginAttempt(runId, {
+      stepId: executionCapsule.stepId,
+      bindingId: previousAttempt.bindingId || null,
+      capsuleId: executionCapsule.capsuleId,
+      capsuleDigest: executionCapsule.provenance?.capsuleDigest || previousAttempt.capsuleDigest || null,
+      routeDecisionId: decision?.decisionId || previousAttempt.routeDecisionId || null,
+      parentAttemptId: previousAttempt.attemptId,
+      provenanceKind: 'routed',
+      planRevision: Number(previousAttempt.planRevision || decision?.planRevision || 1),
+      mutationRevision: Number(executionCapsule.subject?.mutationRevision ?? previousAttempt.mutationRevision ?? 0),
+      workspaceIdentityStart: executionCapsule.provenance?.workspaceIdentity || previousAttempt.workspaceIdentityStart || null,
+      workspaceId: previousAttempt.workspaceId || null,
+      workspaceRootHash: previousAttempt.workspaceRootHash || null,
+      baseWorkspaceIdentity: previousAttempt.baseWorkspaceIdentity || null,
+      retryReason: 'review-transport-fallback',
+    });
+  } catch {
+    // A fallback without a fresh canonical attempt would reuse a failed
+    // provider receipt, so the caller must stop rather than weaken lineage.
+    return null;
+  }
+};
+
+const observeReviewSubjectFreshness = ({ controlPlane, runId, executionCapsule } = {}) => {
+  const stateStore = controlPlane?.stateStore;
+  const projectRoot = controlPlane?.projectRoot;
+  const unavailable = (reasons) => ({ stale: true, reasons, liveWorkspaceIdentity: null, run: null });
+  if (!stateStore || typeof stateStore.getRun !== 'function' || typeof stateStore.observeWorkspaceIdentity !== 'function' || !projectRoot) {
+    return unavailable(['review-workspace-observation-unavailable']);
+  }
+
+  let liveObservation;
+  try {
+    liveObservation = observeWorkspaceIdentity({ projectRoot });
+  } catch {
+    return unavailable(['review-workspace-observation-failed']);
+  }
+  if (!liveObservation?.identity) return unavailable(['review-workspace-identity-unavailable']);
+
+  let run = stateStore.getRun(runId);
+  if (!run) return unavailable(['run-not-found']);
+
+  const subject = executionCapsule?.subject || {};
+  const capsuleWorkspaceIdentity = subject.workspaceIdentity
+    || executionCapsule?.provenance?.workspaceIdentity
+    || null;
+  const capsuleMutationRevision = subject.mutationRevision
+    ?? executionCapsule?.mutationRevision
+    ?? null;
+  const reasons = [];
+
+  // Advance the existing authoritative Run observation before comparing the
+  // capsule. This makes a concurrent mutation visible to the next PROVE turn
+  // while keeping the stale capsule fail-closed for this fallback chain.
+  if (run.currentWorkspaceIdentity !== liveObservation.identity) {
+    reasons.push('review-workspace-identity-changed');
+    try {
+      run = stateStore.observeWorkspaceIdentity(runId, liveObservation.identity).run || stateStore.getRun(runId);
+    } catch {
+      return unavailable(['review-workspace-observation-persist-failed']);
+    }
+  }
+  if (capsuleWorkspaceIdentity !== liveObservation.identity) reasons.push('capsule-workspace-identity-stale');
+  if (!Number.isInteger(Number(capsuleMutationRevision))) {
+    reasons.push('capsule-mutation-revision-unavailable');
+  } else if (Number(capsuleMutationRevision) !== Number(run?.mutationRevision)) {
+    reasons.push('capsule-mutation-revision-stale');
+  }
+  return {
+    stale: reasons.length > 0,
+    reasons,
+    liveWorkspaceIdentity: liveObservation.identity,
+    run,
+  };
+};
+
+const buildReviewSubjectStaleResponse = ({ turn, runId, lastTransportFailure, freshness } = {}) => {
+  const base = withoutReviewAttemptMeta(lastTransportFailure) || {
+    schemaVersion: 1,
+    runId,
+    dispatched: false,
+    modelInput: turn?.modelInput,
+    hostDirective: turn?.hostDirective,
+    executionCapsule: turn?.executionCapsule || turn?.hostDirective?.executionCapsule || null,
+    receipt: null,
+    report: null,
+  };
+  const detail = freshness?.reasons?.join(', ') || 'review capsule subject changed';
+  return {
+    ...base,
+    reason: 'review-subject-stale',
+    executionMode: 'independent-review',
+    review: {
+      required: true,
+      independent: true,
+      status: 'blocked',
+      blockedReason: 'review-subject-stale',
+      errorSummary: detail,
+    },
+    reviewReceipt: null,
+    reviewReceiptId: null,
+    blocker: {
+      reason: 'review-subject-stale',
+      detail: `Reviewer fallback stopped because the capsule subject changed (${detail}). Request a fresh PROVE review action.`,
+    },
+  };
+};
+
+export const dispatchKernelTurn = async ({
+  controlPlane,
+  runId,
+  adapter,
+  registry,
+  runtimeHome,
+  env = process.env,
+  overrides = {},
+  actionContext = {},
+  parentSessionId = null,
+  parentSessionConfig = null,
+  toolPolicy = {},
+  permissionPolicy = {},
+  economics = {},
+  now = () => new Date().toISOString(),
+  reviewFallbacks = [],
+} = {}) => {
+  if (!adapter) throw new Error('dispatchKernelTurn requires a Host adapter');
+  const fallbackEntries = Array.isArray(reviewFallbacks) ? reviewFallbacks : [];
+  const reviewIntent = isReviewActionContext(actionContext);
+
+  // Preserve the original owner-direct and parallel paths byte-for-byte for
+  // ordinary work.  Review candidates need one shared hostNext result, so the
+  // reviewer path below preloads that turn before trying any adapter.
+  if (!reviewIntent) {
+    return withoutReviewAttemptMeta(await dispatchKernelTurnAttempt({
+      controlPlane,
+      runId,
+      adapter,
+      registry,
+      runtimeHome,
+      env,
+      overrides,
+      actionContext,
+      parentSessionId,
+      parentSessionConfig,
+      toolPolicy,
+      permissionPolicy,
+      economics,
+      now,
+    }));
+  }
+
+  const hostCapabilities = adapter.capabilities || {};
+  const turn = await controlPlane.hostNext(runId, { hostCapabilities, actionContext });
+  if (turn.status === 'not_found') return turn;
+  if (!turn.hostDirective?.modelRouteDecision) return turn;
+  const decision = turn.hostDirective.modelRouteDecision;
+  const defaults = {
+    controlPlane,
+    adapter,
+    registry,
+    runtimeHome,
+    env,
+    overrides,
+    actionContext,
+    parentSessionId,
+    parentSessionConfig,
+    toolPolicy,
+    permissionPolicy,
+    economics,
+  };
+
+  // A caller may pass a fallback list defensively while the current action is
+  // ordinary work.  The list is only meaningful for a reviewer decision.
+  if (decision.role !== 'reviewer') {
+    return withoutReviewAttemptMeta(await dispatchKernelTurnAttempt({
+      ...defaults,
+      runId,
+      now,
+      turn,
+      suppressOwnerDirect: true,
+      suppressParallel: true,
+    }));
+  }
+
+  const candidates = [{ adapter }, ...fallbackEntries].map((candidate) => normalizeReviewCandidate(candidate, defaults));
+  const candidateUnavailableReasons = candidates.map((candidate) => reviewCandidateUnavailableReason(candidate));
+  let lastTransportFailure = null;
+  let canonicalAttempt = turn.hostDirective?.attempt || null;
+  for (const [candidateIndex, candidate] of candidates.entries()) {
+    if (candidateUnavailableReasons[candidateIndex]) continue;
+
+    // Every fallback candidate gets a fresh child attempt, including when an
+    // unavailable candidate was skipped between two usable transports. This
+    // keeps one canonical attempt per attempted transport and preserves the
+    // parent chain through arbitrary fallback hops.
+    let fallbackAttempt = null;
+    if (candidateIndex > 0) {
+      const freshness = observeReviewSubjectFreshness({
+        controlPlane,
+        runId,
+        executionCapsule: turn.executionCapsule || turn.hostDirective?.executionCapsule || null,
+      });
+      if (freshness.stale) {
+        finishUnusableReviewAttempt({
+          controlPlane,
+          attempt: canonicalAttempt || lastTransportFailure?.hostDirective?.attempt || turn.hostDirective?.attempt || null,
+          reason: 'review-subject-stale',
+        });
+        return buildReviewSubjectStaleResponse({
+          turn,
+          runId,
+          lastTransportFailure,
+          freshness,
+        });
+      }
+      const previousAttempt = canonicalAttempt;
+      finishUnusableReviewAttempt({
+        controlPlane,
+        attempt: canonicalAttempt,
+        reason: candidateUnavailableReasons.slice(0, candidateIndex).find(Boolean) || 'reviewer-transport-unavailable',
+      });
+      fallbackAttempt = beginReviewFallbackAttempt({
+        controlPlane,
+        runId,
+        turn,
+        decision,
+        previousAttempt,
+      });
+      if (!fallbackAttempt) break;
+    }
+
+    const attempt = await dispatchKernelTurnAttempt({
+      ...candidate,
+      runId,
+      now,
+      turn,
+      suppressOwnerDirect: true,
+      suppressParallel: true,
+      useHostDirectiveStrategy: candidateIndex === 0,
+      attemptOverride: fallbackAttempt,
+    });
+    canonicalAttempt = attempt?.hostDirective?.attempt || fallbackAttempt || canonicalAttempt;
+    const meta = attempt?.[REVIEW_ATTEMPT_META];
+    if (meta?.fallbackEligible !== true) return withoutReviewAttemptMeta(attempt);
+    lastTransportFailure = attempt;
+  }
+
+  if (lastTransportFailure) {
+    finishUnusableReviewAttempt({
+      controlPlane,
+      attempt: canonicalAttempt || lastTransportFailure.hostDirective?.attempt || turn.hostDirective?.attempt || null,
+      reason: lastTransportFailure.review?.blockedReason || 'reviewer-transport-failed',
+    });
+  } else {
+    finishUnusableReviewAttempt({
+      controlPlane,
+      attempt: canonicalAttempt || turn.hostDirective?.attempt || null,
+      reason: 'no-independent-review-capability',
+    });
+  }
+
+  const base = withoutReviewAttemptMeta(lastTransportFailure) || {
+    schemaVersion: 1,
+    runId,
+    dispatched: false,
+    modelInput: turn.modelInput,
+    hostDirective: turn.hostDirective,
+    executionCapsule: turn.executionCapsule || turn.hostDirective.executionCapsule || null,
+    receipt: null,
+    report: null,
+  };
+  return {
+    ...base,
+    reason: 'no-independent-review-capability',
+    executionMode: 'independent-review',
+    review: {
+      required: true,
+      independent: true,
+      status: 'blocked',
+      blockedReason: 'no-independent-review-capability',
+      errorSummary: null,
+    },
+    reviewReceipt: null,
+    reviewReceiptId: null,
+    blocker: {
+      reason: 'no-independent-review-capability',
+      detail: 'No configured reviewer transport produced an independent outcome.',
+    },
+  };
 };

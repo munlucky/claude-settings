@@ -110,6 +110,28 @@ test('Codex without an optional native launcher returns the bounded unit to the 
   });
 });
 
+test('ordinary owner-direct turns ignore configured review fallbacks', async () => {
+  await withRun(async (cp, runId) => {
+    let primaryCalls = 0;
+    let fallbackCalls = 0;
+    const primary = createClaudeAdapter({ launch: async () => { primaryCalls += 1; return {}; } });
+    const fallback = createClaudeAdapter({ launch: async () => { fallbackCalls += 1; return {}; } });
+    const result = await dispatchKernelTurn({
+      controlPlane: cp,
+      runId,
+      adapter: primary,
+      registry: registryFor('claude', FRONTIER_ENV),
+      actionContext: { obligationId: 'security-review' },
+      reviewFallbacks: [{ adapter: fallback, registry: registryFor('claude', FRONTIER_ENV) }],
+    });
+    assert.equal(result.executionMode, 'owner-direct');
+    assert.equal(result.reason, 'owner-session-execution-required');
+    assert.equal(primaryCalls, 0);
+    assert.equal(fallbackCalls, 0);
+    assert.equal(cp.stateStore.listModelRouteDecisions(runId).length, 0);
+  });
+});
+
 test('a failing dispatch is recorded as failed and never as an enforced success', async () => {
   await withRun(async (cp, runId) => {
     const adapter = createClaudeAdapter({ launch: async () => { throw new Error('worker crashed'); } });
