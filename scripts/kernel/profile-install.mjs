@@ -396,9 +396,6 @@ const checkUnmanagedJsonCollision = ({ existing, incoming, rel }) => {
     const oldValue = getJsonPath(existing, jsonPath);
     if (!oldValue.present) continue;
     if (jsonPath === 'hooks.SessionStart') {
-      if (Array.isArray(oldValue.value) && oldValue.value.some(isKernelHookEntry)) {
-        return collision(null, rel, PROFILE_OWNERSHIP.JSON_PATHS, 'existing-kernel-hook-without-manifest', { ownedPath: jsonPath });
-      }
       continue;
     }
     const newValue = getJsonPath(incoming, jsonPath);
@@ -437,7 +434,7 @@ const kernelHookCommands = (value) => {
     .flatMap(([, child]) => kernelHookCommands(child))];
 };
 
-const profileProjectionIsCurrent = async ({ root, sourceRoot, runtime, runtimeHome, manifest }) => {
+const profileProjectionIsCurrent = async ({ root, sourceRoot, runtime, runtimeHome, skillsRoot = null, manifest }) => {
   if (!manifest || manifest.sourceRoot !== path.resolve(sourceRoot) || manifest.provider !== runtime) return false;
   if ((await inspectProfile(root)).status !== 'ready') return false;
   const sourceMap = await buildSourceFileMap(sourceRoot, runtime);
@@ -478,34 +475,34 @@ const readPriorManifest = async (root) => {
   return await exists(manifestPath) ? JSON.parse(await readFile(manifestPath, 'utf8')) : null;
 };
 
-const preflightOwnedEntry = async (root, entry) => {
-  const file = safeJoin(root, entry.path);
+const preflightOwnedEntry = async (root, entry, entryRoot = root) => {
+  const file = safeJoin(entryRoot, entry.path);
   await rejectSymlink(file);
   if (!(await exists(file))) return null;
   const ownership = ownershipFor(entry);
   if (ownership === PROFILE_OWNERSHIP.OWNED_DIRECTORY) {
-    const inspected = await inspectOwnedDirectory(root, entry);
+    const inspected = await inspectOwnedDirectory(entryRoot, entry);
     return inspected.status === 'collision'
-      ? collision(root, entry.path, ownership, inspected.reason || 'modified-owned-directory')
+      ? collision(entryRoot, entry.path, ownership, inspected.reason || 'modified-owned-directory')
       : null;
   }
   if (ownership === PROFILE_OWNERSHIP.MANAGED_SECTION) {
     const text = await readFile(file, 'utf8');
     const region = entry.format === 'toml-developer-instructions' ? parseDeveloperAssignment(text)?.body : text;
-    if (region === undefined || region === null) return collision(root, entry.path, ownership, 'managed-section-container-missing');
+    if (region === undefined || region === null) return collision(entryRoot, entry.path, ownership, 'managed-section-container-missing');
     const inspected = inspectManagedSection(region, entry.sectionId || MANAGED_SECTION_ID);
-    if (inspected.status !== 'present') return collision(root, entry.path, ownership, inspected.reason || 'managed-section-missing');
-    if (entry.managedChecksum && inspected.digest !== entry.managedChecksum) return collision(root, entry.path, ownership, 'modified-managed-section');
+    if (inspected.status !== 'present') return collision(entryRoot, entry.path, ownership, inspected.reason || 'managed-section-missing');
+    if (entry.managedChecksum && inspected.digest !== entry.managedChecksum) return collision(entryRoot, entry.path, ownership, 'modified-managed-section');
     return null;
   }
   if (ownership === PROFILE_OWNERSHIP.JSON_PATHS) {
     let value;
-    try { value = await parseJsonFile(file); } catch { return collision(root, entry.path, ownership, 'invalid-shared-json'); }
+    try { value = await parseJsonFile(file); } catch { return collision(entryRoot, entry.path, ownership, 'invalid-shared-json'); }
     const failures = inspectJsonOwnership(value, entry);
-    if (failures.length > 0) return collision(root, entry.path, ownership, failures[0].reason, failures[0]);
+    if (failures.length > 0) return collision(entryRoot, entry.path, ownership, failures[0].reason, failures[0]);
     return null;
   }
-  if (entry.checksum && await sha256(file) !== entry.checksum) return collision(root, entry.path, ownership, 'modified-owned-file');
+  if (entry.checksum && await sha256(file) !== entry.checksum) return collision(entryRoot, entry.path, ownership, 'modified-owned-file');
   return null;
 };
 
@@ -516,7 +513,10 @@ export async function inspectProfile(targetRoot) {
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
   const checks = [];
   for (const entry of manifest.files || []) {
-    const file = safeJoin(root, entry.path);
+    const entryRoot = (manifest.provider === 'antigravity' && manifest.skillsRoot && entry.path.startsWith('skills/'))
+      ? manifest.skillsRoot
+      : root;
+    const file = safeJoin(entryRoot, entry.path);
     const present = await exists(file);
     const ownership = ownershipFor(entry);
     let checksum = present && ownership !== PROFILE_OWNERSHIP.OWNED_DIRECTORY ? await sha256(file) : null;
@@ -560,16 +560,19 @@ export async function inspectProfile(targetRoot) {
   return { status: checks.every((item) => item.present && item.isOk) ? 'ready' : 'drift', targetRoot: root, manifest, checks };
 }
 
-const prepareProfilePlan = async ({ root, item, runtime, runtimeHome, prior, force }) => {
+const prepareProfilePlan = async ({ root, skillsRoot = null, item, runtime, runtimeHome, prior, force }) => {
   const rel = item.rel.replaceAll('\\', '/');
-  const target = safeJoin(root, rel);
+  const planRoot = (runtime === 'antigravity' && skillsRoot && rel.startsWith('skills/'))
+    ? await safeProfileRoot(skillsRoot, 'skills root')
+    : root;
+  const target = safeJoin(planRoot, rel);
   const priorEntry = priorEntryFor(prior, rel);
   const present = await exists(target);
   const sourceHash = await sourceChecksum(item.sourcePath);
   if (isManagedTextPath(rel)) {
     const incoming = await readFile(item.sourcePath, 'utf8');
     if (priorEntry && !force) {
-      const problem = await preflightOwnedEntry(root, priorEntry);
+      const problem = await preflightOwnedEntry(root, priorEntry, planRoot);
       if (problem) return { collision: problem };
     }
     const existing = present ? await readFile(target, 'utf8') : '';
@@ -593,7 +596,7 @@ const prepareProfilePlan = async ({ root, item, runtime, runtimeHome, prior, for
     if (present) {
       try { existing = await parseJsonFile(target); } catch { return { collision: collision(root, rel, PROFILE_OWNERSHIP.JSON_PATHS, 'invalid-shared-json') }; }
       if (priorEntry && !force) {
-        const problem = await preflightOwnedEntry(root, priorEntry);
+        const problem = await preflightOwnedEntry(root, priorEntry, planRoot);
         if (problem) return { collision: problem };
       } else if (!priorEntry) {
         const problem = checkUnmanagedJsonCollision({ existing, incoming, rel });
@@ -611,7 +614,7 @@ const prepareProfilePlan = async ({ root, item, runtime, runtimeHome, prior, for
   }
 
   if (priorEntry) {
-    const problem = await preflightOwnedEntry(root, priorEntry);
+    const problem = await preflightOwnedEntry(root, priorEntry, planRoot);
     if (problem && !force) return { collision: problem };
   } else if (present) {
     const actual = await sha256(target);
@@ -666,16 +669,16 @@ const markerFor = (runtime, layout = null) => ({
 const isCompatibleProfileMarker = ({ marker, runtime, layout }) => {
   if (!marker || marker.productId !== PROFILE_PRODUCT_ID) return false;
   if (marker.runtime === 'moon-relay-kernel') {
-    return marker.provider === runtime && (layout ? marker.layout === layout : !marker.layout);
+    return (marker.provider === runtime || marker.runtime === runtime) && (layout ? (marker.layout === layout || !marker.layout) : !marker.layout);
   }
-  return marker.track === 'kernel' && marker.runtime === runtime;
+  return marker.track === 'kernel' && marker.runtime === runtime && (layout ? (marker.layout === layout || !marker.layout) : !marker.layout);
 };
 
 const isCompatibleProfileManifest = ({ manifest, runtime, layout }) => {
   if (layout) {
-    return manifest.layout === layout
-      && manifest.runtime === runtime
-      && manifest.kernelRuntime === 'moon-relay-kernel';
+    return (manifest.layout === layout || !manifest.layout)
+      && (manifest.runtime === runtime || manifest.provider === runtime)
+      && (manifest.kernelRuntime === 'moon-relay-kernel' || manifest.track === 'kernel' || manifest.runtime === 'moon-relay-kernel');
   }
   return (manifest.runtime === 'moon-relay-kernel' && manifest.provider === runtime && !manifest.layout)
     || (manifest.track === 'kernel' && manifest.runtime === runtime);
@@ -752,7 +755,7 @@ export async function installKernelProfile({ sourceRoot = process.cwd(), runtime
   const plans = [];
   const collisions = [];
   for (const item of (await buildSourceFileMap(sourceRoot, runtime)).values()) {
-    const plan = await prepareProfilePlan({ root, item, runtime, runtimeHome, prior, force });
+    const plan = await prepareProfilePlan({ root, skillsRoot, item, runtime, runtimeHome, prior, force });
     if (plan.collision) collisions.push(plan.collision); else plans.push(plan);
   }
   const marker = await markerPlan({ root, runtime, prior, force });
@@ -774,7 +777,7 @@ export async function installKernelProfile({ sourceRoot = process.cwd(), runtime
       const external = safeJoin(externalRoot, KERNEL_SKILL_INSTALL_REL);
       if (!(await exists(external))) await copyTree(canonicalKernelSkillDir(sourceRoot), external);
     }
-    const manifest = { schemaVersion: 2, productId: PROFILE_PRODUCT_ID, runtime: 'moon-relay-kernel', provider: runtime, targetRoot: root, sourceRoot: path.resolve(sourceRoot), installedAt: new Date().toISOString(), backupPath, files: plans.map((plan) => plan.entry) };
+    const manifest = { schemaVersion: 2, productId: PROFILE_PRODUCT_ID, runtime: 'moon-relay-kernel', provider: runtime, ...(skillsRoot && runtime === 'antigravity' ? { skillsRoot: canonicalPath(skillsRoot) } : {}), targetRoot: root, sourceRoot: path.resolve(sourceRoot), installedAt: new Date().toISOString(), backupPath, files: plans.map((plan) => plan.entry) };
     await atomicWrite(manifestPath, JSON.stringify(manifest, null, 2));
     return { status: prior ? 'reinstalled' : 'installed', runtime, targetRoot: root, manifestPath, backupPath, installedFilesCount: manifest.files.length };
   } catch (error) {
@@ -900,7 +903,8 @@ export async function installKernelAccountRoot({ sourceRoot = process.cwd(), run
   const manifestPath = profileManifestPath(root);
   const markerPath = profileMarkerPath(root);
   const priorManifest = await readPriorManifest(root);
-  if (priorManifest && (priorManifest.productId !== PROFILE_PRODUCT_ID || priorManifest.layout !== ACCOUNT_ROOT_PROFILE_LAYOUT)) throw new Error('target_collision: foreign or non-account-root Kernel profile manifest');
+  if (priorManifest && priorManifest.productId !== PROFILE_PRODUCT_ID) throw new Error('target_collision: foreign profile manifest');
+  if (priorManifest && priorManifest.layout && priorManifest.layout !== ACCOUNT_ROOT_PROFILE_LAYOUT) throw new Error('target_collision: foreign or non-account-root Kernel profile manifest');
   const prior = await trustedPriorManifest({ root, manifest: priorManifest, runtime, layout: ACCOUNT_ROOT_PROFILE_LAYOUT });
   if (await exists(markerPath) && !prior) throw new Error('target_collision: marker without trusted manifest');
   const effectiveRuntimeHome = runtimeHome || resolveKernelRuntimeHome();
