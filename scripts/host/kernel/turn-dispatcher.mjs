@@ -552,7 +552,12 @@ const dispatchKernelTurnAttempt = async ({
         dispatched: false,
         executionMode: 'independent-review',
         reason: 'independent-review-required',
-        review: { required: true, status: 'pending', independent: true, crossSurface: true },
+        review: {
+          required: true,
+          status: 'pending',
+          independent: true,
+          crossSurface: Boolean(adapter?.capabilities?.supportsCrossSurfaceReview),
+        },
         blocker: null,
         modelInput,
         hostDirective: null,
@@ -758,7 +763,7 @@ const dispatchKernelTurnAttempt = async ({
       concurrencyGroup: actionContext.concurrencyGroup || runId,
       actionContext,
       executionMode: actionContext.executionMode || null,
-      delegationRequested: nativeDelegationRequested,
+      delegationRequested: nativeDelegationRequested || decision.role === 'reviewer',
       childSession: {
         role: decision.role,
         canDelegate: false,

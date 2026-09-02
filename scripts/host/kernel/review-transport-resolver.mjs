@@ -68,7 +68,8 @@ export const resolveReviewTransports = ({
     if (entry) candidates.push(entry);
   }
 
-  // 3. Auto-discover alternate host reviewer transport based on primary adapter surface
+  // 3. Auto-discover alternate host reviewer transport based on primary adapter surface (optional cross-provider fallback)
+  // Cross-provider transport is an optional fallback; when its launcher is unavailable, the dispatcher will skip it cleanly.
   const primarySurface = String(adapter?.surface || adapter?.capabilities?.surface || '').toLowerCase();
   if (primarySurface === 'codex') {
     candidates.push(attestReviewTransport({
@@ -93,5 +94,18 @@ export const resolveReviewTransports = ({
     }) === index;
   });
 
-  return unique;
+  // Keep the review policy's provider preference independent of caller array
+  // order: a trusted same-provider transport is the first fallback after the
+  // current adapter, and cross-provider transports remain optional alternates.
+  // Array.filter preserves the order within each group, so an operator can
+  // still order multiple transports at the same priority.
+  const sameProvider = unique.filter((candidate) => {
+    const surface = String(candidate?.adapter?.capabilities?.surface || candidate?.adapter?.surface || '').toLowerCase();
+    return surface && surface === primarySurface;
+  });
+  const alternateProvider = unique.filter((candidate) => {
+    const surface = String(candidate?.adapter?.capabilities?.surface || candidate?.adapter?.surface || '').toLowerCase();
+    return !surface || surface !== primarySurface;
+  });
+  return [...sameProvider, ...alternateProvider];
 };

@@ -1470,3 +1470,193 @@ test('review transport resolver ignores un-attested capability-shaped candidates
   });
   assert.equal(resolved.some((candidate) => candidate.adapter === untrusted), false);
 });
+
+test('same-provider reviewer fallback is preferred over a cross-provider fallback', async () => {
+  const fixture = await prepareReviewRun('kernel-review-provider-priority', 'review-provider-priority-chain');
+  try {
+    let sameProviderCalls = 0;
+    let crossProviderCalls = 0;
+    const parentSessionObserver = async ({ parentSessionId }) => ({
+      sessionId: parentSessionId,
+      model: 'gpt-5.6-sol',
+      effort: 'xhigh',
+    });
+    const primary = createCodexAdapter({
+      nativeLaunch: async () => ({
+        status: 'failed',
+        resultStatus: 'failed',
+        errorCode: 'transport-unavailable',
+        failureCategory: 'provider/infrastructure',
+        failureStage: 'pre-spawn',
+      }),
+      parentSessionObserver,
+    });
+    const sameProvider = createCodexAdapter({
+      nativeLaunch: async ({ invocation }) => {
+        sameProviderCalls += 1;
+        return {
+          sessionId: 'same-provider-reviewer',
+          terminalEvents: [{ type: 'turn.completed', model: invocation.model, reasoning_effort: invocation.effort }],
+          outcome: { verdict: 'pass', findings: [], risks: [], evidenceRefs: ['review://same-provider'] },
+        };
+      },
+      parentSessionObserver,
+    });
+    const crossProvider = createClaudeAdapter({
+      launch: async ({ invocation }) => {
+        crossProviderCalls += 1;
+        return {
+          resolvedModel: invocation.model,
+          observedModel: invocation.model,
+          resolvedEffort: invocation.effort,
+          observedEffort: invocation.effort,
+          sessionId: 'cross-provider-reviewer',
+          outcome: { verdict: 'pass', findings: [], risks: [], evidenceRefs: ['review://cross-provider'] },
+        };
+      },
+    });
+
+    const result = await dispatchKernelTurn({
+      controlPlane: fixture.cp,
+      runId: 'review-provider-priority-chain',
+      adapter: primary,
+      registry: createModelRegistry({ surface: 'codex', env: { MOON_RELAY_KERNEL_MODEL_FRONTIER: 'gpt-5.6-sol' } }),
+      parentSessionId: 'review-owner',
+      actionContext: REVIEW_ACTION,
+      // Deliberately put the cross-provider candidate first. Resolver policy,
+      // not caller ordering, must select the same-provider transport first.
+      reviewFallbacks: [
+        {
+          adapter: crossProvider,
+          registry: createModelRegistry({ surface: 'claude', env: { MOON_RELAY_KERNEL_MODEL_FRONTIER: 'claude-frontier' } }),
+        },
+        {
+          adapter: sameProvider,
+          registry: createModelRegistry({ surface: 'codex', env: { MOON_RELAY_KERNEL_MODEL_FRONTIER: 'gpt-5.6-sol' } }),
+        },
+      ],
+    });
+
+    assert.equal(sameProviderCalls, 1);
+    assert.equal(crossProviderCalls, 0);
+    assert.equal(result.hostDirective.hostCapabilities.surface, 'codex');
+    assert.equal(result.dispatch.actorSessionId, 'same-provider-reviewer');
+    assert.equal(result.review.review.verdict, 'pass');
+    assert.equal(fixture.cp.listReviewReceipts('review-provider-priority-chain').length, 1);
+  } finally {
+    await cleanupReviewRun(fixture);
+  }
+});
+
+test('Case A DoD: a pure Codex environment completes independent review with a fresh native reviewer without Claude', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'kernel-review-codex-pure-'));
+  const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-review-codex-pure-state-'));
+  await mkdir(path.join(root, '.moon-relay'), { recursive: true });
+  await writeFile(path.join(root, '.moon-relay', 'track.yaml'), 'track: kernel\n');
+  await writeFile(path.join(root, 'package.json'), JSON.stringify({ scripts: { test: 'node --test', lint: 'node -e "process.exit(0)"' } }));
+  await writeFile(path.join(root, 'app.mjs'), 'export const value = 0;\n');
+  const runId = 'pure-codex-review-chain';
+  const cp = await createKernelControlPlane({ runtimeHome, projectRoot: root });
+  try {
+    await cp.startRun({
+      runId,
+      objective: 'secure change in pure codex environment',
+      taskContract: {
+        surfaces: ['security_boundary'],
+        acceptance: ['secure'],
+        allowedPaths: ['app.mjs'],
+      },
+    });
+
+    const ownerSessionId = 'codex-owner-session-a';
+    const implementationSessionId = 'codex-implementation-session-a';
+    const implementer = createCodexAdapter({
+      nativeAgentHost: {
+        spawn_agent: async ({ model, reasoning_effort: reasoningEffort }) => ({
+          session_id: implementationSessionId,
+          terminalEvents: [{ type: 'turn.completed', model, reasoning_effort: reasoningEffort }],
+        }),
+      },
+      parentSessionObserver: async () => ({ sessionId: ownerSessionId, model: 'gpt-5.6-sol', effort: 'medium' }),
+    });
+
+    const implementation = await dispatchKernelTurn({
+      controlPlane: cp,
+      runId,
+      adapter: implementer,
+      registry: createModelRegistry({ surface: 'codex', env: { MOON_RELAY_KERNEL_MODEL_FRONTIER: 'gpt-5.6-sol', MOON_RELAY_KERNEL_MODEL_VALUE: 'gpt-5.6-sol' } }),
+      parentSessionId: ownerSessionId,
+      actionContext: { executionMode: 'native-subagent', delegationRequested: true },
+    });
+    assert.equal(implementation.dispatched, true);
+    assert.equal(implementation.dispatch.status, 'completed');
+    assert.equal(implementation.dispatch.actorSessionId, implementationSessionId);
+
+    await writeFile(path.join(root, 'app.mjs'), 'export const value = 1;\n');
+    await cp.report(runId, {
+      summary: 'implemented by codex owner',
+      capsuleId: implementation.executionCapsule.capsuleId,
+      stepId: implementation.executionCapsule.stepId,
+      changedPaths: ['app.mjs'],
+    });
+
+    await cp.transition(runId, 'EXECUTE');
+    await cp.transition(runId, 'PROVE');
+    const reviewedRun = await cp.getRun(runId);
+
+    let spawnedReviewerRequest = null;
+    const freshReviewerSessionId = 'codex-fresh-reviewer-session-b';
+    const reviewer = createCodexAdapter({
+      nativeAgentHost: {
+        spawn_agent: async (payload) => {
+          spawnedReviewerRequest = payload;
+          return {
+            session_id: freshReviewerSessionId,
+            terminalEvents: [{ type: 'turn.completed', model: 'gpt-5.6-sol', reasoning_effort: 'xhigh' }],
+            outcome: { verdict: 'pass', findings: [], risks: [], evidenceRefs: ['review://codex-native'] },
+          };
+        },
+      },
+      parentSessionObserver: async ({ parentSessionId }) => ({
+        sessionId: parentSessionId,
+        model: 'gpt-5.6-sol',
+        effort: 'xhigh',
+      }),
+    });
+
+    // Pure Codex environment: NO Claude launcher, NO reviewFallbacks, NO hostAdapters, NO reviewTransports
+    const result = await dispatchKernelTurn({
+      controlPlane: cp,
+      runId,
+      adapter: reviewer,
+      registry: createModelRegistry({ surface: 'codex', env: { MOON_RELAY_KERNEL_MODEL_FRONTIER: 'gpt-5.6-sol' } }),
+      parentSessionId: ownerSessionId,
+      actionContext: {
+        actionKind: 'review_engineering',
+        obligationId: 'security-review',
+        changedPaths: ['app.mjs'],
+      },
+      overrides: {}, // NO claudeLauncher
+    });
+
+    assert.equal(result.dispatched, true);
+    assert.equal(result.hostDirective.hostCapabilities.surface, 'codex');
+    assert.equal(result.dispatch.dispatchMechanism, 'native-subagent');
+    assert.equal(result.dispatch.actorSessionId, freshReviewerSessionId);
+    assert.notEqual(result.dispatch.actorSessionId, ownerSessionId);
+    assert.equal(spawnedReviewerRequest.parent_session_id, ownerSessionId);
+    assert.equal(spawnedReviewerRequest.task_name, 'kernel_reviewer');
+    assert.equal(spawnedReviewerRequest.child_session.canCommit, false);
+    assert.equal(spawnedReviewerRequest.child_session.freshSessionRequired, true);
+    assert.equal(spawnedReviewerRequest.execution_capsule.permissions.filesystem, 'read_only');
+    assert.equal(result.review.review.verdict, 'pass');
+    assert.match(result.reviewReceiptId, /^review-receipt-[a-f0-9]{24}$/);
+    assert.equal(result.reviewReceipt.reviewer.usageReceiptId, result.receipt.receiptId);
+    assert.equal(result.reviewReceipt.subject.mutationRevision, reviewedRun.mutationRevision);
+    assert.equal(cp.listReviewReceipts(runId).length, 1);
+  } finally {
+    await cp.close();
+    await rm(runtimeHome, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true });
+  }
+});
