@@ -215,8 +215,8 @@ const TRAPS = {
   // A later, shorter contract must not overwrite an earlier acceptance
   // criterion through its positional id (F2).
   async contract_revision_shrinks_acceptance(cp, projectRoot, { runtimeHome }) {
-    await cp.ensureRun({ runId: 'sen', objective: 'x', taskContract: { acceptance: ['A must hold', 'B must hold'] } });
-    await cp.ensureRun({ runId: 'sen', objective: 'x', taskContract: { acceptance: ['C must hold'] } });
+    await cp.ensureRun({ runId: 'sen', objective: 'x', taskContract: { allowedPaths: ['app.mjs'], acceptance: ['A must hold', 'B must hold'] } });
+    await cp.ensureRun({ runId: 'sen', objective: 'x', taskContract: { allowedPaths: ['app.mjs'], acceptance: ['C must hold'] } });
     const run = await cp.getRun('sen');
     const dropped = !run.acceptanceCriteria.includes('A must hold');
     await mutate(projectRoot, 1);
@@ -327,8 +327,8 @@ const TRAPS = {
         riskTier: 'T2',
         acceptance: ['a holds', 'b holds'],
         steps: [
-          { objective: 'first', allowedPaths: ['**'], acceptanceIds: ['AC-1'], obligationIds: ['unit-test'] },
-          { objective: 'second', allowedPaths: ['**'], acceptanceIds: ['AC-2'], obligationIds: ['static-analysis'] },
+          { objective: 'first', allowedPaths: ['app.mjs'], acceptanceIds: ['AC-1'], obligationIds: ['unit-test'] },
+          { objective: 'second', allowedPaths: ['app.mjs'], acceptanceIds: ['AC-2'], obligationIds: ['static-analysis'] },
         ],
       },
     });

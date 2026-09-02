@@ -319,6 +319,7 @@ test('owner contract revision replans an active step when its allowed scope expa
     steps: [{
       objective: 'bounded implementation',
       allowedPaths: ['scripts/kernel/**', 'tests/**'],
+      acceptanceIds: ['AC-1'],
       obligationIds: ['static-analysis'],
     }],
   };

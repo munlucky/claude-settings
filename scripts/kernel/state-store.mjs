@@ -3844,14 +3844,19 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
     },
 
     getRunObligations(runId) {
-      return db.prepare(`SELECT run_id as runId, obligation_id as obligationId, source_type as sourceType, source_ref as sourceRef, status, evidence_class as evidenceClass, verification_method as verificationMethod, allowed_command_refs as allowedCommandRefs, rejected_command_refs as rejectedCommandRefs, acceptance_ids as acceptanceIds, protected, contract_revision as contractRevision, metadata_json as metadataJson, created_at as createdAt, updated_at as updatedAt FROM run_obligations WHERE run_id=?`).all(runId).map((row) => ({
-        ...row,
-        allowedCommandRefs: safeJsonParse(row.allowedCommandRefs, []),
-        rejectedCommandRefs: safeJsonParse(row.rejectedCommandRefs, []),
-        acceptanceIds: safeJsonParse(row.acceptanceIds, []),
-        metadata: safeJsonParse(row.metadataJson, {}),
-        protected: Boolean(row.protected),
-      }));
+      return db.prepare(`SELECT run_id as runId, obligation_id as obligationId, source_type as sourceType, source_ref as sourceRef, status, evidence_class as evidenceClass, verification_method as verificationMethod, allowed_command_refs as allowedCommandRefs, rejected_command_refs as rejectedCommandRefs, acceptance_ids as acceptanceIds, protected, contract_revision as contractRevision, metadata_json as metadataJson, created_at as createdAt, updated_at as updatedAt FROM run_obligations WHERE run_id=?`).all(runId).map((row) => {
+        const allowed = safeJsonParse(row.allowedCommandRefs, []);
+        const evidenceClass = row.evidenceClass;
+        return {
+          ...row,
+          allowedCommandRefs: allowed,
+          rejectedCommandRefs: safeJsonParse(row.rejectedCommandRefs, []),
+          acceptanceIds: safeJsonParse(row.acceptanceIds, []),
+          metadata: safeJsonParse(row.metadataJson, {}),
+          protected: Boolean(row.protected),
+          satisfiable: evidenceClass === 'judgment' || allowed.length > 0,
+        };
+      });
     },
 
     getRunObligation(runId, obligationId) {
