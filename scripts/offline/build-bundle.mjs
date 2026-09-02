@@ -135,20 +135,30 @@ const packOfflineDependencies = async (stageRoot) => {
   const destination = path.join(stageRoot, 'offline-deps');
   await mkdir(destination, { recursive: true });
   const lock = JSON.parse(await readFile(path.join(stageRoot, 'package-lock.json'), 'utf8'));
-  const rootDependencies = Object.entries(lock.packages?.['']?.dependencies || {});
-  const dependencyNames = new Set(rootDependencies.map(([name]) => name));
-  for (const [name] of rootDependencies) {
-    const packageMeta = lock.packages?.[`node_modules/${name}`];
-    for (const transitiveName of Object.keys(packageMeta?.dependencies || {})) dependencyNames.add(transitiveName);
-  }
-  const dependencies = [...dependencyNames].sort().map((name) => {
-    const version = lock.packages?.[`node_modules/${name}`]?.version;
-    if (!version) throw new Error(`Missing locked package metadata for offline dependency: ${name}`);
-    return `${name}@${version}`;
-  });
+  const dependencyPackages = Object.entries(lock.packages || {})
+    .filter(([entry, metadata]) => entry.startsWith('node_modules/') && metadata?.dev !== true)
+    .map(([entry, metadata]) => {
+      const relativePackagePath = entry.slice('node_modules/'.length);
+      const name = relativePackagePath.split('/node_modules/').at(-1);
+      if (!metadata?.version) throw new Error(`Missing locked package metadata for offline dependency: ${name}`);
+      return {
+        entry,
+        name,
+        version: metadata.version,
+        packageRoot: path.join(stageRoot, 'node_modules', relativePackagePath),
+      };
+    })
+    .sort((left, right) => left.entry.localeCompare(right.entry));
+  const dependencies = [...new Set(dependencyPackages.map(({ name, version }) => `${name}@${version}`))];
   const packResults = [];
-  for (const name of dependencyNames) {
-    const packageRoot = path.join(stageRoot, 'node_modules', name);
+  const packedDependencies = new Set();
+  for (const dependency of dependencyPackages) {
+    const dependencyId = `${dependency.name}@${dependency.version}`;
+    if (packedDependencies.has(dependencyId)) continue;
+    packedDependencies.add(dependencyId);
+    if (!await pathExists(dependency.packageRoot)) {
+      throw new Error(`Missing installed package for offline dependency: ${dependency.entry}`);
+    }
     const result = run(npm, [
       'pack',
       '--offline',
@@ -158,11 +168,19 @@ const packOfflineDependencies = async (stageRoot) => {
       '--pack-destination',
       destination,
       '.',
-    ], { cwd: packageRoot, capture: true });
-    packResults.push({ name, stdout: result.stdout.slice(-1000), stderr: result.stderr.slice(-1000) });
+    ], { cwd: dependency.packageRoot, capture: true });
+    packResults.push({ name: dependency.name, version: dependency.version, stdout: result.stdout.slice(-1000), stderr: result.stderr.slice(-1000) });
   }
-  await writeFile(path.join(destination, 'README.md'), `Offline dependency repair\n\nThe normal bundle already contains node_modules. If repair is needed from the bundle root, install the tarballs together:\n\n  npm install --offline --no-audit --no-fund --ignore-scripts --no-save .\\offline-deps\\better-sqlite3-13.0.2.tgz .\\offline-deps\\node-addon-api-8.9.1.tgz\n\nDo not run npm install without --offline on the closed-network PC.\n`, 'utf8');
-  return { dependencies, packResults, files: await listFiles(destination) };
+  const repairTarballs = (await listFiles(destination)).filter((file) => file.toLowerCase().endsWith('.tgz'));
+  const repairCommand = repairTarballs
+    .map((file) => `.\\offline-deps\\${file}`)
+    .join(' ');
+  await writeFile(
+    path.join(destination, 'README.md'),
+    `Offline dependency repair\n\nThe normal bundle already contains node_modules. If repair is needed from the bundle root, install the tarballs together:\n\n  npm install --offline --no-audit --no-fund --ignore-scripts --no-save ${repairCommand}\n\nDo not run npm install without --offline on the closed-network PC.\n`,
+    'utf8',
+  );
+  return { dependencies, repairTarballs, packResults, files: await listFiles(destination) };
 };
 
 const buildPayload = async (stageRoot, nodeRuntime) => {
@@ -178,6 +196,9 @@ const buildPayload = async (stageRoot, nodeRuntime) => {
 };
 
 const writeBundleGuide = async (stageRoot, manifest) => {
+  const repairCommand = manifest.dependencies.repairTarballs
+    .map((file) => `.\\offline-deps\\${file}`)
+    .join(' ');
   const text = `# Moonshot Relay 폐쇄망 설치 번들\n\n`
     + `- 기준 commit: \`${manifest.source.gitHead}\`\n`
     + `- 대상: Windows x64 / Node v${manifest.target.nodeVersion} / ABI ${manifest.target.modules}\n`
@@ -199,7 +220,7 @@ const writeBundleGuide = async (stageRoot, manifest) => {
     + `\`Install-Offline.cmd --moonshot-home D:\\Moonshot\\.moonshot-relay --claude-home D:\\Moonshot\\.claude --codex-home D:\\Moonshot\\.codex --qwen-home D:\\Moonshot\\.qwen --kernel-home D:\\Moonshot\\.moon-relay-kernel\`\n\n`
     + `## npm 의존성 복구\n\n`
     + `정상 설치에는 npm 호출이 필요하지 않으며 번들 안의 \`node_modules\`를 사용합니다. 손상 시에만 아래처럼 오프라인 tarball을 사용합니다:\n\n`
-    + `\`npm install --offline --no-audit --no-fund --ignore-scripts --no-save .\\offline-deps\\better-sqlite3-13.0.2.tgz\`\n\n`
+    + `\`npm install --offline --no-audit --no-fund --ignore-scripts --no-save ${repairCommand}\`\n\n`
     + `인터넷 registry, \`npx\`, \`git clone\`은 사용하지 마십시오.\n\n`
     + `브라우저 Playwright/Chromium은 선택적 browserd 기능이며 이 기본 설치의 필수 의존성이 아닙니다.\n`;
   await writeFile(path.join(stageRoot, 'START_HERE_OFFLINE.ko.md'), text, 'utf8');
@@ -250,7 +271,12 @@ const main = async () => {
     target: { platform: nodeInfo.platform, arch: nodeInfo.arch, nodeVersion: targetNodeVersion, modules: nodeInfo.modules },
     runtimes: selectedRuntimes,
     antigravity: { included: false, installSurface: 'excluded' },
-    dependencies: { root: offlineDependencies.dependencies, nativeSmoke: 'better-sqlite3', delivery: 'node_modules plus offline-deps/*.tgz' },
+    dependencies: {
+      root: offlineDependencies.dependencies,
+      repairTarballs: offlineDependencies.repairTarballs,
+      nativeSmoke: 'better-sqlite3',
+      delivery: 'node_modules plus offline-deps/*.tgz',
+    },
     payloadBuild: payload,
     sourceFileCount: copiedFiles.length,
     dependencyInstall,

@@ -147,6 +147,55 @@ const verifyPayloadAndDryRun = async (root, failures, evidence) => {
       if (JSON.stringify(installed) !== JSON.stringify(expected)) failures.push(`unexpected dry-run runtimes: ${installed.join(',')}`);
       evidence.installerDryRun = parsed;
     }
+
+    const actualRoot = path.join(tempRoot, 'actual-install');
+    const actualMoonshotHome = path.join(actualRoot, 'moonshot');
+    const actualInstaller = path.join(root, 'scripts', 'offline', 'install-bundle.mjs');
+    const actualResult = spawnSync(nodePath, [
+      actualInstaller,
+      '--skip-kernel',
+      '--skip-provider-profiles',
+      '--moonshot-home',
+      actualMoonshotHome,
+      '--claude-home',
+      path.join(actualRoot, 'claude'),
+      '--codex-home',
+      path.join(actualRoot, 'codex'),
+      '--qwen-home',
+      path.join(actualRoot, 'qwen'),
+      '--json',
+    ], {
+      cwd: root,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        npm_config_offline: 'true',
+        npm_config_registry: 'http://127.0.0.1:9/',
+      },
+    });
+    if (actualResult.status !== 0) {
+      failures.push(`offline installer actual run failed: ${actualResult.stderr || actualResult.stdout}`);
+    } else {
+      const parsed = JSON.parse(actualResult.stdout);
+      if (parsed.dependencies?.status !== 'installed') failures.push('offline installer did not install bundled production dependencies');
+      const installedPackage = path.join(actualMoonshotHome, 'node_modules', 'better-sqlite3', 'package.json');
+      if (!(await pathExists(installedPackage))) failures.push('offline installer omitted better-sqlite3 from the installed common home');
+      const smoke = spawnSync(nodePath, ['-e', [
+        "const Database = require('better-sqlite3');",
+        "const db = new Database(':memory:');",
+        "db.exec('CREATE TABLE t (x TEXT)');",
+        "db.prepare('INSERT INTO t VALUES (?)').run('installed-offline-ok');",
+        "if (db.prepare('SELECT x FROM t').get().x !== 'installed-offline-ok') process.exit(1);",
+        'db.close();',
+      ].join('')], { cwd: actualMoonshotHome, encoding: 'utf8' });
+      if (smoke.status !== 0) failures.push(`installed better-sqlite3 smoke failed: ${smoke.stderr || smoke.stdout}`);
+      evidence.installerActual = {
+        dependencies: parsed.dependencies,
+        relay: parsed.relay,
+        installedPackage,
+        nativeSmoke: smoke.status === 0,
+      };
+    }
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }

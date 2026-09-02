@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
-import { access, readFile } from 'node:fs/promises';
+import { access, cp, mkdir, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
@@ -13,6 +13,7 @@ const relayInstaller = path.join(bundleRoot, 'scripts', 'install-account-root-ha
 const kernelCli = path.join(bundleRoot, 'bin', 'moon-relay-kernel.mjs');
 const payloadRoot = path.join(bundleRoot, 'payload');
 const selectedRuntimes = ['claude', 'codex', 'qwen'];
+const defaultMoonshotHome = path.join(process.env.USERPROFILE || process.env.HOME || os.homedir(), '.moonshot-relay');
 
 const usage = () => `Usage: Install-Offline.cmd [--dry-run] [--json] [--skip-kernel] [--skip-provider-profiles]
   [--moonshot-home <dir>] [--claude-home <dir>] [--codex-home <dir>] [--qwen-home <dir>]
@@ -34,6 +35,7 @@ const parseArgs = (argv) => {
     skipKernel: false,
     skipProviderProfiles: false,
     passthrough: [],
+    moonshotHome: path.resolve(process.env.MOONSHOT_RELAY_HOME || defaultMoonshotHome),
     kernelHome: process.env.MOON_RELAY_KERNEL_HOME
       || path.join(process.env.USERPROFILE || process.env.HOME || os.homedir(), '.moon-relay-kernel'),
   };
@@ -53,7 +55,9 @@ const parseArgs = (argv) => {
     } else if (arg === '--kernel-home') {
       options.kernelHome = path.resolve(argv[++index]);
     } else if (['--moonshot-home', '--claude-home', '--codex-home', '--qwen-home'].includes(arg)) {
-      options.passthrough.push(arg, path.resolve(argv[++index]));
+      const resolved = path.resolve(argv[++index]);
+      if (arg === '--moonshot-home') options.moonshotHome = resolved;
+      options.passthrough.push(arg, resolved);
     } else if (['--no-backup', '--remove-legacy-harness-core'].includes(arg)) {
       options.passthrough.push(arg);
     } else if (arg === '--help' || arg === '-h') {
@@ -140,6 +144,16 @@ const installKernel = async (options, nodePath) => {
   };
 };
 
+const installProductionDependencies = async (options) => {
+  const sourceRoot = path.join(bundleRoot, 'node_modules');
+  const targetRoot = path.join(options.moonshotHome, 'node_modules');
+  if (!(await pathExists(sourceRoot))) throw new Error(`Missing bundled production dependencies: ${sourceRoot}`);
+  if (options.dryRun) return { status: 'dry-run', sourceRoot, targetRoot };
+  await mkdir(options.moonshotHome, { recursive: true });
+  await cp(sourceRoot, targetRoot, { recursive: true, force: true });
+  return { status: 'installed', sourceRoot, targetRoot };
+};
+
 const main = async () => {
   const options = parseArgs(process.argv.slice(2));
   if (!(await pathExists(relayInstaller))) throw new Error(`Missing relay installer: ${relayInstaller}`);
@@ -162,12 +176,14 @@ const main = async () => {
   ];
   const relayResult = run(nodePath, relayArgs, { capture: true });
   const relay = JSON.parse(relayResult.stdout);
+  const dependencies = await installProductionDependencies(options);
 
   const result = {
     schemaVersion: 1,
     bundleRoot,
     targetNode: nodePath,
     antigravity: 'excluded',
+    dependencies,
     kernel,
     relay,
   };
