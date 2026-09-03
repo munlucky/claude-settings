@@ -56,26 +56,33 @@ export async function buildProjectKnowledgeContext({
   let rawSemanticFacts = [];
   let rawGraphRelations = [];
   let rawOntologyConstraints = [];
+  let contextLoadError = null;
 
-  if (stateStore && typeof stateStore.listKnowledgeRecords === 'function') {
-    knowledgeRevision = String(stateStore.getProjectKnowledgeRevision ? stateStore.getProjectKnowledgeRevision(projectId) : 1);
-    const allRecords = stateStore.listKnowledgeRecords({ projectId, statuses: ['committed', 'verified'] });
-    rawPolicyAnchors = allRecords.filter((r) => r.type === 'policy_anchor');
-    rawSemanticFacts = allRecords.filter((r) => r.type !== 'policy_anchor' && r.type !== 'kg_relation' && r.type !== 'ontology_constraint');
-    rawGraphRelations = allRecords.filter((r) => r.type === 'kg_relation');
-    rawOntologyConstraints = allRecords.filter((r) => r.type === 'ontology_constraint');
-  } else {
-    knowledgeRevision = await readProjectRevision(projectId, { env });
-    const records = await loadAllProjectRecords(projectId, { env });
-    rawPolicyAnchors = records.policyAnchors || [];
-    rawSemanticFacts = [
-      ...(records.semanticFacts || []),
-      ...(records.architectureRecords || []),
-      ...(records.architectureDecisions || []),
-      ...(records.observations || []),
-    ];
-    rawGraphRelations = records.kgRelations || [];
-    rawOntologyConstraints = records.ontologyConstraints || [];
+  try {
+    if (stateStore && typeof stateStore.listKnowledgeRecords === 'function') {
+      knowledgeRevision = String(stateStore.getProjectKnowledgeRevision ? stateStore.getProjectKnowledgeRevision(projectId) : 1);
+      const allRecords = stateStore.listKnowledgeRecords({ projectId, statuses: ['committed', 'verified'] });
+      rawPolicyAnchors = allRecords.filter((r) => r.type === 'policy_anchor');
+      rawSemanticFacts = allRecords.filter((r) => r.type !== 'policy_anchor' && r.type !== 'kg_relation' && r.type !== 'ontology_constraint');
+      rawGraphRelations = allRecords.filter((r) => r.type === 'kg_relation');
+      rawOntologyConstraints = allRecords.filter((r) => r.type === 'ontology_constraint');
+    } else {
+      knowledgeRevision = await readProjectRevision(projectId, { env });
+      const records = await loadAllProjectRecords(projectId, { env });
+      rawPolicyAnchors = records.policyAnchors || [];
+      rawSemanticFacts = [
+        ...(records.semanticFacts || []),
+        ...(records.architectureRecords || []),
+        ...(records.architectureDecisions || []),
+        ...(records.observations || []),
+      ];
+      rawGraphRelations = records.kgRelations || [];
+      rawOntologyConstraints = records.ontologyConstraints || [];
+    }
+  } catch (error) {
+    // Context availability is a first-class receipt state. Do not present a
+    // failed store read as an empty but ready knowledge pack.
+    contextLoadError = error;
   }
 
   const staleOrUnavailable = [];
@@ -172,13 +179,55 @@ export async function buildProjectKnowledgeContext({
 
   const artifactPaths = resolveRunArtifactPaths({ runtimeHome: resolveKernelRuntimeHome({ env }), projectId, runId });
   const contextPackRef = path.join('runs', runId, 'projections', 'context', `${stage}.json`);
-  const status = 'ready';
+  const selectedCounts = {
+    policy: selectedPolicy.length,
+    facts: budgetedFacts.length,
+    constraints: selectedConstraints.length,
+    graph: selectedGraph.length,
+  };
+  const usableRecordCount = Object.values(selectedCounts).reduce((sum, count) => sum + count, 0);
+  const omittedCounts = {
+    stale: staleOrUnavailable.filter((entry) => String(entry.reason || '').startsWith('freshness_')).length,
+    unavailable: staleOrUnavailable.filter((entry) => String(entry.reason || '').includes('unavailable') || String(entry.reason || '').includes('load_failed')).length,
+    policy: omittedByPolicy.length,
+    total: staleOrUnavailable.length + omittedByPolicy.length,
+  };
+  const status = contextLoadError
+    ? 'unavailable'
+    : usableRecordCount > 0
+      ? 'ready-populated'
+      : staleOrUnavailable.length > 0
+        ? 'stale'
+        : 'ready-empty';
+  if (contextLoadError) {
+    staleOrUnavailable.push({
+      id: 'context-store',
+      reason: 'load_failed',
+      errorCode: contextLoadError.code || contextLoadError.name || 'context_load_failed',
+    });
+    omittedCounts.unavailable += 1;
+    omittedCounts.total += 1;
+  }
 
   const rawPayload = {
     schemaVersion: 1,
     projectId,
     knowledgeRevision,
     status,
+    degradedContext: status !== 'ready-populated',
+    quality: {
+      status,
+      usableRecordCount,
+      selectedCounts,
+      omittedCounts,
+      reason: contextLoadError
+        ? 'context-store-read-failed'
+        : status === 'ready-empty'
+          ? 'no-usable-records'
+          : status === 'stale'
+            ? 'all-candidates-stale-or-unavailable'
+            : null,
+    },
     strictness,
     stage,
     policyAnchors: selectedPolicy,

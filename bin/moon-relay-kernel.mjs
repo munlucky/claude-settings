@@ -9,6 +9,7 @@ import { resolveKernelNode } from '../scripts/kernel/runtime-resolver.mjs';
 import { computeKernelSourceIdentity } from '../scripts/kernel/control-plane.mjs';
 import { resolveCanonicalHostSession } from '../scripts/kernel/run/host-session.mjs';
 import { recoveryForKernelError } from '../scripts/kernel/run/binding-preflight.mjs';
+import { discoverRunLocator } from '../scripts/kernel/run/run-locator.mjs';
 
 const args = process.argv.slice(2);
 const command = args[0] || 'doctor';
@@ -54,9 +55,67 @@ if (!process.env.MOON_RELAY_KERNEL_REEXEC) {
 
 const runtimeHomeArg = getArgValue('--runtime-home');
 const projectRoot = getArgValue('--project-root') || process.cwd();
+const positionalRunId = ['next', 'report', 'resume', 'abandon'].includes(command)
+  && args[1]
+  && !args[1].startsWith('--')
+  ? args[1]
+  : null;
+const explicitRunId = getArgValue('--run-id') || positionalRunId || null;
+const envRunId = process.env.MOON_RELAY_KERNEL_RUN_ID || null;
+const locatorRunId = explicitRunId || envRunId || null;
+const locatorDiscovery = runtimeHomeArg
+  ? { status: 'skipped-explicit-runtime', runtimeHome: null, locator: null, candidates: [] }
+  : discoverRunLocator({ runId: locatorRunId, projectRoot });
+// `doctor` and `version` are diagnostic metadata surfaces. They may display a
+// stale locator through their normal diagnostics, but must remain usable when
+// an old address-book entry cannot be opened; lifecycle commands still fail
+// closed and never create a replacement runtime from that entry.
+const locatorDiscoveryFailureAllowed = !['doctor', 'version', '--version'].includes(command);
+const runtimeBindingDiscoveryError = ['ambiguous', 'stale'].includes(locatorDiscovery.status)
+  && !runtimeHomeArg
+  && locatorDiscoveryFailureAllowed
+  ? Object.assign(new Error(
+      locatorDiscovery.status === 'stale' ? 'runtime_binding_stale' : 'runtime_binding_ambiguous',
+    ), {
+      code: locatorDiscovery.status === 'stale' ? 'runtime_binding_stale' : 'runtime_binding_ambiguous',
+      errorCode: locatorDiscovery.status === 'stale' ? 'runtime_binding_stale' : 'runtime_binding_ambiguous',
+      nextAction: locatorDiscovery.status === 'stale' ? 'repair-runtime-binding' : 'resolve-runtime-binding',
+      details: {
+        expected: {
+          runId: locatorRunId,
+          projectRoot,
+          locatorStatus: locatorDiscovery.status,
+          candidates: locatorDiscovery.candidates,
+        },
+        provided: {
+          runtimeHome: process.env.MOON_RELAY_KERNEL_HOME || null,
+          runId: locatorRunId,
+        },
+        candidates: locatorDiscovery.candidates,
+        recovery: {
+          action: locatorDiscovery.status === 'stale' ? 'inspect-run-locator' : 'resume-existing-run',
+        },
+      },
+    })
+  : null;
+// An explicit CLI path remains the strongest override. A validated account-root
+// locator is the next-strongest address: project/worktree discovery must not
+// reopen a stale ambient home just because the caller did not know the Run id.
+// The SQLite runtime selected below remains authoritative after it opens and
+// validates the Run binding.
+const discoveredRuntimeHome = locatorDiscovery.status === 'resolved'
+  ? locatorDiscovery.runtimeHome
+  : null;
+const discoveredRunId = locatorDiscovery.status === 'resolved'
+  ? locatorDiscovery.locator?.runId || null
+  : null;
+const effectiveRuntimeHome = runtimeHomeArg
+  || discoveredRuntimeHome
+  || process.env.MOON_RELAY_KERNEL_HOME
+  || null;
 const trackEnv = () => ({
   ...kernelEnv,
-  ...(runtimeHomeArg ? { MOON_RELAY_KERNEL_HOME: runtimeHomeArg } : {}),
+  ...(effectiveRuntimeHome ? { MOON_RELAY_KERNEL_HOME: effectiveRuntimeHome } : {}),
 });
 const wrongHarnessError = (resolution, root) => Object.assign(
   new Error(`wrong_harness: Kernel command requires account-root track=kernel (found ${resolution.track || 'none'} from ${resolution.source} for ${root})`),
@@ -118,13 +177,6 @@ const sessionId = resolvedHostSession.sessionId;
 const legacySessionId = nativeSessionId && sessionId !== nativeSessionId && !nativeSessionId.includes(':')
   ? nativeSessionId
   : null;
-const positionalRunId = ['next', 'report', 'resume', 'abandon'].includes(command)
-  && args[1]
-  && !args[1].startsWith('--')
-  ? args[1]
-  : null;
-const explicitRunId = getArgValue('--run-id') || positionalRunId || null;
-const envRunId = process.env.MOON_RELAY_KERNEL_RUN_ID || null;
 const hostRunResolutionError = explicitRunId && envRunId && String(explicitRunId) !== String(envRunId)
   ? Object.assign(new Error('run_binding_conflict'), {
       code: 'run_binding_conflict',
@@ -133,22 +185,25 @@ const hostRunResolutionError = explicitRunId && envRunId && String(explicitRunId
       details: { bindings: [{ source: 'cli', runId: explicitRunId }, { source: 'environment', runId: envRunId }] },
     })
   : null;
-const inferredRunId = explicitRunId || envRunId || null;
+const inferredRunId = explicitRunId || envRunId || discoveredRunId || null;
 const kernelEnv = sessionId || inferredRunId
   ? {
       ...process.env,
+      ...(effectiveRuntimeHome ? { MOON_RELAY_KERNEL_HOME: effectiveRuntimeHome } : {}),
       ...(sessionId ? { MOON_RELAY_KERNEL_SESSION_ID: sessionId } : {}),
       ...(sessionId ? { MOON_RELAY_KERNEL_PROVIDER: hostProvider } : {}),
       ...(legacySessionId ? { MOON_RELAY_KERNEL_LEGACY_SESSION_ID: legacySessionId } : {}),
       ...(inferredRunId ? { MOON_RELAY_KERNEL_RUN_ID: inferredRunId } : {}),
     }
-  : process.env;
+  : effectiveRuntimeHome
+    ? { ...process.env, MOON_RELAY_KERNEL_HOME: effectiveRuntimeHome }
+    : process.env;
 
 const openControlPlane = async () => {
   await assertKernelTrack();
   const { createKernelControlPlane } = await import('../scripts/kernel/control-plane.mjs');
   return createKernelControlPlane({
-    runtimeHome: runtimeHomeArg || undefined,
+    runtimeHome: effectiveRuntimeHome || undefined,
     projectRoot,
     env: kernelEnv,
     requireHostBinding: false,
@@ -161,11 +216,12 @@ const output = (value) =>
   );
 
 try {
+  if (runtimeBindingDiscoveryError) throw runtimeBindingDiscoveryError;
   if (hostSessionResolutionError) throw hostSessionResolutionError;
   if (hostRunResolutionError) throw hostRunResolutionError;
   if (command === 'mcp-bridge') {
     const { startMcpBridgeServer } = await import('../scripts/kernel/bridge/mcp.mjs');
-    startMcpBridgeServer({ runtimeHome: runtimeHomeArg || undefined, env: kernelEnv });
+    startMcpBridgeServer({ runtimeHome: effectiveRuntimeHome || undefined, env: kernelEnv });
   } else if (command === '--version' || command === 'version') {
     output({ productId: 'moon-relay-kernel', version: '0.1.0' });
   } else if (command === 'doctor') {
@@ -178,14 +234,73 @@ try {
       let store;
       let diagnostics;
       let projectIdentity;
+      let resume = null;
       try {
         const { openKernelStateStore } = await import('../scripts/kernel/state-store.mjs');
         const { inspectKernelProjectIdentity } = await import('../scripts/kernel/project-identity-preflight.mjs');
+        const { resolveKernelWorktreeIdentity } = await import('../scripts/kernel/run/worktree-binding.mjs');
+        const { buildResumeView } = await import('../scripts/kernel/state-projector.mjs');
         projectIdentity = await inspectKernelProjectIdentity({ projectRoot, runtimeHome, env: kernelEnv });
         store = await openKernelStateStore({ runtimeHome });
         diagnostics = store.diagnoseLifecycleState({
           projectId: projectIdentity.projectId,
         });
+        const currentWorktree = resolveKernelWorktreeIdentity({ cwd: projectRoot, workspaceRoot: projectRoot });
+        const worktreeLease = currentWorktree.worktreeId && typeof store.getWorktreeMutationLease === 'function'
+          ? store.getWorktreeMutationLease(currentWorktree.worktreeId)
+          : null;
+        const mutableRuns = store.listRuns({
+          projectId: projectIdentity.projectId,
+          ...(currentWorktree.worktreeId ? { worktreeId: currentWorktree.worktreeId } : {}),
+          statuses: ['active', 'blocked'],
+        }).filter((run) => run.status === 'active'
+          || worktreeLease?.holderRunId === run.runId);
+        if (mutableRuns.length === 1) {
+          const run = mutableRuns[0];
+          const steps = typeof store.getRunSteps === 'function'
+            ? store.getRunSteps(run.runId, { planRevision: run.planRevision })
+            : [];
+          const step = steps.find((entry) => ['active', 'ready'].includes(entry.state))
+            || steps.find((entry) => entry.state !== 'passed')
+            || null;
+          const context = store.getKnowledgeContextReceipt(run.runId, run.state)?.receiptJson
+            || store.getKnowledgeContextReceipt(run.runId, 'FRAME')?.receiptJson
+            || null;
+          resume = buildResumeView({
+            run,
+            step,
+            verifications: store.getVerifications(run.runId),
+            obligations: store.getRunObligations(run.runId),
+            reviews: store.listReviewReceipts(run.runId),
+            completionDecision: store.getCompletionDecision(run.runId),
+            finalizationReceipt: store.getFinalizationReceipt(run.runId),
+            gitCloseout: store.getGitCloseoutReceipt(run.runId),
+            routeDecisions: store.listModelRouteDecisions(run.runId),
+            usageReceipts: store.listModelUsageReceipts(run.runId),
+            context,
+          });
+        } else if (mutableRuns.length > 1) {
+          resume = {
+            schemaVersion: 1,
+            status: 'ambiguous',
+            candidates: mutableRuns.map((run) => ({
+              runId: run.runId,
+              status: run.status,
+              state: run.state,
+              updatedAt: run.updatedAt,
+              worktreeId: run.worktreeId || null,
+              workspaceId: run.workspaceId || null,
+            })),
+            recovery: { action: 'resume-existing-run' },
+          };
+        } else {
+          resume = {
+            schemaVersion: 1,
+            status: 'not-found',
+            candidates: [],
+            recovery: { action: 'supply-a-task-contract' },
+          };
+        }
         if (projectIdentity.status === 'repair_required') {
           diagnostics.findings.push({
             code: 'project_identity_preflight_required',
@@ -227,6 +342,7 @@ try {
         status: diagnostics.status,
         diagnostics,
         projectIdentity,
+        resume,
       });
     }
   } else if (command === 'identity') {
@@ -480,7 +596,7 @@ try {
     const cp = await openControlPlane();
     const runId = getArgValue('--run-id');
     if (!runId) throw new Error('finalization-status command requires --run-id');
-    const store = await (await import('../scripts/kernel/state-store.mjs')).openKernelStateStore({ runtimeHome: runtimeHomeArg || undefined });
+    const store = await (await import('../scripts/kernel/state-store.mjs')).openKernelStateStore({ runtimeHome: effectiveRuntimeHome || undefined });
     const res = store.getFinalizationReceipt(runId);
     await cp.close();
     output(res || { status: 'not_found' });

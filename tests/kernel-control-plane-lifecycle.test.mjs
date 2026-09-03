@@ -6,6 +6,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
 import { normalizeSessionBinding } from '../scripts/kernel/run/session-binding.mjs';
 import { resolveKernelProjectIdentity } from '../scripts/kernel/project-identity.mjs';
+import { buildResumeView } from '../scripts/kernel/state-projector.mjs';
 
 test('KernelControlPlane wires full knowledge lifecycle end-to-end', async () => {
   const tmpRuntimeHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-cp-test-'));
@@ -33,7 +34,7 @@ test('KernelControlPlane wires full knowledge lifecycle end-to-end', async () =>
   });
 
   assert.ok(executeContext.knowledgeContext);
-  assert.equal(executeContext.knowledgeContext.status, 'ready');
+  assert.equal(executeContext.knowledgeContext.status, 'ready-empty');
 
   // Step 3: recordProof in PROVE extracts and reviews candidates
   await cp.transition('cp-run-1', 'PROVE');
@@ -113,4 +114,179 @@ test('public Kernel control-plane bootstrap reconciles terminal bindings from pr
     try { await first.close(); } catch {}
     await rm(runtimeHome, { recursive: true, force: true });
   }
+});
+
+test('resume view identifies an interrupted independent review as the next action', () => {
+  const view = buildResumeView({
+    run: {
+      runId: 'run-resume-review',
+      status: 'blocked',
+      blockedReason: 'security-review',
+      state: 'PROVE',
+      mutationRevision: 4,
+      finalizationStatus: 'pending',
+      taskContract: { completionPredicate: { requiredOutcomes: [] } },
+    },
+    obligations: [{ obligationId: 'security-review', status: 'required', evidenceClass: 'judgment' }],
+    routeDecisions: [{ decisionId: 'route-review', role: 'reviewer', actionKind: 'review_engineering' }],
+    usageReceipts: [{ decisionId: 'route-review', resultStatus: 'interrupted' }],
+  });
+  assert.equal(view.kernel.overall, 'blocked');
+  assert.equal(view.kernel.reason, 'security-review');
+  assert.equal(view.review.status, 'pending');
+  assert.equal(view.review.execution, 'interrupted');
+  assert.equal(view.resume.action, 'resume-independent-review');
+});
+
+test('resume view keeps pushed Git state distinct from pending Kernel finalization', () => {
+  const view = buildResumeView({
+    run: {
+      runId: 'run-resume-git',
+      status: 'active',
+      state: 'CLOSE',
+      mutationRevision: 2,
+      finalizationStatus: 'pending',
+      taskContract: { completionPredicate: { requiredOutcomes: [] } },
+    },
+    step: { state: 'passed' },
+    obligations: [{ obligationId: 'default', status: 'required', evidenceClass: 'hard' }],
+    verifications: [{ obligationId: 'default', status: 'passed', evidenceDigest: 'sha256:evidence' }],
+    completionDecision: { decision: 'accepted' },
+    gitCloseout: { status: 'completed', pushStatus: 'completed', parity: 'matched', commitSha: 'abc123' },
+  });
+  assert.equal(view.kernel.overall, 'active');
+  assert.equal(view.git.status, 'pushed');
+  assert.equal(view.git.head, 'abc123');
+  assert.equal(view.finalization.status, 'pending');
+  assert.equal(view.resume.action, 'retry-finalization');
+});
+
+test('resume view marks a requested Git closeout without a receipt as retryable', () => {
+  const view = buildResumeView({
+    run: {
+      runId: 'run-resume-git-missing-receipt',
+      status: 'completed',
+      state: 'CLOSE',
+      mutationRevision: 2,
+      finalizationStatus: 'partial',
+      taskContract: { completionPredicate: { requiredOutcomes: [] } },
+    },
+    completionDecision: { decision: 'accepted' },
+    finalizationReceipt: {
+      finalizationStatus: 'partial',
+      gitCloseoutRequest: { requested: true, mode: 'commit_and_push' },
+      gitCloseoutStatus: 'failed',
+    },
+  });
+  assert.equal(view.git.requested, true);
+  assert.equal(view.git.status, 'failed');
+  assert.equal(view.resume.action, 'retry-finalization');
+});
+
+test('resume view keeps active implementation ahead of pending verification and review', () => {
+  const view = buildResumeView({
+    run: {
+      runId: 'run-resume-implementation',
+      status: 'active',
+      state: 'FRAME',
+      mutationRevision: 0,
+      taskContract: { completionPredicate: { requiredOutcomes: [] } },
+    },
+    step: { state: 'active' },
+    obligations: [
+      { obligationId: 'unit-test', status: 'required', evidenceClass: 'hard' },
+      { obligationId: 'security-review', status: 'required', evidenceClass: 'judgment' },
+    ],
+  });
+  assert.equal(view.implementation.status, 'active');
+  assert.equal(view.verification.status, 'pending');
+  assert.equal(view.review.status, 'pending');
+  assert.equal(view.resume.action, 'continue-implementation');
+});
+
+test('resume view follows a failed Step into its pending review instead of reopening implementation', () => {
+  const view = buildResumeView({
+    run: {
+      runId: 'run-resume-failed-step-review',
+      status: 'active',
+      state: 'PROVE',
+      mutationRevision: 1,
+      taskContract: { completionPredicate: { requiredOutcomes: [] } },
+    },
+    step: { state: 'failed', reasons: ['obligation-unsatisfied:security-review'] },
+    obligations: [{ obligationId: 'security-review', status: 'required', evidenceClass: 'judgment' }],
+  });
+  assert.equal(view.implementation.status, 'pending');
+  assert.equal(view.review.status, 'pending');
+  assert.equal(view.resume.action, 'start-independent-review');
+});
+
+test('resume view keeps passed hard obligations visible as passed after the Kernel marks them complete', () => {
+  const view = buildResumeView({
+    run: {
+      runId: 'run-resume-proof-status',
+      status: 'active',
+      state: 'PROVE',
+      mutationRevision: 1,
+      taskContract: { completionPredicate: { requiredOutcomes: [] } },
+    },
+    step: { state: 'failed', reasons: ['obligation-unsatisfied:security-review'] },
+    obligations: [
+      { obligationId: 'unit-test', status: 'passed', evidenceClass: 'hard' },
+      { obligationId: 'security-review', status: 'required', evidenceClass: 'judgment' },
+    ],
+    verifications: [{ obligationId: 'unit-test', status: 'passed' }],
+  });
+  assert.equal(view.verification.status, 'passed');
+  assert.equal(view.review.status, 'pending');
+  assert.equal(view.resume.action, 'start-independent-review');
+});
+
+test('resume view ignores a stale review receipt when a later reviewer attempt was interrupted', () => {
+  const view = buildResumeView({
+    run: {
+      runId: 'run-resume-stale-review',
+      status: 'active',
+      state: 'PROVE',
+      mutationRevision: 4,
+      currentWorkspaceIdentity: 'sha256:workspace-current',
+      taskContract: { completionPredicate: { requiredOutcomes: [] } },
+    },
+    obligations: [{ obligationId: 'security-review', status: 'required', evidenceClass: 'judgment' }],
+    reviews: [{
+      createdAt: '2026-09-02T10:00:00.000Z',
+      subject: { mutationRevision: 4, workspaceIdentity: 'sha256:workspace-current' },
+      reviewer: { usageReceiptId: 'usage-completed', routeDecisionId: 'route-completed' },
+    }],
+    routeDecisions: [
+      { decisionId: 'route-completed', role: 'reviewer' },
+      { decisionId: 'route-interrupted', role: 'reviewer' },
+    ],
+    usageReceipts: [
+      { receiptId: 'usage-completed', decisionId: 'route-completed', resultStatus: 'completed', createdAt: '2026-09-02T10:01:00.000Z' },
+      { receiptId: 'usage-interrupted', decisionId: 'route-interrupted', resultStatus: 'interrupted', createdAt: '2026-09-02T10:02:00.000Z' },
+    ],
+  });
+  assert.equal(view.review.execution, 'interrupted');
+  assert.equal(view.resume.action, 'resume-independent-review');
+});
+
+test('resume view does not treat an older mutation review as current completion evidence', () => {
+  const view = buildResumeView({
+    run: {
+      runId: 'run-resume-old-review',
+      status: 'active',
+      state: 'PROVE',
+      mutationRevision: 4,
+      currentWorkspaceIdentity: 'sha256:workspace-current',
+      taskContract: { completionPredicate: { requiredOutcomes: [] } },
+    },
+    obligations: [{ obligationId: 'security-review', status: 'required', evidenceClass: 'judgment' }],
+    reviews: [{
+      subject: { mutationRevision: 3, workspaceIdentity: 'sha256:workspace-old' },
+      reviewer: { usageReceiptId: 'usage-old', routeDecisionId: 'route-old' },
+    }],
+  });
+  assert.equal(view.review.execution, 'never-started');
+  assert.equal(view.resume.action, 'start-independent-review');
 });

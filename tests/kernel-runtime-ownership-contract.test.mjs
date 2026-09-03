@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -9,6 +10,12 @@ import { resolveSurfaceRoots } from '../scripts/switcher/paths.mjs';
 import { buildCodexDesktopLaunch } from '../scripts/switcher/providers/codex.mjs';
 import { resolveKernelWorktreeIdentity } from '../scripts/kernel/run/worktree-binding.mjs';
 import { canonicalPath } from '../scripts/kernel/runtime-home.mjs';
+import { openKernelStateStore } from '../scripts/kernel/state-store.mjs';
+import {
+  discoverRunLocator,
+  validateRunLocatorRuntime,
+  writeRunLocator,
+} from '../scripts/kernel/run/run-locator.mjs';
 
 const safeClean = async (dirs) => {
   for (const dir of dirs) {
@@ -129,7 +136,7 @@ test('Invariant 3 & 4: Session is optional telemetry and zero provider subproces
     const reportRes = await cp.report(resolved, {
       status: 'completed',
       summary: 'work completed natively',
-      changedPaths: ['README.md'],
+      changedPaths: [],
       verifications: [{ obligationId: 'default', commandRef: 'test', acceptanceCoverage: ['zero session dependency verified'] }],
     });
     assert.equal(reportRes.status, 'completed');
@@ -334,5 +341,131 @@ test('Invariant 12: Kernel session metadata absence never prevents Run creation 
     assert.equal(resumed.status, 'resumed');
   } finally {
     await cp.close();
+  }
+});
+
+const locatorFixtureRun = (runId, runtimeHome, status = 'active') => ({
+  runId,
+  projectId: 'project-fixture',
+  workspaceId: 'workspace-fixture',
+  worktreeId: 'worktree-fixture',
+  status,
+  state: 'EXECUTE',
+  finalizationStatus: 'pending',
+  createdAt: '2026-09-02T00:00:00.000Z',
+  runtimeHome,
+});
+
+const createLocatorRuntimeRun = async (runData) => {
+  const store = await openKernelStateStore({ runtimeHome: runData.runtimeHome });
+  try {
+    store.createRun({
+      runId: runData.runId,
+      objective: `fixture-${runData.runId}`,
+      sourceIdentity: 'source-fixture',
+      projectId: runData.projectId,
+      workspaceId: runData.workspaceId,
+      worktreeId: runData.worktreeId,
+    });
+  } finally {
+    store.close();
+  }
+};
+
+test('Kernel run locator resolves a unique project/worktree and exact run id', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'kernel-locator-'));
+  const projectRoot = path.join(root, 'project');
+  const locatorRoot = path.join(root, 'locator');
+  const runtimeHome = path.join(root, 'runtime');
+  try {
+    const runData = locatorFixtureRun('run-unique', runtimeHome);
+    await createLocatorRuntimeRun(runData);
+    await writeRunLocator({ run: runData, runtimeHome, projectRoot, locatorRoot });
+
+    const byProject = discoverRunLocator({ projectRoot, locatorRoot });
+    assert.equal(byProject.status, 'resolved');
+    assert.equal(byProject.locator.runId, 'run-unique');
+    assert.equal(byProject.runtimeHome, path.resolve(runtimeHome));
+
+    const byRun = discoverRunLocator({ runId: 'run-unique', locatorRoot });
+    assert.equal(byRun.status, 'resolved');
+    assert.equal(byRun.locator.runtimeHome, path.resolve(runtimeHome));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('Kernel run locator fails closed on ambiguous project/worktree discovery', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'kernel-locator-ambiguous-'));
+  const projectRoot = path.join(root, 'project');
+  const locatorRoot = path.join(root, 'locator');
+  try {
+    for (const runId of ['run-first', 'run-second']) {
+      const runData = locatorFixtureRun(runId, path.join(root, runId));
+      await createLocatorRuntimeRun(runData);
+      await writeRunLocator({ run: runData, runtimeHome: runData.runtimeHome, projectRoot, locatorRoot });
+    }
+    const result = discoverRunLocator({ projectRoot, locatorRoot });
+    assert.equal(result.status, 'ambiguous');
+    assert.equal(result.candidates.length, 2);
+    assert.equal(result.runtimeHome, null);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('Kernel run locator rejects a stale address without creating a runtime database', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'kernel-locator-stale-'));
+  const locatorRoot = path.join(root, 'locator');
+  const runtimeHome = path.join(root, 'missing-runtime');
+  try {
+    const runData = locatorFixtureRun('run-stale', runtimeHome);
+    await writeRunLocator({ run: runData, runtimeHome, locatorRoot });
+    const result = discoverRunLocator({ runId: runData.runId, locatorRoot });
+    assert.equal(result.status, 'stale');
+    assert.equal(result.runtimeHome, null);
+    assert.equal(result.stale[0].validation.reason, 'runtime-db-missing');
+    assert.equal(existsSync(path.join(runtimeHome, 'state', 'runtime-state.sqlite')), false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('Kernel run locator rejects a runtime database that no longer contains the Run', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'kernel-locator-missing-run-'));
+  const locatorRoot = path.join(root, 'locator');
+  const runtimeHome = path.join(root, 'runtime');
+  try {
+    const store = await openKernelStateStore({ runtimeHome });
+    store.close();
+    const runData = locatorFixtureRun('run-missing-from-db', runtimeHome);
+    await writeRunLocator({ run: runData, runtimeHome, locatorRoot });
+    const result = discoverRunLocator({ runId: runData.runId, locatorRoot });
+    assert.equal(result.status, 'stale');
+    assert.equal(result.stale[0].validation.reason, 'run-not-found');
+    assert.equal(existsSync(path.join(runtimeHome, 'state', 'runtime-state.sqlite')), true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('Kernel run locator uses the authoritative Run lifecycle instead of locator status', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'kernel-locator-lifecycle-'));
+  const projectRoot = path.join(root, 'project');
+  const locatorRoot = path.join(root, 'locator');
+  const runtimeHome = path.join(root, 'runtime');
+  try {
+    const runData = locatorFixtureRun('run-authoritative-lifecycle', runtimeHome);
+    await createLocatorRuntimeRun(runData);
+    const staleLocatorStatus = { ...runData, status: 'completed' };
+    await writeRunLocator({ run: staleLocatorStatus, runtimeHome, projectRoot, locatorRoot });
+    const validation = validateRunLocatorRuntime(staleLocatorStatus);
+    assert.equal(validation.status, 'valid');
+    assert.equal(validation.runStatus, 'active');
+    const result = discoverRunLocator({ projectRoot, locatorRoot });
+    assert.equal(result.status, 'resolved');
+    assert.equal(result.locator.runId, runData.runId);
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });

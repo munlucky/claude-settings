@@ -7,7 +7,7 @@ import { detectStagnation } from './run/stagnation.mjs';
 import { recommendModelRouting, resolveModelRoute } from './run/model-routing.mjs';
 import { buildExecutionAssignmentId, normalizeHostCapabilities, resolveEnforcementStrategy, summarizeModelRouting } from './run/model-route-contract.mjs';
 import { buildReleaseEvidencePack } from './evidence-pack.mjs';
-import { projectRunState } from './state-projector.mjs';
+import { projectRunState, buildResumeView } from './state-projector.mjs';
 import { resolveKernelRuntimeHome } from './runtime-home.mjs';
 import { KERNEL_POLICY, KernelPrinciplesError, loadKernelPrinciples } from './policy.mjs';
 import { resolveKernelCapabilities } from './capability-resolver.mjs';
@@ -18,7 +18,7 @@ import { buildProjectKnowledgeContext } from './knowledge/context-load.mjs';
 import { retryGitCloseout as retryGitCloseoutHelper } from './git/closeout.mjs';
 import { finalizeRun, recordKnowledgeObservations } from './run/finalization.mjs';
 import { normalizeChangedContract } from './change-contract.mjs';
-import { observeWorkspaceIdentity, observeScopedWorkspaceIdentity } from './run/workspace-identity.mjs';
+import { observeWorkspaceIdentity, observeScopedWorkspaceIdentity, deriveRunChangedPaths } from './run/workspace-identity.mjs';
 import { executeTrustedProof, executeApprovedProof, executeWithFlakyRerun, UntrustedCommandError, CommandApprovalRequiredError } from './proof/proof-executor.mjs';
 import { NetworkPolicyUnenforceableError } from './proof/network-policy.mjs';
 import { buildNextPayload, normalizeReport, planStatePath, planRouteSteps } from './run/run-loop.mjs';
@@ -50,7 +50,7 @@ import { digestOfEvidence, digestOfPaths, evaluateReviewReceipt, reviewEvidenceR
 import { isProtectedObligation } from './proof/protected-obligations.mjs';
 import { hashSessionId } from './run/model-route-contract.mjs';
 import { scanRepositoryEvidence } from './task/evidence-scan.mjs';
-import { allStepsPassed } from './run/run-step-ledger.mjs';
+import { allStepsPassed, currentStep as selectCurrentStep } from './run/run-step-ledger.mjs';
 import { planRunSteps } from './run/step-planner.mjs';
 import { createWorkCursorApi } from './run/work-cursor.mjs';
 import { admitRoute, admissionAllowsDispatch } from './routing/route-admission.mjs';
@@ -66,6 +66,7 @@ import { resolveBoundInvocation as resolveInvocation } from './run/invocation-re
 import { buildSuccessorKey } from './run/successor-key.mjs';
 import { registerKernelWorktreeBinding, assertRunWorktreeMutationAuthority } from './run/worktree-binding.mjs';
 import { resolveRunArtifactPaths } from './artifact-paths.mjs';
+import { writeRunLocator } from './run/run-locator.mjs';
 import { buildStructuredRunSignals, failureFingerprint } from './knowledge/capture.mjs';
 import { buildEvidenceIdentity, buildEvidenceReuseReceipt, VERIFICATION_SCOPE_FIELD, EVIDENCE_IDENTITY_FIELDS } from './proof/evidence-reuse.mjs';
 import { assertImplementationWorkUnitScope, workUnitScopeFailure } from './run/work-unit-scope.mjs';
@@ -383,6 +384,37 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
   }
   const effectiveWorkspaceId = registeredWorkspace.workspaceId;
   const effectiveWorktreeId = currentWorktree.worktreeId;
+  // The locator is only a Kernel account-root address book. SQLite remains the
+  // authority for every Run field; a locator write failure must not turn
+  // derived discovery metadata into a lifecycle failure.
+  const syncRunLocator = async (run) => {
+    if (!run?.runId) return null;
+    try {
+      return await writeRunLocator({
+        run,
+        runtimeHome,
+        projectRoot,
+        projectIdentity: currentProject,
+        worktree: currentWorktree,
+        ownerSessionId: hostSessionId,
+      });
+    } catch {
+      return null;
+    }
+  };
+  const advanceWorkspaceReportBaseline = (runId, observation) => {
+    if (observation?.method !== 'git' || !Array.isArray(observation.changeEntries)) return;
+    try {
+      store.updateRunWorkspaceBaseline(runId, {
+        changedPaths: observation.changedPaths || [],
+        entries: observation.changeEntries,
+      });
+    } catch {
+      // This is a derived observation cursor. The immutable Run-start
+      // baseline and SQLite lifecycle receipts remain authoritative if the
+      // convenience cursor cannot be refreshed.
+    }
+  };
   let deliveryRecoveryInProgress = false;
   // Reconcile terminal bindings and stale mutation locks at the public Kernel
   // lifecycle boundary. Preserve only a completed binding owned by this host
@@ -639,20 +671,63 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     verificationScopeIdentities: verificationScopeIdentities(runId, obligations || store.getRunObligations(runId)),
   });
 
+  const resumeViewForRun = (currentRun, {
+    completion = null,
+    obligations = null,
+    verifications = null,
+    step = null,
+    context = null,
+  } = {}) => {
+    if (!currentRun) return null;
+    const resolvedObligations = obligations || store.getRunObligations(currentRun.runId);
+    const resolvedVerifications = verifications || store.getVerifications(currentRun.runId);
+    const resolvedCompletion = completion || evaluateRunCompletion(currentRun.runId, { obligations: resolvedObligations });
+    const resolvedContext = context
+      || store.getKnowledgeContextReceipt(currentRun.runId, currentRun.state)?.receiptJson
+      || store.getKnowledgeContextReceipt(currentRun.runId, 'FRAME')?.receiptJson
+      || null;
+    const steps = typeof store.getRunSteps === 'function'
+      ? store.getRunSteps(currentRun.runId, { planRevision: currentRun.planRevision })
+      : [];
+    const resolvedStep = step || selectCurrentStep(steps, { planRevision: currentRun.planRevision });
+    return buildResumeView({
+      run: currentRun,
+      step: resolvedStep,
+      verifications: resolvedVerifications,
+      obligations: resolvedObligations,
+      reviews: store.listReviewReceipts(currentRun.runId),
+      completionDecision: store.getCompletionDecision(currentRun.runId),
+      finalizationReceipt: store.getFinalizationReceipt(currentRun.runId),
+      gitCloseout: store.getGitCloseoutReceipt(currentRun.runId),
+      routeDecisions: store.listModelRouteDecisions(currentRun.runId),
+      usageReceipts: store.listModelUsageReceipts(currentRun.runId),
+      completion: resolvedCompletion,
+      context: resolvedContext,
+    });
+  };
+
   const buildNextForRun = (run, options = {}) => {
     const currentRun = run || store.getRun(options.runId);
     if (!currentRun) return buildNextPayload({ run: currentRun, ...options });
     const obligations = options.obligations || refreshProofPolicyBindings(currentRun.runId);
     const completion = options.completion || evaluateRunCompletion(currentRun.runId, { obligations });
+    const verifications = options.verifications || store.getVerifications(currentRun.runId);
     return buildNextPayload({
       ...options,
       run: currentRun,
-      verifications: options.verifications || store.getVerifications(currentRun.runId),
+      verifications,
       requiredObligations: options.requiredObligations || currentRun.requiredObligations,
       obligations,
       satisfiedObligations: completion.obligationStatuses.filter((entry) => entry.satisfied).map((entry) => entry.obligationId),
       outstandingObligationIds: completion.unsatisfiedObligations.map((entry) => entry.obligationId),
       contract: options.contract || (currentRun.taskContract ? contractBriefing(currentRun.taskContract) : null),
+      resume: options.resume || resumeViewForRun(currentRun, {
+        completion,
+        obligations,
+        verifications,
+        step: options.step || null,
+        context: options.context || null,
+      }),
     });
   };
 
@@ -924,6 +999,10 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
           implementationContext,
           workspaceId: effectiveWorkspaceId,
           worktreeId: effectiveWorktreeId,
+          baselineChangedPaths: workspaceObservation.changedPaths || [],
+          baselineWorkspaceEntries: workspaceObservation.changeEntries || [],
+          reportBaselineChangedPaths: workspaceObservation.changedPaths || [],
+          reportBaselineWorkspaceEntries: workspaceObservation.changeEntries || [],
         });
         store.declareRunObligations(runId, obligations);
 
@@ -957,6 +1036,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
           receiptJson: frameKnowledgeCtx,
         });
 
+        await syncRunLocator(run);
         await projectRunState(run, { runtimeHome });
         return run;
       } catch (error) {
@@ -1063,6 +1143,10 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         implementationContext,
         workspaceId: effectiveWorkspaceId,
         worktreeId: effectiveWorktreeId,
+        baselineChangedPaths: workspaceObservation.changedPaths || [],
+        baselineWorkspaceEntries: workspaceObservation.changeEntries || [],
+        reportBaselineChangedPaths: workspaceObservation.changedPaths || [],
+        reportBaselineWorkspaceEntries: workspaceObservation.changeEntries || [],
       };
       const planned = planRunSteps({
         run: successorRun,
@@ -1123,6 +1207,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         });
         await projectRunState(result.run, { runtimeHome });
       }
+      await syncRunLocator(result.run);
       return {
         status: result.created ? 'created' : 'resumed',
         run: result.run,
@@ -1355,6 +1440,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     async abandon(runId, { reason = 'user_requested' } = {}) {
       if (!runId) throw new Error('abandon requires a runId');
       const result = store.abandonRun(runId, { reason });
+      await syncRunLocator(result);
       return result;
     },
 
@@ -1476,6 +1562,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
 
     async abandonRun(runId) {
       const updated = store.abandonRun(runId);
+      await syncRunLocator(updated);
       await projectRunState(updated, { runtimeHome });
       return updated;
     },
@@ -2961,6 +3048,8 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         }
       }
 
+      await syncRunLocator(run);
+
       const capabilityDecision = resolveKernelCapabilities({
         ...(run.taskContract?.flags || {}),
         taskClass: run.taskContract?.taskClass || 'feature',
@@ -2978,6 +3067,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         contract: run.taskContract ? contractBriefing(run.taskContract) : null,
         completion,
         knowledgePromptBlock: stageContext?.promptBlock || null,
+        context: stageContext,
         capabilities: capabilityDecision.selected.map((entry) => ({ id: entry.id, guidance: entry.guidance })),
       });
 
@@ -3050,6 +3140,13 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         obligations,
         reviews: store.listReviewReceipts(runId),
         completionDecision: store.getCompletionDecision(runId),
+      });
+      payload.resume = resumeViewForRun(run, {
+        completion,
+        obligations,
+        verifications: store.getVerifications(runId),
+        step,
+        context: stageContext,
       });
       return payload;
     },
@@ -3427,6 +3524,33 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
           }),
         };
       };
+      const workspaceScopeRejected = ({
+        actualChangedPaths = null,
+        reportedChangedPaths = [],
+        failure,
+        observation = null,
+      }) => {
+        const currentRun = store.getRun(runId);
+        return {
+          schemaVersion: 1,
+          runId,
+          status: 'scope-rejected',
+          actualChangedPaths,
+          reportedChangedPaths,
+          workspaceObservation: observation
+            ? { method: observation.method || null, status: observation.status || 'observed', reason: observation.reason || null }
+            : { method: null, status: 'unavailable', reason: 'workspace-observation-unavailable' },
+          executed: [],
+          failures: [failure],
+          finalization: null,
+          next: buildNextForRun(currentRun, {
+            verifications: store.getVerifications(runId),
+            requiredObligations: currentRun.requiredObligations,
+            contract: currentRun.taskContract ? contractBriefing(currentRun.taskContract) : null,
+            failures: [failure],
+          }),
+        };
+      };
       // A run that already reached accepted completion but whose finalization
       // is partial re-enters finalization instead of restarting the loop.
       if (run.status === 'completed' && run.finalizationStatus !== 'completed') {
@@ -3447,7 +3571,82 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         };
       }
 
-      const report = normalizeReport(payload);
+      let report = normalizeReport(payload);
+      // An omitted changedPaths field carries no caller claim. The Kernel may
+      // fill it from the live authoritative observation for follow-up reports
+      // (for example, a review/evidence-only report while the same working
+      // tree remains dirty). An explicitly supplied [] is still a claim that
+      // there are no changed paths and must match the authority exactly.
+      const changedPathsClaimed = Boolean(payload && typeof payload === 'object'
+        && Object.prototype.hasOwnProperty.call(payload, 'changedPaths'));
+      const reportedChangedPaths = changedPathsClaimed ? canonicalChangedPaths(report.changedPaths) : [];
+      let liveWorkspaceObservation = null;
+      let actualChangedPaths = null;
+      let workspaceMismatchFailure = null;
+
+      // `changedPaths` in a model report is a claim. For a direct owner report,
+      // the live Git observation and the Run's baseline are the authority. A
+      // mismatch is rejected before knowledge compilation, capsule settlement,
+      // or proof execution so an omitted or stale path cannot be hidden by a
+      // passing verification.
+      if (parallelSettlement) {
+        actualChangedPaths = canonicalChangedPaths(
+          parallelSettlement.result?.changedPaths || report.changedPaths,
+        );
+        report = { ...report, changedPaths: actualChangedPaths };
+      } else {
+        try {
+          liveWorkspaceObservation = observeWorkspaceIdentity({ projectRoot });
+        } catch {
+          return workspaceScopeRejected({
+            reportedChangedPaths,
+            failure: {
+              obligationId: 'workspace-scope',
+              command: 'kernel report',
+              errorSummary: 'Kernel could not observe the workspace before accepting the report',
+              errorCode: 'workspace_observation_unavailable',
+            },
+          });
+        }
+        const changeSet = deriveRunChangedPaths({
+          observation: liveWorkspaceObservation,
+          baselineChangedPaths: run.reportBaselineChangedPaths || run.baselineChangedPaths,
+          baselineEntries: run.reportBaselineWorkspaceEntries || run.baselineWorkspaceEntries,
+          baselineStatus: run.workspaceBaselineStatus,
+        });
+        if (changeSet.status !== 'observed' && liveWorkspaceObservation.method === 'git') {
+          return workspaceScopeRejected({
+            reportedChangedPaths,
+            observation: liveWorkspaceObservation,
+            failure: {
+              obligationId: 'workspace-scope',
+              command: 'kernel report',
+              errorSummary: `Kernel cannot establish an authoritative Git change set: ${changeSet.reason || 'observation unavailable'}`,
+              errorCode: 'workspace_observation_unavailable',
+            },
+          });
+        }
+        // A non-Git project has no Git change-set authority. Preserve the
+        // existing stat-walk compatibility path while making the limitation
+        // visible in the response; Git projects remain fail-closed above.
+        actualChangedPaths = changeSet.status === 'observed'
+          ? canonicalChangedPaths(changeSet.actualChangedPaths)
+          : reportedChangedPaths;
+        if (changedPathsClaimed && liveWorkspaceObservation.method === 'git'
+          && !receiptValuesEqual(actualChangedPaths, reportedChangedPaths, { paths: true })) {
+          const missingFromReport = actualChangedPaths.filter((entry) => !reportedChangedPaths.includes(entry));
+          const staleInReport = reportedChangedPaths.filter((entry) => !actualChangedPaths.includes(entry));
+          workspaceMismatchFailure = {
+            obligationId: 'workspace-scope',
+            command: 'kernel report',
+            errorSummary: `Report changed paths do not match the authoritative workspace delta${missingFromReport.length > 0 ? `; unreported: ${missingFromReport.join(', ')}` : ''}${staleInReport.length > 0 ? `; stale: ${staleInReport.join(', ')}` : ''}`,
+            errorCode: missingFromReport.length > 0 ? 'unreported_workspace_change' : 'stale_or_invalid_change_report',
+            actualChangedPaths,
+            reportedChangedPaths,
+          };
+        }
+        report = { ...report, changedPaths: actualChangedPaths };
+      }
 
       // Project-owned required_verification records are compiled when the
       // actual changed scope becomes known. This keeps a report's binding
@@ -3470,20 +3669,6 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         }
       }
 
-      if (report.blocker) {
-        if (typeof store.recordRunSignals === 'function') {
-          store.recordRunSignals(runId, buildStructuredRunSignals({
-            runId,
-            blocker: { ...report.blocker, blockerReceipt: `blocker://${runId}/${report.blocker.reason}` },
-            changedPaths: report.changedPaths,
-          }));
-        }
-        store.markRunBlocked(runId, report.blocker.reason);
-        await projectRunState(store.getRun(runId), { runtimeHome });
-        return buildBlockedResponse({ runId, reason: report.blocker.reason, detail: report.blocker.detail || null });
-      }
-      if (run.status === 'blocked') store.resumeBlockedRun(runId);
-
       // K1: a report answers a capsule. A report that names a capsule the
       // Kernel never issued, or one built against a workspace the run has
       // already moved past, is refused before any evidence is executed — and a
@@ -3495,6 +3680,49 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         ? this.resolveParallelSettlementStep(runId, report, parallelSettlement)
         : this.resolveReportStep(runId, report);
       const activeStep = stepResolution.step || null;
+
+      // Keep the actual Git set authoritative, but preserve the more useful
+      // existing diagnostics when a stale claim also points at an invalid
+      // step, capsule, or scope. Neither check accepts the caller's paths for
+      // completion: the claimed set is consulted only to explain a stale or
+      // out-of-scope claim, while the actual set is used for all downstream
+      // acceptance decisions.
+      if (workspaceMismatchFailure) {
+        const claimedScopeRejection = this.assertCapsuleScope(
+          runId,
+          { ...report, changedPaths: reportedChangedPaths },
+          activeStep,
+        );
+        const actualScopeRejection = this.assertCapsuleScope(
+          runId,
+          { ...report, changedPaths: actualChangedPaths },
+          activeStep,
+        );
+        const failures = stepResolution.rejection || actualScopeRejection || claimedScopeRejection;
+        if (failures) {
+          const currentRun = store.getRun(runId);
+          return {
+            schemaVersion: 1,
+            runId,
+            status: stepResolution.rejection ? 'step-rejected' : 'scope-rejected',
+            executed: [],
+            failures,
+            finalization: null,
+            next: buildNextForRun(currentRun, {
+              verifications: store.getVerifications(runId),
+              requiredObligations: currentRun.requiredObligations,
+              contract: currentRun.taskContract ? contractBriefing(currentRun.taskContract) : null,
+              failures,
+            }),
+          };
+        }
+        return workspaceScopeRejected({
+          actualChangedPaths,
+          reportedChangedPaths,
+          observation: liveWorkspaceObservation,
+          failure: workspaceMismatchFailure,
+        });
+      }
 
       // A stale named capsule remains a capsule/scope failure even when the
       // active attempt carrying it also has stale mutation lineage. Preserve
@@ -3540,6 +3768,25 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         };
       }
 
+      // A blocker is still a model claim about the current work unit. Accept
+      // it only after the same workspace-diff, step-lineage, and capsule-scope
+      // checks as a normal report; otherwise a blocker could hide an
+      // unreported or forbidden actual change before fail-closed validation.
+      if (report.blocker) {
+        if (typeof store.recordRunSignals === 'function') {
+          store.recordRunSignals(runId, buildStructuredRunSignals({
+            runId,
+            blocker: { ...report.blocker, blockerReceipt: `blocker://${runId}/${report.blocker.reason}` },
+            changedPaths: report.changedPaths,
+          }));
+        }
+        store.markRunBlocked(runId, report.blocker.reason);
+        await syncRunLocator(store.getRun(runId));
+        await projectRunState(store.getRun(runId), { runtimeHome });
+        return buildBlockedResponse({ runId, reason: report.blocker.reason, detail: report.blocker.detail || null });
+      }
+      if (run.status === 'blocked') store.resumeBlockedRun(runId);
+
       // A refined contract (new constraints, or an optional evidence-plan
       // refinement produced in FRAME) is persisted before any execution
       // (P0-5). Plain and structured acceptance criteria both bind to the
@@ -3572,7 +3819,11 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       const boundWorkspace = boundWorkspaceId && store.getProjectWorkspace
         ? store.getProjectWorkspace(boundWorkspaceId)
         : null;
-      const observation = observeWorkspaceIdentity({ projectRoot: boundWorkspace?.canonicalRoot || projectRoot });
+      const observation = !parallelSettlement && liveWorkspaceObservation
+        ? liveWorkspaceObservation
+        : observeWorkspaceIdentity({
+          projectRoot: boundWorkspace?.canonicalRoot || projectRoot,
+        });
       // A routed Step workspace has its own identity and mutation lock. Its
       // observation is an execution receipt, not a mutation of the owner
       // workspace; only the owner workspace advances the Run revision.
@@ -3993,14 +4244,38 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         if (!store.isLeaseHeld(runId, { holder, fencingToken })) {
           return { schemaVersion: 1, runId, status: 'lease-conflict', lease: store.getLease(runId), next: await this.next(runId) };
         }
+        let finalizationChangedPaths = report.changedPaths;
+        if (!parallelSettlement) {
+          let finalizationObservation = null;
+          try { finalizationObservation = observeWorkspaceIdentity({ projectRoot }); } catch {}
+          const finalizationChangeSet = deriveRunChangedPaths({
+            observation: finalizationObservation || liveWorkspaceObservation,
+            baselineChangedPaths: refreshed.baselineChangedPaths,
+            baselineEntries: refreshed.baselineWorkspaceEntries,
+            baselineStatus: refreshed.workspaceBaselineStatus,
+          });
+          if (finalizationChangeSet.status === 'observed') {
+            finalizationChangedPaths = canonicalChangedPaths(finalizationChangeSet.actualChangedPaths);
+          }
+        }
         finalization = await this.finalizeRun(runId, {
           gitCloseoutRequest: report.gitCloseoutRequest,
-          changedPaths: report.changedPaths,
+          changedPaths: finalizationChangedPaths,
           knowledgeObservations: report.knowledgeObservations,
           structuredSignals,
         });
       }
 
+      const proofMutatedWorkspace = executed.some((entry) => entry.workspaceMutatedByProof === true);
+      // Advance the report-local observation boundary after all proof and
+      // finalization work has run. The original Run-start baseline is kept
+      // untouched for user-change protection; this cursor makes each mutable
+      // step/report compare against the workspace it actually started from.
+      if (!workerWorkspace && !proofMutatedWorkspace) {
+        let currentWorkspaceObservation = null;
+        try { currentWorkspaceObservation = observeWorkspaceIdentity({ projectRoot }); } catch {}
+        advanceWorkspaceReportBaseline(runId, currentWorkspaceObservation);
+      }
       const finalRun = store.getRun(runId);
       // `completed` requires BOTH an accepted completion decision and a
       // finalization that actually finished (P0-7).
@@ -4016,12 +4291,15 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         ? classifyFailures({ baselineFailures: finalRun.baselineFailures || [], currentFailures: failures, changedPaths: report.changedPaths })
         : null;
 
+      await syncRunLocator(finalRun);
       return {
         schemaVersion: 1,
         runId,
         status,
         attemptNumber: attempt.attemptNumber,
         mutationDetected: observed.changed,
+        actualChangedPaths,
+        reportedChangedPaths,
         executed,
         failures,
         failureClassification,
@@ -4042,13 +4320,16 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
 
     async closeRun(runId) {
       const updated = store.transition(runId, 'CLOSE');
+      await syncRunLocator(updated);
       await projectRunState(updated, { runtimeHome });
       return updated;
     },
 
     async finalizeRun(runId, options = {}) {
       try { preflight(runId, 'finalize'); } catch (error) { return bindingErrorPayload(error, { projectRoot, provider: hostProvider }); }
-      return finalizeRun({ store, runtimeHome, projectRoot, runId, ...options });
+      const finalized = await finalizeRun({ store, runtimeHome, projectRoot, runId, ...options });
+      await syncRunLocator(store.getRun(runId));
+      return finalized;
     },
 
     async retryGitCloseout(runId) {
@@ -4063,14 +4344,24 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       try { preflight(runId, 'status'); } catch (error) { return bindingErrorPayload(error, { projectRoot, provider: hostProvider }); }
       const run = store.getRun(runId);
       if (!run) return null;
+      await syncRunLocator(run);
       const completion = evaluateRunCompletion(runId);
+      const verifications = store.getVerifications(runId);
+      const context = store.getKnowledgeContextReceipt(runId, run.state)?.receiptJson
+        || store.getKnowledgeContextReceipt(runId, 'FRAME')?.receiptJson
+        || null;
       return {
         run,
         completion,
+        resume: resumeViewForRun(run, {
+          completion,
+          verifications,
+          context,
+        }),
         measurement: buildKernelMeasurement({
           run,
           completion,
-          verifications: store.getVerifications(runId),
+          verifications,
           verificationHistory: store.getVerificationHistory?.(runId) || [],
           attempts: store.getAttempts(runId),
           routeDecisions: store.listModelRouteDecisions(runId),

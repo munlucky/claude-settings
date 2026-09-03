@@ -143,6 +143,7 @@ export const buildNextPayload = ({
   capabilities = [],
   satisfiedObligations = null,
   outstandingObligationIds = null,
+  resume = null,
 }) => {
   const acceptancePlans = Array.isArray(contract?.acceptance)
     ? contract.acceptance.map((item) => ({
@@ -173,6 +174,7 @@ export const buildNextPayload = ({
     knowledge: knowledgePromptBlock,
     acceptancePlans,
     capabilities,
+    ...(resume ? { resume } : {}),
   };
 
   if (run.status === 'completed' && (run.finalizationStatus || 'completed') === 'completed') {

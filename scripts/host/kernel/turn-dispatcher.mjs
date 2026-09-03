@@ -863,6 +863,11 @@ const dispatchKernelTurnAttempt = async ({
   if (decision.role !== 'reviewer') return response;
 
   if (dispatch.status !== 'completed' || !dispatch.outcome) {
+    finishUnusableReviewAttempt({
+      controlPlane,
+      attempt,
+      reason: dispatch.errorCode || (dispatch.outcome ? 'reviewer-dispatch-failed' : 'reviewer-outcome-missing'),
+    });
     return withReviewAttemptMeta({
       ...response,
       review: {
@@ -886,6 +891,11 @@ const dispatchKernelTurnAttempt = async ({
     executionCapsule,
   });
   if (!reviewerOutcome) {
+    finishUnusableReviewAttempt({
+      controlPlane,
+      attempt,
+      reason: 'reviewer-provenance-missing',
+    });
     return withReviewAttemptMeta({
       ...response,
       review: { required: true, independent: true, status: 'blocked', blockedReason: 'reviewer-provenance-missing' },
@@ -915,6 +925,11 @@ const dispatchKernelTurnAttempt = async ({
     // A usage receipt may exist even when the review chain is incomplete. It
     // remains observable, but it can never be promoted to a review receipt by
     // the Host or by the model.
+    finishUnusableReviewAttempt({
+      controlPlane,
+      attempt,
+      reason: 'incomplete_review_chain',
+    });
     return withReviewAttemptMeta({
       ...response,
       review: {

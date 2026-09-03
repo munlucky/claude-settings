@@ -91,6 +91,11 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       release_evidence_required INTEGER NOT NULL DEFAULT 0,
       successor_key TEXT,
       run_signals_json TEXT NOT NULL DEFAULT '{}',
+      baseline_changed_paths TEXT NOT NULL DEFAULT '[]',
+      baseline_workspace_entries TEXT NOT NULL DEFAULT '[]',
+      workspace_baseline_changed_paths TEXT NOT NULL DEFAULT '[]',
+      workspace_baseline_entries TEXT NOT NULL DEFAULT '[]',
+      workspace_baseline_status TEXT NOT NULL DEFAULT 'known',
       updated_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS verifications (
@@ -592,6 +597,11 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
     );
   `);
 
+  const hasColumn = (table, column) => db.prepare(`PRAGMA table_info(${table})`).all()
+    .some((entry) => entry.name === column);
+  const hadWorkspaceBaselineColumns = hasColumn('runs', 'workspace_baseline_changed_paths')
+    && hasColumn('runs', 'workspace_baseline_entries');
+  const hadWorkspaceBaselineStatus = hasColumn('runs', 'workspace_baseline_status');
   const addCol = (t, c, typ) => { try { db.exec(`ALTER TABLE ${t} ADD COLUMN ${c} ${typ}`); } catch {} };
   addCol('git_closeout_receipts', 'status', 'TEXT');
   addCol('git_closeout_receipts', 'before_head_sha', 'TEXT');
@@ -617,6 +627,54 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
   addCol('runs', 'project_id', 'TEXT');
   addCol('runs', 'owner_binding_id', 'TEXT');
   addCol('runs', 'successor_key', 'TEXT');
+  // Nullable on migration so a legacy Run can fall back to its immutable
+  // Run-start baseline. Fresh Runs always initialize these fields explicitly.
+  addCol('runs', 'workspace_baseline_changed_paths', 'TEXT');
+  addCol('runs', 'workspace_baseline_entries', 'TEXT');
+  // A legacy Run whose workspace baseline was not captured must not silently
+  // attribute pre-existing dirty files to Kernel work.
+  addCol('runs', 'workspace_baseline_status', 'TEXT');
+  try {
+    db.prepare(`
+      UPDATE runs
+      SET workspace_baseline_status = CASE
+        WHEN workspace_baseline_changed_paths IS NULL
+          OR workspace_baseline_entries IS NULL THEN 'unknown'
+        WHEN workspace_baseline_status IS NULL THEN ?
+        ELSE workspace_baseline_status
+      END
+      WHERE workspace_baseline_status IS NULL
+    `).run(hadWorkspaceBaselineColumns ? 'known' : 'unknown');
+  } catch {}
+  // Baselines captured before index identity was added cannot protect a
+  // partially-staged pre-existing file. Mark only non-empty legacy baselines
+  // unknown; an empty baseline remains sufficient because every live changed
+  // path is then Run-owned by definition.
+  if (!hadWorkspaceBaselineStatus || hadWorkspaceBaselineColumns) {
+    try {
+      const rows = db.prepare(`
+        SELECT run_id AS runId, workspace_baseline_status AS status,
+               baseline_changed_paths AS baselineChangedPaths,
+               baseline_workspace_entries AS baselineEntries
+        FROM runs
+      `).all();
+      for (const row of rows) {
+        if (row.status !== 'known') continue;
+        let paths = [];
+        let entries = [];
+        try { paths = JSON.parse(row.baselineChangedPaths || '[]'); } catch {}
+        try { entries = JSON.parse(row.baselineEntries || '[]'); } catch {}
+        const hasUnindexedBaseline = Array.isArray(paths) && paths.length > 0
+          && (!Array.isArray(entries) || entries.some((entry) => !entry
+            || Array.isArray(entry)
+            || entry.indexStateKnown !== true
+            || !Object.prototype.hasOwnProperty.call(entry, 'statusCode')));
+        if (hasUnindexedBaseline) {
+          db.prepare(`UPDATE runs SET workspace_baseline_status='unknown' WHERE run_id=?`).run(row.runId);
+        }
+      }
+    } catch {}
+  }
   addCol('project_workspaces', 'worktree_id', 'TEXT');
   // Obligation binding authority (P0-2/P0-3).
   addCol('run_obligations', 'evidence_class', "TEXT DEFAULT 'hard'");
@@ -788,6 +846,8 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
   try { db.exec(`ALTER TABLE runs ADD COLUMN project_mode TEXT;`); } catch {}
   try { db.exec(`ALTER TABLE runs ADD COLUMN baseline_failures TEXT DEFAULT '[]';`); } catch {}
   try { db.exec(`ALTER TABLE runs ADD COLUMN baseline_status TEXT DEFAULT 'pending';`); } catch {}
+  try { db.exec(`ALTER TABLE runs ADD COLUMN baseline_changed_paths TEXT NOT NULL DEFAULT '[]';`); } catch {}
+  try { db.exec(`ALTER TABLE runs ADD COLUMN baseline_workspace_entries TEXT NOT NULL DEFAULT '[]';`); } catch {}
   try { db.exec(`ALTER TABLE runs ADD COLUMN replan_count INTEGER DEFAULT 0;`); } catch {}
   try { db.exec(`ALTER TABLE runs ADD COLUMN proof_tier TEXT DEFAULT 'T0';`); } catch {}
   try { db.exec(`ALTER TABLE runs ADD COLUMN evidence_tier TEXT DEFAULT 'E0';`); } catch {}
@@ -1441,6 +1501,11 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       implementationContext = null,
       workspaceId = null,
       worktreeId = null,
+      baselineChangedPaths = [],
+      baselineWorkspaceEntries = [],
+      reportBaselineChangedPaths = null,
+      reportBaselineWorkspaceEntries = null,
+      workspaceBaselineStatus = 'known',
       ownerBindingId = null,
       successorKey = null,
       withinTransaction = false,
@@ -1461,8 +1526,8 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       const effectiveWorktreeId = worktreeId || registeredWorkspace?.worktreeId || null;
       const persistRun = () => {
         db.prepare(`
-          INSERT INTO runs(run_id, objective, state, status, revision, mutation_revision, source_identity, run_start_workspace_identity, current_workspace_identity, project_mode, proof_tier, evidence_tier, required_obligations, acceptance_criteria, release_evidence_required, project_id, knowledge_revision_start, knowledge_status, task_contract_json, contract_revision, finalization_status, route_json, implementation_context_json, workspace_id, worktree_id, owner_binding_id, successor_key, updated_at)
-          VALUES(?, ?, 'FRAME', 'active', 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO runs(run_id, objective, state, status, revision, mutation_revision, source_identity, run_start_workspace_identity, current_workspace_identity, project_mode, proof_tier, evidence_tier, required_obligations, acceptance_criteria, release_evidence_required, project_id, knowledge_revision_start, knowledge_status, task_contract_json, contract_revision, finalization_status, route_json, implementation_context_json, workspace_id, worktree_id, baseline_changed_paths, baseline_workspace_entries, workspace_baseline_changed_paths, workspace_baseline_entries, workspace_baseline_status, owner_binding_id, successor_key, updated_at)
+          VALUES(?, ?, 'FRAME', 'active', 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           runId,
           objective,
@@ -1483,6 +1548,11 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
           implementationContext ? persistentJson(implementationContext) : null,
           workspaceId,
           effectiveWorktreeId,
+          JSON.stringify(canonicalReceiptPaths(baselineChangedPaths)),
+          persistentJson(baselineWorkspaceEntries),
+          JSON.stringify(canonicalReceiptPaths(reportBaselineChangedPaths === null ? baselineChangedPaths : reportBaselineChangedPaths)),
+          persistentJson(reportBaselineWorkspaceEntries === null ? baselineWorkspaceEntries : reportBaselineWorkspaceEntries),
+          workspaceBaselineStatus,
           ownerBindingId,
           successorKey,
           now()
@@ -2055,10 +2125,15 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
                proof_tier as proofTier, evidence_tier as evidenceTier,
                required_obligations as requiredObligations, acceptance_criteria as acceptanceCriteria,
                release_evidence_required as releaseEvidenceRequired,
-               project_id as projectId, knowledge_revision_start as knowledgeRevisionStart,
-               knowledge_revision_close as knowledgeRevisionClose, knowledge_status as knowledgeStatus,
-               context_pack_ref as contextPackRef,
-               task_contract_json as taskContractJson,
+                project_id as projectId, knowledge_revision_start as knowledgeRevisionStart,
+                knowledge_revision_close as knowledgeRevisionClose, knowledge_status as knowledgeStatus,
+                context_pack_ref as contextPackRef,
+                baseline_changed_paths as baselineChangedPaths,
+                baseline_workspace_entries as baselineWorkspaceEntries,
+                workspace_baseline_changed_paths as reportBaselineChangedPaths,
+                workspace_baseline_entries as reportBaselineWorkspaceEntries,
+                workspace_baseline_status as workspaceBaselineStatus,
+                task_contract_json as taskContractJson,
                contract_revision as contractRevision,
                finalization_status as finalizationStatus,
                route_json as routeJson,
@@ -2103,6 +2178,15 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         knowledgeRevisionClose: row.knowledgeRevisionClose || null,
         knowledgeStatus: row.knowledgeStatus || null,
         contextPackRef: row.contextPackRef || null,
+        baselineChangedPaths: canonicalReceiptPaths(safeJsonParse(row.baselineChangedPaths, [])),
+        baselineWorkspaceEntries: safeJsonParse(row.baselineWorkspaceEntries, []),
+        reportBaselineChangedPaths: canonicalReceiptPaths(row.reportBaselineChangedPaths
+          ? safeJsonParse(row.reportBaselineChangedPaths, [])
+          : safeJsonParse(row.baselineChangedPaths, [])),
+        reportBaselineWorkspaceEntries: row.reportBaselineWorkspaceEntries
+          ? safeJsonParse(row.reportBaselineWorkspaceEntries, [])
+          : safeJsonParse(row.baselineWorkspaceEntries, []),
+        workspaceBaselineStatus: row.workspaceBaselineStatus || 'unknown',
         taskContract: row.taskContractJson ? safeJsonParse(row.taskContractJson, null) : null,
         contractRevision: Number(row.contractRevision || 1),
         finalizationStatus: row.finalizationStatus || 'pending',
@@ -2116,6 +2200,24 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         runSignals: row.runSignalsJson ? safeJsonParse(row.runSignalsJson, {}) : {},
         updatedAt: row.updatedAt,
       };
+    },
+
+    // A report describes the delta since the last accepted mutable boundary.
+    // Keep the original Run-start baseline immutable for user-change
+    // protection, while advancing this observation baseline after a report
+    // has been processed so the next step/report can claim only its own work.
+    updateRunWorkspaceBaseline(runId, { changedPaths = [], entries = [] } = {}) {
+      db.prepare(`
+        UPDATE runs
+        SET workspace_baseline_changed_paths=?, workspace_baseline_entries=?, updated_at=?
+        WHERE run_id=?
+      `).run(
+        JSON.stringify(canonicalReceiptPaths(changedPaths)),
+        persistentJson(entries),
+        now(),
+        runId,
+      );
+      return this.getRun(runId);
     },
 
     getRunMetadata(runId) {

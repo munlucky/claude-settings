@@ -56,12 +56,26 @@ export const bindingErrorPayload = (error, { projectRoot = process.cwd(), provid
   const remediation = ['host_binding_missing', 'wrong_harness', 'host_binding_conflict', 'run_binding_conflict'].includes(errorCode)
     ? recoveryForKernelError({ code: errorCode, projectRoot, provider })
     : null;
+  const expected = error?.details?.expected && typeof error.details.expected === 'object'
+    ? error.details.expected
+    : null;
+  const provided = error?.details?.provided && typeof error.details.provided === 'object'
+    ? error.details.provided
+    : null;
+  const recovery = error?.details?.recovery && typeof error.details.recovery === 'object'
+    ? error.details.recovery
+    : remediation
+      ? { action: remediation.action }
+      : null;
   return {
     schemaVersion: 1,
     status: 'error',
     errorCode,
     ...(error?.nextAction ? { nextAction: error.nextAction } : remediation ? { nextAction: remediation.action } : {}),
     ...(remediation ? { remediation } : {}),
+    ...(expected ? { expected } : {}),
+    ...(provided ? { provided } : {}),
+    ...(recovery ? { recovery } : {}),
   };
 };
 

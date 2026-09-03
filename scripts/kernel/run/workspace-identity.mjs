@@ -23,12 +23,50 @@ const hashFileContent = (absolutePath) => {
   }
 };
 
+// Git's NUL-delimited path output is already an exact path value. Do not trim
+// it: leading/trailing whitespace is legal in a POSIX filename and must not be
+// collapsed into another scope entry. A backslash is a separator only on
+// Windows; on POSIX it may be a literal filename character.
+const normalizeGitPath = (value) => {
+  const raw = String(value ?? '');
+  const platformPath = process.platform === 'win32' ? raw.replaceAll('\\', '/') : raw;
+  return platformPath.replace(/^\.\//u, '');
+};
+
+const parseGitPathList = (value) => [...new Set(
+  nulSeparated(value).map(normalizeGitPath).filter(Boolean),
+)];
+
+// Porcelain -z emits the destination and source as separate NUL-delimited
+// paths for renames/copies. Keep both: a scope authority must account for the
+// path that disappeared as well as the path that appeared. Retain the XY code
+// too: a content digest alone cannot distinguish an index-only change.
+const parseGitStatusEntries = (value) => {
+  const tokens = nulSeparated(value);
+  const entries = [];
+  for (let index = 0; index < tokens.length; index += 1) {
+    const record = tokens[index];
+    if (!record || record.length < 4) continue;
+    const statusCode = record.slice(0, 2);
+    const currentPath = normalizeGitPath(record.slice(3));
+    if (currentPath) entries.push({ path: currentPath, statusCode });
+    if (/[RC]/u.test(statusCode) && tokens[index + 1]) {
+      const previousPath = normalizeGitPath(tokens[index + 1]);
+      if (previousPath) entries.push({ path: previousPath, statusCode });
+      index += 1;
+    }
+  }
+  return [...new Map(entries.map((entry) => [entry.path, entry])).values()];
+};
+
+const parseGitStatusPaths = (value) => parseGitStatusEntries(value).map((entry) => entry.path);
+
 const normalizeVerificationScopes = (scopes) => {
   if (!Array.isArray(scopes) || scopes.length === 0) return { scopes: null, reason: 'scope-not-declared' };
   const normalized = [];
   for (const raw of scopes) {
     if (typeof raw !== 'string') return { scopes: null, reason: 'scope-entry-invalid' };
-    const scope = raw.trim().replaceAll('\\', '/').replace(/^\.\//u, '').replace(/\/{2,}/gu, '/');
+    const scope = normalizeGitPath(raw).replace(/\/{2,}/gu, '/');
     if (!scope || scope === '*' || scope === '**') return { scopes: null, reason: 'scope-too-broad' };
     if (/^(?:[A-Za-z]:|\/|\\\\)/u.test(scope) || scope.split('/').includes('..')) {
       return { scopes: null, reason: 'scope-path-invalid' };
@@ -41,8 +79,30 @@ const normalizeVerificationScopes = (scopes) => {
 
 const nulSeparated = (value) => String(value || '').split('\0').filter(Boolean);
 
+// `git ls-files --stage -z` gives the exact index object/mode/stage for every
+// tracked path. Restricting the map to changed paths keeps the identity small,
+// while still detecting staging, unstaging, and partial-stage changes on a
+// pre-existing dirty file.
+const parseGitIndexEntries = (value) => nulSeparated(value)
+  .map((record) => {
+    const separator = record.indexOf('\t');
+    if (separator < 0) return null;
+    const [mode, objectId, stage] = record.slice(0, separator).split(/\s+/u);
+    const relativePath = normalizeGitPath(record.slice(separator + 1));
+    if (!relativePath || !objectId) return null;
+    return {
+      path: relativePath,
+      indexMode: mode || null,
+      indexDigest: objectId,
+      indexStage: stage || '0',
+    };
+  })
+  .filter(Boolean);
+
 const safeProjectRelativePath = (projectRoot, relPath) => {
-  const normalized = String(relPath || '').replaceAll('\\', '/').replace(/^\.\//u, '');
+  const raw = String(relPath ?? '');
+  const normalized = (process.platform === 'win32' ? raw.replaceAll('\\', '/') : raw)
+    .replace(/^\.\//u, '');
   if (!normalized || normalized.split('/').includes('..')) return null;
   const absolute = path.resolve(projectRoot, ...normalized.split('/'));
   const relative = path.relative(path.resolve(projectRoot), absolute);
@@ -96,22 +156,42 @@ const observeGitWorkspace = (projectRoot) => {
 
   const headTree = (runGit(['rev-parse', 'HEAD^{tree}'], projectRoot) || 'no-head').trim();
   const headCommit = (runGit(['rev-parse', 'HEAD'], projectRoot) || 'no-head').trim();
-  const status = runGit(['status', '--porcelain', '-z', '--untracked-files=all'], projectRoot);
-  if (status === null) return null;
+  const status = runGit(['status', '--porcelain=v1', '-z', '--untracked-files=all'], projectRoot);
+  const unstaged = runGit(['diff', '--name-only', '-z', '--no-renames'], projectRoot);
+  const staged = runGit(['diff', '--cached', '--name-only', '-z', '--no-renames'], projectRoot);
+  const untracked = runGit(['ls-files', '--others', '--exclude-standard', '-z'], projectRoot);
+  const index = runGit(['ls-files', '--stage', '-z'], projectRoot);
+  if (status === null || unstaged === null || staged === null || untracked === null || index === null) return null;
 
-  const entries = [];
-  for (const rawEntry of status.split('\0')) {
-    if (!rawEntry || rawEntry.length < 4) continue;
-    const statusCode = rawEntry.slice(0, 2);
-    const relPath = rawEntry.slice(3);
-    if (!relPath) continue;
-    if (statusCode.includes('D')) {
-      entries.push(`${relPath}::deleted`);
-      continue;
-    }
-    entries.push(`${relPath}::${hashFileContent(path.join(projectRoot, relPath))}`);
-  }
-  entries.sort();
+  const statusByPath = new Map(parseGitStatusEntries(status).map((entry) => [entry.path, entry.statusCode]));
+  const indexByPath = new Map(parseGitIndexEntries(index).map((entry) => [entry.path, entry]));
+
+  const changedPaths = [...new Set([
+    ...parseGitStatusPaths(status),
+    ...parseGitPathList(unstaged),
+    ...parseGitPathList(staged),
+    ...parseGitPathList(untracked),
+  ])].sort();
+  const changeEntries = changedPaths.map((relPath) => ({
+    path: relPath,
+    digest: hashFileContent(path.join(projectRoot, relPath)),
+    indexDigest: indexByPath.get(relPath)?.indexDigest || null,
+    indexMode: indexByPath.get(relPath)?.indexMode || null,
+    indexStage: indexByPath.get(relPath)?.indexStage || null,
+    indexStateKnown: true,
+    statusCode: statusByPath.get(relPath) || null,
+  }));
+  // Keep the coarse workspace identity compatible across an integration
+  // worktree and the owner worktree: one may have the same patch staged while
+  // the other has it unstaged. The detailed index/status fields remain in
+  // changeEntries and are the authority used by deriveRunChangedPaths, so an
+  // index-only mutation is still visible to report scope validation without
+  // making Delivery reject an equivalent patch solely because Git staging
+  // differs between the two workspaces.
+  const entries = changeEntries.map((entry) => JSON.stringify([
+    entry.path,
+    entry.digest,
+  ])).sort();
 
   return {
     // Include the commit as well as its tree. Two commits may point at the same
@@ -120,6 +200,8 @@ const observeGitWorkspace = (projectRoot) => {
     identity: sha256(JSON.stringify({ headCommit, headTree, entries })),
     method: 'git',
     dirtyPathCount: entries.length,
+    changedPaths,
+    changeEntries,
   };
 };
 
@@ -157,6 +239,8 @@ const observeStatWalkWorkspace = (projectRoot) => {
     identity: sha256(JSON.stringify({ entries })),
     method: 'stat-walk',
     dirtyPathCount: null,
+    changedPaths: null,
+    changeEntries: [],
   };
 };
 
@@ -165,6 +249,93 @@ const observeStatWalkWorkspace = (projectRoot) => {
 export const observeWorkspaceIdentity = ({ projectRoot = process.cwd() } = {}) => {
   const observation = observeGitWorkspace(projectRoot) || observeStatWalkWorkspace(projectRoot);
   return { ...observation, projectRoot, observedAt: new Date().toISOString() };
+};
+
+const normalizedBaselineEntries = (entries = []) => (Array.isArray(entries) ? entries : [])
+  .map((entry) => {
+    if (Array.isArray(entry)) return {
+      path: normalizeGitPath(entry[0]),
+      digest: String(entry[1] || ''),
+      indexStateKnown: false,
+      indexDigest: null,
+      indexMode: null,
+      indexStage: null,
+      statusCode: null,
+    };
+    const indexStateKnown = entry?.indexStateKnown === true
+      || Object.prototype.hasOwnProperty.call(entry || {}, 'indexDigest')
+      || Object.prototype.hasOwnProperty.call(entry || {}, 'statusCode');
+    return {
+      path: normalizeGitPath(entry?.path),
+      digest: String(entry?.digest || ''),
+      indexStateKnown,
+      indexDigest: indexStateKnown && entry?.indexDigest ? String(entry.indexDigest) : null,
+      indexMode: indexStateKnown && entry?.indexMode ? String(entry.indexMode) : null,
+      indexStage: indexStateKnown && entry?.indexStage ? String(entry.indexStage) : null,
+      statusCode: indexStateKnown && entry?.statusCode ? String(entry.statusCode) : null,
+    };
+  })
+  .filter((entry) => entry.path && entry.digest);
+
+// Return the Run-owned portion of the live Git change set. A Run starts with
+// any pre-existing dirty files as its baseline; comparing content digests (not
+// just path names) keeps an initially-uncommitted fixture or a baseline file
+// that is later edited from disappearing from the authoritative delta.
+export const deriveRunChangedPaths = ({ observation = null, baselineChangedPaths = [], baselineEntries = [], baselineStatus = 'known' } = {}) => {
+  if (baselineStatus === 'unknown') {
+    return {
+      status: 'unavailable',
+      reason: 'workspace-baseline-unknown',
+      actualChangedPaths: null,
+      fullChangedPaths: Array.isArray(observation?.changedPaths) ? [...observation.changedPaths].sort() : null,
+      baselineChangedPaths: [...new Set((Array.isArray(baselineChangedPaths) ? baselineChangedPaths : []).map(normalizeGitPath).filter(Boolean))].sort(),
+      baselineDriftPaths: [],
+    };
+  }
+  if (observation?.method !== 'git' || !Array.isArray(observation.changedPaths) || !Array.isArray(observation.changeEntries)) {
+    return {
+      status: 'unavailable',
+      reason: observation?.method === 'git' ? 'git-change-observation-unavailable' : 'non-git-workspace',
+      actualChangedPaths: null,
+      fullChangedPaths: null,
+      baselineChangedPaths: [...new Set((Array.isArray(baselineChangedPaths) ? baselineChangedPaths : []).map(normalizeGitPath).filter(Boolean))].sort(),
+      baselineDriftPaths: [],
+    };
+  }
+
+  // Keep the complete baseline entry, not only its working-tree digest. The
+  // index fields and porcelain status are part of the authority because a
+  // staged/unstaged transition can change the Run-owned state without
+  // changing the file content.
+  const baseline = new Map(normalizedBaselineEntries(baselineEntries).map((entry) => [entry.path, entry]));
+  const baselinePaths = new Set([
+    ...(Array.isArray(baselineChangedPaths) ? baselineChangedPaths : []),
+    ...baseline.keys(),
+  ].map(normalizeGitPath).filter(Boolean));
+  const actualChangedPaths = observation.changeEntries
+    .filter((entry) => {
+      const previous = baseline.get(entry.path);
+      if (!previous) return true;
+      if (previous.digest !== entry.digest) return true;
+      if (previous.indexStateKnown && (!entry.indexStateKnown
+        || previous.indexDigest !== entry.indexDigest
+        || previous.indexMode !== entry.indexMode
+        || previous.indexStage !== entry.indexStage
+        || previous.statusCode !== entry.statusCode)) return true;
+      return false;
+    })
+    .map((entry) => entry.path);
+  const currentPaths = new Set(observation.changedPaths);
+  const baselineDriftPaths = [...baselinePaths].filter((entry) => !currentPaths.has(entry)).sort();
+
+  return {
+    status: 'observed',
+    reason: null,
+    actualChangedPaths: [...new Set([...actualChangedPaths, ...baselineDriftPaths])].sort(),
+    fullChangedPaths: [...observation.changedPaths].sort(),
+    baselineChangedPaths: [...baselinePaths].sort(),
+    baselineDriftPaths,
+  };
 };
 
 export const observeScopedWorkspaceIdentity = ({ projectRoot = process.cwd(), scopes = [] } = {}) => {

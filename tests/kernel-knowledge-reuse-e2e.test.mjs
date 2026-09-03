@@ -4,6 +4,11 @@ import path from 'node:path';
 import os from 'node:os';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
+import {
+  buildEvidenceIdentity,
+  buildEvidenceReuseReceipt,
+  exactEvidenceIdentityMatch,
+} from '../scripts/kernel/proof/evidence-reuse.mjs';
 
 test('Cross-Run Knowledge Reuse E2E: verifies direct SQLite knowledge context retrieval, revision continuity after projection deletion, and project root isolation', async () => {
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'kernel-reuse-e2e-'));
@@ -111,7 +116,7 @@ test('Cross-Run Knowledge Reuse E2E: verifies direct SQLite knowledge context re
 
   const run2FrameContext = await controlPlane.buildStageContext('run-e2e-2', { stage: 'FRAME' });
   assert.ok(run2FrameContext.knowledgeContext);
-  assert.equal(run2FrameContext.knowledgeContext.status, 'ready');
+  assert.equal(run2FrameContext.knowledgeContext.status, 'ready-populated');
 
   const promptBlockText = run2FrameContext.knowledgeContext.promptBlock;
   assert.ok(promptBlockText.includes('Use JWT stateless session tokens for auth service'));
@@ -183,4 +188,36 @@ test('Cross-Run Knowledge Reuse E2E: verifies direct SQLite knowledge context re
   const otherPromptBlock = otherContext.knowledgeContext.promptBlock;
   assert.equal(otherPromptBlock.includes('Use JWT stateless session tokens for auth service'), false);
   assert.equal(otherPromptBlock.includes('Authentication service runs on port 4000'), false);
+});
+
+test('cross-report proof reuse requires the complete exact freshness identity', () => {
+  const identity = buildEvidenceIdentity({
+    commandRef: 'test:kernel',
+    verifierVersion: 'kernel-proof-v2',
+    sourceInputDigest: 'sha256:source',
+    artifactDigest: 'sha256:artifact',
+    fixtureDigest: 'sha256:fixture',
+    environment: { fingerprint: 'sha256:environment' },
+    verificationScopeDigest: 'sha256:scope',
+  });
+  const same = { ...identity, values: { ...identity.values } };
+  const changedScope = {
+    ...identity,
+    values: { ...identity.values, verificationScopeDigest: 'sha256:other-scope' },
+  };
+  assert.equal(exactEvidenceIdentityMatch(identity, same), true);
+  assert.equal(exactEvidenceIdentityMatch(identity, changedScope), false);
+
+  const receipt = buildEvidenceReuseReceipt({
+    runId: 'run-current',
+    obligationId: 'default',
+    priorRunId: 'run-prior',
+    priorVerificationId: 7,
+    mutationRevision: 3,
+    identity,
+    evidenceDigest: 'sha256:evidence',
+  });
+  assert.equal(receipt.priorRunId, 'run-prior');
+  assert.equal(receipt.priorVerificationId, 7);
+  assert.equal(receipt.identity, identity.digest);
 });

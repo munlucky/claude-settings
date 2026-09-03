@@ -151,7 +151,7 @@ test("Case C: verification command missing until PROVE is reported only when PRO
     // 5. report() also returns blocked response
     const blockedReport = await cp.report('r-case-c', {
       summary: 'implemented',
-      changedPaths: ['app.mjs'],
+      changedPaths: [],
     });
     assert.equal(blockedReport.status, 'blocked');
     assert.equal(blockedReport.blockedReason, 'unsupported-verification');

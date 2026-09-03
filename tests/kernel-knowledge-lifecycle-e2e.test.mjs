@@ -21,7 +21,7 @@ test('Full Kernel Project Knowledge Lifecycle E2E Scenario A (load -> prove -> a
 
   // Step 2: Context Load (FRAME)
   const ctx = await buildProjectKnowledgeContext({ projectId, stage: 'FRAME', env });
-  assert.equal(ctx.status, 'ready');
+  assert.equal(ctx.status, 'ready-empty');
   assert.ok(ctx.digest);
 
   // Step 3: Candidate extraction & review

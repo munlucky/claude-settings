@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
-import { observeWorkspaceIdentity } from '../scripts/kernel/run/workspace-identity.mjs';
+import { deriveRunChangedPaths, observeWorkspaceIdentity } from '../scripts/kernel/run/workspace-identity.mjs';
 import { resolveTrustedCommand, executeTrustedProof, UntrustedCommandError, redactSecretLikeOutput } from '../scripts/kernel/proof/proof-executor.mjs';
 import { planStatePath, buildNextPayload } from '../scripts/kernel/run/run-loop.mjs';
 import { CODEX_MAIN_SESSION_POLICY } from '../scripts/host/kernel/codex-session-observer.mjs';
@@ -185,7 +185,9 @@ test('host loop E2E: fail -> fix -> hard evidence -> accepted completion', async
     const first = await cp.next('host-loop-1');
     assert.equal(first.action.type, 'implement');
 
-    // Model reports without fixing the bug: kernel-executed proof fails.
+    // The implementation attempt is an actual workspace mutation, but the
+    // focused proof still fails because the model wrote the wrong status.
+    await writeFile(path.join(projectRoot, 'app.mjs'), `export const statusForInvalidPassword = () => 400;\n`);
     const failedReport = await cp.report('host-loop-1', {
       summary: 'attempted fix',
       changedPaths: ['app.mjs'],
@@ -273,6 +275,9 @@ test('routed Codex worker E2E: worker receipt -> failed proof -> fix -> accepted
       effort: CODEX_MAIN_SESSION_POLICY.effort,
     });
     await controlPlane.next(runId);
+    // The routed worker's first implementation attempt is reflected in the
+    // owner workspace before its report is ingested.
+    await writeFile(path.join(projectRoot, 'app.mjs'), `export const statusForInvalidPassword = () => 400;\n`);
     const first = await controlPlane.report(runId, {
       status: 'completed',
       summary: 'worker attempted the fix',
@@ -351,5 +356,152 @@ test('caller-attested proof alone cannot complete a source-mutating run', async 
     await cp.close();
     await rm(runtimeHome, { recursive: true, force: true });
     await rm(projectRoot, { recursive: true, force: true });
+  }
+});
+
+const setupActualDiffFixture = async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'kernel-actual-diff-'));
+  const runtimeHome = path.join(root, 'runtime');
+  const projectRoot = path.join(root, 'project');
+  await mkdir(path.join(projectRoot, 'src'), { recursive: true });
+  await writeFile(path.join(projectRoot, 'package.json'), JSON.stringify({
+    name: 'kernel-actual-diff-fixture',
+    version: '1.0.0',
+    scripts: { 'test:ok': 'node -e "process.exit(0)"' },
+  }));
+  for (const name of ['tracked.mjs', 'staged.mjs', 'deleted.mjs']) {
+    await writeFile(path.join(projectRoot, 'src', name), 'export const value = 0;\n');
+  }
+  await writeFile(path.join(projectRoot, 'baseline.mjs'), 'export const value = 0;\n');
+  const git = (args) => spawnSync('git', args, { cwd: projectRoot, encoding: 'utf8' });
+  assert.equal(git(['init']).status, 0);
+  assert.equal(git(['add', '--all']).status, 0);
+  assert.equal(git(['-c', 'user.name=kernel-test', '-c', 'user.email=kernel@example.invalid', 'commit', '-m', 'fixture', '--quiet']).status, 0);
+  return { root, runtimeHome, projectRoot };
+};
+
+test('actual Git observation includes tracked, staged, deleted, and untracked paths', async () => {
+  const fixture = await setupActualDiffFixture();
+  try {
+    const baseline = observeWorkspaceIdentity({ projectRoot: fixture.projectRoot });
+    await writeFile(path.join(fixture.projectRoot, 'src', 'tracked.mjs'), 'export const value = 1;\n');
+    await writeFile(path.join(fixture.projectRoot, 'src', 'staged.mjs'), 'export const value = 1;\n');
+    assert.equal(spawnSync('git', ['add', 'src/staged.mjs'], { cwd: fixture.projectRoot, encoding: 'utf8' }).status, 0);
+    await rm(path.join(fixture.projectRoot, 'src', 'deleted.mjs'));
+    await writeFile(path.join(fixture.projectRoot, 'src', 'untracked.mjs'), 'export const value = 1;\n');
+    const current = observeWorkspaceIdentity({ projectRoot: fixture.projectRoot });
+    const derived = deriveRunChangedPaths({
+      observation: current,
+      baselineChangedPaths: baseline.changedPaths,
+      baselineEntries: baseline.changeEntries,
+    });
+    assert.equal(derived.status, 'observed');
+    assert.deepEqual(derived.actualChangedPaths, [
+      'src/deleted.mjs',
+      'src/staged.mjs',
+      'src/tracked.mjs',
+      'src/untracked.mjs',
+    ]);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test('actual Git authority detects an index-only change when working content returns to baseline', async () => {
+  const fixture = await setupActualDiffFixture();
+  try {
+    const baseline = observeWorkspaceIdentity({ projectRoot: fixture.projectRoot });
+    await writeFile(path.join(fixture.projectRoot, 'src', 'tracked.mjs'), 'export const value = 1;\n');
+    assert.equal(spawnSync('git', ['add', 'src/tracked.mjs'], { cwd: fixture.projectRoot, encoding: 'utf8' }).status, 0);
+    await writeFile(path.join(fixture.projectRoot, 'src', 'tracked.mjs'), 'export const value = 0;\n');
+
+    const current = observeWorkspaceIdentity({ projectRoot: fixture.projectRoot });
+    const derived = deriveRunChangedPaths({
+      observation: current,
+      baselineChangedPaths: baseline.changedPaths,
+      baselineEntries: baseline.changeEntries,
+    });
+    assert.equal(derived.status, 'observed');
+    assert.deepEqual(derived.actualChangedPaths, ['src/tracked.mjs']);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test('actual Git authority fails closed when the immutable Run baseline is unknown', async () => {
+  const fixture = await setupActualDiffFixture();
+  try {
+    const observation = observeWorkspaceIdentity({ projectRoot: fixture.projectRoot });
+    const derived = deriveRunChangedPaths({
+      observation,
+      baselineChangedPaths: observation.changedPaths,
+      baselineEntries: observation.changeEntries,
+      baselineStatus: 'unknown',
+    });
+    assert.equal(derived.status, 'unavailable');
+    assert.equal(derived.reason, 'workspace-baseline-unknown');
+    assert.equal(derived.actualChangedPaths, null);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test('report rejects a changed workspace when changedPaths omits the actual delta', async () => {
+  const fixture = await setupActualDiffFixture();
+  const cp = await createKernelControlPlane({ runtimeHome: fixture.runtimeHome, projectRoot: fixture.projectRoot });
+  try {
+    await cp.startRun({
+      runId: 'run-actual-diff',
+      objective: 'Observe the actual workspace delta',
+      taskContract: {
+        behaviorChanging: true,
+        allowedPaths: ['src/**'],
+        acceptance: [{
+          acceptance: 'the changed path is observed',
+          evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'], obligationId: 'default' },
+        }],
+      },
+    });
+    await writeFile(path.join(fixture.projectRoot, 'src', 'tracked.mjs'), 'export const value = 2;\n');
+    const rejected = await cp.report('run-actual-diff', { summary: 'forgot the path', changedPaths: [] });
+    assert.equal(rejected.status, 'scope-rejected');
+    assert.equal(rejected.failures[0].errorCode, 'unreported_workspace_change');
+    assert.deepEqual(rejected.actualChangedPaths, ['src/tracked.mjs']);
+    assert.deepEqual(rejected.reportedChangedPaths, []);
+    assert.deepEqual(cp.stateStore.getVerifications('run-actual-diff'), []);
+  } finally {
+    await cp.close();
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test('blocker reports cannot hide an actual change outside the issued capsule scope', async () => {
+  const fixture = await setupActualDiffFixture();
+  const cp = await createKernelControlPlane({ runtimeHome: fixture.runtimeHome, projectRoot: fixture.projectRoot });
+  try {
+    await cp.startRun({
+      runId: 'run-blocker-actual-scope',
+      objective: 'Keep blocker scope fail closed',
+      taskContract: {
+        behaviorChanging: true,
+        allowedPaths: ['src/**'],
+        acceptance: [{
+          acceptance: 'the scoped change is reviewed',
+          evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test:ok'], obligationId: 'default' },
+        }],
+      },
+    });
+    await writeFile(path.join(fixture.projectRoot, 'baseline.mjs'), 'export const value = 1;\n');
+    const rejected = await cp.report('run-blocker-actual-scope', {
+      summary: 'the workspace is blocked',
+      changedPaths: ['baseline.mjs'],
+      blocker: { reason: 'external-dependency', detail: 'dependency is unavailable' },
+    });
+    assert.equal(rejected.status, 'scope-rejected');
+    assert.match(rejected.failures[0].errorSummary, /outside the allowed paths/);
+    assert.equal(cp.stateStore.getRun('run-blocker-actual-scope').status, 'active');
+  } finally {
+    await cp.close();
+    await rm(fixture.root, { recursive: true, force: true });
   }
 });

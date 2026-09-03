@@ -19,7 +19,7 @@ test('Context Budget - enforces stage context budget constraints when loading co
     });
 
     assert.ok(ctx);
-    assert.equal(ctx.status, 'ready');
+    assert.equal(ctx.status, 'ready-empty');
     assert.ok(typeof ctx.promptBlock === 'string');
   } finally {
     store.close();
