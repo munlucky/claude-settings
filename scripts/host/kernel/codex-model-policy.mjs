@@ -6,12 +6,21 @@
 // This module lives on the Host side. The Kernel decides a logical model class;
 // only here does that become a provider model id.
 
-export const CODEX_MODELS = Object.freeze({ sol: 'gpt-5.6-sol', terra: 'gpt-5.6-terra', luna: 'gpt-5.6-luna' });
+export const CODEX_MODELS = Object.freeze({
+  astra: 'gpt-6-astra',
+  sol: 'gpt-5.6-sol',
+  terra: 'gpt-5.6-terra',
+  luna: 'gpt-5.6-luna',
+});
 export const CODEX_REASONING_EFFORTS = Object.freeze(['low', 'medium', 'high', 'xhigh', 'max']);
 
-// `gpt-5.6` is an alias that resolves to the Sol tier. The Host records the
-// explicit id in the receipt so a replay is reproducible even if the alias moves.
-export const CODEX_MODEL_ALIASES = Object.freeze({ 'gpt-5.6': CODEX_MODELS.sol });
+// `gpt-5.6` is an alias that resolves to the Sol tier. `gpt-6` resolves to Astra.
+// The Host records the explicit id in the receipt so a replay is reproducible even if the alias moves.
+export const CODEX_MODEL_ALIASES = Object.freeze({
+  'gpt-5.6': CODEX_MODELS.sol,
+  'gpt-6': CODEX_MODELS.astra,
+  'gpt-6-astra': CODEX_MODELS.astra,
+});
 
 export const resolveCodexModelAlias = (model) => CODEX_MODEL_ALIASES[String(model)] || String(model);
 
@@ -43,10 +52,10 @@ export const resolveCodexModelPolicy = ({
   let reasoning = 'max';
 
   if (PLANNING_ACTIONS.has(actionKind)) {
-    model = CODEX_MODELS.sol; reasoning = 'high'; reasons.push('planning-action');
+    model = CODEX_MODELS.astra; reasoning = 'high'; reasons.push('planning-action');
   } else if (REVIEW_ACTIONS.has(actionKind)) {
     const protectedReview = riskTier === 'T3' || shapes.some((shape) => HIGH_RISK_SHAPES.includes(String(shape)));
-    model = CODEX_MODELS.sol;
+    model = protectedReview ? CODEX_MODELS.sol : CODEX_MODELS.astra;
     reasoning = protectedReview ? 'xhigh' : 'high';
     reasons.push(protectedReview ? 'protected-review' : 'engineering-review');
   } else if (complexity === 'routine' || complexity === 'routine-batch') {
@@ -54,7 +63,7 @@ export const resolveCodexModelPolicy = ({
     // default so mechanical work does not silently downgrade enforcement.
     model = CODEX_MODELS.luna; reasoning = 'max'; reasons.push('routine-batch');
   } else if (complexity === 'complex' || complexity === 'large-refactor') {
-    model = CODEX_MODELS.sol; reasoning = 'high'; reasons.push('complex-implementation');
+    model = CODEX_MODELS.astra; reasoning = 'high'; reasons.push('complex-implementation');
   } else {
     reasons.push('default-implementation');
   }

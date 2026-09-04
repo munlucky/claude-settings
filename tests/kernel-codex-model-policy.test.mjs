@@ -11,18 +11,18 @@ test('ordinary implementation and debugging default to Luna at max', () => {
   }
 });
 
-test('planning actions route to Sol at high', () => {
+test('planning actions route to Astra at high', () => {
   for (const actionKind of ['understand', 'design', 'plan', 'replan']) {
     const policy = resolveCodexModelPolicy({ actionKind });
-    assert.equal(policy.model, CODEX_MODELS.sol);
+    assert.equal(policy.model, CODEX_MODELS.astra);
     assert.equal(policy.reasoning, 'high');
   }
 });
 
-test('complex implementation and large refactors escalate to Sol high', () => {
+test('complex implementation and large refactors escalate to Astra high', () => {
   for (const complexity of ['complex', 'large-refactor']) {
     const policy = resolveCodexModelPolicy({ actionKind: 'implement', complexity });
-    assert.equal(policy.model, CODEX_MODELS.sol);
+    assert.equal(policy.model, CODEX_MODELS.astra);
     assert.equal(policy.reasoning, 'high');
   }
 });
@@ -48,9 +48,13 @@ test('max is the default implementation effort and explicit requests remain attr
   assert.ok(policy.reasons.includes('user-requested-reasoning'));
 });
 
-test('the gpt-5.6 alias resolves to an explicit Sol id for reproducibility', () => {
+test('the gpt-5.6 alias resolves to an explicit Sol id and gpt-6 to Astra for reproducibility', () => {
   assert.equal(resolveCodexModelAlias('gpt-5.6'), CODEX_MODELS.sol);
   assert.equal(resolveCodexModelAlias('gpt-5.6-terra'), CODEX_MODELS.terra);
-  const policy = resolveCodexModelPolicy({ userRequested: { model: 'gpt-5.6' } });
-  assert.equal(policy.model, CODEX_MODELS.sol);
+  assert.equal(resolveCodexModelAlias('gpt-6'), CODEX_MODELS.astra);
+  assert.equal(resolveCodexModelAlias('gpt-6-astra'), CODEX_MODELS.astra);
+  const solPolicy = resolveCodexModelPolicy({ userRequested: { model: 'gpt-5.6' } });
+  assert.equal(solPolicy.model, CODEX_MODELS.sol);
+  const astraPolicy = resolveCodexModelPolicy({ userRequested: { model: 'gpt-6' } });
+  assert.equal(astraPolicy.model, CODEX_MODELS.astra);
 });

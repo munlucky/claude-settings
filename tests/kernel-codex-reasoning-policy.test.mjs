@@ -6,14 +6,18 @@ test('max is the starting point for ordinary work', () => {
   assert.equal(resolveCodexModelPolicy({ actionKind: 'implement' }).reasoning, 'max');
 });
 
-test('engineering review uses Sol high; a protected review uses xhigh', () => {
-  assert.equal(resolveCodexModelPolicy({ actionKind: 'review_engineering' }).reasoning, 'high');
+test('engineering review uses Astra high; a protected review uses Sol xhigh', () => {
+  const engineeringReview = resolveCodexModelPolicy({ actionKind: 'review_engineering' });
+  assert.equal(engineeringReview.reasoning, 'high');
+  assert.equal(engineeringReview.model, CODEX_MODELS.astra);
   for (const shape of ['security', 'migration', 'authentication', 'authorization', 'payment', 'data-loss', 'irreversible']) {
     const policy = resolveCodexModelPolicy({ actionKind: 'review_contract', shapes: [shape] });
     assert.equal(policy.reasoning, 'xhigh', shape);
     assert.equal(policy.model, CODEX_MODELS.sol);
   }
-  assert.equal(resolveCodexModelPolicy({ actionKind: 'review_engineering', riskTier: 'T3' }).reasoning, 'xhigh');
+  const t3Review = resolveCodexModelPolicy({ actionKind: 'review_engineering', riskTier: 'T3' });
+  assert.equal(t3Review.reasoning, 'xhigh');
+  assert.equal(t3Review.model, CODEX_MODELS.sol);
 });
 
 test('repeated failure escalates model and reasoning together', () => {
