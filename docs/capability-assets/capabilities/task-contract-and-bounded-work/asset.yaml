@@ -8,88 +8,265 @@
   "product_relevance": {
     "relevant": true,
     "reason": "모든 agent workflow가 scope, non-goal, acceptance와 허용 경계를 공유해야 한다.",
-    "consumers": ["agent_workflow"]
+    "consumers": [
+      "agent_workflow"
+    ]
   },
   "origin": {
     "first_seen": {
       "epoch": "E2",
       "commit": "5ccf1c9ccfbf68ae8067d6e7e69a7555c782fdb5",
       "date": "2026-01-21",
-      "evidence": [".claude/skills/completion-verifier/SKILL.md"]
+      "evidence": [
+        ".claude/skills/completion-verifier/SKILL.md"
+      ]
     },
     "generations": [
-      {"id": "relay-workflow", "epoch": "E1", "commit": "77ed33f1e1f3c1f0c44216b86d9df5123e58cbb7", "label": "Relay workflow", "change": "계획, skill 조합, workflow 규칙을 사용자 작업에 바인딩했다."},
-      {"id": "relay-completion-contract", "epoch": "E2", "commit": "5ccf1c9ccfbf68ae8067d6e7e69a7555c782fdb5", "label": "Completion contract", "change": "완료 조건과 검증 계약을 명시적인 작업 경계로 승격했다."},
-      {"id": "kernel-contract", "epoch": "E4", "commit": "7806dd1870501a1171969ca8e13af8fbec26f892", "label": "Kernel contract", "change": "task contract schema와 Kernel policy로 실행 전 계약을 분리했다."},
-      {"id": "execution-first-contract", "epoch": "E8", "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e", "label": "Execution-first contract", "change": "owner-direct 실행과 bounded work unit을 현재 완료 권위에 연결했다."}
+      {
+        "id": "relay-workflow",
+        "epoch": "E1",
+        "commit": "77ed33f1e1f3c1f0c44216b86d9df5123e58cbb7",
+        "label": "Relay workflow",
+        "change": "계획, skill 조합, workflow 규칙을 사용자 작업에 바인딩했다."
+      },
+      {
+        "id": "relay-completion-contract",
+        "epoch": "E2",
+        "commit": "5ccf1c9ccfbf68ae8067d6e7e69a7555c782fdb5",
+        "label": "Completion contract",
+        "change": "완료 조건과 검증 계약을 명시적인 작업 경계로 승격했다."
+      },
+      {
+        "id": "kernel-contract",
+        "epoch": "E4",
+        "commit": "7806dd1870501a1171969ca8e13af8fbec26f892",
+        "label": "Kernel contract",
+        "change": "task contract schema와 Kernel policy로 실행 전 계약을 분리했다."
+      },
+      {
+        "id": "execution-first-contract",
+        "epoch": "E8",
+        "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
+        "label": "Execution-first contract",
+        "change": "owner-direct 실행과 bounded work unit을 현재 완료 권위에 연결했다."
+      }
     ]
   },
   "problem": {
-    "solves": ["모호한 요청이 무제한 변경으로 확장되는 문제", "acceptance와 non-goal이 실행 중 유실되는 문제"],
-    "does_not_solve": ["제품 요구사항 자체의 우선순위 결정", "계약만으로 보장할 수 없는 provider live 성공"]
+    "solves": [
+      "모호한 요청이 무제한 변경으로 확장되는 문제",
+      "acceptance와 non-goal이 실행 중 유실되는 문제"
+    ],
+    "does_not_solve": [
+      "제품 요구사항 자체의 우선순위 결정",
+      "계약만으로 보장할 수 없는 provider live 성공"
+    ]
   },
-  "recommended_use": ["작업 시작 전에 objective, acceptance, constraints, non-goals를 고정한다.", "각 실행은 허용 경로와 한정된 work unit을 갖게 한다."],
-  "avoid_use": ["계약을 runtime feature registry로 사용하지 않는다.", "불명확한 요구를 임의의 기능으로 채우지 않는다."],
+  "recommended_use": [
+    "작업 시작 전에 objective, acceptance, constraints, non-goals를 고정한다.",
+    "각 실행은 허용 경로와 한정된 work unit을 갖게 한다."
+  ],
+  "avoid_use": [
+    "계약을 runtime feature registry로 사용하지 않는다.",
+    "불명확한 요구를 임의의 기능으로 채우지 않는다."
+  ],
   "authority": {
-    "owns_state": ["task scope, acceptance, non-goal과 work-unit binding"],
-    "owns_completion": ["계약 자체는 completion authority가 아니며 Kernel close gate가 소유한다."],
-    "provides_evidence": ["task-contract schema validation", "scope admission과 bounded-work tests"]
+    "owns_state": [
+      "task scope, acceptance, non-goal과 work-unit binding"
+    ],
+    "owns_completion": [
+      "계약 자체는 completion authority가 아니며 Kernel close gate가 소유한다."
+    ],
+    "provides_evidence": [
+      "task-contract schema validation",
+      "scope admission과 bounded-work tests"
+    ]
   },
   "contracts": {
-    "inputs": ["user objective", "acceptance criteria", "constraints", "non-goals", "allowed paths"],
-    "outputs": ["immutable task contract", "admitted bounded work unit"],
-    "invariants": ["forbidden paths는 실행 전 차단된다.", "계약에 없는 제품 동작 변경은 scope가 아니다."],
-    "guardrails": ["계약을 재발행해 cursor를 우회하지 않는다.", "runtime source와 asset index를 혼합하지 않는다."]
+    "inputs": [
+      "user objective",
+      "acceptance criteria",
+      "constraints",
+      "non-goals",
+      "allowed paths"
+    ],
+    "outputs": [
+      "immutable task contract",
+      "admitted bounded work unit"
+    ],
+    "invariants": [
+      "forbidden paths는 실행 전 차단된다.",
+      "계약에 없는 제품 동작 변경은 scope가 아니다."
+    ],
+    "guardrails": [
+      "계약을 재발행해 cursor를 우회하지 않는다.",
+      "runtime source와 asset index를 혼합하지 않는다."
+    ]
   },
   "implementations": {
     "best_known": {
       "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
-      "paths": ["scripts/kernel/task/task-contract.mjs", "scripts/kernel/run/contract-preflight.mjs", "scripts/kernel/run/work-unit-scope.mjs", "schemas/kernel.task-contract.schema.json"],
+      "paths": [
+        "scripts/kernel/task/task-contract.mjs",
+        "scripts/kernel/run/contract-preflight.mjs",
+        "scripts/kernel/run/work-unit-scope.mjs",
+        "schemas/kernel.task-contract.schema.json"
+      ],
       "generation": "E8-current",
       "notes": "현재 Kernel의 contract-first admission과 owner-direct bounded execution."
     },
     "historical": [
-      {"commit": "77ed33f1e1f3c1f0c44216b86d9df5123e58cbb7", "paths": [".claude/skills/moonshot-orchestrator/SKILL.md", ".claude/rules/workflow.md"], "generation": "E1-relay", "notes": "Relay가 workflow와 skill 조합으로 작업 경계를 표현했다."},
-      {"commit": "5ccf1c9ccfbf68ae8067d6e7e69a7555c782fdb5", "paths": [".claude/skills/completion-verifier/SKILL.md"], "generation": "E2-relay", "notes": "검증 조건을 계약의 일부로 다루기 시작했다."},
-      {"commit": "7806dd1870501a1171969ca8e13af8fbec26f892", "paths": ["kernel/workflow.yaml", "schemas/kernel.task-contract.schema.json"], "generation": "E4-kernel", "notes": "Kernel 정책과 구조화 schema가 도입됐다."}
+      {
+        "commit": "77ed33f1e1f3c1f0c44216b86d9df5123e58cbb7",
+        "paths": [
+          ".claude/skills/moonshot-orchestrator/SKILL.md",
+          ".claude/rules/workflow.md"
+        ],
+        "generation": "E1-relay",
+        "notes": "Relay가 workflow와 skill 조합으로 작업 경계를 표현했다."
+      },
+      {
+        "commit": "5ccf1c9ccfbf68ae8067d6e7e69a7555c782fdb5",
+        "paths": [
+          ".claude/skills/completion-verifier/SKILL.md"
+        ],
+        "generation": "E2-relay",
+        "notes": "검증 조건을 계약의 일부로 다루기 시작했다."
+      },
+      {
+        "commit": "7806dd1870501a1171969ca8e13af8fbec26f892",
+        "paths": [
+          "kernel/workflow.yaml",
+          "schemas/kernel.task-contract.schema.json"
+        ],
+        "generation": "E4-kernel",
+        "notes": "Kernel 정책과 구조화 schema가 도입됐다."
+      }
     ]
   },
   "proof": {
     "tests": [
-      {"id": "task-contract-schema", "path": "tests/active-contracts.test.mjs", "purpose": "계약 schema와 필수 경계가 유지되는지 검증한다.", "commandRef": "test", "status": "verified"},
-      {"id": "bounded-work-unit", "path": "tests/kernel-bounded-work-unit.test.mjs", "purpose": "work unit scope와 owner-direct 실행 경계를 검증한다.", "commandRef": "test", "status": "verified"},
-      {"id": "step-scope", "path": "tests/kernel-run-step-scope.test.mjs", "purpose": "허용/금지 경로 admission을 검증한다.", "commandRef": "test", "status": "verified"}
+      {
+        "id": "task-contract-schema",
+        "path": "tests/active-contracts.test.mjs",
+        "purpose": "계약 schema와 필수 경계가 유지되는지 검증한다.",
+        "commandRef": "test",
+        "status": "verified",
+        "referenceStatus": "verified",
+        "executionStatus": "historical-pass"
+      },
+      {
+        "id": "bounded-work-unit",
+        "path": "tests/kernel-bounded-work-unit.test.mjs",
+        "purpose": "work unit scope와 owner-direct 실행 경계를 검증한다.",
+        "commandRef": "test",
+        "status": "verified",
+        "referenceStatus": "verified",
+        "executionStatus": "historical-pass"
+      },
+      {
+        "id": "step-scope",
+        "path": "tests/kernel-run-step-scope.test.mjs",
+        "purpose": "허용/금지 경로 admission을 검증한다.",
+        "commandRef": "test",
+        "status": "verified",
+        "referenceStatus": "verified",
+        "executionStatus": "historical-pass"
+      }
     ],
     "fixtures": [],
     "smoke": [
-      {"id": "kernel-entrypoint", "path": "bin/moon-relay-kernel.mjs", "purpose": "Kernel public entrypoint가 계약 기반 실행 표면을 제공한다.", "commandRef": null, "status": "verified"}
+      {
+        "id": "kernel-entrypoint",
+        "path": "bin/moon-relay-kernel.mjs",
+        "purpose": "Kernel public entrypoint가 계약 기반 실행 표면을 제공한다.",
+        "commandRef": null,
+        "status": "verified"
+      }
     ]
   },
   "known_failures": [
-    {"id": "contract-scope-drift", "severity": "P1", "symptom": "작업 중 contract를 다시 발행하면 이미 진행한 cursor와 baseline이 어긋날 수 있다.", "root_cause": "계약 변경을 단순 설정 변경으로 취급하고 기존 binding을 보존하지 않음.", "lesson": "scope 변경은 명시적 replan 경로로만 수행하고 기존 증거를 재검증해야 한다.", "fixed_in": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e", "regression_tests": ["tests/kernel-run-step-replan.test.mjs", "tests/kernel-contract-preflight-continuation.test.mjs"]}
+    {
+      "id": "contract-scope-drift",
+      "severity": "P1",
+      "symptom": "작업 중 contract를 다시 발행하면 이미 진행한 cursor와 baseline이 어긋날 수 있다.",
+      "root_cause": "계약 변경을 단순 설정 변경으로 취급하고 기존 binding을 보존하지 않음.",
+      "lesson": "scope 변경은 명시적 replan 경로로만 수행하고 기존 증거를 재검증해야 한다.",
+      "fixed_in": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
+      "regression_tests": [
+        "tests/kernel-run-step-replan.test.mjs",
+        "tests/kernel-contract-preflight-continuation.test.mjs"
+      ]
+    }
   ],
   "dependencies": {
-    "capabilities": ["step-ledger-resume", "control-plane-state-authority"],
-    "runtime": ["Kernel task contract", "work-unit scope admission"],
+    "capabilities": [
+      "step-ledger-resume",
+      "control-plane-state-authority"
+    ],
+    "runtime": [
+      "Kernel task contract",
+      "work-unit scope admission"
+    ],
     "external": []
   },
   "current_integration": {
     "layer": "Kernel task admission and owner-direct execution",
     "active": true,
-    "paths": ["scripts/kernel/task/task-contract.mjs", "scripts/kernel/run/work-unit-scope.mjs"],
-    "entrypoints": ["bin/moon-relay-kernel.mjs"],
+    "paths": [
+      "scripts/kernel/task/task-contract.mjs",
+      "scripts/kernel/run/work-unit-scope.mjs"
+    ],
+    "entrypoints": [
+      "bin/moon-relay-kernel.mjs"
+    ],
     "notes": "현재 핵심 경로다. Asset Base는 계약을 복제하지 않고 provenance만 색인한다."
   },
   "reintroduction": {
     "recommended_layer": "Kernel task admission",
     "trigger": "새 실행 surface가 사용자 요청을 받거나 기존 work unit을 재개할 때",
-    "integration_points": ["task contract preflight", "step/work-unit scope", "completion evidence plan"],
-    "risks": ["계약 범위를 넓혀 legacy 기능을 암묵적으로 재도입할 수 있음", "외부 provider 상태를 로컬 계약으로 과장할 수 있음"],
-    "guardrails": ["계약 변경은 replan으로 기록", "외부 실행은 host receipt로 별도 증명", "asset manifest는 runtime에서 읽지 않음"]
+    "integration_points": [
+      "task contract preflight",
+      "step/work-unit scope",
+      "completion evidence plan"
+    ],
+    "risks": [
+      "계약 범위를 넓혀 legacy 기능을 암묵적으로 재도입할 수 있음",
+      "외부 provider 상태를 로컬 계약으로 과장할 수 있음"
+    ],
+    "guardrails": [
+      "계약 변경은 replan으로 기록",
+      "외부 실행은 host receipt로 별도 증명",
+      "asset manifest는 runtime에서 읽지 않음"
+    ]
   },
   "decision": {
     "disposition": "retain",
     "rationale": "현재 Kernel의 실행 경계와 재현 가능한 작업 단위를 지탱하는 CORE capability다.",
-    "follow_up": ["새 capability를 추가할 때 contract owner와 completion owner를 분리해 기록한다."]
-  }
+    "follow_up": [
+      "새 capability를 추가할 때 contract owner와 completion owner를 분리해 기록한다."
+    ]
+  },
+  "subcapabilities": [
+    {
+      "id": "task-contract-binding",
+      "name": "Task contract binding",
+      "role": "사용자 목적, 인수조건, 비목표를 불변 계약으로 바인딩",
+      "disposition": "CORE",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": false
+      }
+    },
+    {
+      "id": "work-unit-scope",
+      "name": "Work unit scope",
+      "role": "허용/금지 경로 및 제한된 work-unit admission 경계 소유",
+      "disposition": "CORE",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": false
+      }
+    }
+  ]
 }

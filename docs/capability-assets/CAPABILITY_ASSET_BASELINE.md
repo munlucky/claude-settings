@@ -1,65 +1,81 @@
-# Capability Asset Base Freeze Baseline
+# Capability Asset Base Freeze Baseline v2
 
 - **Repository**: `munlucky/moonshot-relay`
 - **Baseline Branch**: `main`
 - **Baseline Commit**: `9701a86d2225c938f13982a7e0f7f43a7f9bc10e`
+- **Correction Commit**: `8744a3d5491a00dd0f42bc0f2758a1ec66458550` (Baseline v1)
 - **Captured Date**: 2026-09-04
+- **Catalog Version**: 3
+- **Baseline Version**: 2
+- **Canonical Document**: `docs/capability-assets/CAPABILITY_ASSET_BASELINE.md` (단일 진실 원천)
 - **Role**: Non-runtime Engineering Capability Asset Index
-- **Phase Status**: Phase A (Capability Assetization) Complete / Ready for Phase B (Decomplexification)
+- **Phase Status**: Phase A (Capability Assetization) Baseline v2 Complete / Ready for Phase B (Decomplexification)
 
 ---
 
 ## 1. 종합 자산 통계 (Summary Statistics)
 
-| 지표 | 수치 | 비고 |
+### A. Capability Family (15개)
+| 상태 | 수량 | 비고 |
 | :--- | :---: | :--- |
-| **총 Capability 자산 수** | **15** | 35개 이상의 역사적 세부 기능을 15개 대표 패밀리로 통합 |
-| **CORE** | **9** | 현재 Kernel 제품의 본질 경로 (Workflow & Knowledge) |
-| **HOST** | **2** | Host/Provider 어댑터 및 패키지 설치 경계 |
-| **OPTIONAL** | **2** | 독립 실행 및 명시적 선택 기반 생산성/학습 자산 |
-| **LIBRARY** | **0** | 자체 완료 권위 없는 독립 라이브러리는 별도 자산화 유보 |
-| **REFERENCE** | **1** | 하네스 표면 진단 및 회귀 관측 참조 자산 |
-| **DEPRECATED** | **1** | 구 Relay phase runner (실패 교훈 보존, 재도입 금지) |
-| **EXPERIMENTAL** | **0** | 미검증 자산 없음 |
+| **CORE** | 9 | 상위 대표 분류 (Workflow & Knowledge 중심) |
+| **HOST** | 2 | Provider 세션 및 패키지 설치 경계 |
+| **OPTIONAL** | 2 | 독립 도구 및 회고 학습 |
+| **REFERENCE** | 1 | 하네스 표면 진단 |
+| **DEPRECATED** | 1 | 구 Relay phase runner 아카이브 |
+| **합계** | **15** | 35개 이상의 역사적 기능을 15개 응집 패밀리로 관리 |
+
+### B. Subcapabilities (47개 — Decomplexification 실제 판단 단위)
+| 세부 Disposition | 수량 | 비율 | 의미 |
+| :--- | :---: | :---: | :--- |
+| **CORE** | **21** | 44.7% | Kernel 내부에 반드시 유지할 본질 권위 (계약, 원장, 증거, 지식, 전이, 라우트 게이트, 문맥) |
+| **HOST** | **13** | 27.7% | Host Layer / Provider Adapter로 이관할 실행/환경 책임 (세션, 모델선택, 와이어포맷, 캐시) |
+| **OPTIONAL** | **9** | 19.1% | 명시적 조건부 활성화 자산 (독립 리뷰어, 원격 패리티, 정체 에스컬레이션, 아키텍처 도구) |
+| **REFERENCE** | **2** | 4.3% | 하네스 표면 예산 및 회귀 진단 참조 자산 |
+| **DEPRECATED** | **2** | 4.3% | 과거 스플릿 브레인 결함으로 퇴역한 교훈 자산 |
+| **합계** | **47** | 100% | 15개 전체 Family에 걸쳐 100% 명시적으로 정의됨 |
 
 ---
 
-## 2. 계보 및 검증 통계 (Lineage & Proof Metrics)
+## 2. 역방향 커버리지 원장 (Coverage Ledger Metrics)
 
-- **Relay-only 자산**: 0개 (모든 자산이 Kernel로 계승되었거나 아카이브 보존됨)
-- **Kernel-only 자산**: 9개 (Kernel 도입 이후 신규 구축된 권위/상태/라우팅/최적화 자산)
-- **Relay → Kernel 계승 자산**: 6개 (계약, 완료검증, 지식, 세션, 생산성, 하네스 진단)
-- **중복 기능 통합 패밀리**: 15개 통합 자산군 (개별 세부 후보군을 패밀리 단위로 응집)
-- **검증 증거(Proof) 없는 자산**: **0개** (전체 45개 테스트 경로가 실제 파일에 100% 바인딩됨)
-- **불변 커밋(Immutable Commits) 검증**: **33개** Git SHA가 `git cat-file -e`로 유효성 확인 완료
-
----
-
-## 3. 세대별 역사 구간 (Epochs Provenance)
-
-- **E0 (Early Relay)**: `e0aa7a22a2bca953fee7805a8c6bf8c3956d867e` - 프로젝트 셋업, 설정 동기화
-- **E1 (Workflow & Skill Relay)**: `77ed33f1e1f3c1f0c44216b86d9df5123e58cbb7` - 작업 계획, 분해, 스킬 라우터
-- **E2 (Contract & Evidence Relay)**: `5ccf1c9ccfbf68ae8067d6e7e69a7555c782fdb5` - 완료 검증, 증거 기반 완료 권위
-- **E3 (Architecture & Retro Relay)**: `1f7ed38b80f2d66d34498548448423c56154be16` - 아키텍처 하네스, 회고 루프
-- **E4 (Kernel Introduction)**: `7806dd1870501a1171969ca8e13af8fbec26f892` - Moon Relay Kernel 소스 계약
-- **E5 (Kernel Knowledge Lifecycle)**: `761a0d19dc8abdccd9d32469af79f0ec600d104f` - 프로젝트 지식 라이프사이클
-- **E6 (Model & Provider Optimization)**: `01eac62a1c37b4b044704304992f38ef4c520603` - 논리 모델 라우팅, 프롬프트 최적화
-- **E7 (Native Runtime & Execution-First)**: `30b317c0c8f0dee9b4a1c8f82f8b14fe30a7f692` - 오너 직접 실행, 릴레이 런타임 퇴역
-- **E8 (Current Stabilized Kernel)**: `9701a86d2225c938f13982a7e0f7f43a7f9bc10e` - 최종 완료 권위 경계 보정
+- **원장 파일**: [`docs/capability-assets/coverage-ledger.yaml`](coverage-ledger.yaml)
+- **총 매핑 파일 수**: **719개**
+- **Capability 매핑 파일**: **665개**
+  - `scripts/kernel/**`: 149개 (100% 매핑 완료)
+  - `kernel/**`: 14개 (100% 매핑 완료)
+  - `schemas/kernel.*`: 31개 (100% 매핑 완료)
+  - `tests/kernel-*.test.mjs`: 235개 (100% 매핑 완료)
+  - `archive/scripts/legacy-phase-adapters/**`: 190개 (100% 매핑 완료)
+  - `package/kernel/**`: 14개 (100% 매핑 완료)
+  - `bin/moon-relay-*.mjs`, `bin/moonshot-relay.mjs`: 3개 (100% 매핑 완료)
+  - 공식 카탈로그 스킬: 29개 (100% 매핑 완료)
+- **명시적 제외(Ignored with Reason)**: **54개** (일반 프롬프트/가이드 스킬, 사유 필수 명시)
+- **미분류 파일(Unclassified)**: **0개 (100% 전수 커버리지 달성)**
 
 ---
 
-## 4. Decomplexification 인계 요약
+## 3. 검증 증거 및 의미 (Proof Semantics)
 
-후속 작업(Kernel Decomplexification)은 본 베이스라인을 기준으로 다음 분할 정책을 적용한다:
-1. **Core 유지 (9개)**: Task Contract, Step Ledger, Evidence Completion, Mutation Guard, Project Identity, Knowledge Ingestion, Control Plane, Model Routing, Prompt Cache
-2. **Host 분리 (2개)**: Provider Session Boundary, Account-root Profile Adoption
-3. **Archive 격리 (4개)**: Standalone Tools, Retrospective, Harness Audit, Legacy Phase Runner
-
-상세 인계 맵: [docs/capability-assets/decisions/decomplexification-maps.md](docs/capability-assets/decisions/decomplexification-maps.md)
+- **Proof Reference Coverage**: **100%** (매니페스트에 기재된 45개 테스트 파일이 작업트리에 모두 실존함)
+- **Proof Execution at Freeze**:
+  - `executed-pass`: 자산화 및 표면 예산 검증기 통과
+  - `historical-pass`: 43개 세부 회귀 테스트 (과거 에포크 및 베이스라인에서 통과 증명 보존)
+- **Remote CI Status**: `not-verified` (로컬 체크아웃 베이스라인 동결)
 
 ---
 
-## 5. 동결 선언 (Freeze Declaration)
+## 4. Decomplexification 인계 요약 (v2)
 
-본 문서는 Phase A 자산화 작업의 최종 결과물로서, 향후 기능 재도입 시 과거 구현과 실패 경험을 신속히 재참조할 수 있는 영구적 R&D 인덱스를 확정한다. 본 커밋 시점까지 생산 Kernel 코드에 대한 임의의 단순화, 삭제, 런타임 변경은 일절 수행되지 않았음을 보증한다.
+후속 Decomplexification은 Family가 아닌 **47개 Subcapability**를 기준으로 집행한다:
+1. **Kernel Core (21개 유지)**: Task Contract, Work Unit Scope, Step Ledger, Work Cursor, Evidence Binding, Verification Authority, Completion Gate, Protected Obligation, Mutation Safety, Workspace Fence, Project Identity, Knowledge Store, Ingestion, Ontology Gate, Control Plane State, SQLite Adapter, Required Capability, Route Admission, Context Build, Knowledge Context Selection, Context Freshness
+2. **Host Extraction (13개 이관)**: Review Transport, Git Staging, Git Commit, Host Session, Execution Capsule, Worktree Isolation, Model Selection, Provider Selection, Effort/Cost Routing, Prompt Envelope, Prompt Cache, Package Materialization, Profile Projection
+3. **Optional / Archive (13개 격리/보관)**: Independent Reviewer Execution, Remote Parity, Stagnation Escalation, Optimization Cycle, Architecture Artifacts, Codebase Understanding, Diff/Audit Tools, Daily Retro, Improvement Proposals, Harness Audit, Legacy Phase Runner
+
+상세 인계 맵: [docs/capability-assets/decisions/decomplexification-maps.md](decisions/decomplexification-maps.md)
+
+---
+
+## 5. 최종 동결 선언 (Freeze Declaration v2)
+
+본 Baseline v2는 정합성, 전수 커버리지 원장(`unclassified=0`), 47개 Subcapability 세분화, Proof 의미 분리 및 루트 중복 제거를 모두 완결한 최종 엔지니어링 인덱스다. 커널 생산 런타임 코드는 전혀 변경되지 않았으며, 안전하게 Phase B (Kernel Decomplexification)를 시작할 수 있음을 보증한다.

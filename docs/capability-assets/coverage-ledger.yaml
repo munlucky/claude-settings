@@ -1,0 +1,2890 @@
+{
+  "schemaVersion": 1,
+  "kind": "capability-asset-coverage-ledger",
+  "baselineCommit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
+  "updatedAt": "2026-09-04",
+  "summary": {
+    "totalMapped": 719,
+    "classifiedCapabilityCount": 665,
+    "ignoredCount": 54,
+    "unclassifiedCount": 0
+  },
+  "surfaces": {
+    "archive/scripts/legacy-phase-adapters/README.md": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/agent-loop-phase-artifacts.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/agent-loop-phase-artifacts.sh": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/agent-loop-phase-artifacts.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/agent-loop-phase-attempt.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/agent-loop-phase-attempt.sh": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/agent-loop-phase-attempt.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/agent-loop-phase-plan-lib.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/agent-loop-phase-plan-lib.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/agent-loop-phase-plan.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/agent-loop-phase-plan.sh": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/agent-loop-phase-plan.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/agent-loop-phase-runner.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/agent-loop-phase-runner.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/agent-loop-phase-runtime.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/agent-loop-phase-runtime.sh": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/agent-loop-phase-runtime.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/agent-loop-phase-state.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/agent-loop-phase-state.sh": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/agent-loop-phase-state.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/agent-loop-shell-core.sh": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/agent-loop.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/agent-loop.sh": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/artifact-normalizer.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/artifact-normalizer.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/awtl-failure-analyzer.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/awtl-import-trace.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/awtl-trace.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/blocker-closeout-prevention.e2e.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/browser-flow-runner.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/check-mcp.sh": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/check-mcp.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/code-review-graph-stage.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/code-review-graph-stage.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/codex-exec-wrapper.ps1": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/commit-moonshot-promotion-audit.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/delegated-terminal-split-brain-prevention.e2e.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/demo-first-gate-lib.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/harness-prepare-worktree.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/harness-prepare-worktree.sh": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/harness-profile-contract.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/harness-state-invariants.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/harness-state-invariants.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/harness-surface-inventory.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/harness-surface-inventory.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/install-account-root-harness.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/knowledge-context-build.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/knowledge-improvement-lifecycle.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/knowledge-records.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/knowledge-repo-audit.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/knowledge-repo-audit.sh": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/awtl-failed-turn-case.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/awtl-failed-turn-case.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/awtl-failure-attribution.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/awtl-failure-prevention-brief.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/awtl-failure-prevention-brief.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/awtl-harness-capture.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/awtl-memory-promotion.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/awtl-redaction.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/awtl-replay-scorecard.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/awtl-runtime-importers.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/awtl-runtime-importers.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/awtl-trace-sink.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/blocker-sidecar-state.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/blocker-sidecar-state.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/clock.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/clock.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/closeout-diagnostics.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/closeout-diagnostics.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/code-review-graph-evidence-block.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/code-review-graph-evidence.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/code-review-graph-evidence.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/code-review-graph-fixtures/changed-files-unresolved.json": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/code-review-graph-fixtures/missing-required-stage.json": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/code-review-graph-fixtures/phase-pass.json": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/command-resolver.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/command-resolver.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/current-artifacts-state.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/current-artifacts-state.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/effort-profile.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/failure-classifier.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/final-outcome-projection.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/final-outcome-projection.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/fs-utils.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/git-utils.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/harness-overhead-regression.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/harness-state-invariants.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/harness-state-invariants.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/lifecycle-projection-writer.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/lifecycle-projection-writer.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/logging.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/model-routing-policy.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/path-authority.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/phase-attempt-manifest.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/phase-attempt-manifest.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/phase-attempt-telemetry.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/phase-attempt-telemetry.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/phase-closeout-artifacts.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/phase-closeout-parsers.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/phase-closeout-verdict.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/phase-closeout-verdict.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/phase-event-ledger.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/phase-execution-paths.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/phase-execution-paths.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/phase-liveness-checker.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/phase-liveness-checker.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/phase-loop-controller.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/phase-loop-controller.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/phase-remediation-packet.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/phase-remediation-packet.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/phase-run-lease-policy.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/phase-run-lease-policy.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/phase-run-lease-status.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/phase-run-lease-status.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/phase-run-lease-store.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/phase-run-lease-store.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/phase-summary-projection.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/phase-summary-projection.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/prepared-state-reset.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/process-utils.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/prompt-redaction.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/runtime-parity-classifier.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/runtime-parity-classifier.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/runtime-platform.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/runtime-unavailable-cache.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/simple-run-state.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/simple-run-state.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/terminal-blocker-publisher.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/terminal-blocker-publisher.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/timeout-ledger.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/timeout-ledger.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/verification-contract.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/verification-contract.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/waste-ledger.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/waste-ledger.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/lib/windows-safe-files.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/moonshot-phase-dispatch.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/moonshot-phase-dispatch.sh": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/moonshot-phase-dispatch.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/notify.cjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/ontology-constraint-validate.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/phase-capability-preflight.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/phase-capability-preflight.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/phase-checkpoint-commit.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/phase-checkpoint-commit.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/phase-closeout-artifacts.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/phase-closeout-finalize.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/phase-closeout-finalize.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/phase-closeout-reconciler.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/phase-closeout-reconciler.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/phase-final-git-closeout.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/phase-final-git-closeout.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/phase-goal-control.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/phase-parallel-planner.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/phase-run-lease.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/phase-wave-coordinator.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/phase-worktree-coordinator.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/phase-worktree-coordinator.sh": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/prepare-implementation-plan-state.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/prepare-implementation-plan-state.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/project-identity.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/render-scorecard.py": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/runtime-cli.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/runtime-cli.sh": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/runtime-state.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/runtime-state.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/sync-phase-archive.py": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/token-safe-git.sh": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/verification-verdict-state.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/verify-code-policy.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/verify-code-policy.sh": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/verify-code-policy.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/verify-phase-closeout-fixtures.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/verify-phase-closeout.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/verify-phase-closeout.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/verify-phase-runner-boundary.sh": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/verify-phase-runtime-parity-shell-core.sh": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/verify-phase-runtime-parity.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/verify-phase-runtime-parity.sh": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/verify-phase-runtime-parity.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/verify-plan-conformance.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/verify-plan-conformance.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/verify-shell-syntax.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/verify-shell-syntax.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/visual-diff-runner.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/workflow-enforcement.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/workflow-enforcement.sh": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/workflow-enforcement.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/write-verification-verdict.py": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "archive/scripts/legacy-phase-adapters/write-verification-verdict.test.mjs": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "bin/moon-relay-kernel.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "bin/moon-relay-standalone.mjs": {
+      "classification": "capability",
+      "capability": "standalone-architecture-and-research-tools"
+    },
+    "bin/moonshot-relay.mjs": {
+      "classification": "capability",
+      "capability": "account-root-package-and-profile-adoption"
+    },
+    "kernel/capabilities.yaml": {
+      "classification": "capability",
+      "capability": "model-routing-and-route-admission"
+    },
+    "kernel/context-policy.yaml": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "kernel/evidence-policy.yaml": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "kernel/knowledge-policy.yaml": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "kernel/model-policy.yaml": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "kernel/principles.yaml": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "kernel/product.yaml": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "kernel/promotion-policy.yaml": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "kernel/proof-policy.yaml": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "kernel/runtime-policy.yaml": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "kernel/scheduler-policy.yaml": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "kernel/state-policy.yaml": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "kernel/upstream-registry.yaml": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "kernel/workflow.yaml": {
+      "classification": "capability",
+      "capability": "task-contract-and-bounded-work"
+    },
+    "package/kernel/manifest.json": {
+      "classification": "capability",
+      "capability": "account-root-package-and-profile-adoption"
+    },
+    "package/kernel/package.json": {
+      "classification": "capability",
+      "capability": "account-root-package-and-profile-adoption"
+    },
+    "package/kernel/profiles/antigravity/GEMINI.md": {
+      "classification": "capability",
+      "capability": "account-root-package-and-profile-adoption"
+    },
+    "package/kernel/profiles/antigravity/README.md": {
+      "classification": "capability",
+      "capability": "account-root-package-and-profile-adoption"
+    },
+    "package/kernel/profiles/antigravity/profile-contract.yaml": {
+      "classification": "capability",
+      "capability": "account-root-package-and-profile-adoption"
+    },
+    "package/kernel/profiles/claude/CLAUDE.md": {
+      "classification": "capability",
+      "capability": "account-root-package-and-profile-adoption"
+    },
+    "package/kernel/profiles/claude/settings.json": {
+      "classification": "capability",
+      "capability": "account-root-package-and-profile-adoption"
+    },
+    "package/kernel/profiles/codex/.codex/config.toml": {
+      "classification": "capability",
+      "capability": "account-root-package-and-profile-adoption"
+    },
+    "package/kernel/profiles/codex/.codex/hooks.json": {
+      "classification": "capability",
+      "capability": "account-root-package-and-profile-adoption"
+    },
+    "package/kernel/profiles/codex/AGENTS.override.md": {
+      "classification": "capability",
+      "capability": "account-root-package-and-profile-adoption"
+    },
+    "package/kernel/profiles/codex/skills/moon-relay-kernel/SKILL.md": {
+      "classification": "capability",
+      "capability": "account-root-package-and-profile-adoption"
+    },
+    "package/kernel/profiles/qwen/QWEN.md": {
+      "classification": "capability",
+      "capability": "account-root-package-and-profile-adoption"
+    },
+    "package/kernel/skills.lock.json": {
+      "classification": "capability",
+      "capability": "account-root-package-and-profile-adoption"
+    },
+    "package/kernel/standalone-skills.lock.json": {
+      "classification": "capability",
+      "capability": "account-root-package-and-profile-adoption"
+    },
+    "schemas/kernel.applicable-knowledge-slice.schema.json": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "schemas/kernel.attempt-provenance.schema.json": {
+      "classification": "capability",
+      "capability": "mutation-fencing-and-git-closeout"
+    },
+    "schemas/kernel.codebase-index-manifest.schema.json": {
+      "classification": "capability",
+      "capability": "standalone-architecture-and-research-tools"
+    },
+    "schemas/kernel.context-receipt.schema.json": {
+      "classification": "capability",
+      "capability": "context-prompt-cache-and-optimization"
+    },
+    "schemas/kernel.eval-case.schema.json": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "schemas/kernel.execution-capsule.schema.json": {
+      "classification": "capability",
+      "capability": "task-contract-and-bounded-work"
+    },
+    "schemas/kernel.git-closeout-receipt.schema.json": {
+      "classification": "capability",
+      "capability": "mutation-fencing-and-git-closeout"
+    },
+    "schemas/kernel.git-closeout-request.schema.json": {
+      "classification": "capability",
+      "capability": "mutation-fencing-and-git-closeout"
+    },
+    "schemas/kernel.knowledge-candidate.schema.json": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "schemas/kernel.knowledge-commit-receipt.schema.json": {
+      "classification": "capability",
+      "capability": "knowledge-ingestion-and-evidence-graph"
+    },
+    "schemas/kernel.knowledge-contract.schema.json": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "schemas/kernel.knowledge-import-receipt.schema.json": {
+      "classification": "capability",
+      "capability": "knowledge-ingestion-and-evidence-graph"
+    },
+    "schemas/kernel.knowledge-import.schema.json": {
+      "classification": "capability",
+      "capability": "knowledge-ingestion-and-evidence-graph"
+    },
+    "schemas/kernel.knowledge-record.schema.json": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "schemas/kernel.knowledge-review-result.schema.json": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "schemas/kernel.measurement.schema.json": {
+      "classification": "capability",
+      "capability": "model-routing-and-route-admission"
+    },
+    "schemas/kernel.model-route.schema.json": {
+      "classification": "capability",
+      "capability": "model-routing-and-route-admission"
+    },
+    "schemas/kernel.model-usage.schema.json": {
+      "classification": "capability",
+      "capability": "model-routing-and-route-admission"
+    },
+    "schemas/kernel.qa-report.schema.json": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "schemas/kernel.release-evidence.schema.json": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "schemas/kernel.review-capsule.schema.json": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "schemas/kernel.review-receipt.schema.json": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "schemas/kernel.route-admission.schema.json": {
+      "classification": "capability",
+      "capability": "model-routing-and-route-admission"
+    },
+    "schemas/kernel.run-summary.schema.json": {
+      "classification": "capability",
+      "capability": "step-ledger-resume"
+    },
+    "schemas/kernel.runtime-manifest.schema.json": {
+      "classification": "capability",
+      "capability": "account-root-package-and-profile-adoption"
+    },
+    "schemas/kernel.runtime-state.schema.json": {
+      "classification": "capability",
+      "capability": "step-ledger-resume"
+    },
+    "schemas/kernel.session-source.schema.json": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "schemas/kernel.state-projection.schema.json": {
+      "classification": "capability",
+      "capability": "step-ledger-resume"
+    },
+    "schemas/kernel.task-contract.schema.json": {
+      "classification": "capability",
+      "capability": "task-contract-and-bounded-work"
+    },
+    "schemas/kernel.track.schema.json": {
+      "classification": "capability",
+      "capability": "account-root-package-and-profile-adoption"
+    },
+    "schemas/kernel.workflow-state.schema.json": {
+      "classification": "capability",
+      "capability": "task-contract-and-bounded-work"
+    },
+    "scripts/kernel/artifact-paths.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "scripts/kernel/bridge/mcp.mjs": {
+      "classification": "capability",
+      "capability": "provider-session-and-execution-boundary"
+    },
+    "scripts/kernel/cache-replay.mjs": {
+      "classification": "capability",
+      "capability": "context-prompt-cache-and-optimization"
+    },
+    "scripts/kernel/canonical-digest.mjs": {
+      "classification": "capability",
+      "capability": "context-prompt-cache-and-optimization"
+    },
+    "scripts/kernel/capability-guidance.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "scripts/kernel/capability-resolver.mjs": {
+      "classification": "capability",
+      "capability": "model-routing-and-route-admission"
+    },
+    "scripts/kernel/change-contract.mjs": {
+      "classification": "capability",
+      "capability": "mutation-fencing-and-git-closeout"
+    },
+    "scripts/kernel/codebase/build-index.mjs": {
+      "classification": "capability",
+      "capability": "standalone-architecture-and-research-tools"
+    },
+    "scripts/kernel/codebase/candidate-extract.mjs": {
+      "classification": "capability",
+      "capability": "standalone-architecture-and-research-tools"
+    },
+    "scripts/kernel/codebase/incremental-refresh.mjs": {
+      "classification": "capability",
+      "capability": "standalone-architecture-and-research-tools"
+    },
+    "scripts/kernel/codebase/manifest.mjs": {
+      "classification": "capability",
+      "capability": "standalone-architecture-and-research-tools"
+    },
+    "scripts/kernel/codebase/query.mjs": {
+      "classification": "capability",
+      "capability": "standalone-architecture-and-research-tools"
+    },
+    "scripts/kernel/context-build.mjs": {
+      "classification": "capability",
+      "capability": "context-prompt-cache-and-optimization"
+    },
+    "scripts/kernel/context-receipt.mjs": {
+      "classification": "capability",
+      "capability": "context-prompt-cache-and-optimization"
+    },
+    "scripts/kernel/context-segments.mjs": {
+      "classification": "capability",
+      "capability": "context-prompt-cache-and-optimization"
+    },
+    "scripts/kernel/control-plane.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "scripts/kernel/durable-write.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "scripts/kernel/eval/model-routing-eval.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "scripts/kernel/eval/sentinel-eval.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "scripts/kernel/evidence-pack.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "scripts/kernel/git/closeout.mjs": {
+      "classification": "capability",
+      "capability": "mutation-fencing-and-git-closeout"
+    },
+    "scripts/kernel/git/commit-message.mjs": {
+      "classification": "capability",
+      "capability": "mutation-fencing-and-git-closeout"
+    },
+    "scripts/kernel/git/remote-parity.mjs": {
+      "classification": "capability",
+      "capability": "mutation-fencing-and-git-closeout"
+    },
+    "scripts/kernel/git/staging-policy.mjs": {
+      "classification": "capability",
+      "capability": "mutation-fencing-and-git-closeout"
+    },
+    "scripts/kernel/installer.mjs": {
+      "classification": "capability",
+      "capability": "account-root-package-and-profile-adoption"
+    },
+    "scripts/kernel/knowledge-ingestion/candidate-extract.mjs": {
+      "classification": "capability",
+      "capability": "knowledge-ingestion-and-evidence-graph"
+    },
+    "scripts/kernel/knowledge-ingestion/conflict.mjs": {
+      "classification": "capability",
+      "capability": "knowledge-ingestion-and-evidence-graph"
+    },
+    "scripts/kernel/knowledge-ingestion/deduplicate.mjs": {
+      "classification": "capability",
+      "capability": "knowledge-ingestion-and-evidence-graph"
+    },
+    "scripts/kernel/knowledge-ingestion/import.mjs": {
+      "classification": "capability",
+      "capability": "knowledge-ingestion-and-evidence-graph"
+    },
+    "scripts/kernel/knowledge-ingestion/normalize.mjs": {
+      "classification": "capability",
+      "capability": "knowledge-ingestion-and-evidence-graph"
+    },
+    "scripts/kernel/knowledge-ingestion/redact.mjs": {
+      "classification": "capability",
+      "capability": "knowledge-ingestion-and-evidence-graph"
+    },
+    "scripts/kernel/knowledge-ingestion/transaction.mjs": {
+      "classification": "capability",
+      "capability": "knowledge-ingestion-and-evidence-graph"
+    },
+    "scripts/kernel/knowledge-ingestion/verify.mjs": {
+      "classification": "capability",
+      "capability": "knowledge-ingestion-and-evidence-graph"
+    },
+    "scripts/kernel/knowledge/architecture-resolve.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "scripts/kernel/knowledge/candidate-extract.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "scripts/kernel/knowledge/candidate-review.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "scripts/kernel/knowledge/canonical-record-mapper.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "scripts/kernel/knowledge/capture.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "scripts/kernel/knowledge/change-diff.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "scripts/kernel/knowledge/commit.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "scripts/kernel/knowledge/context-load.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "scripts/kernel/knowledge/context-render.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "scripts/kernel/knowledge/evidence-binder.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "scripts/kernel/knowledge/freshness.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "scripts/kernel/knowledge/ontology-evaluate.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "scripts/kernel/knowledge/ontology-gate.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "scripts/kernel/knowledge/path-scope.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "scripts/kernel/knowledge/projection.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "scripts/kernel/knowledge/receipt.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "scripts/kernel/knowledge/records.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "scripts/kernel/knowledge/revision.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "scripts/kernel/knowledge/store.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "scripts/kernel/knowledge/supersession.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "scripts/kernel/knowledge/tacit-resolve.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "scripts/kernel/knowledge/topology-projection.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "scripts/kernel/legacy-hydration-cleanup.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "scripts/kernel/optimization-cycle.mjs": {
+      "classification": "capability",
+      "capability": "context-prompt-cache-and-optimization"
+    },
+    "scripts/kernel/package-build.mjs": {
+      "classification": "capability",
+      "capability": "account-root-package-and-profile-adoption"
+    },
+    "scripts/kernel/persistence/knowledge-repository.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "scripts/kernel/persistence/run-repository.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "scripts/kernel/persistence/verification-repository.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "scripts/kernel/persistent-sanitizer.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "scripts/kernel/policy.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "scripts/kernel/profile-build.mjs": {
+      "classification": "capability",
+      "capability": "account-root-package-and-profile-adoption"
+    },
+    "scripts/kernel/profile-doctor.mjs": {
+      "classification": "capability",
+      "capability": "account-root-package-and-profile-adoption"
+    },
+    "scripts/kernel/profile-install.mjs": {
+      "classification": "capability",
+      "capability": "account-root-package-and-profile-adoption"
+    },
+    "scripts/kernel/profile-projection.mjs": {
+      "classification": "capability",
+      "capability": "account-root-package-and-profile-adoption"
+    },
+    "scripts/kernel/project-hydrate.mjs": {
+      "classification": "capability",
+      "capability": "account-root-package-and-profile-adoption"
+    },
+    "scripts/kernel/project-identity-preflight.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "scripts/kernel/project-identity.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "scripts/kernel/proof-route.mjs": {
+      "classification": "capability",
+      "capability": "model-routing-and-route-admission"
+    },
+    "scripts/kernel/proof/baseline-proof.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "scripts/kernel/proof/command-catalog.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "scripts/kernel/proof/domain-policy.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "scripts/kernel/proof/evidence-reuse.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "scripts/kernel/proof/failure-classify.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "scripts/kernel/proof/network-policy.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "scripts/kernel/proof/process-tree.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "scripts/kernel/proof/proof-executor.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "scripts/kernel/proof/protected-obligations.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "scripts/kernel/proof/review-pipeline.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "scripts/kernel/proof/review-receipt.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "scripts/kernel/proof/static-analysis.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "scripts/kernel/risk-surfaces.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "scripts/kernel/route.mjs": {
+      "classification": "capability",
+      "capability": "model-routing-and-route-admission"
+    },
+    "scripts/kernel/routing/route-admission.mjs": {
+      "classification": "capability",
+      "capability": "model-routing-and-route-admission"
+    },
+    "scripts/kernel/run/attempt-provenance.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "scripts/kernel/run/binding-preflight.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "scripts/kernel/run/capsule-selection.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "scripts/kernel/run/completion-outcomes.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "scripts/kernel/run/completion-view.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "scripts/kernel/run/contract-preflight.mjs": {
+      "classification": "capability",
+      "capability": "task-contract-and-bounded-work"
+    },
+    "scripts/kernel/run/execution-capsule.mjs": {
+      "classification": "capability",
+      "capability": "provider-session-and-execution-boundary"
+    },
+    "scripts/kernel/run/finalization.mjs": {
+      "classification": "capability",
+      "capability": "step-ledger-resume"
+    },
+    "scripts/kernel/run/host-session.mjs": {
+      "classification": "capability",
+      "capability": "provider-session-and-execution-boundary"
+    },
+    "scripts/kernel/run/invocation-resolver.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "scripts/kernel/run/model-route-contract.mjs": {
+      "classification": "capability",
+      "capability": "task-contract-and-bounded-work"
+    },
+    "scripts/kernel/run/model-routing.mjs": {
+      "classification": "capability",
+      "capability": "model-routing-and-route-admission"
+    },
+    "scripts/kernel/run/mutation-guard.mjs": {
+      "classification": "capability",
+      "capability": "mutation-fencing-and-git-closeout"
+    },
+    "scripts/kernel/run/obligation-compiler.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "scripts/kernel/run/provider-mutation-adapter.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "scripts/kernel/run/required-host-capabilities.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "scripts/kernel/run/run-identity.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "scripts/kernel/run/run-locator.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "scripts/kernel/run/run-loop.mjs": {
+      "classification": "capability",
+      "capability": "step-ledger-resume"
+    },
+    "scripts/kernel/run/run-step-ledger.mjs": {
+      "classification": "capability",
+      "capability": "step-ledger-resume"
+    },
+    "scripts/kernel/run/session-binding.mjs": {
+      "classification": "capability",
+      "capability": "provider-session-and-execution-boundary"
+    },
+    "scripts/kernel/run/session-holder.mjs": {
+      "classification": "capability",
+      "capability": "provider-session-and-execution-boundary"
+    },
+    "scripts/kernel/run/stagnation.mjs": {
+      "classification": "capability",
+      "capability": "model-routing-and-route-admission"
+    },
+    "scripts/kernel/run/step-planner.mjs": {
+      "classification": "capability",
+      "capability": "step-ledger-resume"
+    },
+    "scripts/kernel/run/successor-key.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "scripts/kernel/run/work-cursor.mjs": {
+      "classification": "capability",
+      "capability": "step-ledger-resume"
+    },
+    "scripts/kernel/run/work-unit-scope.mjs": {
+      "classification": "capability",
+      "capability": "task-contract-and-bounded-work"
+    },
+    "scripts/kernel/run/workspace-identity.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "scripts/kernel/run/workspace-registration.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "scripts/kernel/run/worktree-binding.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "scripts/kernel/runtime-boundary-audit.mjs": {
+      "classification": "capability",
+      "capability": "account-root-package-and-profile-adoption"
+    },
+    "scripts/kernel/runtime-home.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "scripts/kernel/runtime-resolver.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "scripts/kernel/sqlite-adapter.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "scripts/kernel/standalone/architecture-artifacts.mjs": {
+      "classification": "capability",
+      "capability": "standalone-architecture-and-research-tools"
+    },
+    "scripts/kernel/standalone/artifact-utils.mjs": {
+      "classification": "capability",
+      "capability": "standalone-architecture-and-research-tools"
+    },
+    "scripts/kernel/standalone/catalog.mjs": {
+      "classification": "capability",
+      "capability": "standalone-architecture-and-research-tools"
+    },
+    "scripts/kernel/standalone/codebase-understanding.mjs": {
+      "classification": "capability",
+      "capability": "standalone-architecture-and-research-tools"
+    },
+    "scripts/kernel/standalone/common.mjs": {
+      "classification": "capability",
+      "capability": "standalone-architecture-and-research-tools"
+    },
+    "scripts/kernel/standalone/explain-diff-html.mjs": {
+      "classification": "capability",
+      "capability": "standalone-architecture-and-research-tools"
+    },
+    "scripts/kernel/standalone/kernel-commit.mjs": {
+      "classification": "capability",
+      "capability": "standalone-architecture-and-research-tools"
+    },
+    "scripts/kernel/standalone/prework.mjs": {
+      "classification": "capability",
+      "capability": "standalone-architecture-and-research-tools"
+    },
+    "scripts/kernel/standalone/product-definition.mjs": {
+      "classification": "capability",
+      "capability": "standalone-architecture-and-research-tools"
+    },
+    "scripts/kernel/standalone/project-memory.mjs": {
+      "classification": "capability",
+      "capability": "standalone-architecture-and-research-tools"
+    },
+    "scripts/kernel/standalone/session-providers/claude.mjs": {
+      "classification": "capability",
+      "capability": "standalone-architecture-and-research-tools"
+    },
+    "scripts/kernel/standalone/session-providers/codex.mjs": {
+      "classification": "capability",
+      "capability": "standalone-architecture-and-research-tools"
+    },
+    "scripts/kernel/standalone/session-providers/generic.mjs": {
+      "classification": "capability",
+      "capability": "standalone-architecture-and-research-tools"
+    },
+    "scripts/kernel/standalone/session-providers/index.mjs": {
+      "classification": "capability",
+      "capability": "standalone-architecture-and-research-tools"
+    },
+    "scripts/kernel/standalone/session-providers/normalize.mjs": {
+      "classification": "capability",
+      "capability": "standalone-architecture-and-research-tools"
+    },
+    "scripts/kernel/standalone/session-providers/resolver.mjs": {
+      "classification": "capability",
+      "capability": "standalone-architecture-and-research-tools"
+    },
+    "scripts/kernel/standalone/ui-audit.mjs": {
+      "classification": "capability",
+      "capability": "standalone-architecture-and-research-tools"
+    },
+    "scripts/kernel/state-projector.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "scripts/kernel/state-store.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "scripts/kernel/task/evidence-plan.mjs": {
+      "classification": "capability",
+      "capability": "task-contract-and-bounded-work"
+    },
+    "scripts/kernel/task/evidence-scan.mjs": {
+      "classification": "capability",
+      "capability": "task-contract-and-bounded-work"
+    },
+    "scripts/kernel/task/greenfield-bootstrap.mjs": {
+      "classification": "capability",
+      "capability": "task-contract-and-bounded-work"
+    },
+    "scripts/kernel/task/migration-workflow.mjs": {
+      "classification": "capability",
+      "capability": "task-contract-and-bounded-work"
+    },
+    "scripts/kernel/task/project-mode.mjs": {
+      "classification": "capability",
+      "capability": "task-contract-and-bounded-work"
+    },
+    "scripts/kernel/task/task-contract.mjs": {
+      "classification": "capability",
+      "capability": "task-contract-and-bounded-work"
+    },
+    "scripts/kernel/transition.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "scripts/kernel/unification-audit.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "scripts/kernel/upstream-registry.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "scripts/kernel/workspace/step-worktree-manager.mjs": {
+      "classification": "capability",
+      "capability": "provider-session-and-execution-boundary"
+    },
+    "skills/adr-c4-writer/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/architecture-artifacts/SKILL.md": {
+      "classification": "capability",
+      "capability": "standalone-architecture-and-research-tools"
+    },
+    "skills/architecture-gate-reviewer/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/architecture-option-generator/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/architecture-tradeoff-reviewer/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/asr-extractor/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/assumption-ledger/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/audit/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/browser-verifier/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/build-error-resolver/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/code-simplifier/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/codebase-architecture-recovery/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/codebase-understanding/SKILL.md": {
+      "classification": "capability",
+      "capability": "standalone-architecture-and-research-tools"
+    },
+    "skills/codex-review-code/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/codex-validate-plan/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/commit-moonshot/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/completion-verifier/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/context-readiness-gate/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/design-asset-parser/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/doc-auto-sync/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/explain-diff-html/SKILL.md": {
+      "classification": "capability",
+      "capability": "standalone-architecture-and-research-tools"
+    },
+    "skills/failure-analyzer/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/figma-spec-synthesizer/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/figma-spec-synthesizer/agents/openai.yaml": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/frontend-design/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/harness-memory-promoter/SKILL.md": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "skills/implementation-runner/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/karpathy-execution-gate/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/kernel-browser-proof-adapter/SKILL.md": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "skills/kernel-commit-closeout/SKILL.md": {
+      "classification": "capability",
+      "capability": "mutation-fencing-and-git-closeout"
+    },
+    "skills/kernel-commit/SKILL.md": {
+      "classification": "capability",
+      "capability": "mutation-fencing-and-git-closeout"
+    },
+    "skills/kernel-conditional-frontend-guidance/SKILL.md": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "skills/kernel-diagnosing-bugs/SKILL.md": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "skills/kernel-domain-modeling/SKILL.md": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "skills/kernel-minimal-correct-change/SKILL.md": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "skills/kernel-review-complexity/SKILL.md": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "skills/kernel-review-spec/SKILL.md": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "skills/kernel-review-standards/SKILL.md": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "skills/kernel-security-review-policy/SKILL.md": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "skills/kernel-simplification-check/SKILL.md": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "skills/kernel-test-driven-development/SKILL.md": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "skills/kernel-tracer-slicing/SKILL.md": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "skills/kernel-verification-before-completion/SKILL.md": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "skills/moon-relay-kernel/SKILL.md": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "skills/moonshot-architecture/SKILL.md": {
+      "classification": "capability",
+      "capability": "standalone-architecture-and-research-tools"
+    },
+    "skills/moonshot-classify-task/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/moonshot-decide-sequence/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/moonshot-detect-uncertainty/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/moonshot-evaluate-complexity/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/moonshot-in-session-coordinator/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/moonshot-orchestrator/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/moonshot-phase-executor/SKILL.md": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "skills/moonshot-phase-runner/SKILL.md": {
+      "classification": "capability",
+      "capability": "legacy-phase-runner-and-harness-adapters"
+    },
+    "skills/moonshot-plan-writer/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/moonshot-relay-maintainer/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/moonshot-relay-maintainer/agents/openai.yaml": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/moonshot-relay-setup/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/moonshot-retro/SKILL.md": {
+      "classification": "capability",
+      "capability": "retrospective-and-regression-learning"
+    },
+    "skills/moonshot-teams-runner/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/normalize/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/plan-ceo-review/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/plan-eng-review/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/polish/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/pre-flight-check/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/product-definition/SKILL.md": {
+      "classification": "capability",
+      "capability": "standalone-architecture-and-research-tools"
+    },
+    "skills/product-gate-reviewer/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/product-orchestrator/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/project-contract-gate/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/project-md-refresh/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/project-memory-refresh/SKILL.md": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "skills/project-memory/SKILL.md": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "skills/qa-flow/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/security-reviewer/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/session-logger/SKILL.md": {
+      "classification": "capability",
+      "capability": "retrospective-and-regression-learning"
+    },
+    "skills/task-slicer/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/teach-impeccable/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/test-driven-development/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/ui-audit/SKILL.md": {
+      "classification": "capability",
+      "capability": "standalone-architecture-and-research-tools"
+    },
+    "skills/vercel-react-best-practices/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/verification-contract-gate/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/verification-evidence-gate/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/web-design-guidelines/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "skills/workspace-isolation-gate/SKILL.md": {
+      "classification": "ignored",
+      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+    },
+    "tests/kernel-account-root-profile.test.mjs": {
+      "classification": "capability",
+      "capability": "account-root-package-and-profile-adoption"
+    },
+    "tests/kernel-app-switching-parity.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-architecture-knowledge.test.mjs": {
+      "classification": "capability",
+      "capability": "knowledge-ingestion-and-evidence-graph"
+    },
+    "tests/kernel-attempt-provenance.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-bounded-work-unit.test.mjs": {
+      "classification": "capability",
+      "capability": "task-contract-and-bounded-work"
+    },
+    "tests/kernel-bridge-mcp.test.mjs": {
+      "classification": "capability",
+      "capability": "provider-session-and-execution-boundary"
+    },
+    "tests/kernel-brownfield-scan.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-cache-backward-compatibility.test.mjs": {
+      "classification": "capability",
+      "capability": "context-prompt-cache-and-optimization"
+    },
+    "tests/kernel-cache-replay.test.mjs": {
+      "classification": "capability",
+      "capability": "context-prompt-cache-and-optimization"
+    },
+    "tests/kernel-cache-sqlite-migration.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-cache-summary.test.mjs": {
+      "classification": "capability",
+      "capability": "context-prompt-cache-and-optimization"
+    },
+    "tests/kernel-cache-usage-receipt.test.mjs": {
+      "classification": "capability",
+      "capability": "context-prompt-cache-and-optimization"
+    },
+    "tests/kernel-capability-resolution.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-capsule-step-admission-e2e.test.mjs": {
+      "classification": "capability",
+      "capability": "step-ledger-resume"
+    },
+    "tests/kernel-capsule-step-migration.test.mjs": {
+      "classification": "capability",
+      "capability": "step-ledger-resume"
+    },
+    "tests/kernel-changed-path-contract.test.mjs": {
+      "classification": "capability",
+      "capability": "task-contract-and-bounded-work"
+    },
+    "tests/kernel-claude-agent-package.test.mjs": {
+      "classification": "capability",
+      "capability": "account-root-package-and-profile-adoption"
+    },
+    "tests/kernel-claude-agent-template-regression.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-claude-delegation-policy.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-claude-effort-policy.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-claude-model-adapter.test.mjs": {
+      "classification": "capability",
+      "capability": "model-routing-and-route-admission"
+    },
+    "tests/kernel-claude-opus5-prompt.test.mjs": {
+      "classification": "capability",
+      "capability": "context-prompt-cache-and-optimization"
+    },
+    "tests/kernel-claude-output-artifact.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-claude-prompt-cache.test.mjs": {
+      "classification": "capability",
+      "capability": "context-prompt-cache-and-optimization"
+    },
+    "tests/kernel-claude-thinking-policy.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-cli-doctor.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-codex-agents-md-policy.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-codex-fast-mode-policy.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-codex-gpt56-prompt.test.mjs": {
+      "classification": "capability",
+      "capability": "context-prompt-cache-and-optimization"
+    },
+    "tests/kernel-codex-model-adapter.test.mjs": {
+      "classification": "capability",
+      "capability": "model-routing-and-route-admission"
+    },
+    "tests/kernel-codex-model-policy.test.mjs": {
+      "classification": "capability",
+      "capability": "model-routing-and-route-admission"
+    },
+    "tests/kernel-codex-plan-policy.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-codex-programmatic-tool-policy.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-codex-project-hydration.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-codex-reasoning-policy.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-codex-responses-capabilities.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-codex-session-continuity.test.mjs": {
+      "classification": "capability",
+      "capability": "provider-session-and-execution-boundary"
+    },
+    "tests/kernel-codex-subagent-policy.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-command-shim.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-commit-closeout-capability.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-commit-message.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-common-delegation-policy.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-common-execution-prompt.test.mjs": {
+      "classification": "capability",
+      "capability": "context-prompt-cache-and-optimization"
+    },
+    "tests/kernel-common-plan-policy.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-common-verification-policy.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-completion-authority-required.test.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "tests/kernel-completion-gate-bypass.test.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "tests/kernel-completion-gate-recovery.test.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "tests/kernel-completion-view.test.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "tests/kernel-compression-audit.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-concurrent-commit.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-context-bootstrap-degraded.test.mjs": {
+      "classification": "capability",
+      "capability": "context-prompt-cache-and-optimization"
+    },
+    "tests/kernel-context-byte-identity.test.mjs": {
+      "classification": "capability",
+      "capability": "context-prompt-cache-and-optimization"
+    },
+    "tests/kernel-context-compiler.test.mjs": {
+      "classification": "capability",
+      "capability": "context-prompt-cache-and-optimization"
+    },
+    "tests/kernel-context-payload-redaction.test.mjs": {
+      "classification": "capability",
+      "capability": "context-prompt-cache-and-optimization"
+    },
+    "tests/kernel-context-policy-authority.test.mjs": {
+      "classification": "capability",
+      "capability": "context-prompt-cache-and-optimization"
+    },
+    "tests/kernel-context-record-order.test.mjs": {
+      "classification": "capability",
+      "capability": "context-prompt-cache-and-optimization"
+    },
+    "tests/kernel-context-redaction.test.mjs": {
+      "classification": "capability",
+      "capability": "context-prompt-cache-and-optimization"
+    },
+    "tests/kernel-context-segments.test.mjs": {
+      "classification": "capability",
+      "capability": "context-prompt-cache-and-optimization"
+    },
+    "tests/kernel-contract-preflight-continuation.test.mjs": {
+      "classification": "capability",
+      "capability": "task-contract-and-bounded-work"
+    },
+    "tests/kernel-control-plane-lifecycle.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-core-skills.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-cross-surface-e2e.test.mjs": {
+      "classification": "capability",
+      "capability": "provider-session-and-execution-boundary"
+    },
+    "tests/kernel-cross-surface-matrix.test.mjs": {
+      "classification": "capability",
+      "capability": "provider-session-and-execution-boundary"
+    },
+    "tests/kernel-end-to-end-integration.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-entrypoint-contract.test.mjs": {
+      "classification": "capability",
+      "capability": "task-contract-and-bounded-work"
+    },
+    "tests/kernel-eval-corpus-contract.test.mjs": {
+      "classification": "capability",
+      "capability": "task-contract-and-bounded-work"
+    },
+    "tests/kernel-evidence-pack.test.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "tests/kernel-evidence-plan.test.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "tests/kernel-evidence-semantics.test.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "tests/kernel-execution-capsule-budget.test.mjs": {
+      "classification": "capability",
+      "capability": "provider-session-and-execution-boundary"
+    },
+    "tests/kernel-execution-capsule-fresh-session.test.mjs": {
+      "classification": "capability",
+      "capability": "provider-session-and-execution-boundary"
+    },
+    "tests/kernel-execution-capsule.test.mjs": {
+      "classification": "capability",
+      "capability": "provider-session-and-execution-boundary"
+    },
+    "tests/kernel-execution-first-baseline.test.mjs": {
+      "classification": "capability",
+      "capability": "task-contract-and-bounded-work"
+    },
+    "tests/kernel-explicit-invocation-policy.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-final-reconciliation.test.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "tests/kernel-finalization-knowledge-nonblocking.test.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "tests/kernel-finalization-lifecycle.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-finalization-report-resume.test.mjs": {
+      "classification": "capability",
+      "capability": "step-ledger-resume"
+    },
+    "tests/kernel-flaky-and-selfmutation.test.mjs": {
+      "classification": "capability",
+      "capability": "model-routing-and-route-admission"
+    },
+    "tests/kernel-git-closeout-e2e.test.mjs": {
+      "classification": "capability",
+      "capability": "mutation-fencing-and-git-closeout"
+    },
+    "tests/kernel-git-closeout-index-integrity.test.mjs": {
+      "classification": "capability",
+      "capability": "mutation-fencing-and-git-closeout"
+    },
+    "tests/kernel-git-closeout-path-validation.test.mjs": {
+      "classification": "capability",
+      "capability": "mutation-fencing-and-git-closeout"
+    },
+    "tests/kernel-git-closeout-retry.test.mjs": {
+      "classification": "capability",
+      "capability": "mutation-fencing-and-git-closeout"
+    },
+    "tests/kernel-git-closeout-safety.test.mjs": {
+      "classification": "capability",
+      "capability": "mutation-fencing-and-git-closeout"
+    },
+    "tests/kernel-git-closeout.test.mjs": {
+      "classification": "capability",
+      "capability": "mutation-fencing-and-git-closeout"
+    },
+    "tests/kernel-git-remote-parity.test.mjs": {
+      "classification": "capability",
+      "capability": "mutation-fencing-and-git-closeout"
+    },
+    "tests/kernel-git-staging-policy.test.mjs": {
+      "classification": "capability",
+      "capability": "mutation-fencing-and-git-closeout"
+    },
+    "tests/kernel-global-skills-isolation.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-greenfield-bootstrap.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-guide-improvements.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-host-loop-e2e.test.mjs": {
+      "classification": "capability",
+      "capability": "provider-session-and-execution-boundary"
+    },
+    "tests/kernel-host-model-contract.test.mjs": {
+      "classification": "capability",
+      "capability": "task-contract-and-bounded-work"
+    },
+    "tests/kernel-host-model-dispatch.test.mjs": {
+      "classification": "capability",
+      "capability": "model-routing-and-route-admission"
+    },
+    "tests/kernel-independent-review-session.test.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "tests/kernel-install-isolation.test.mjs": {
+      "classification": "capability",
+      "capability": "account-root-package-and-profile-adoption"
+    },
+    "tests/kernel-knowledge-candidate.test.mjs": {
+      "classification": "capability",
+      "capability": "knowledge-ingestion-and-evidence-graph"
+    },
+    "tests/kernel-knowledge-commit.test.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "tests/kernel-knowledge-concurrency.test.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "tests/kernel-knowledge-context-redaction.test.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "tests/kernel-knowledge-context.test.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "tests/kernel-knowledge-freshness-load.test.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "tests/kernel-knowledge-freshness.test.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "tests/kernel-knowledge-isolation.test.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "tests/kernel-knowledge-lifecycle-e2e.test.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "tests/kernel-knowledge-package.test.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "tests/kernel-knowledge-profile-isolation.test.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "tests/kernel-knowledge-records.test.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "tests/kernel-knowledge-reuse-e2e.test.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "tests/kernel-knowledge-review.test.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "tests/kernel-knowledge-revision.test.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "tests/kernel-knowledge-stable-segment.test.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "tests/kernel-knowledge-store.test.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "tests/kernel-knowledge-supersession.test.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "tests/kernel-knowledge-transaction-recovery.test.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "tests/kernel-knowledge-uninstall-rollback.test.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "tests/kernel-lifecycle-doctor.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-managed-runtime.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-measurement-contract.test.mjs": {
+      "classification": "capability",
+      "capability": "task-contract-and-bounded-work"
+    },
+    "tests/kernel-migration-workflow.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-model-capsule-view.test.mjs": {
+      "classification": "capability",
+      "capability": "model-routing-and-route-admission"
+    },
+    "tests/kernel-model-escalation-e2e.test.mjs": {
+      "classification": "capability",
+      "capability": "model-routing-and-route-admission"
+    },
+    "tests/kernel-model-measurement.test.mjs": {
+      "classification": "capability",
+      "capability": "model-routing-and-route-admission"
+    },
+    "tests/kernel-model-policy-shadow-mode.test.mjs": {
+      "classification": "capability",
+      "capability": "model-routing-and-route-admission"
+    },
+    "tests/kernel-model-policy-usage-receipt.test.mjs": {
+      "classification": "capability",
+      "capability": "model-routing-and-route-admission"
+    },
+    "tests/kernel-model-policy.test.mjs": {
+      "classification": "capability",
+      "capability": "model-routing-and-route-admission"
+    },
+    "tests/kernel-model-route-contract.test.mjs": {
+      "classification": "capability",
+      "capability": "task-contract-and-bounded-work"
+    },
+    "tests/kernel-model-route-persistence.test.mjs": {
+      "classification": "capability",
+      "capability": "model-routing-and-route-admission"
+    },
+    "tests/kernel-model-routing-e2e.test.mjs": {
+      "classification": "capability",
+      "capability": "model-routing-and-route-admission"
+    },
+    "tests/kernel-model-routing-eval.test.mjs": {
+      "classification": "capability",
+      "capability": "model-routing-and-route-admission"
+    },
+    "tests/kernel-model-routing-resume.test.mjs": {
+      "classification": "capability",
+      "capability": "step-ledger-resume"
+    },
+    "tests/kernel-model-routing-summary.test.mjs": {
+      "classification": "capability",
+      "capability": "model-routing-and-route-admission"
+    },
+    "tests/kernel-model-usage-receipt.test.mjs": {
+      "classification": "capability",
+      "capability": "model-routing-and-route-admission"
+    },
+    "tests/kernel-multi-provider-session.test.mjs": {
+      "classification": "capability",
+      "capability": "provider-session-and-execution-boundary"
+    },
+    "tests/kernel-mutation-fencing-remediation.test.mjs": {
+      "classification": "capability",
+      "capability": "mutation-fencing-and-git-closeout"
+    },
+    "tests/kernel-mutation-guard.test.mjs": {
+      "classification": "capability",
+      "capability": "mutation-fencing-and-git-closeout"
+    },
+    "tests/kernel-native-provider-policy.test.mjs": {
+      "classification": "capability",
+      "capability": "model-routing-and-route-admission"
+    },
+    "tests/kernel-native-smoke.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-network-policy.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-next-purity.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-no-relay-db-migration.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-obligation-binding.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-ontology-evaluate.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-ontology-gating.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-openai-explicit-cache.test.mjs": {
+      "classification": "capability",
+      "capability": "context-prompt-cache-and-optimization"
+    },
+    "tests/kernel-optimization-cycle.test.mjs": {
+      "classification": "capability",
+      "capability": "context-prompt-cache-and-optimization"
+    },
+    "tests/kernel-package-materialization.test.mjs": {
+      "classification": "capability",
+      "capability": "account-root-package-and-profile-adoption"
+    },
+    "tests/kernel-parallel-admission.test.mjs": {
+      "classification": "capability",
+      "capability": "provider-session-and-execution-boundary"
+    },
+    "tests/kernel-parallel-dispatch.test.mjs": {
+      "classification": "capability",
+      "capability": "provider-session-and-execution-boundary"
+    },
+    "tests/kernel-parallel-fencing.test.mjs": {
+      "classification": "capability",
+      "capability": "provider-session-and-execution-boundary"
+    },
+    "tests/kernel-parallel-ledger.test.mjs": {
+      "classification": "capability",
+      "capability": "step-ledger-resume"
+    },
+    "tests/kernel-parallel-recovery.test.mjs": {
+      "classification": "capability",
+      "capability": "provider-session-and-execution-boundary"
+    },
+    "tests/kernel-parallel-runtime.test.mjs": {
+      "classification": "capability",
+      "capability": "provider-session-and-execution-boundary"
+    },
+    "tests/kernel-parallel-scope.test.mjs": {
+      "classification": "capability",
+      "capability": "provider-session-and-execution-boundary"
+    },
+    "tests/kernel-parallel-selection.test.mjs": {
+      "classification": "capability",
+      "capability": "provider-session-and-execution-boundary"
+    },
+    "tests/kernel-path-canonicalization.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-persisted-reasoning-lineage.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-preflight-execution-first.test.mjs": {
+      "classification": "capability",
+      "capability": "task-contract-and-bounded-work"
+    },
+    "tests/kernel-principle-runtime.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-product-contract.test.mjs": {
+      "classification": "capability",
+      "capability": "task-contract-and-bounded-work"
+    },
+    "tests/kernel-profile-isolation.test.mjs": {
+      "classification": "capability",
+      "capability": "account-root-package-and-profile-adoption"
+    },
+    "tests/kernel-profile-ownership.test.mjs": {
+      "classification": "capability",
+      "capability": "account-root-package-and-profile-adoption"
+    },
+    "tests/kernel-profile-rollback-remediation.test.mjs": {
+      "classification": "capability",
+      "capability": "account-root-package-and-profile-adoption"
+    },
+    "tests/kernel-profile-switcher-lifecycle.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-progressive-admission.test.mjs": {
+      "classification": "capability",
+      "capability": "model-routing-and-route-admission"
+    },
+    "tests/kernel-project-identity-migration.test.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "tests/kernel-project-identity-review-remediation.test.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "tests/kernel-project-identity.test.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "tests/kernel-project-mode.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-prompt-envelope.test.mjs": {
+      "classification": "capability",
+      "capability": "context-prompt-cache-and-optimization"
+    },
+    "tests/kernel-prompt-inventory.test.mjs": {
+      "classification": "capability",
+      "capability": "context-prompt-cache-and-optimization"
+    },
+    "tests/kernel-prompt-legacy-instruction.test.mjs": {
+      "classification": "capability",
+      "capability": "context-prompt-cache-and-optimization"
+    },
+    "tests/kernel-prompt-prefix-mutation.test.mjs": {
+      "classification": "capability",
+      "capability": "context-prompt-cache-and-optimization"
+    },
+    "tests/kernel-prompt-shadow-mode.test.mjs": {
+      "classification": "capability",
+      "capability": "context-prompt-cache-and-optimization"
+    },
+    "tests/kernel-prompt-size-budget.test.mjs": {
+      "classification": "capability",
+      "capability": "context-prompt-cache-and-optimization"
+    },
+    "tests/kernel-proof-command-not-knowledge.test.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "tests/kernel-proof-process-tree.test.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "tests/kernel-proof-tier.test.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "tests/kernel-provider-cache-capabilities.test.mjs": {
+      "classification": "capability",
+      "capability": "context-prompt-cache-and-optimization"
+    },
+    "tests/kernel-provider-cache-fallback.test.mjs": {
+      "classification": "capability",
+      "capability": "context-prompt-cache-and-optimization"
+    },
+    "tests/kernel-provider-prompt-policy.test.mjs": {
+      "classification": "capability",
+      "capability": "context-prompt-cache-and-optimization"
+    },
+    "tests/kernel-provider-smoke.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-report-lease.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-required-capability.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-resume-lease.test.mjs": {
+      "classification": "capability",
+      "capability": "step-ledger-resume"
+    },
+    "tests/kernel-review-capsule.test.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "tests/kernel-review-host-bridge.test.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "tests/kernel-review-model-routing.test.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "tests/kernel-review-pipeline.test.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "tests/kernel-review-receipt-completion.test.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "tests/kernel-review-receipt-freshness.test.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "tests/kernel-review-receipt.test.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "tests/kernel-route-admission-drift.test.mjs": {
+      "classification": "capability",
+      "capability": "model-routing-and-route-admission"
+    },
+    "tests/kernel-route-admission-e2e.test.mjs": {
+      "classification": "capability",
+      "capability": "model-routing-and-route-admission"
+    },
+    "tests/kernel-route-admission-review.test.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "tests/kernel-route-admission.test.mjs": {
+      "classification": "capability",
+      "capability": "model-routing-and-route-admission"
+    },
+    "tests/kernel-route-flaky-approval.test.mjs": {
+      "classification": "capability",
+      "capability": "model-routing-and-route-admission"
+    },
+    "tests/kernel-run-env-resolution.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-run-locator-fail-soft.test.mjs": {
+      "classification": "capability",
+      "capability": "step-ledger-resume"
+    },
+    "tests/kernel-run-step-ledger.test.mjs": {
+      "classification": "capability",
+      "capability": "step-ledger-resume"
+    },
+    "tests/kernel-run-step-replan.test.mjs": {
+      "classification": "capability",
+      "capability": "step-ledger-resume"
+    },
+    "tests/kernel-run-step-resume.test.mjs": {
+      "classification": "capability",
+      "capability": "step-ledger-resume"
+    },
+    "tests/kernel-run-step-scope.test.mjs": {
+      "classification": "capability",
+      "capability": "step-ledger-resume"
+    },
+    "tests/kernel-runtime-boundary-static.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-runtime-context-wiring.test.mjs": {
+      "classification": "capability",
+      "capability": "context-prompt-cache-and-optimization"
+    },
+    "tests/kernel-runtime-home-isolation.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-runtime-ownership-contract.test.mjs": {
+      "classification": "capability",
+      "capability": "task-contract-and-bounded-work"
+    },
+    "tests/kernel-secret-redaction.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-sentinel-eval.test.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "tests/kernel-session-affinity-key.test.mjs": {
+      "classification": "capability",
+      "capability": "provider-session-and-execution-boundary"
+    },
+    "tests/kernel-session-affinity.test.mjs": {
+      "classification": "capability",
+      "capability": "provider-session-and-execution-boundary"
+    },
+    "tests/kernel-session-binding.test.mjs": {
+      "classification": "capability",
+      "capability": "provider-session-and-execution-boundary"
+    },
+    "tests/kernel-session-continuation-summary.test.mjs": {
+      "classification": "capability",
+      "capability": "provider-session-and-execution-boundary"
+    },
+    "tests/kernel-session-lineage-reset.test.mjs": {
+      "classification": "capability",
+      "capability": "provider-session-and-execution-boundary"
+    },
+    "tests/kernel-session-run-lifecycle.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-sqlite-adapter-contract.test.mjs": {
+      "classification": "capability",
+      "capability": "task-contract-and-bounded-work"
+    },
+    "tests/kernel-stage-knowledge-remediation.test.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "tests/kernel-stagnation-routing.test.mjs": {
+      "classification": "capability",
+      "capability": "model-routing-and-route-admission"
+    },
+    "tests/kernel-standalone-project-knowledge.test.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "tests/kernel-standalone-unification.test.mjs": {
+      "classification": "capability",
+      "capability": "standalone-architecture-and-research-tools"
+    },
+    "tests/kernel-state-authority.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-state-projection.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-subagent-review.test.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "tests/kernel-successor-worktree.test.mjs": {
+      "classification": "capability",
+      "capability": "provider-session-and-execution-boundary"
+    },
+    "tests/kernel-tacit-retrieval.test.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "tests/kernel-tool-manifest-stability.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-track-contract.test.mjs": {
+      "classification": "capability",
+      "capability": "task-contract-and-bounded-work"
+    },
+    "tests/kernel-turn-dispatcher-envelope.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-turn-dispatcher-model-policy.test.mjs": {
+      "classification": "capability",
+      "capability": "model-routing-and-route-admission"
+    },
+    "tests/kernel-typed-knowledge-persistence.test.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
+    "tests/kernel-upstream-registry.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-workflow-state-machine.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-workspace-mutation-lock.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-worktree-binding.test.mjs": {
+      "classification": "capability",
+      "capability": "provider-session-and-execution-boundary"
+    },
+    "tests/kernel-worktree-concurrency-downgrade.test.mjs": {
+      "classification": "capability",
+      "capability": "provider-session-and-execution-boundary"
+    }
+  }
+}

@@ -2,8 +2,12 @@
 
 - **ID**: `legacy-phase-runner-and-harness-adapters`
 - **Domain**: `EXECUTION`
-- **Status**: `DEPRECATED`
+- **Family Status**: `DEPRECATED`
 - **Summary**: Relay phase/lease/artifact/harness 구현과 실패 교훈을 삭제하지 않고 비교용 historical asset으로 보존한다.
+
+## Subcapabilities (Decomplexification 단위)
+- **`legacy-phase-runner`** [`DEPRECATED`]: 구 Relay phase 실행 및 임차 정책 (비교용)
+- **`legacy-harness-adapters`** [`DEPRECATED`]: 아카이브된 과거 하네스 어댑터 (재도입 금지)
 
 ## 해결하는 문제
 - 역사적 Relay phase 실행을 비교하고 실패 교훈을 추적하는 문제

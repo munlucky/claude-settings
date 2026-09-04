@@ -6,7 +6,7 @@ import { test } from 'node:test';
 const root = path.resolve('.');
 const script = path.join(root, 'scripts', 'capability-assets-check.mjs');
 
-test('capability asset base validates manifests, provenance, catalog, and freeze boundary', () => {
+test('capability asset base validates manifests, provenance, catalog, subcapabilities, coverage ledger, and freeze boundary', () => {
   const result = spawnSync(process.execPath, [script], {
     cwd: root,
     encoding: 'utf8',
@@ -16,12 +16,24 @@ test('capability asset base validates manifests, provenance, catalog, and freeze
   const report = JSON.parse(result.stdout);
   assert.equal(report.status, 'pass');
   assert.equal(report.readOnly, true);
+  assert.equal(report.catalogVersion, 3);
+  assert.equal(report.baselineVersion, 2);
   assert.equal(report.assetCount, 15);
+  assert.equal(report.subcapabilityCount, 47);
   assert.equal(report.checked.immutableCommits, 33);
   assert.equal(report.checked.proofPaths, 45);
+  assert.equal(report.checked.subcapabilities, 47);
+  assert.equal(report.checked.coverageSurfaces, 719);
+  assert.equal(report.checked.rootBaselineForbidden, true);
+  assert.equal(report.checked.canonicalBaselineExists, true);
   assert.equal(report.statusCounts.CORE, 9);
   assert.equal(report.statusCounts.HOST, 2);
   assert.equal(report.statusCounts.OPTIONAL, 2);
   assert.equal(report.statusCounts.REFERENCE, 1);
   assert.equal(report.statusCounts.DEPRECATED, 1);
+  assert.equal(report.subcapabilityStatusCounts.CORE, 21);
+  assert.equal(report.subcapabilityStatusCounts.HOST, 13);
+  assert.equal(report.subcapabilityStatusCounts.OPTIONAL, 9);
+  assert.equal(report.subcapabilityStatusCounts.REFERENCE, 2);
+  assert.equal(report.subcapabilityStatusCounts.DEPRECATED, 2);
 });

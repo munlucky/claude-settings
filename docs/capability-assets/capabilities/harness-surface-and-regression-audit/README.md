@@ -2,8 +2,12 @@
 
 - **ID**: `harness-surface-and-regression-audit`
 - **Domain**: `TRUST`
-- **Status**: `REFERENCE`
+- **Family Status**: `REFERENCE`
 - **Summary**: tracked surface, tests, budget와 regression signal을 진단해 검증 범위 drift를 드러낸다.
+
+## Subcapabilities (Decomplexification 단위)
+- **`harness-surface-budget`** [`REFERENCE`]: 저장소 파일/라인/토큰 표면 예산 측정
+- **`regression-audit-reporting`** [`REFERENCE`]: 미등록 테스트 탐지 및 회귀 보고
 
 ## 해결하는 문제
 - 새 테스트가 실행 목록에서 빠지는 문제

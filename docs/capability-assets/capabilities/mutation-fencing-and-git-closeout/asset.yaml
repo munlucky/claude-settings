@@ -8,88 +8,301 @@
   "product_relevance": {
     "relevant": true,
     "reason": "agent workflow가 사용자 변경과 harness 변경을 섞지 않고 추적 가능하게 닫아야 한다.",
-    "consumers": ["agent_workflow"]
+    "consumers": [
+      "agent_workflow"
+    ]
   },
   "origin": {
     "first_seen": {
       "epoch": "E2",
       "commit": "5ccf1c9ccfbf68ae8067d6e7e69a7555c782fdb5",
       "date": "2026-01-21",
-      "evidence": [".claude/skills/completion-verifier/SKILL.md"]
+      "evidence": [
+        ".claude/skills/completion-verifier/SKILL.md"
+      ]
     },
     "generations": [
-      {"id": "relay-mutation-check", "epoch": "E2", "commit": "5ccf1c9ccfbf68ae8067d6e7e69a7555c782fdb5", "label": "Relay verification boundary", "change": "작업 후 변경과 검증을 분리했다."},
-      {"id": "relay-lease-closeout", "epoch": "E3", "commit": "1f7ed38b80f2d66d34498548448423c56154be16", "label": "Lease and artifact closeout", "change": "phase lease, artifact와 closeout diagnostics를 추가했다."},
-      {"id": "kernel-staging-policy", "epoch": "E6", "commit": "01eac62a1c37b4b044704304992f38ef4c520603", "label": "Kernel staging policy", "change": "staging, mutation guard와 remote parity를 Kernel 정책으로 분리했다."},
-      {"id": "current-closeout", "epoch": "E8", "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e", "label": "Current closeout", "change": "owner binding, index integrity와 safe closeout을 결합했다."}
+      {
+        "id": "relay-mutation-check",
+        "epoch": "E2",
+        "commit": "5ccf1c9ccfbf68ae8067d6e7e69a7555c782fdb5",
+        "label": "Relay verification boundary",
+        "change": "작업 후 변경과 검증을 분리했다."
+      },
+      {
+        "id": "relay-lease-closeout",
+        "epoch": "E3",
+        "commit": "1f7ed38b80f2d66d34498548448423c56154be16",
+        "label": "Lease and artifact closeout",
+        "change": "phase lease, artifact와 closeout diagnostics를 추가했다."
+      },
+      {
+        "id": "kernel-staging-policy",
+        "epoch": "E6",
+        "commit": "01eac62a1c37b4b044704304992f38ef4c520603",
+        "label": "Kernel staging policy",
+        "change": "staging, mutation guard와 remote parity를 Kernel 정책으로 분리했다."
+      },
+      {
+        "id": "current-closeout",
+        "epoch": "E8",
+        "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
+        "label": "Current closeout",
+        "change": "owner binding, index integrity와 safe closeout을 결합했다."
+      }
     ]
   },
   "problem": {
-    "solves": ["proof가 workspace를 변경해 evidence를 오염시키는 문제", "의도하지 않은 파일이 commit/closeout에 섞이는 문제"],
-    "does_not_solve": ["사용자가 명시하지 않은 commit/push 권한을 부여하는 것", "변경 내용의 제품적 정당성"]
+    "solves": [
+      "proof가 workspace를 변경해 evidence를 오염시키는 문제",
+      "의도하지 않은 파일이 commit/closeout에 섞이는 문제"
+    ],
+    "does_not_solve": [
+      "사용자가 명시하지 않은 commit/push 권한을 부여하는 것",
+      "변경 내용의 제품적 정당성"
+    ]
   },
-  "recommended_use": ["mutation 전 allowed path와 ancestry를 확인한다.", "closeout 시 index integrity, source identity와 remote parity를 별도 증명한다."],
-  "avoid_use": ["검증 실패를 숨기기 위해 reset/checkout으로 workspace를 덮지 않는다.", "assetization 범위를 벗어난 runtime 파일을 임의로 고치지 않는다."],
+  "recommended_use": [
+    "mutation 전 allowed path와 ancestry를 확인한다.",
+    "closeout 시 index integrity, source identity와 remote parity를 별도 증명한다."
+  ],
+  "avoid_use": [
+    "검증 실패를 숨기기 위해 reset/checkout으로 workspace를 덮지 않는다.",
+    "assetization 범위를 벗어난 runtime 파일을 임의로 고치지 않는다."
+  ],
   "authority": {
-    "owns_state": ["mutation lease, staging boundary, closeout receipt"],
-    "owns_completion": ["Git closeout은 completion을 보조하며 Kernel completion authority를 대체하지 않는다."],
-    "provides_evidence": ["mutation guard", "staging/index integrity", "Git closeout receipt"]
+    "owns_state": [
+      "mutation lease, staging boundary, closeout receipt"
+    ],
+    "owns_completion": [
+      "Git closeout은 completion을 보조하며 Kernel completion authority를 대체하지 않는다."
+    ],
+    "provides_evidence": [
+      "mutation guard",
+      "staging/index integrity",
+      "Git closeout receipt"
+    ]
   },
   "contracts": {
-    "inputs": ["task allowed paths", "workspace identity", "requested Git action", "current index"],
-    "outputs": ["accepted/rejected mutation", "scoped Git closeout receipt"],
-    "invariants": ["proof는 workspace를 mutate하지 않는다.", "금지 경로 변경은 closeout 전에 차단된다."],
-    "guardrails": ["commit/push는 명시 요청이 없으면 수행하지 않는다.", "destructive cleanup은 exact target preflight가 필요하다."]
+    "inputs": [
+      "task allowed paths",
+      "workspace identity",
+      "requested Git action",
+      "current index"
+    ],
+    "outputs": [
+      "accepted/rejected mutation",
+      "scoped Git closeout receipt"
+    ],
+    "invariants": [
+      "proof는 workspace를 mutate하지 않는다.",
+      "금지 경로 변경은 closeout 전에 차단된다."
+    ],
+    "guardrails": [
+      "commit/push는 명시 요청이 없으면 수행하지 않는다.",
+      "destructive cleanup은 exact target preflight가 필요하다."
+    ]
   },
   "implementations": {
     "best_known": {
       "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
-      "paths": ["scripts/kernel/run/mutation-guard.mjs", "scripts/kernel/git/staging-policy.mjs", "scripts/kernel/git/closeout.mjs", "scripts/kernel/git/remote-parity.mjs", "schemas/kernel.git-closeout-receipt.schema.json"],
+      "paths": [
+        "scripts/kernel/run/mutation-guard.mjs",
+        "scripts/kernel/git/staging-policy.mjs",
+        "scripts/kernel/git/closeout.mjs",
+        "scripts/kernel/git/remote-parity.mjs",
+        "schemas/kernel.git-closeout-receipt.schema.json"
+      ],
       "generation": "E8-current",
       "notes": "현재 Kernel mutation fencing과 Git closeout 구현."
     },
     "historical": [
-      {"commit": "4836e14ed180fae8a9034f2c06b884cb7a994db6", "paths": [".claude/scripts/agent-loop.sh"], "generation": "E2-relay", "notes": "Relay agent loop와 검증 단계의 초기 경계."},
-      {"commit": "1f7ed38b80f2d66d34498548448423c56154be16", "paths": ["archive/scripts/legacy-phase-adapters/lib/phase-run-lease-policy.mjs", "archive/scripts/legacy-phase-adapters/lib/closeout-diagnostics.mjs"], "generation": "E3-relay", "notes": "lease와 closeout diagnostics 자산."},
-      {"commit": "01eac62a1c37b4b044704304992f38ef4c520603", "paths": ["scripts/kernel/git/staging-policy.mjs", "scripts/kernel/git/closeout.mjs"], "generation": "E6-kernel", "notes": "Git mutation과 staging policy가 Kernel로 이동."}
+      {
+        "commit": "4836e14ed180fae8a9034f2c06b884cb7a994db6",
+        "paths": [
+          ".claude/scripts/agent-loop.sh"
+        ],
+        "generation": "E2-relay",
+        "notes": "Relay agent loop와 검증 단계의 초기 경계."
+      },
+      {
+        "commit": "1f7ed38b80f2d66d34498548448423c56154be16",
+        "paths": [
+          "archive/scripts/legacy-phase-adapters/lib/phase-run-lease-policy.mjs",
+          "archive/scripts/legacy-phase-adapters/lib/closeout-diagnostics.mjs"
+        ],
+        "generation": "E3-relay",
+        "notes": "lease와 closeout diagnostics 자산."
+      },
+      {
+        "commit": "01eac62a1c37b4b044704304992f38ef4c520603",
+        "paths": [
+          "scripts/kernel/git/staging-policy.mjs",
+          "scripts/kernel/git/closeout.mjs"
+        ],
+        "generation": "E6-kernel",
+        "notes": "Git mutation과 staging policy가 Kernel로 이동."
+      }
     ]
   },
   "proof": {
     "tests": [
-      {"id": "mutation-guard", "path": "tests/kernel-mutation-guard.test.mjs", "purpose": "금지 mutation과 proof self-mutation을 차단하는지 검증한다.", "commandRef": "test", "status": "verified"},
-      {"id": "git-closeout", "path": "tests/kernel-git-closeout.test.mjs", "purpose": "closeout receipt와 owner boundary를 검증한다.", "commandRef": "test", "status": "verified"},
-      {"id": "git-index-integrity", "path": "tests/kernel-git-closeout-index-integrity.test.mjs", "purpose": "staging/index integrity를 검증한다.", "commandRef": "test", "status": "verified"}
+      {
+        "id": "mutation-guard",
+        "path": "tests/kernel-mutation-guard.test.mjs",
+        "purpose": "금지 mutation과 proof self-mutation을 차단하는지 검증한다.",
+        "commandRef": "test",
+        "status": "verified",
+        "referenceStatus": "verified",
+        "executionStatus": "historical-pass"
+      },
+      {
+        "id": "git-closeout",
+        "path": "tests/kernel-git-closeout.test.mjs",
+        "purpose": "closeout receipt와 owner boundary를 검증한다.",
+        "commandRef": "test",
+        "status": "verified",
+        "referenceStatus": "verified",
+        "executionStatus": "historical-pass"
+      },
+      {
+        "id": "git-index-integrity",
+        "path": "tests/kernel-git-closeout-index-integrity.test.mjs",
+        "purpose": "staging/index integrity를 검증한다.",
+        "commandRef": "test",
+        "status": "verified",
+        "referenceStatus": "verified",
+        "executionStatus": "historical-pass"
+      }
     ],
     "fixtures": [],
     "smoke": [
-      {"id": "git-closeout-schema", "path": "schemas/kernel.git-closeout-receipt.schema.json", "purpose": "closeout receipt contract를 확인한다.", "commandRef": null, "status": "verified"}
+      {
+        "id": "git-closeout-schema",
+        "path": "schemas/kernel.git-closeout-receipt.schema.json",
+        "purpose": "closeout receipt contract를 확인한다.",
+        "commandRef": null,
+        "status": "verified"
+      }
     ]
   },
   "known_failures": [
-    {"id": "prepared-state-contamination", "severity": "P1", "symptom": "기존 dirty/prepared state가 새 작업의 mutation과 섞여 evidence와 closeout을 오염시킬 수 있었다.", "root_cause": "workspace baseline과 mutation revision을 강하게 바인딩하지 않음.", "lesson": "baseline, exact allowed paths, mutation revision과 index identity를 함께 기록한다.", "fixed_in": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e", "regression_tests": ["tests/kernel-flaky-and-selfmutation.test.mjs", "tests/kernel-git-closeout-index-integrity.test.mjs", "tests/kernel-mutation-fencing-remediation.test.mjs"]}
+    {
+      "id": "prepared-state-contamination",
+      "severity": "P1",
+      "symptom": "기존 dirty/prepared state가 새 작업의 mutation과 섞여 evidence와 closeout을 오염시킬 수 있었다.",
+      "root_cause": "workspace baseline과 mutation revision을 강하게 바인딩하지 않음.",
+      "lesson": "baseline, exact allowed paths, mutation revision과 index identity를 함께 기록한다.",
+      "fixed_in": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
+      "regression_tests": [
+        "tests/kernel-flaky-and-selfmutation.test.mjs",
+        "tests/kernel-git-closeout-index-integrity.test.mjs",
+        "tests/kernel-mutation-fencing-remediation.test.mjs"
+      ]
+    }
   ],
   "dependencies": {
-    "capabilities": ["task-contract-and-bounded-work", "evidence-completion-and-review-authority", "control-plane-state-authority"],
-    "runtime": ["Kernel workspace mutation lock", "Git closeout repository"],
-    "external": ["Git remote only when an explicit push is requested"]
+    "capabilities": [
+      "task-contract-and-bounded-work",
+      "evidence-completion-and-review-authority",
+      "control-plane-state-authority"
+    ],
+    "runtime": [
+      "Kernel workspace mutation lock",
+      "Git closeout repository"
+    ],
+    "external": [
+      "Git remote only when an explicit push is requested"
+    ]
   },
   "current_integration": {
     "layer": "Kernel mutation guard and Git closeout",
     "active": true,
-    "paths": ["scripts/kernel/run/mutation-guard.mjs", "scripts/kernel/git/closeout.mjs"],
-    "entrypoints": ["bin/moon-relay-kernel.mjs"],
+    "paths": [
+      "scripts/kernel/run/mutation-guard.mjs",
+      "scripts/kernel/git/closeout.mjs"
+    ],
+    "entrypoints": [
+      "bin/moon-relay-kernel.mjs"
+    ],
     "notes": "CORE trust boundary. This assetization intentionally does not request commit or push."
   },
   "reintroduction": {
     "recommended_layer": "workspace mutation and closeout",
     "trigger": "새 task가 파일 mutation 또는 사용자 요청 Git closeout을 수행할 때",
-    "integration_points": ["scope admission", "mutation lock", "staging policy", "closeout receipt"],
-    "risks": ["legacy cleanup가 사용자 변경을 삭제할 위험", "검증 output이 tracked surface를 키울 위험"],
-    "guardrails": ["exact path/ancestry preflight", "no destructive reset by default", "commit/push explicit request only"]
+    "integration_points": [
+      "scope admission",
+      "mutation lock",
+      "staging policy",
+      "closeout receipt"
+    ],
+    "risks": [
+      "legacy cleanup가 사용자 변경을 삭제할 위험",
+      "검증 output이 tracked surface를 키울 위험"
+    ],
+    "guardrails": [
+      "exact path/ancestry preflight",
+      "no destructive reset by default",
+      "commit/push explicit request only"
+    ]
   },
   "decision": {
     "disposition": "retain",
     "rationale": "신뢰 경계와 사용자 변경 보존을 동시에 지키는 현재 CORE capability다.",
-    "follow_up": ["모든 future asset validator는 read-only여야 하며 generated state를 payload에 포함하지 않는다."]
-  }
+    "follow_up": [
+      "모든 future asset validator는 read-only여야 하며 generated state를 payload에 포함하지 않는다."
+    ]
+  },
+  "subcapabilities": [
+    {
+      "id": "mutation-scope-safety",
+      "name": "Mutation scope safety",
+      "role": "선언된 경로 외의 임의 파일 변조 차단",
+      "disposition": "CORE",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": false
+      }
+    },
+    {
+      "id": "workspace-fencing",
+      "name": "Workspace fencing",
+      "role": "작업 공간 분리 및 외부 파일 유출 차단",
+      "disposition": "CORE",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": false
+      }
+    },
+    {
+      "id": "git-staging-safety",
+      "name": "Git staging safety",
+      "role": "Git 스테이징 정책 및 제외 파일 보호",
+      "disposition": "HOST",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": false
+      }
+    },
+    {
+      "id": "git-commit",
+      "name": "Git commit",
+      "role": "작업 문맥 기반 커밋 메시지 생성 및 로컬 커밋",
+      "disposition": "HOST",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": false
+      }
+    },
+    {
+      "id": "remote-parity",
+      "name": "Remote parity",
+      "role": "원격 저장소 푸시 및 remote parity 검증",
+      "disposition": "OPTIONAL",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": false
+      }
+    }
+  ]
 }

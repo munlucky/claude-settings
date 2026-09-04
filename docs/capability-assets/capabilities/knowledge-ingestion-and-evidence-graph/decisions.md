@@ -3,6 +3,10 @@
 - **Status**: `CORE`
 - **Disposition**: `retain`
 
+## Subcapabilities & Dispositions
+- **`knowledge-ingestion-normalization`** -> `CORE` (Workflow: true, Knowledge: true)
+- **`ontology-gate-promotion`** -> `CORE` (Workflow: true, Knowledge: true)
+
 ## 설계 및 보존 결정
 프로젝트 지식 lifecycle과 failure learning을 안전하게 연결하는 현재 CORE capability다.
 

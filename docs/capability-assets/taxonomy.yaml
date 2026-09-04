@@ -1,5 +1,6 @@
 schemaVersion: 1
 kind: capability-asset-taxonomy
+baselineVersion: 2
 domains:
   WORK:
     label: 작업 계획과 진행
@@ -29,7 +30,8 @@ domains:
     label: 생산성과 도구
     description: 계획, 문서, commit, retro, diff, browser와 orchestration
     candidateCapabilities: [plan-writer, architecture-writer, research-writer, commit-helper, session-logger, retrospective, diff-review, browser-evidence, skill-router, phase-runner]
-statuses:
+
+familyStatuses:
   CORE:
     meaning: 현재 핵심 경로이며 계약과 실행 가능한 proof가 유지됨
     minimumEvidence: [current-integration, authority-boundary, executable-proof, known-failure-review]
@@ -51,14 +53,28 @@ statuses:
   EXPERIMENTAL:
     meaning: 검증, 계약 또는 통합이 아직 불완전함
     minimumEvidence: [provenance-or-origin-note, open-risk]
+
+subcapabilityDispositions:
+  CORE:
+    meaning: AI Agent Workflow 또는 Project Knowledge Lifecycle의 본질 권위
+    criterion: "이 기능이 없으면 두 제품 목표가 성립하지 않는가? YES"
+  HOST:
+    meaning: Host 환경, Provider 세션, 인프라, CLI 어댑터에 속하는 실행 책임
+    criterion: "Kernel의 순수 권위가 아니며 Host에 위임 가능한가? YES"
+  OPTIONAL:
+    meaning: 특정 고위험 상황 또는 명시적 선택 시에만 활성화되는 자산
+    criterion: "일반 작업에는 불필요하며 특정 조건에서만 필요한가? YES"
+  REFERENCE:
+    meaning: 품질 측정, 표면 예산, 하네스 진단 관측용 자산
+    criterion: "런타임 기능이 아닌 진단/관측용인가? YES"
+  DEPRECATED:
+    meaning: 구조적 결함으로 퇴역했으나 실패 교훈을 보존하는 자산
+    criterion: "다시 사용하면 안 되는 과거 설계인가? YES"
+
 classificationRules:
-  - id: core-requires-current-use
-    rule: CORE는 현재 통합과 실행 가능한 proof 없이 부여하지 않는다.
-  - id: library-is-not-authority
-    rule: LIBRARY는 state나 completion authority를 소유하지 않는다.
-  - id: deprecated-keeps-lessons
-    rule: DEPRECATED는 삭제하지 않고 실패 원인과 금지 사용을 남긴다.
-  - id: reference-is-not-adoption
-    rule: REFERENCE는 제품 채택이나 runtime 활성화를 의미하지 않는다.
-  - id: experimental-is-explicit
-    rule: EXPERIMENTAL은 미검증 범위와 다음 검증 조건을 명시한다.
+  - id: core-requires-product-relevance
+    rule: Subcapability CORE는 agent_workflow 또는 project_knowledge_lifecycle 중 하나 이상이 true여야 한다.
+  - id: subcapability-disposition-is-authority
+    rule: Decomplexification의 실제 판단 단위는 Family status가 아닌 Subcapability disposition이다.
+  - id: single-canonical-baseline
+    rule: Baseline 문서는 docs/capability-assets/CAPABILITY_ASSET_BASELINE.md 단 하나만 유지한다.

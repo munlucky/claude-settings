@@ -3,6 +3,10 @@
 - **Status**: `CORE`
 - **Disposition**: `retain`
 
+## Subcapabilities & Dispositions
+- **`run-step-ledger`** -> `CORE` (Workflow: true, Knowledge: true)
+- **`work-cursor-resume`** -> `CORE` (Workflow: true, Knowledge: true)
+
 ## 설계 및 보존 결정
 Relay의 phase 진행 자산을 Kernel의 단일 step ledger로 통합해 보존할 가치가 있는 CORE capability다.
 

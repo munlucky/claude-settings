@@ -2,8 +2,12 @@
 
 - **ID**: `retrospective-and-regression-learning`
 - **Domain**: `KNOWLEDGE`
-- **Status**: `OPTIONAL`
+- **Family Status**: `OPTIONAL`
 - **Summary**: 실패·회고 signal을 수집하고 regression candidate로 만들되 명시적 review 전에는 authority로 승격하지 않는다.
+
+## Subcapabilities (Decomplexification 단위)
+- **`daily-retro-collection`** [`OPTIONAL`]: 일일 회고 및 장애 신호 수집
+- **`improvement-proposals`** [`OPTIONAL`]: 회고 기반 개선 제안 및 이슈 초안 작성
 
 ## 해결하는 문제
 - 반복 실패가 다음 작업에서 재현되는 문제

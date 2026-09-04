@@ -3,6 +3,10 @@
 - **Status**: `DEPRECATED`
 - **Disposition**: `archive`
 
+## Subcapabilities & Dispositions
+- **`legacy-phase-runner`** -> `DEPRECATED` (Workflow: true, Knowledge: false)
+- **`legacy-harness-adapters`** -> `DEPRECATED` (Workflow: true, Knowledge: false)
+
 ## 설계 및 보존 결정
 Relay 역사와 실패 교훈은 보존하지만 현재 Kernel runtime에 재도입하지 않는다.
 

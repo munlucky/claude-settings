@@ -3,6 +3,14 @@
 - **Status**: `CORE`
 - **Disposition**: `retain`
 
+## Subcapabilities & Dispositions
+- **`context-build`** -> `CORE` (Workflow: true, Knowledge: true)
+- **`knowledge-context-selection`** -> `CORE` (Workflow: true, Knowledge: true)
+- **`context-receipt-freshness`** -> `CORE` (Workflow: true, Knowledge: true)
+- **`prompt-envelope`** -> `HOST` (Workflow: true, Knowledge: false)
+- **`prompt-cache`** -> `HOST` (Workflow: true, Knowledge: false)
+- **`optimization-cycle`** -> `OPTIONAL` (Workflow: true, Knowledge: false)
+
 ## 설계 및 보존 결정
 비용과 재현성을 함께 다루는 현재 CORE capability이며 knowledge와 evidence boundary를 보강한다.
 

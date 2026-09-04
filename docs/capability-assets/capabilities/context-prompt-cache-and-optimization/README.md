@@ -2,8 +2,16 @@
 
 - **ID**: `context-prompt-cache-and-optimization`
 - **Domain**: `OPTIMIZATION`
-- **Status**: `CORE`
+- **Family Status**: `CORE`
 - **Summary**: bounded context, redaction, prompt envelope, stable cache와 optimization evidence를 관리한다.
+
+## Subcapabilities (Decomplexification 단위)
+- **`context-build`** [`CORE`]: 제한된 문맥 빌드 및 민감 정보 마스킹
+- **`knowledge-context-selection`** [`CORE`]: 프로젝트 지식 선별 및 주입
+- **`context-receipt-freshness`** [`CORE`]: 문맥 바이트 영수증 및 신선도 검증
+- **`prompt-envelope`** [`HOST`]: Provider별 프롬프트 와이어 포맷 정규화
+- **`prompt-cache`** [`HOST`]: Provider 프롬프트 캐시 브레이크포인트 최적화
+- **`optimization-cycle`** [`OPTIONAL`]: 캐시 재생 및 토큰 절감 지표 측정 루프
 
 ## 해결하는 문제
 - 매 turn마다 큰 context를 재구성해 비용과 latency가 증가하는 문제

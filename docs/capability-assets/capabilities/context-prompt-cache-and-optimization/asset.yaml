@@ -8,91 +8,343 @@
   "product_relevance": {
     "relevant": true,
     "reason": "agent workflow와 knowledge lifecycle은 같은 source/context를 재현 가능하고 비용 효율적으로 전달해야 한다.",
-    "consumers": ["agent_workflow", "project_knowledge_lifecycle"]
+    "consumers": [
+      "agent_workflow",
+      "project_knowledge_lifecycle"
+    ]
   },
   "origin": {
     "first_seen": {
       "epoch": "E6",
       "commit": "9e929f98037bc427a7707dbf844568d3eb39d99f",
       "date": "2026-07-30",
-      "evidence": ["scripts/kernel/context-build.mjs", "scripts/kernel/context-receipt.mjs"]
+      "evidence": [
+        "scripts/kernel/context-build.mjs",
+        "scripts/kernel/context-receipt.mjs"
+      ]
     },
     "generations": [
-      {"id": "context-receipt", "epoch": "E4", "commit": "7806dd1870501a1171969ca8e13af8fbec26f892", "label": "Kernel context", "change": "context build와 receipt를 Kernel execution surface에 도입했다."},
-      {"id": "shared-model-optimization", "epoch": "E6", "commit": "9e929f98037bc427a7707dbf844568d3eb39d99f", "label": "Shared optimization", "change": "stable context와 model execution optimization을 추가했다."},
-      {"id": "cache-replay", "epoch": "E7", "commit": "30b317c0c8f0dee9b4a1c8f82f8b14fe30a7f692", "label": "Cache replay", "change": "prompt/cache segment reuse와 invalidation 조건을 구조화했다."},
-      {"id": "current-fresh-context", "epoch": "E8", "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e", "label": "Fresh context", "change": "redaction, digest, freshness와 context boundary를 owner-direct execution에 연결했다."}
+      {
+        "id": "context-receipt",
+        "epoch": "E4",
+        "commit": "7806dd1870501a1171969ca8e13af8fbec26f892",
+        "label": "Kernel context",
+        "change": "context build와 receipt를 Kernel execution surface에 도입했다."
+      },
+      {
+        "id": "shared-model-optimization",
+        "epoch": "E6",
+        "commit": "9e929f98037bc427a7707dbf844568d3eb39d99f",
+        "label": "Shared optimization",
+        "change": "stable context와 model execution optimization을 추가했다."
+      },
+      {
+        "id": "cache-replay",
+        "epoch": "E7",
+        "commit": "30b317c0c8f0dee9b4a1c8f82f8b14fe30a7f692",
+        "label": "Cache replay",
+        "change": "prompt/cache segment reuse와 invalidation 조건을 구조화했다."
+      },
+      {
+        "id": "current-fresh-context",
+        "epoch": "E8",
+        "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
+        "label": "Fresh context",
+        "change": "redaction, digest, freshness와 context boundary를 owner-direct execution에 연결했다."
+      }
     ]
   },
   "problem": {
-    "solves": ["매 turn마다 큰 context를 재구성해 비용과 latency가 증가하는 문제", "변경된 source/knowledge에도 stale cache를 재사용하는 문제"],
-    "does_not_solve": ["모델의 reasoning quality", "cache가 외부 provider에서 실제 hit되었다는 live 보장"]
+    "solves": [
+      "매 turn마다 큰 context를 재구성해 비용과 latency가 증가하는 문제",
+      "변경된 source/knowledge에도 stale cache를 재사용하는 문제"
+    ],
+    "does_not_solve": [
+      "모델의 reasoning quality",
+      "cache가 외부 provider에서 실제 hit되었다는 live 보장"
+    ]
   },
-  "recommended_use": ["context segment에 source identity, digest와 freshness를 기록한다.", "cache replay는 step·task·knowledge·evidence 변경 시 invalidation한다."],
-  "avoid_use": ["raw secret이나 unbounded prompt를 cache에 넣지 않는다.", "cache hit를 execution proof로 취급하지 않는다."],
+  "recommended_use": [
+    "context segment에 source identity, digest와 freshness를 기록한다.",
+    "cache replay는 step·task·knowledge·evidence 변경 시 invalidation한다."
+  ],
+  "avoid_use": [
+    "raw secret이나 unbounded prompt를 cache에 넣지 않는다.",
+    "cache hit를 execution proof로 취급하지 않는다."
+  ],
   "authority": {
-    "owns_state": ["context segments", "prompt envelope", "cache lineage and invalidation metadata"],
-    "owns_completion": ["optimization plane은 completion을 소유하지 않는다."],
-    "provides_evidence": ["context receipt", "cache usage/freshness and byte identity tests"]
+    "owns_state": [
+      "context segments",
+      "prompt envelope",
+      "cache lineage and invalidation metadata"
+    ],
+    "owns_completion": [
+      "optimization plane은 completion을 소유하지 않는다."
+    ],
+    "provides_evidence": [
+      "context receipt",
+      "cache usage/freshness and byte identity tests"
+    ]
   },
   "contracts": {
-    "inputs": ["task contract", "project knowledge", "source files", "model/provider policy", "cache key"],
-    "outputs": ["bounded redacted context", "provider prompt envelope", "replay/invalidation decision"],
-    "invariants": ["stable segment은 content identity가 같을 때만 재사용된다.", "prompt와 evidence ownership은 분리된다."],
-    "guardrails": ["size/token budget", "secret redaction", "digest/freshness gate", "provider-specific envelope isolation"]
+    "inputs": [
+      "task contract",
+      "project knowledge",
+      "source files",
+      "model/provider policy",
+      "cache key"
+    ],
+    "outputs": [
+      "bounded redacted context",
+      "provider prompt envelope",
+      "replay/invalidation decision"
+    ],
+    "invariants": [
+      "stable segment은 content identity가 같을 때만 재사용된다.",
+      "prompt와 evidence ownership은 분리된다."
+    ],
+    "guardrails": [
+      "size/token budget",
+      "secret redaction",
+      "digest/freshness gate",
+      "provider-specific envelope isolation"
+    ]
   },
   "implementations": {
     "best_known": {
       "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
-      "paths": ["scripts/kernel/context-build.mjs", "scripts/kernel/context-receipt.mjs", "scripts/kernel/context-segments.mjs", "scripts/kernel/cache-replay.mjs", "scripts/kernel/canonical-digest.mjs", "scripts/kernel/optimization-cycle.mjs"],
+      "paths": [
+        "scripts/kernel/context-build.mjs",
+        "scripts/kernel/context-receipt.mjs",
+        "scripts/kernel/context-segments.mjs",
+        "scripts/kernel/cache-replay.mjs",
+        "scripts/kernel/canonical-digest.mjs",
+        "scripts/kernel/optimization-cycle.mjs"
+      ],
       "generation": "E8-current",
       "notes": "현재 Kernel context/prompt/cache optimization plane."
     },
     "historical": [
-      {"commit": "7806dd1870501a1171969ca8e13af8fbec26f892", "paths": ["scripts/kernel/context-build.mjs", "scripts/kernel/context-receipt.mjs", "kernel/context-policy.yaml"], "generation": "E4-kernel", "notes": "초기 context receipt와 policy."},
-      {"commit": "9e929f98037bc427a7707dbf844568d3eb39d99f", "paths": ["scripts/kernel/context-build.mjs", "scripts/kernel/context-receipt.mjs"], "generation": "E6-kernel", "notes": "shared model execution optimization."},
-      {"commit": "30b317c0c8f0dee9b4a1c8f82f8b14fe30a7f692", "paths": ["scripts/kernel/cache-replay.mjs", "scripts/kernel/context-segments.mjs"], "generation": "E7-kernel", "notes": "cache replay와 stable segment."}
+      {
+        "commit": "7806dd1870501a1171969ca8e13af8fbec26f892",
+        "paths": [
+          "scripts/kernel/context-build.mjs",
+          "scripts/kernel/context-receipt.mjs",
+          "kernel/context-policy.yaml"
+        ],
+        "generation": "E4-kernel",
+        "notes": "초기 context receipt와 policy."
+      },
+      {
+        "commit": "9e929f98037bc427a7707dbf844568d3eb39d99f",
+        "paths": [
+          "scripts/kernel/context-build.mjs",
+          "scripts/kernel/context-receipt.mjs"
+        ],
+        "generation": "E6-kernel",
+        "notes": "shared model execution optimization."
+      },
+      {
+        "commit": "30b317c0c8f0dee9b4a1c8f82f8b14fe30a7f692",
+        "paths": [
+          "scripts/kernel/cache-replay.mjs",
+          "scripts/kernel/context-segments.mjs"
+        ],
+        "generation": "E7-kernel",
+        "notes": "cache replay와 stable segment."
+      }
     ]
   },
   "proof": {
     "tests": [
-      {"id": "context-compiler", "path": "tests/kernel-context-compiler.test.mjs", "purpose": "context compilation과 bounded envelope를 검증한다.", "commandRef": "test", "status": "verified"},
-      {"id": "context-byte-identity", "path": "tests/kernel-context-byte-identity.test.mjs", "purpose": "동일 input의 byte identity와 digest를 검증한다.", "commandRef": "test", "status": "verified"},
-      {"id": "cache-replay", "path": "tests/kernel-cache-replay.test.mjs", "purpose": "cache replay와 invalidation을 검증한다.", "commandRef": "test", "status": "verified"}
+      {
+        "id": "context-compiler",
+        "path": "tests/kernel-context-compiler.test.mjs",
+        "purpose": "context compilation과 bounded envelope를 검증한다.",
+        "commandRef": "test",
+        "status": "verified",
+        "referenceStatus": "verified",
+        "executionStatus": "historical-pass"
+      },
+      {
+        "id": "context-byte-identity",
+        "path": "tests/kernel-context-byte-identity.test.mjs",
+        "purpose": "동일 input의 byte identity와 digest를 검증한다.",
+        "commandRef": "test",
+        "status": "verified",
+        "referenceStatus": "verified",
+        "executionStatus": "historical-pass"
+      },
+      {
+        "id": "cache-replay",
+        "path": "tests/kernel-cache-replay.test.mjs",
+        "purpose": "cache replay와 invalidation을 검증한다.",
+        "commandRef": "test",
+        "status": "verified",
+        "referenceStatus": "verified",
+        "executionStatus": "historical-pass"
+      }
     ],
     "fixtures": [
-      {"id": "step-change-cache", "path": "tests/fixtures/kernel-cache-replay/step-change.json", "purpose": "step 변경 시 replay를 차단하는 fixture.", "commandRef": null, "status": "verified"},
-      {"id": "knowledge-change-cache", "path": "tests/fixtures/kernel-cache-replay/project-knowledge-change.json", "purpose": "knowledge 변경 시 cache lineage를 무효화하는 fixture.", "commandRef": null, "status": "verified"}
+      {
+        "id": "step-change-cache",
+        "path": "tests/fixtures/kernel-cache-replay/step-change.json",
+        "purpose": "step 변경 시 replay를 차단하는 fixture.",
+        "commandRef": null,
+        "status": "verified"
+      },
+      {
+        "id": "knowledge-change-cache",
+        "path": "tests/fixtures/kernel-cache-replay/project-knowledge-change.json",
+        "purpose": "knowledge 변경 시 cache lineage를 무효화하는 fixture.",
+        "commandRef": null,
+        "status": "verified"
+      }
     ],
     "smoke": [
-      {"id": "optimization-cycle", "path": "scripts/kernel/optimization-cycle.mjs", "purpose": "optimization decision 경계를 확인한다.", "commandRef": null, "status": "verified"}
+      {
+        "id": "optimization-cycle",
+        "path": "scripts/kernel/optimization-cycle.mjs",
+        "purpose": "optimization decision 경계를 확인한다.",
+        "commandRef": null,
+        "status": "verified"
+      }
     ]
   },
   "known_failures": [
-    {"id": "stale-context-replay", "severity": "P1", "symptom": "source, step 또는 project knowledge가 바뀌었는데 이전 prompt/cache segment가 재사용될 수 있었다.", "root_cause": "cache key와 evidence freshness inputs가 충분히 바인딩되지 않았다.", "lesson": "content digest, task/step/knowledge identity와 provider envelope를 cache lineage에 포함한다.", "fixed_in": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e", "regression_tests": ["tests/kernel-cache-replay.test.mjs", "tests/kernel-cache-summary.test.mjs", "tests/kernel-context-byte-identity.test.mjs"]}
+    {
+      "id": "stale-context-replay",
+      "severity": "P1",
+      "symptom": "source, step 또는 project knowledge가 바뀌었는데 이전 prompt/cache segment가 재사용될 수 있었다.",
+      "root_cause": "cache key와 evidence freshness inputs가 충분히 바인딩되지 않았다.",
+      "lesson": "content digest, task/step/knowledge identity와 provider envelope를 cache lineage에 포함한다.",
+      "fixed_in": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
+      "regression_tests": [
+        "tests/kernel-cache-replay.test.mjs",
+        "tests/kernel-cache-summary.test.mjs",
+        "tests/kernel-context-byte-identity.test.mjs"
+      ]
+    }
   ],
   "dependencies": {
-    "capabilities": ["project-identity-and-knowledge-lifecycle", "knowledge-ingestion-and-evidence-graph", "model-routing-and-route-admission"],
-    "runtime": ["Kernel context compiler", "cache repository", "provider prompt adapter"],
-    "external": ["provider cache support"]
+    "capabilities": [
+      "project-identity-and-knowledge-lifecycle",
+      "knowledge-ingestion-and-evidence-graph",
+      "model-routing-and-route-admission"
+    ],
+    "runtime": [
+      "Kernel context compiler",
+      "cache repository",
+      "provider prompt adapter"
+    ],
+    "external": [
+      "provider cache support"
+    ]
   },
   "current_integration": {
     "layer": "Kernel context, prompt, cache and optimization plane",
     "active": true,
-    "paths": ["scripts/kernel/context-build.mjs", "scripts/kernel/cache-replay.mjs", "scripts/kernel/optimization-cycle.mjs"],
-    "entrypoints": ["bin/moon-relay-kernel.mjs"],
+    "paths": [
+      "scripts/kernel/context-build.mjs",
+      "scripts/kernel/cache-replay.mjs",
+      "scripts/kernel/optimization-cycle.mjs"
+    ],
+    "entrypoints": [
+      "bin/moon-relay-kernel.mjs"
+    ],
     "notes": "CORE optimization capability. Reuse never substitutes for fresh completion proof."
   },
   "reintroduction": {
     "recommended_layer": "context compiler and provider-aware cache",
     "trigger": "새 context segment, prompt provider 또는 optimization policy를 추가할 때",
-    "integration_points": ["source digest", "knowledge freshness", "prompt envelope", "cache replay", "usage receipt"],
-    "risks": ["stale knowledge leakage", "secret retention", "provider envelope drift", "false evidence from cache hit"],
-    "guardrails": ["redaction", "size/token budget", "freshness invalidation", "provider isolation", "receipt distinction"]
+    "integration_points": [
+      "source digest",
+      "knowledge freshness",
+      "prompt envelope",
+      "cache replay",
+      "usage receipt"
+    ],
+    "risks": [
+      "stale knowledge leakage",
+      "secret retention",
+      "provider envelope drift",
+      "false evidence from cache hit"
+    ],
+    "guardrails": [
+      "redaction",
+      "size/token budget",
+      "freshness invalidation",
+      "provider isolation",
+      "receipt distinction"
+    ]
   },
   "decision": {
     "disposition": "retain",
     "rationale": "비용과 재현성을 함께 다루는 현재 CORE capability이며 knowledge와 evidence boundary를 보강한다.",
-    "follow_up": ["optimization 변경은 context byte identity와 cache invalidation 회귀를 함께 갱신한다."]
-  }
+    "follow_up": [
+      "optimization 변경은 context byte identity와 cache invalidation 회귀를 함께 갱신한다."
+    ]
+  },
+  "subcapabilities": [
+    {
+      "id": "context-build",
+      "name": "Context build",
+      "role": "제한된 문맥 빌드 및 민감 정보 마스킹",
+      "disposition": "CORE",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": true
+      }
+    },
+    {
+      "id": "knowledge-context-selection",
+      "name": "Knowledge context selection",
+      "role": "프로젝트 지식 선별 및 주입",
+      "disposition": "CORE",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": true
+      }
+    },
+    {
+      "id": "context-receipt-freshness",
+      "name": "Context receipt freshness",
+      "role": "문맥 바이트 영수증 및 신선도 검증",
+      "disposition": "CORE",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": true
+      }
+    },
+    {
+      "id": "prompt-envelope",
+      "name": "Prompt envelope",
+      "role": "Provider별 프롬프트 와이어 포맷 정규화",
+      "disposition": "HOST",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": false
+      }
+    },
+    {
+      "id": "prompt-cache",
+      "name": "Prompt cache",
+      "role": "Provider 프롬프트 캐시 브레이크포인트 최적화",
+      "disposition": "HOST",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": false
+      }
+    },
+    {
+      "id": "optimization-cycle",
+      "name": "Optimization cycle",
+      "role": "캐시 재생 및 토큰 절감 지표 측정 루프",
+      "disposition": "OPTIONAL",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": false
+      }
+    }
+  ]
 }

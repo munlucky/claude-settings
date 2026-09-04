@@ -2,8 +2,16 @@
 
 - **ID**: `evidence-completion-and-review-authority`
 - **Domain**: `TRUST`
-- **Status**: `CORE`
+- **Family Status**: `CORE`
 - **Summary**: 실행 증거와 review receipt를 completion gate에 연결해 서술과 실제 실행을 분리한다.
+
+## Subcapabilities (Decomplexification 단위)
+- **`evidence-binding`** [`CORE`]: 실증 증거 수집 및 인수조건 의무 바인딩
+- **`verification-authority`** [`CORE`]: 검증 실행 결과 평가 및 통과 여부 단일 권위
+- **`completion-decision`** [`CORE`]: 최종 완료 판정 및 릴리즈 승인 게이트
+- **`protected-obligation`** [`CORE`]: 고위험 변경에 대한 필수 검증 의무 강제
+- **`independent-reviewer-execution`** [`OPTIONAL`]: 독립 컨텍스트 리뷰어 실행 및 판정 도출
+- **`review-transport`** [`HOST`]: 외부 리뷰어 세션 브릿지 및 프로토콜 전송
 
 ## 해결하는 문제
 - 문서상 완료와 실제 검증 성공이 분리되는 문제

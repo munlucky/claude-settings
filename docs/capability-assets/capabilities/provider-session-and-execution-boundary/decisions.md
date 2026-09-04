@@ -3,6 +3,11 @@
 - **Status**: `HOST`
 - **Disposition**: `retain`
 
+## Subcapabilities & Dispositions
+- **`host-session-binding`** -> `HOST` (Workflow: true, Knowledge: false)
+- **`execution-capsule-transport`** -> `HOST` (Workflow: true, Knowledge: false)
+- **`step-worktree-isolation`** -> `HOST` (Workflow: true, Knowledge: false)
+
 ## 설계 및 보존 결정
 현재 Kernel의 provider-independent core와 Host-owned execution을 연결하는 HOST capability다.
 

@@ -8,90 +8,293 @@
   "product_relevance": {
     "relevant": true,
     "reason": "workflow 개선과 project knowledge lifecycle은 provenance와 evidence가 붙은 candidate만 재사용해야 한다.",
-    "consumers": ["agent_workflow", "project_knowledge_lifecycle"]
+    "consumers": [
+      "agent_workflow",
+      "project_knowledge_lifecycle"
+    ]
   },
   "origin": {
     "first_seen": {
       "epoch": "E5",
       "commit": "761a0d19dc8abdccd9d32469af79f0ec600d104f",
       "date": "2026-07-23",
-      "evidence": ["scripts/kernel/knowledge/store.mjs", "scripts/kernel/knowledge/records.mjs"]
+      "evidence": [
+        "scripts/kernel/knowledge/store.mjs",
+        "scripts/kernel/knowledge/records.mjs"
+      ]
     },
     "generations": [
-      {"id": "relay-knowledge-import", "epoch": "E3", "commit": "1f7ed38b80f2d66d34498548448423c56154be16", "label": "Relay knowledge import", "change": "회고·trace를 knowledge record와 개선 candidate로 변환했다."},
-      {"id": "kernel-knowledge-store", "epoch": "E5", "commit": "761a0d19dc8abdccd9d32469af79f0ec600d104f", "label": "Kernel knowledge store", "change": "knowledge record, evidence binding과 revision 저장 구조를 도입했다."},
-      {"id": "ingestion-pipeline", "epoch": "E7", "commit": "30b317c0c8f0dee9b4a1c8f82f8b14fe30a7f692", "label": "Ingestion pipeline", "change": "redact, normalize, deduplicate, conflict와 transaction 단계를 분리했다."},
-      {"id": "current-evidence-graph", "epoch": "E8", "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e", "label": "Evidence graph", "change": "candidate와 evidence/revision/ontology gate를 current Kernel lifecycle에 연결했다."}
+      {
+        "id": "relay-knowledge-import",
+        "epoch": "E3",
+        "commit": "1f7ed38b80f2d66d34498548448423c56154be16",
+        "label": "Relay knowledge import",
+        "change": "회고·trace를 knowledge record와 개선 candidate로 변환했다."
+      },
+      {
+        "id": "kernel-knowledge-store",
+        "epoch": "E5",
+        "commit": "761a0d19dc8abdccd9d32469af79f0ec600d104f",
+        "label": "Kernel knowledge store",
+        "change": "knowledge record, evidence binding과 revision 저장 구조를 도입했다."
+      },
+      {
+        "id": "ingestion-pipeline",
+        "epoch": "E7",
+        "commit": "30b317c0c8f0dee9b4a1c8f82f8b14fe30a7f692",
+        "label": "Ingestion pipeline",
+        "change": "redact, normalize, deduplicate, conflict와 transaction 단계를 분리했다."
+      },
+      {
+        "id": "current-evidence-graph",
+        "epoch": "E8",
+        "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
+        "label": "Evidence graph",
+        "change": "candidate와 evidence/revision/ontology gate를 current Kernel lifecycle에 연결했다."
+      }
     ]
   },
   "problem": {
-    "solves": ["서로 다른 source에서 온 signal을 검증 없이 memory로 승격하는 문제", "중복·충돌·민감 데이터가 knowledge store로 유입되는 문제"],
-    "does_not_solve": ["candidate 내용의 도메인 truth를 자동 판정하는 것", "review/commit authority를 대체하는 것"]
+    "solves": [
+      "서로 다른 source에서 온 signal을 검증 없이 memory로 승격하는 문제",
+      "중복·충돌·민감 데이터가 knowledge store로 유입되는 문제"
+    ],
+    "does_not_solve": [
+      "candidate 내용의 도메인 truth를 자동 판정하는 것",
+      "review/commit authority를 대체하는 것"
+    ]
   },
-  "recommended_use": ["source provenance, evidence refs와 redaction 결과를 candidate에 바인딩한다.", "normalize → deduplicate → conflict → review 순서를 보존한다."],
-  "avoid_use": ["raw payload를 canonical knowledge로 저장하지 않는다.", "자동 candidate를 silent promotion하지 않는다."],
+  "recommended_use": [
+    "source provenance, evidence refs와 redaction 결과를 candidate에 바인딩한다.",
+    "normalize → deduplicate → conflict → review 순서를 보존한다."
+  ],
+  "avoid_use": [
+    "raw payload를 canonical knowledge로 저장하지 않는다.",
+    "자동 candidate를 silent promotion하지 않는다."
+  ],
   "authority": {
-    "owns_state": ["ingestion transaction", "candidate/evidence graph", "redaction and conflict state"],
-    "owns_completion": ["knowledge candidate의 ingestion은 task completion을 소유하지 않는다."],
-    "provides_evidence": ["ingestion receipts", "candidate review and evidence binding tests"]
+    "owns_state": [
+      "ingestion transaction",
+      "candidate/evidence graph",
+      "redaction and conflict state"
+    ],
+    "owns_completion": [
+      "knowledge candidate의 ingestion은 task completion을 소유하지 않는다."
+    ],
+    "provides_evidence": [
+      "ingestion receipts",
+      "candidate review and evidence binding tests"
+    ]
   },
   "contracts": {
-    "inputs": ["source signal", "project identity", "evidence refs", "redaction policy"],
-    "outputs": ["redacted normalized candidate", "dedup/conflict decision", "transaction receipt"],
-    "invariants": ["raw secret와 unscoped payload는 저장하지 않는다.", "candidate가 source/evidence 없이 canonical record가 되지 않는다."],
-    "guardrails": ["review/commit gate 유지", "project scope와 revision freshness 확인", "conflict는 fail-closed"]
+    "inputs": [
+      "source signal",
+      "project identity",
+      "evidence refs",
+      "redaction policy"
+    ],
+    "outputs": [
+      "redacted normalized candidate",
+      "dedup/conflict decision",
+      "transaction receipt"
+    ],
+    "invariants": [
+      "raw secret와 unscoped payload는 저장하지 않는다.",
+      "candidate가 source/evidence 없이 canonical record가 되지 않는다."
+    ],
+    "guardrails": [
+      "review/commit gate 유지",
+      "project scope와 revision freshness 확인",
+      "conflict는 fail-closed"
+    ]
   },
   "implementations": {
     "best_known": {
       "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
-      "paths": ["scripts/kernel/knowledge-ingestion/candidate-extract.mjs", "scripts/kernel/knowledge-ingestion/redact.mjs", "scripts/kernel/knowledge-ingestion/normalize.mjs", "scripts/kernel/knowledge-ingestion/deduplicate.mjs", "scripts/kernel/knowledge-ingestion/conflict.mjs", "scripts/kernel/knowledge-ingestion/transaction.mjs", "scripts/kernel/knowledge-ingestion/verify.mjs", "scripts/kernel/knowledge/evidence-binder.mjs", "scripts/kernel/knowledge/candidate-review.mjs"],
+      "paths": [
+        "scripts/kernel/knowledge-ingestion/candidate-extract.mjs",
+        "scripts/kernel/knowledge-ingestion/redact.mjs",
+        "scripts/kernel/knowledge-ingestion/normalize.mjs",
+        "scripts/kernel/knowledge-ingestion/deduplicate.mjs",
+        "scripts/kernel/knowledge-ingestion/conflict.mjs",
+        "scripts/kernel/knowledge-ingestion/transaction.mjs",
+        "scripts/kernel/knowledge-ingestion/verify.mjs",
+        "scripts/kernel/knowledge/evidence-binder.mjs",
+        "scripts/kernel/knowledge/candidate-review.mjs"
+      ],
       "generation": "E8-current",
       "notes": "현재 Kernel ingestion과 evidence-bound candidate lifecycle."
     },
     "historical": [
-      {"commit": "1f7ed38b80f2d66d34498548448423c56154be16", "paths": ["archive/scripts/legacy-phase-adapters/knowledge-context-build.test.mjs", "archive/scripts/legacy-phase-adapters/knowledge-improvement-lifecycle.test.mjs"], "generation": "E3-relay", "notes": "Relay trace와 knowledge improvement signal."},
-      {"commit": "761a0d19dc8abdccd9d32469af79f0ec600d104f", "paths": ["scripts/kernel/knowledge/store.mjs", "scripts/kernel/knowledge/records.mjs"], "generation": "E5-kernel", "notes": "Kernel knowledge store와 typed record."},
-      {"commit": "30b317c0c8f0dee9b4a1c8f82f8b14fe30a7f692", "paths": ["scripts/kernel/knowledge-ingestion/import.mjs", "scripts/kernel/knowledge-ingestion/verify.mjs"], "generation": "E7-kernel", "notes": "ingestion pipeline과 transaction verification."}
+      {
+        "commit": "1f7ed38b80f2d66d34498548448423c56154be16",
+        "paths": [
+          "archive/scripts/legacy-phase-adapters/knowledge-context-build.test.mjs",
+          "archive/scripts/legacy-phase-adapters/knowledge-improvement-lifecycle.test.mjs"
+        ],
+        "generation": "E3-relay",
+        "notes": "Relay trace와 knowledge improvement signal."
+      },
+      {
+        "commit": "761a0d19dc8abdccd9d32469af79f0ec600d104f",
+        "paths": [
+          "scripts/kernel/knowledge/store.mjs",
+          "scripts/kernel/knowledge/records.mjs"
+        ],
+        "generation": "E5-kernel",
+        "notes": "Kernel knowledge store와 typed record."
+      },
+      {
+        "commit": "30b317c0c8f0dee9b4a1c8f82f8b14fe30a7f692",
+        "paths": [
+          "scripts/kernel/knowledge-ingestion/import.mjs",
+          "scripts/kernel/knowledge-ingestion/verify.mjs"
+        ],
+        "generation": "E7-kernel",
+        "notes": "ingestion pipeline과 transaction verification."
+      }
     ]
   },
   "proof": {
     "tests": [
-      {"id": "knowledge-candidate", "path": "tests/kernel-knowledge-candidate.test.mjs", "purpose": "candidate schema와 review boundary를 검증한다.", "commandRef": "test", "status": "verified"},
-      {"id": "knowledge-store", "path": "tests/kernel-knowledge-store.test.mjs", "purpose": "typed knowledge store와 project scope를 검증한다.", "commandRef": "test", "status": "verified"},
-      {"id": "knowledge-lifecycle", "path": "tests/kernel-knowledge-lifecycle-e2e.test.mjs", "purpose": "ingestion부터 review/commit까지 lifecycle을 검증한다.", "commandRef": "test", "status": "verified"}
+      {
+        "id": "knowledge-candidate",
+        "path": "tests/kernel-knowledge-candidate.test.mjs",
+        "purpose": "candidate schema와 review boundary를 검증한다.",
+        "commandRef": "test",
+        "status": "verified",
+        "referenceStatus": "verified",
+        "executionStatus": "historical-pass"
+      },
+      {
+        "id": "knowledge-store",
+        "path": "tests/kernel-knowledge-store.test.mjs",
+        "purpose": "typed knowledge store와 project scope를 검증한다.",
+        "commandRef": "test",
+        "status": "verified",
+        "referenceStatus": "verified",
+        "executionStatus": "historical-pass"
+      },
+      {
+        "id": "knowledge-lifecycle",
+        "path": "tests/kernel-knowledge-lifecycle-e2e.test.mjs",
+        "purpose": "ingestion부터 review/commit까지 lifecycle을 검증한다.",
+        "commandRef": "test",
+        "status": "verified",
+        "referenceStatus": "verified",
+        "executionStatus": "historical-pass"
+      }
     ],
     "fixtures": [
-      {"id": "cache-knowledge-change", "path": "tests/fixtures/kernel-cache-replay/project-knowledge-change.json", "purpose": "knowledge change가 cache reuse를 무효화하는 fixture.", "commandRef": null, "status": "verified"}
+      {
+        "id": "cache-knowledge-change",
+        "path": "tests/fixtures/kernel-cache-replay/project-knowledge-change.json",
+        "purpose": "knowledge change가 cache reuse를 무효화하는 fixture.",
+        "commandRef": null,
+        "status": "verified"
+      }
     ],
     "smoke": [
-      {"id": "knowledge-transaction", "path": "scripts/kernel/knowledge-ingestion/transaction.mjs", "purpose": "ingestion transaction 경계를 확인한다.", "commandRef": null, "status": "verified"}
+      {
+        "id": "knowledge-transaction",
+        "path": "scripts/kernel/knowledge-ingestion/transaction.mjs",
+        "purpose": "ingestion transaction 경계를 확인한다.",
+        "commandRef": null,
+        "status": "verified"
+      }
     ]
   },
   "known_failures": [
-    {"id": "unreviewed-knowledge-promotion", "severity": "P1", "symptom": "실패 signal이나 외부 문서가 review 없이 canonical knowledge로 승격될 수 있었다.", "root_cause": "candidate, review, commit lifecycle이 단일 write로 축약되었다.", "lesson": "candidate는 evidence와 review result를 갖기 전까지 advisory 상태로 유지한다.", "fixed_in": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e", "regression_tests": ["tests/kernel-knowledge-review.test.mjs", "tests/kernel-knowledge-commit.test.mjs", "tests/kernel-knowledge-candidate.test.mjs"]}
+    {
+      "id": "unreviewed-knowledge-promotion",
+      "severity": "P1",
+      "symptom": "실패 signal이나 외부 문서가 review 없이 canonical knowledge로 승격될 수 있었다.",
+      "root_cause": "candidate, review, commit lifecycle이 단일 write로 축약되었다.",
+      "lesson": "candidate는 evidence와 review result를 갖기 전까지 advisory 상태로 유지한다.",
+      "fixed_in": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
+      "regression_tests": [
+        "tests/kernel-knowledge-review.test.mjs",
+        "tests/kernel-knowledge-commit.test.mjs",
+        "tests/kernel-knowledge-candidate.test.mjs"
+      ]
+    }
   ],
   "dependencies": {
-    "capabilities": ["project-identity-and-knowledge-lifecycle", "evidence-completion-and-review-authority", "context-prompt-cache-and-optimization"],
-    "runtime": ["Kernel knowledge repository", "SQLite knowledge transaction"],
+    "capabilities": [
+      "project-identity-and-knowledge-lifecycle",
+      "evidence-completion-and-review-authority",
+      "context-prompt-cache-and-optimization"
+    ],
+    "runtime": [
+      "Kernel knowledge repository",
+      "SQLite knowledge transaction"
+    ],
     "external": []
   },
   "current_integration": {
     "layer": "Kernel knowledge ingestion and evidence graph",
     "active": true,
-    "paths": ["scripts/kernel/knowledge-ingestion/transaction.mjs", "scripts/kernel/knowledge/evidence-binder.mjs", "scripts/kernel/knowledge/candidate-review.mjs"],
-    "entrypoints": ["bin/moon-relay-kernel.mjs"],
+    "paths": [
+      "scripts/kernel/knowledge-ingestion/transaction.mjs",
+      "scripts/kernel/knowledge/evidence-binder.mjs",
+      "scripts/kernel/knowledge/candidate-review.mjs"
+    ],
+    "entrypoints": [
+      "bin/moon-relay-kernel.mjs"
+    ],
     "notes": "CORE capability. Asset Base retains provenance, not a second knowledge store."
   },
   "reintroduction": {
     "recommended_layer": "project-scoped knowledge ingestion",
     "trigger": "새 source, retrospective signal 또는 cross-run evidence를 유입할 때",
-    "integration_points": ["redaction", "normalization", "deduplication", "conflict", "review", "commit"],
-    "risks": ["secret/raw payload leakage", "duplicate knowledge", "wrong project namespace", "silent promotion"],
-    "guardrails": ["schema and redaction gate", "evidence-bound candidate", "explicit review/commit", "freshness and supersession"]
+    "integration_points": [
+      "redaction",
+      "normalization",
+      "deduplication",
+      "conflict",
+      "review",
+      "commit"
+    ],
+    "risks": [
+      "secret/raw payload leakage",
+      "duplicate knowledge",
+      "wrong project namespace",
+      "silent promotion"
+    ],
+    "guardrails": [
+      "schema and redaction gate",
+      "evidence-bound candidate",
+      "explicit review/commit",
+      "freshness and supersession"
+    ]
   },
   "decision": {
     "disposition": "retain",
     "rationale": "프로젝트 지식 lifecycle과 failure learning을 안전하게 연결하는 현재 CORE capability다.",
-    "follow_up": ["asset validator는 knowledge store에 접근하지 않고 manifest evidence만 검사한다."]
-  }
+    "follow_up": [
+      "asset validator는 knowledge store에 접근하지 않고 manifest evidence만 검사한다."
+    ]
+  },
+  "subcapabilities": [
+    {
+      "id": "knowledge-ingestion-normalization",
+      "name": "Knowledge ingestion normalization",
+      "role": "지식 수집, 정규화, 중복 제거 및 충돌 검사",
+      "disposition": "CORE",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": true
+      }
+    },
+    {
+      "id": "ontology-gate-promotion",
+      "name": "Ontology gate promotion",
+      "role": "온톨로지 제약 평가 및 프로젝트 지식 승격",
+      "disposition": "CORE",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": true
+      }
+    }
+  ]
 }

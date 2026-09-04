@@ -3,6 +3,11 @@
 - **Status**: `OPTIONAL`
 - **Disposition**: `retain`
 
+## Subcapabilities & Dispositions
+- **`architecture-artifacts`** -> `OPTIONAL` (Workflow: true, Knowledge: true)
+- **`codebase-understanding`** -> `OPTIONAL` (Workflow: true, Knowledge: true)
+- **`standalone-diff-and-audit`** -> `OPTIONAL` (Workflow: true, Knowledge: false)
+
 ## 설계 및 보존 결정
 구현 품질을 보조하는 OPTIONAL productivity capability로 보존하되 runtime authority와 분리한다.
 

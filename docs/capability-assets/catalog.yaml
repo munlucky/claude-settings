@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "kind": "capability-asset-catalog",
-  "catalogVersion": 2,
+  "catalogVersion": 3,
   "repository": {
     "name": "moonshot-relay",
     "remote": "https://github.com/munlucky/moonshot-relay",
@@ -24,27 +24,199 @@
     "sourceSnapshotsCopied": false
   },
   "classification": {
-    "domains": ["WORK", "TRUST", "KNOWLEDGE", "EXECUTION", "INTELLIGENCE", "OPTIMIZATION", "PRODUCTIVITY"],
-    "statuses": ["CORE", "HOST", "OPTIONAL", "LIBRARY", "REFERENCE", "DEPRECATED", "EXPERIMENTAL"],
-    "counts": {"CORE": 9, "HOST": 2, "OPTIONAL": 2, "LIBRARY": 0, "REFERENCE": 1, "DEPRECATED": 1, "EXPERIMENTAL": 0},
-    "relevanceKeys": ["agent_workflow", "project_knowledge_lifecycle"]
+    "domains": [
+      "WORK",
+      "TRUST",
+      "KNOWLEDGE",
+      "EXECUTION",
+      "INTELLIGENCE",
+      "OPTIMIZATION",
+      "PRODUCTIVITY"
+    ],
+    "statuses": [
+      "CORE",
+      "HOST",
+      "OPTIONAL",
+      "LIBRARY",
+      "REFERENCE",
+      "DEPRECATED",
+      "EXPERIMENTAL"
+    ],
+    "counts": {
+      "CORE": 9,
+      "HOST": 2,
+      "OPTIONAL": 2,
+      "LIBRARY": 0,
+      "REFERENCE": 1,
+      "DEPRECATED": 1,
+      "EXPERIMENTAL": 0
+    },
+    "relevanceKeys": [
+      "agent_workflow",
+      "project_knowledge_lifecycle"
+    ],
+    "subcapabilityCounts": {
+      "total": 47,
+      "CORE": 21,
+      "HOST": 13,
+      "OPTIONAL": 9,
+      "LIBRARY": 0,
+      "REFERENCE": 2,
+      "DEPRECATED": 2,
+      "EXPERIMENTAL": 0
+    }
   },
   "assets": [
-    {"id": "task-contract-and-bounded-work", "path": "capabilities/task-contract-and-bounded-work/asset.yaml", "domain": "WORK", "status": "CORE", "relevance": {"agent_workflow": true, "project_knowledge_lifecycle": false}},
-    {"id": "step-ledger-resume", "path": "capabilities/step-ledger-resume/asset.yaml", "domain": "WORK", "status": "CORE", "relevance": {"agent_workflow": true, "project_knowledge_lifecycle": true}},
-    {"id": "evidence-completion-and-review-authority", "path": "capabilities/evidence-completion-and-review-authority/asset.yaml", "domain": "TRUST", "status": "CORE", "relevance": {"agent_workflow": true, "project_knowledge_lifecycle": true}},
-    {"id": "mutation-fencing-and-git-closeout", "path": "capabilities/mutation-fencing-and-git-closeout/asset.yaml", "domain": "TRUST", "status": "CORE", "relevance": {"agent_workflow": true, "project_knowledge_lifecycle": false}},
-    {"id": "project-identity-and-knowledge-lifecycle", "path": "capabilities/project-identity-and-knowledge-lifecycle/asset.yaml", "domain": "KNOWLEDGE", "status": "CORE", "relevance": {"agent_workflow": true, "project_knowledge_lifecycle": true}},
-    {"id": "knowledge-ingestion-and-evidence-graph", "path": "capabilities/knowledge-ingestion-and-evidence-graph/asset.yaml", "domain": "KNOWLEDGE", "status": "CORE", "relevance": {"agent_workflow": true, "project_knowledge_lifecycle": true}},
-    {"id": "control-plane-state-authority", "path": "capabilities/control-plane-state-authority/asset.yaml", "domain": "EXECUTION", "status": "CORE", "relevance": {"agent_workflow": true, "project_knowledge_lifecycle": true}},
-    {"id": "provider-session-and-execution-boundary", "path": "capabilities/provider-session-and-execution-boundary/asset.yaml", "domain": "EXECUTION", "status": "HOST", "relevance": {"agent_workflow": true, "project_knowledge_lifecycle": false}},
-    {"id": "model-routing-and-route-admission", "path": "capabilities/model-routing-and-route-admission/asset.yaml", "domain": "INTELLIGENCE", "status": "CORE", "relevance": {"agent_workflow": true, "project_knowledge_lifecycle": false}},
-    {"id": "context-prompt-cache-and-optimization", "path": "capabilities/context-prompt-cache-and-optimization/asset.yaml", "domain": "OPTIMIZATION", "status": "CORE", "relevance": {"agent_workflow": true, "project_knowledge_lifecycle": true}},
-    {"id": "account-root-package-and-profile-adoption", "path": "capabilities/account-root-package-and-profile-adoption/asset.yaml", "domain": "EXECUTION", "status": "HOST", "relevance": {"agent_workflow": true, "project_knowledge_lifecycle": false}},
-    {"id": "standalone-architecture-and-research-tools", "path": "capabilities/standalone-architecture-and-research-tools/asset.yaml", "domain": "PRODUCTIVITY", "status": "OPTIONAL", "relevance": {"agent_workflow": true, "project_knowledge_lifecycle": true}},
-    {"id": "retrospective-and-regression-learning", "path": "capabilities/retrospective-and-regression-learning/asset.yaml", "domain": "KNOWLEDGE", "status": "OPTIONAL", "relevance": {"agent_workflow": true, "project_knowledge_lifecycle": true}},
-    {"id": "legacy-phase-runner-and-harness-adapters", "path": "capabilities/legacy-phase-runner-and-harness-adapters/asset.yaml", "domain": "EXECUTION", "status": "DEPRECATED", "relevance": {"agent_workflow": true, "project_knowledge_lifecycle": false}},
-    {"id": "harness-surface-and-regression-audit", "path": "capabilities/harness-surface-and-regression-audit/asset.yaml", "domain": "TRUST", "status": "REFERENCE", "relevance": {"agent_workflow": true, "project_knowledge_lifecycle": false}}
+    {
+      "id": "task-contract-and-bounded-work",
+      "path": "capabilities/task-contract-and-bounded-work/asset.yaml",
+      "domain": "WORK",
+      "status": "CORE",
+      "relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": false
+      }
+    },
+    {
+      "id": "step-ledger-resume",
+      "path": "capabilities/step-ledger-resume/asset.yaml",
+      "domain": "WORK",
+      "status": "CORE",
+      "relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": true
+      }
+    },
+    {
+      "id": "evidence-completion-and-review-authority",
+      "path": "capabilities/evidence-completion-and-review-authority/asset.yaml",
+      "domain": "TRUST",
+      "status": "CORE",
+      "relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": true
+      }
+    },
+    {
+      "id": "mutation-fencing-and-git-closeout",
+      "path": "capabilities/mutation-fencing-and-git-closeout/asset.yaml",
+      "domain": "TRUST",
+      "status": "CORE",
+      "relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": false
+      }
+    },
+    {
+      "id": "project-identity-and-knowledge-lifecycle",
+      "path": "capabilities/project-identity-and-knowledge-lifecycle/asset.yaml",
+      "domain": "KNOWLEDGE",
+      "status": "CORE",
+      "relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": true
+      }
+    },
+    {
+      "id": "knowledge-ingestion-and-evidence-graph",
+      "path": "capabilities/knowledge-ingestion-and-evidence-graph/asset.yaml",
+      "domain": "KNOWLEDGE",
+      "status": "CORE",
+      "relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": true
+      }
+    },
+    {
+      "id": "control-plane-state-authority",
+      "path": "capabilities/control-plane-state-authority/asset.yaml",
+      "domain": "EXECUTION",
+      "status": "CORE",
+      "relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": true
+      }
+    },
+    {
+      "id": "provider-session-and-execution-boundary",
+      "path": "capabilities/provider-session-and-execution-boundary/asset.yaml",
+      "domain": "EXECUTION",
+      "status": "HOST",
+      "relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": false
+      }
+    },
+    {
+      "id": "model-routing-and-route-admission",
+      "path": "capabilities/model-routing-and-route-admission/asset.yaml",
+      "domain": "INTELLIGENCE",
+      "status": "CORE",
+      "relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": false
+      }
+    },
+    {
+      "id": "context-prompt-cache-and-optimization",
+      "path": "capabilities/context-prompt-cache-and-optimization/asset.yaml",
+      "domain": "OPTIMIZATION",
+      "status": "CORE",
+      "relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": true
+      }
+    },
+    {
+      "id": "account-root-package-and-profile-adoption",
+      "path": "capabilities/account-root-package-and-profile-adoption/asset.yaml",
+      "domain": "EXECUTION",
+      "status": "HOST",
+      "relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": false
+      }
+    },
+    {
+      "id": "standalone-architecture-and-research-tools",
+      "path": "capabilities/standalone-architecture-and-research-tools/asset.yaml",
+      "domain": "PRODUCTIVITY",
+      "status": "OPTIONAL",
+      "relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": true
+      }
+    },
+    {
+      "id": "retrospective-and-regression-learning",
+      "path": "capabilities/retrospective-and-regression-learning/asset.yaml",
+      "domain": "KNOWLEDGE",
+      "status": "OPTIONAL",
+      "relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": true
+      }
+    },
+    {
+      "id": "legacy-phase-runner-and-harness-adapters",
+      "path": "capabilities/legacy-phase-runner-and-harness-adapters/asset.yaml",
+      "domain": "EXECUTION",
+      "status": "DEPRECATED",
+      "relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": false
+      }
+    },
+    {
+      "id": "harness-surface-and-regression-audit",
+      "path": "capabilities/harness-surface-and-regression-audit/asset.yaml",
+      "domain": "TRUST",
+      "status": "REFERENCE",
+      "relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": false
+      }
+    }
   ],
   "assetCount": 15,
   "coverage": {
@@ -54,7 +226,8 @@
     "allManifestsComplete": true,
     "allDependenciesResolvable": true,
     "allProofPathsBound": true,
-    "allProvenanceCommitsImmutable": true
+    "allProvenanceCommitsImmutable": true,
+    "coverageLedger": "coverage-ledger.yaml"
   },
   "waveStatus": {
     "wave0Framework": "complete",
@@ -74,9 +247,27 @@
     "relayOnlyCount": 0,
     "kernelOnlyCount": 9,
     "inheritedCount": 6,
-    "duplicateFamilyCount": 1,
     "noProofCount": 0,
-    "openRisks": ["HOST assets need host/provider receipts for live claims.", "DEPRECATED archive assets need a new contract before reintroduction."],
-    "decomplexification": "not performed; separately authorized work required"
-  }
+    "openRisks": [
+      "HOST assets need host/provider receipts for live claims.",
+      "DEPRECATED archive assets need a new contract before reintroduction."
+    ],
+    "decomplexification": "not performed; separately authorized work required",
+    "baselineVersion": 2,
+    "subcapabilitySummary": {
+      "total": 47,
+      "CORE": 21,
+      "HOST": 13,
+      "OPTIONAL": 9,
+      "REFERENCE": 2,
+      "DEPRECATED": 2
+    },
+    "coverageSummary": {
+      "totalMapped": 719,
+      "classifiedCapabilityCount": 665,
+      "ignoredCount": 54,
+      "unclassifiedCount": 0
+    }
+  },
+  "baselineVersion": 2
 }

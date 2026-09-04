@@ -3,6 +3,14 @@
 - **Status**: `CORE`
 - **Disposition**: `retain`
 
+## Subcapabilities & Dispositions
+- **`required-capability-contract`** -> `CORE` (Workflow: true, Knowledge: false)
+- **`route-admission`** -> `CORE` (Workflow: true, Knowledge: false)
+- **`model-selection`** -> `HOST` (Workflow: true, Knowledge: false)
+- **`provider-selection`** -> `HOST` (Workflow: true, Knowledge: false)
+- **`effort-cost-routing`** -> `HOST` (Workflow: true, Knowledge: false)
+- **`stagnation-escalation`** -> `OPTIONAL` (Workflow: true, Knowledge: false)
+
 ## 설계 및 보존 결정
 현재 multi-stage Kernel의 선택과 비용·위험 경계를 담당하는 CORE capability다.
 

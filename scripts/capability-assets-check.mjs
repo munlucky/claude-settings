@@ -12,8 +12,18 @@ const catalogPath = path.join(assetRoot, 'catalog.yaml');
 const taxonomyPath = path.join(assetRoot, 'taxonomy.yaml');
 const epochsPath = path.join(assetRoot, 'epochs.yaml');
 const inventoryPath = path.join(assetRoot, 'inventory-current.yaml');
+const coverageLedgerPath = path.join(assetRoot, 'coverage-ledger.yaml');
+const baselineDocPath = path.join(assetRoot, 'CAPABILITY_ASSET_BASELINE.md');
+const rootBaselineDocPath = path.join(root, 'CAPABILITY_ASSET_BASELINE.md');
 const errors = [];
 const warnings = [];
+
+if (fs.existsSync(rootBaselineDocPath)) {
+  addError('root CAPABILITY_ASSET_BASELINE.md is forbidden; canonical document is docs/capability-assets/CAPABILITY_ASSET_BASELINE.md');
+}
+if (!fs.existsSync(baselineDocPath)) {
+  addError('canonical CAPABILITY_ASSET_BASELINE.md missing at docs/capability-assets/CAPABILITY_ASSET_BASELINE.md');
+}
 
 function addError(message) {
   errors.push(message);
@@ -119,12 +129,18 @@ function checkProofItem(item, label) {
   if (item.status !== undefined && !['verified', 'partial', 'missing', 'historical', 'unknown'].includes(item.status)) {
     addError(label + '.status is not a supported proof status');
   }
+  if (item.referenceStatus !== undefined && !['verified', 'missing'].includes(item.referenceStatus)) {
+    addError(label + '.referenceStatus must be verified or missing');
+  }
+  if (item.executionStatus !== undefined && !['executed-pass', 'executed-fail', 'historical-pass', 'not-run-at-freeze', 'unknown'].includes(item.executionStatus)) {
+    addError(label + '.executionStatus is not a supported execution status: ' + item.executionStatus);
+  }
   if (isText(item.path) && !fs.existsSync(path.join(root, item.path))) {
     addError(label + ' path does not exist in the current checkout: ' + item.path);
   }
 }
 
-function checkManifest(manifest, manifestPath, schema, epochCommits, allIds) {
+function checkManifest(manifest, manifestPath, schema, epochCommits, allIds, allSubcapabilityIds, collectedSubcapabilities) {
   const label = manifestPath.replace(root + path.sep, '').replaceAll(path.sep, '/');
   if (!isObject(manifest)) return;
   const required = Array.isArray(schema?.required) ? schema.required : [];
@@ -317,6 +333,44 @@ function checkManifest(manifest, manifestPath, schema, epochCommits, allIds) {
       addError(label + ' DEPRECATED asset must have archive or forbid disposition');
     }
   }
+
+  const subcapabilities = manifest.subcapabilities;
+  if (!Array.isArray(subcapabilities) || subcapabilities.length === 0) {
+    addError(label + '.subcapabilities must be a non-empty array');
+  } else {
+    subcapabilities.forEach((subcap, index) => {
+      const subcapLabel = label + '.subcapabilities[' + index + ']';
+      requireObject(subcap, subcapLabel);
+      if (!isObject(subcap)) return;
+      exactKeys(subcap, ['id', 'name', 'role', 'disposition', 'product_relevance'], subcapLabel);
+      requireText(subcap.id, subcapLabel + '.id');
+      requireText(subcap.name, subcapLabel + '.name');
+      requireText(subcap.role, subcapLabel + '.role');
+      if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(subcap.id || '')) {
+        addError(subcapLabel + '.id is not kebab-case: ' + subcap.id);
+      }
+      if (allSubcapabilityIds.has(subcap.id)) {
+        addError('duplicate subcapability ID across catalog: ' + subcap.id);
+      }
+      allSubcapabilityIds.add(subcap.id);
+      collectedSubcapabilities.push(subcap);
+
+      if (!['CORE', 'HOST', 'OPTIONAL', 'LIBRARY', 'REFERENCE', 'DEPRECATED', 'EXPERIMENTAL'].includes(subcap.disposition)) {
+        addError(subcapLabel + '.disposition is invalid: ' + subcap.disposition);
+      }
+      requireObject(subcap.product_relevance, subcapLabel + '.product_relevance');
+      if (isObject(subcap.product_relevance)) {
+        exactKeys(subcap.product_relevance, ['agent_workflow', 'project_knowledge_lifecycle'], subcapLabel + '.product_relevance');
+        if (typeof subcap.product_relevance.agent_workflow !== 'boolean') addError(subcapLabel + '.product_relevance.agent_workflow must be boolean');
+        if (typeof subcap.product_relevance.project_knowledge_lifecycle !== 'boolean') addError(subcapLabel + '.product_relevance.project_knowledge_lifecycle must be boolean');
+      }
+      if (subcap.disposition === 'CORE') {
+        if (!subcap.product_relevance?.agent_workflow && !subcap.product_relevance?.project_knowledge_lifecycle) {
+          addError(subcapLabel + ' CORE subcapability must be relevant to agent_workflow or project_knowledge_lifecycle');
+        }
+      }
+    });
+  }
 }
 
 const schema = readJson(schemaPath, 'asset.schema.json') || {};
@@ -347,18 +401,81 @@ const manifestPaths = fs.existsSync(manifestDir)
   : [];
 const manifests = [];
 const allIds = new Set();
+const allSubcapabilityIds = new Set();
+const collectedSubcapabilities = [];
 for (const manifestPath of manifestPaths) {
   const manifest = readJson(manifestPath, manifestPath.replace(root + path.sep, '').replaceAll(path.sep, '/'));
   if (manifest?.id) allIds.add(manifest.id);
   manifests.push({ path: manifestPath, data: manifest });
 }
-for (const record of manifests) checkManifest(record.data, record.path, schema, epochCommits, allIds);
+for (const record of manifests) checkManifest(record.data, record.path, schema, epochCommits, allIds, allSubcapabilityIds, collectedSubcapabilities);
 if (allIds.size !== manifestPaths.length) addError('capability manifest IDs must be unique');
+
+const coverageLedger = readJson(coverageLedgerPath, 'coverage-ledger.yaml');
+if (!isObject(coverageLedger)) {
+  addError('coverage-ledger.yaml must be JSON-compatible YAML');
+} else {
+  if (coverageLedger.schemaVersion !== 1 || coverageLedger.kind !== 'capability-asset-coverage-ledger') {
+    addError('coverage-ledger.yaml metadata is invalid');
+  }
+  if (coverageLedger.summary?.unclassifiedCount !== 0) {
+    addError('coverage-ledger.yaml unclassifiedCount must be 0, found ' + coverageLedger.summary?.unclassifiedCount);
+  }
+  const surfaces = coverageLedger.surfaces || {};
+  const surfaceEntries = Object.entries(surfaces);
+  if (surfaceEntries.length !== coverageLedger.summary?.totalMapped) {
+    addError('coverage-ledger.yaml totalMapped mismatch: summary says ' + coverageLedger.summary?.totalMapped + ', found ' + surfaceEntries.length);
+  }
+  let classifiedCount = 0;
+  let ignoredCount = 0;
+  for (const [filePath, entry] of surfaceEntries) {
+    safeRelativePath(filePath, 'coverage-ledger surface ' + filePath);
+    if (!fs.existsSync(path.join(root, filePath))) {
+      addError('coverage-ledger surface file does not exist: ' + filePath);
+    }
+    if (entry.classification === 'capability') {
+      classifiedCount++;
+      if (!allIds.has(entry.capability)) {
+        addError('coverage-ledger surface ' + filePath + ' references unknown capability: ' + entry.capability);
+      }
+    } else if (entry.classification === 'ignored') {
+      ignoredCount++;
+      requireText(entry.reason, 'coverage-ledger ignored surface ' + filePath + '.reason');
+    } else {
+      addError('coverage-ledger surface ' + filePath + ' has unknown classification: ' + entry.classification);
+    }
+  }
+  if (classifiedCount !== coverageLedger.summary?.classifiedCapabilityCount) {
+    addError('coverage-ledger classifiedCapabilityCount mismatch');
+  }
+  if (ignoredCount !== coverageLedger.summary?.ignoredCount) {
+    addError('coverage-ledger ignoredCount mismatch');
+  }
+
+  const gitFilesResult = git(['ls-files']);
+  if (gitFilesResult.status === 0) {
+    const gitFiles = gitFilesResult.stdout.split(/\r?\n/).filter(Boolean);
+    const corePrefixes = ['scripts/kernel/', 'kernel/', 'package/kernel/', 'archive/scripts/legacy-phase-adapters/'];
+    for (const gf of gitFiles) {
+      const isCore = corePrefixes.some((prefix) => gf.startsWith(prefix))
+        || (gf.startsWith('schemas/kernel.') && gf.endsWith('.json'))
+        || (gf.startsWith('tests/kernel-') && gf.endsWith('.test.mjs'))
+        || gf === 'bin/moon-relay-kernel.mjs'
+        || gf === 'bin/moonshot-relay.mjs'
+        || gf === 'bin/moon-relay-standalone.mjs';
+      if (isCore && !surfaces[gf]) {
+        addError('core file not mapped in coverage-ledger.yaml: ' + gf);
+      }
+    }
+  }
+}
 
 if (!isObject(catalog)) {
   addError('catalog.yaml must be JSON-compatible YAML');
 } else {
   if (catalog.schemaVersion !== 1 || catalog.kind !== 'capability-asset-catalog') addError('catalog metadata is invalid');
+  if (catalog.catalogVersion !== 3) addError('catalog.catalogVersion must be 3');
+  if (catalog.baselineVersion !== 2) addError('catalog.baselineVersion must be 2');
   if (!Array.isArray(catalog.assets)) addError('catalog.assets must be an array');
   const catalogIds = new Set((catalog.assets || []).map((asset) => asset.id));
   if (catalog.assetCount !== (catalog.assets || []).length) addError('catalog.assetCount does not match catalog.assets');
@@ -385,6 +502,36 @@ if (!isObject(catalog)) {
       addError('catalog classification count mismatch for ' + status);
     }
   }
+
+  const subcapCounts = {};
+  for (const sc of collectedSubcapabilities) {
+    subcapCounts[sc.disposition] = (subcapCounts[sc.disposition] || 0) + 1;
+  }
+  if (catalog.classification?.subcapabilityCounts?.total !== collectedSubcapabilities.length) {
+    addError('catalog.classification.subcapabilityCounts.total mismatch: expected ' + collectedSubcapabilities.length + ', got ' + catalog.classification?.subcapabilityCounts?.total);
+  }
+  for (const [status, count] of Object.entries(catalog.classification?.subcapabilityCounts || {})) {
+    if (status === 'total') continue;
+    if ((subcapCounts[status] || 0) !== count) {
+      addError('catalog.classification.subcapabilityCounts.' + status + ' mismatch: expected ' + (subcapCounts[status] || 0) + ', got ' + count);
+    }
+  }
+
+  if (catalog.freeze?.coverageSummary) {
+    if (catalog.freeze.coverageSummary.unclassifiedCount !== 0) {
+      addError('catalog.freeze.coverageSummary.unclassifiedCount must be 0');
+    }
+    if (catalog.freeze.coverageSummary.totalMapped !== coverageLedger?.summary?.totalMapped) {
+      addError('catalog.freeze.coverageSummary.totalMapped mismatch with coverage-ledger');
+    }
+    if (catalog.freeze.coverageSummary.classifiedCapabilityCount !== coverageLedger?.summary?.classifiedCapabilityCount) {
+      addError('catalog.freeze.coverageSummary.classifiedCapabilityCount mismatch with coverage-ledger');
+    }
+    if (catalog.freeze.coverageSummary.ignoredCount !== coverageLedger?.summary?.ignoredCount) {
+      addError('catalog.freeze.coverageSummary.ignoredCount mismatch with coverage-ledger');
+    }
+  }
+
   if (catalog.scope?.runtimeLoaded !== false || catalog.scope?.installerLoaded !== false || catalog.scope?.productionBehaviorChanged !== false || catalog.scope?.decomplexificationPerformed !== false || catalog.scope?.sourceSnapshotsCopied !== false) {
     addError('catalog scope boundary must remain non-runtime and non-decomplexification');
   }
@@ -400,13 +547,20 @@ if (!inventory.includes('kernelHistory: complete')) addError('inventory-current.
 
 const result = {
   schemaVersion: 1,
+  catalogVersion: catalog?.catalogVersion || 1,
+  baselineVersion: catalog?.baselineVersion || 1,
   status: errors.length === 0 ? 'pass' : 'fail',
   readOnly: true,
   baselineCommit: '9701a86d2225c938f13982a7e0f7f43a7f9bc10e',
   assetCount: manifests.length,
+  subcapabilityCount: collectedSubcapabilities.length,
   statusCounts: manifests.reduce((counts, record) => {
     const status = record.data?.status || 'invalid';
     counts[status] = (counts[status] || 0) + 1;
+    return counts;
+  }, {}),
+  subcapabilityStatusCounts: collectedSubcapabilities.reduce((counts, sc) => {
+    counts[sc.disposition] = (counts[sc.disposition] || 0) + 1;
     return counts;
   }, {}),
   checked: {
@@ -415,9 +569,14 @@ const result = {
     taxonomy: fs.existsSync(taxonomyPath),
     epochs: fs.existsSync(epochsPath),
     inventory: fs.existsSync(inventoryPath),
+    coverageLedger: fs.existsSync(coverageLedgerPath),
+    rootBaselineForbidden: !fs.existsSync(rootBaselineDocPath),
+    canonicalBaselineExists: fs.existsSync(baselineDocPath),
     immutableCommits: epochCommits.size,
     proofPaths: manifests.reduce((count, record) => count + (record.data?.proof?.tests?.length || 0), 0),
-    dependencies: manifests.reduce((count, record) => count + (record.data?.dependencies?.capabilities?.length || 0), 0)
+    dependencies: manifests.reduce((count, record) => count + (record.data?.dependencies?.capabilities?.length || 0), 0),
+    subcapabilities: collectedSubcapabilities.length,
+    coverageSurfaces: Object.keys(coverageLedger?.surfaces || {}).length,
   },
   warnings,
   errors

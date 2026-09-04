@@ -3,6 +3,10 @@
 - **Status**: `REFERENCE`
 - **Disposition**: `retain`
 
+## Subcapabilities & Dispositions
+- **`harness-surface-budget`** -> `REFERENCE` (Workflow: true, Knowledge: false)
+- **`regression-audit-reporting`** -> `REFERENCE` (Workflow: true, Knowledge: false)
+
 ## 설계 및 보존 결정
 자산화 자체와 future decomplexification에서 surface drift를 관찰하는 REFERENCE capability로 유지한다.
 

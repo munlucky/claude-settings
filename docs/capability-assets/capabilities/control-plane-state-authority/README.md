@@ -2,8 +2,12 @@
 
 - **ID**: `control-plane-state-authority`
 - **Domain**: `EXECUTION`
-- **Status**: `CORE`
+- **Family Status**: `CORE`
 - **Summary**: run, workflow, state projection과 durable repository의 권위를 단일 Kernel control plane으로 조정한다.
+
+## Subcapabilities (Decomplexification 단위)
+- **`state-transition-authority`** [`CORE`]: 런타임 라이프사이클 상태 전이 단일 권위
+- **`minimal-durable-state`** [`CORE`]: SQLite 어댑터 기반 실행 상태 영속화 및 투영
 
 ## 해결하는 문제
 - run state와 projection이 서로 다른 lifecycle을 나타내는 문제

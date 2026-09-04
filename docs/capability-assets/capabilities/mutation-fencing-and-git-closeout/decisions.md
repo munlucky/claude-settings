@@ -3,6 +3,13 @@
 - **Status**: `CORE`
 - **Disposition**: `retain`
 
+## Subcapabilities & Dispositions
+- **`mutation-scope-safety`** -> `CORE` (Workflow: true, Knowledge: false)
+- **`workspace-fencing`** -> `CORE` (Workflow: true, Knowledge: false)
+- **`git-staging-safety`** -> `HOST` (Workflow: true, Knowledge: false)
+- **`git-commit`** -> `HOST` (Workflow: true, Knowledge: false)
+- **`remote-parity`** -> `OPTIONAL` (Workflow: true, Knowledge: false)
+
 ## 설계 및 보존 결정
 신뢰 경계와 사용자 변경 보존을 동시에 지키는 현재 CORE capability다.
 

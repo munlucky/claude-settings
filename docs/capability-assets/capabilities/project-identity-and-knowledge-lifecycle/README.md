@@ -2,8 +2,12 @@
 
 - **ID**: `project-identity-and-knowledge-lifecycle`
 - **Domain**: `KNOWLEDGE`
-- **Status**: `CORE`
+- **Family Status**: `CORE`
 - **Summary**: 프로젝트 identity, knowledge namespace와 revision lifecycle을 안전한 scope에 묶는다.
+
+## Subcapabilities (Decomplexification 단위)
+- **`project-identity-binding`** [`CORE`]: 프로젝트 고유 식별자 확정 및 네임스페이스 격리
+- **`knowledge-lifecycle-authority`** [`CORE`]: 지식 레코드 개정, 대체, 저장 권위
 
 ## 해결하는 문제
 - 동일 저장소의 remote/basename alias가 서로 다른 knowledge namespace를 만드는 문제

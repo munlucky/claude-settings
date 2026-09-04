@@ -8,87 +8,263 @@
   "product_relevance": {
     "relevant": true,
     "reason": "agent workflow의 반복 실패를 학습 자산으로 바꾸지만 knowledge commit과 runtime adoption은 별도 gate다.",
-    "consumers": ["agent_workflow", "project_knowledge_lifecycle"]
+    "consumers": [
+      "agent_workflow",
+      "project_knowledge_lifecycle"
+    ]
   },
   "origin": {
     "first_seen": {
       "epoch": "E3",
       "commit": "1f7ed38b80f2d66d34498548448423c56154be16",
       "date": "2026-06-09",
-      "evidence": ["archive/scripts/legacy-phase-adapters/awtl-trace.mjs", "archive/scripts/legacy-phase-adapters/knowledge-improvement-lifecycle.test.mjs"]
+      "evidence": [
+        "archive/scripts/legacy-phase-adapters/awtl-trace.mjs",
+        "archive/scripts/legacy-phase-adapters/knowledge-improvement-lifecycle.test.mjs"
+      ]
     },
     "generations": [
-      {"id": "relay-awtl", "epoch": "E3", "commit": "1f7ed38b80f2d66d34498548448423c56154be16", "label": "Awtl trace and improvement", "change": "실패 turn, trace와 개선 후보를 회고 artifact로 수집했다."},
-      {"id": "current-retro-contract", "epoch": "E8", "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e", "label": "Advisory retrospective", "change": "retro collection, redaction, proposal과 no-promotion authority를 분리했다."}
+      {
+        "id": "relay-awtl",
+        "epoch": "E3",
+        "commit": "1f7ed38b80f2d66d34498548448423c56154be16",
+        "label": "Awtl trace and improvement",
+        "change": "실패 turn, trace와 개선 후보를 회고 artifact로 수집했다."
+      },
+      {
+        "id": "current-retro-contract",
+        "epoch": "E8",
+        "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
+        "label": "Advisory retrospective",
+        "change": "retro collection, redaction, proposal과 no-promotion authority를 분리했다."
+      }
     ]
   },
   "problem": {
-    "solves": ["반복 실패가 다음 작업에서 재현되는 문제", "실패 signal을 구조화된 regression test/개선 proposal로 잃는 문제"],
-    "does_not_solve": ["자동으로 product fix를 적용하는 것", "review 없이 knowledge나 runtime policy를 바꾸는 것"]
+    "solves": [
+      "반복 실패가 다음 작업에서 재현되는 문제",
+      "실패 signal을 구조화된 regression test/개선 proposal로 잃는 문제"
+    ],
+    "does_not_solve": [
+      "자동으로 product fix를 적용하는 것",
+      "review 없이 knowledge나 runtime policy를 바꾸는 것"
+    ]
   },
-  "recommended_use": ["실패 symptom, evidence, root cause와 regression candidate를 수집한다.", "proposal은 review와 명시적 commit 전까지 advisory로 유지한다."],
-  "avoid_use": ["자동 promotion을 completion이나 policy update로 해석하지 않는다.", "민감한 raw trace를 redaction 없이 보존하지 않는다."],
+  "recommended_use": [
+    "실패 symptom, evidence, root cause와 regression candidate를 수집한다.",
+    "proposal은 review와 명시적 commit 전까지 advisory로 유지한다."
+  ],
+  "avoid_use": [
+    "자동 promotion을 completion이나 policy update로 해석하지 않는다.",
+    "민감한 raw trace를 redaction 없이 보존하지 않는다."
+  ],
   "authority": {
-    "owns_state": ["retro collection artifact", "improvement proposal", "regression candidate"],
-    "owns_completion": ["retro는 completion을 소유하지 않는다."],
-    "provides_evidence": ["redacted retro artifact", "regression test and no-promotion contract"]
+    "owns_state": [
+      "retro collection artifact",
+      "improvement proposal",
+      "regression candidate"
+    ],
+    "owns_completion": [
+      "retro는 completion을 소유하지 않는다."
+    ],
+    "provides_evidence": [
+      "redacted retro artifact",
+      "regression test and no-promotion contract"
+    ]
   },
   "contracts": {
-    "inputs": ["failed turn/receipt", "task scope", "redaction policy", "existing regression corpus"],
-    "outputs": ["redacted retrospective", "improvement proposal", "candidate regression test"],
-    "invariants": ["proposal은 source/evidence를 참조한다.", "candidate와 committed knowledge를 구분한다."],
-    "guardrails": ["redaction", "advisory-only default", "explicit review/commit", "no runtime auto-promotion"]
+    "inputs": [
+      "failed turn/receipt",
+      "task scope",
+      "redaction policy",
+      "existing regression corpus"
+    ],
+    "outputs": [
+      "redacted retrospective",
+      "improvement proposal",
+      "candidate regression test"
+    ],
+    "invariants": [
+      "proposal은 source/evidence를 참조한다.",
+      "candidate와 committed knowledge를 구분한다."
+    ],
+    "guardrails": [
+      "redaction",
+      "advisory-only default",
+      "explicit review/commit",
+      "no runtime auto-promotion"
+    ]
   },
   "implementations": {
     "best_known": {
       "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
-      "paths": ["scripts/knowledge-improvement-lifecycle.mjs", "scripts/awtl-memory-promotion.mjs", "tests/retro-collect-contract.test.mjs", "tests/retro-improvement-proposer-contract.test.mjs"],
+      "paths": [
+        "scripts/knowledge-improvement-lifecycle.mjs",
+        "scripts/awtl-memory-promotion.mjs",
+        "tests/retro-collect-contract.test.mjs",
+        "tests/retro-improvement-proposer-contract.test.mjs"
+      ],
       "generation": "E8-current",
       "notes": "현재 retro/improvement surface는 advisory와 explicit promotion gate를 유지한다."
     },
     "historical": [
-      {"commit": "1f7ed38b80f2d66d34498548448423c56154be16", "paths": ["archive/scripts/legacy-phase-adapters/awtl-trace.mjs", "archive/scripts/legacy-phase-adapters/knowledge-improvement-lifecycle.test.mjs"], "generation": "E3-relay", "notes": "Awtl failure trace와 knowledge improvement lifecycle."},
-      {"commit": "1f7ed38b80f2d66d34498548448423c56154be16", "paths": ["archive/scripts/legacy-phase-adapters/lib/awtl-failure-prevention-brief.mjs", "archive/scripts/legacy-phase-adapters/lib/awtl-failed-turn-case.mjs"], "generation": "E3-relay", "notes": "실패 예방 brief와 failed-turn case 보조 자산."}
+      {
+        "commit": "1f7ed38b80f2d66d34498548448423c56154be16",
+        "paths": [
+          "archive/scripts/legacy-phase-adapters/awtl-trace.mjs",
+          "archive/scripts/legacy-phase-adapters/knowledge-improvement-lifecycle.test.mjs"
+        ],
+        "generation": "E3-relay",
+        "notes": "Awtl failure trace와 knowledge improvement lifecycle."
+      },
+      {
+        "commit": "1f7ed38b80f2d66d34498548448423c56154be16",
+        "paths": [
+          "archive/scripts/legacy-phase-adapters/lib/awtl-failure-prevention-brief.mjs",
+          "archive/scripts/legacy-phase-adapters/lib/awtl-failed-turn-case.mjs"
+        ],
+        "generation": "E3-relay",
+        "notes": "실패 예방 brief와 failed-turn case 보조 자산."
+      }
     ]
   },
   "proof": {
     "tests": [
-      {"id": "retro-collect", "path": "tests/retro-collect-contract.test.mjs", "purpose": "회고 수집 contract와 evidence binding을 검증한다.", "commandRef": "test", "status": "verified"},
-      {"id": "retro-redaction", "path": "tests/retro-redaction-contract.test.mjs", "purpose": "retro output의 redaction 경계를 검증한다.", "commandRef": "test", "status": "verified"},
-      {"id": "retro-no-promotion", "path": "tests/retro-no-promotion-authority-contract.test.mjs", "purpose": "retro candidate가 자동 authority가 되지 않는지 검증한다.", "commandRef": "test", "status": "verified"}
+      {
+        "id": "retro-collect",
+        "path": "tests/retro-collect-contract.test.mjs",
+        "purpose": "회고 수집 contract와 evidence binding을 검증한다.",
+        "commandRef": "test",
+        "status": "verified",
+        "referenceStatus": "verified",
+        "executionStatus": "historical-pass"
+      },
+      {
+        "id": "retro-redaction",
+        "path": "tests/retro-redaction-contract.test.mjs",
+        "purpose": "retro output의 redaction 경계를 검증한다.",
+        "commandRef": "test",
+        "status": "verified",
+        "referenceStatus": "verified",
+        "executionStatus": "historical-pass"
+      },
+      {
+        "id": "retro-no-promotion",
+        "path": "tests/retro-no-promotion-authority-contract.test.mjs",
+        "purpose": "retro candidate가 자동 authority가 되지 않는지 검증한다.",
+        "commandRef": "test",
+        "status": "verified",
+        "referenceStatus": "verified",
+        "executionStatus": "historical-pass"
+      }
     ],
     "fixtures": [
-      {"id": "retro-full-task", "path": "tests/fixtures/retro/task-full/design.md", "purpose": "회고 artifact package fixture.", "commandRef": null, "status": "verified"}
+      {
+        "id": "retro-full-task",
+        "path": "tests/fixtures/retro/task-full/design.md",
+        "purpose": "회고 artifact package fixture.",
+        "commandRef": null,
+        "status": "verified"
+      }
     ],
     "smoke": [
-      {"id": "retro-cli", "path": "scripts/knowledge-improvement-lifecycle.mjs", "purpose": "retro/improvement lifecycle 진입점을 확인한다.", "commandRef": null, "status": "verified"}
+      {
+        "id": "retro-cli",
+        "path": "scripts/knowledge-improvement-lifecycle.mjs",
+        "purpose": "retro/improvement lifecycle 진입점을 확인한다.",
+        "commandRef": null,
+        "status": "verified"
+      }
     ]
   },
   "known_failures": [
-    {"id": "silent-improvement-promotion", "severity": "P1", "symptom": "실패 candidate가 review/commit 없이 runtime guidance나 canonical knowledge로 승격될 수 있었다.", "root_cause": "retro collection과 promotion authority가 같은 lifecycle로 취급되었다.", "lesson": "advisory-only 기본값과 explicit review/commit을 유지한다.", "fixed_in": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e", "regression_tests": ["tests/retro-no-promotion-authority-contract.test.mjs", "tests/retro-improvement-proposer-contract.test.mjs"]}
+    {
+      "id": "silent-improvement-promotion",
+      "severity": "P1",
+      "symptom": "실패 candidate가 review/commit 없이 runtime guidance나 canonical knowledge로 승격될 수 있었다.",
+      "root_cause": "retro collection과 promotion authority가 같은 lifecycle로 취급되었다.",
+      "lesson": "advisory-only 기본값과 explicit review/commit을 유지한다.",
+      "fixed_in": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
+      "regression_tests": [
+        "tests/retro-no-promotion-authority-contract.test.mjs",
+        "tests/retro-improvement-proposer-contract.test.mjs"
+      ]
+    }
   ],
   "dependencies": {
-    "capabilities": ["knowledge-ingestion-and-evidence-graph", "evidence-completion-and-review-authority", "project-identity-and-knowledge-lifecycle"],
-    "runtime": ["retro artifact and proposal surface"],
+    "capabilities": [
+      "knowledge-ingestion-and-evidence-graph",
+      "evidence-completion-and-review-authority",
+      "project-identity-and-knowledge-lifecycle"
+    ],
+    "runtime": [
+      "retro artifact and proposal surface"
+    ],
     "external": []
   },
   "current_integration": {
     "layer": "separate retrospective and improvement plane",
     "active": true,
-    "paths": ["scripts/knowledge-improvement-lifecycle.mjs", "tests/retro-collect-contract.test.mjs"],
-    "entrypoints": ["bin/moon-relay-standalone.mjs"],
+    "paths": [
+      "scripts/knowledge-improvement-lifecycle.mjs",
+      "tests/retro-collect-contract.test.mjs"
+    ],
+    "entrypoints": [
+      "bin/moon-relay-standalone.mjs"
+    ],
     "notes": "OPTIONAL advisory capability. Explicit review and commit remain required."
   },
   "reintroduction": {
     "recommended_layer": "advisory retrospective and regression proposal surface",
     "trigger": "반복 실패, regression 또는 workflow improvement signal을 분석할 때",
-    "integration_points": ["failure receipt", "redaction", "candidate extraction", "review", "regression test"],
-    "risks": ["secret leakage", "false root cause", "silent policy mutation", "duplicate candidate noise"],
-    "guardrails": ["redaction", "evidence refs", "advisory-only", "explicit review/commit", "regression proof"]
+    "integration_points": [
+      "failure receipt",
+      "redaction",
+      "candidate extraction",
+      "review",
+      "regression test"
+    ],
+    "risks": [
+      "secret leakage",
+      "false root cause",
+      "silent policy mutation",
+      "duplicate candidate noise"
+    ],
+    "guardrails": [
+      "redaction",
+      "evidence refs",
+      "advisory-only",
+      "explicit review/commit",
+      "regression proof"
+    ]
   },
   "decision": {
     "disposition": "retain",
     "rationale": "반복 실패를 잊지 않게 하는 OPTIONAL learning asset이지만 runtime 권위와 분리한다.",
-    "follow_up": ["새 candidate type은 promotion authority와 rejection path를 먼저 정의한다."]
-  }
+    "follow_up": [
+      "새 candidate type은 promotion authority와 rejection path를 먼저 정의한다."
+    ]
+  },
+  "subcapabilities": [
+    {
+      "id": "daily-retro-collection",
+      "name": "Daily retro collection",
+      "role": "일일 회고 및 장애 신호 수집",
+      "disposition": "OPTIONAL",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": true
+      }
+    },
+    {
+      "id": "improvement-proposals",
+      "name": "Improvement proposals",
+      "role": "회고 기반 개선 제안 및 이슈 초안 작성",
+      "disposition": "OPTIONAL",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": true
+      }
+    }
+  ]
 }

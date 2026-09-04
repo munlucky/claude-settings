@@ -3,6 +3,14 @@
 - **Status**: `CORE`
 - **Disposition**: `retain`
 
+## Subcapabilities & Dispositions
+- **`evidence-binding`** -> `CORE` (Workflow: true, Knowledge: false)
+- **`verification-authority`** -> `CORE` (Workflow: true, Knowledge: false)
+- **`completion-decision`** -> `CORE` (Workflow: true, Knowledge: true)
+- **`protected-obligation`** -> `CORE` (Workflow: true, Knowledge: false)
+- **`independent-reviewer-execution`** -> `OPTIONAL` (Workflow: true, Knowledge: false)
+- **`review-transport`** -> `HOST` (Workflow: true, Knowledge: false)
+
 ## 설계 및 보존 결정
 신뢰 가능한 agent workflow의 핵심 completion boundary이므로 CORE로 유지한다.
 

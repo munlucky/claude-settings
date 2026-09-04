@@ -3,6 +3,10 @@
 - **Status**: `CORE`
 - **Disposition**: `retain`
 
+## Subcapabilities & Dispositions
+- **`task-contract-binding`** -> `CORE` (Workflow: true, Knowledge: false)
+- **`work-unit-scope`** -> `CORE` (Workflow: true, Knowledge: false)
+
 ## 설계 및 보존 결정
 현재 Kernel의 실행 경계와 재현 가능한 작업 단위를 지탱하는 CORE capability다.
 

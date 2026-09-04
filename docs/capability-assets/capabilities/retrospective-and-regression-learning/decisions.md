@@ -3,6 +3,10 @@
 - **Status**: `OPTIONAL`
 - **Disposition**: `retain`
 
+## Subcapabilities & Dispositions
+- **`daily-retro-collection`** -> `OPTIONAL` (Workflow: true, Knowledge: true)
+- **`improvement-proposals`** -> `OPTIONAL` (Workflow: true, Knowledge: true)
+
 ## 설계 및 보존 결정
 반복 실패를 잊지 않게 하는 OPTIONAL learning asset이지만 runtime 권위와 분리한다.
 

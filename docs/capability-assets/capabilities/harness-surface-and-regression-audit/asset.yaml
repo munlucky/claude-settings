@@ -8,88 +8,264 @@
   "product_relevance": {
     "relevant": true,
     "reason": "agent workflow의 검증 범위와 harness 성장 상태를 관찰하지만 completion authority나 runtime state를 소유하지 않는다.",
-    "consumers": ["agent_workflow"]
+    "consumers": [
+      "agent_workflow"
+    ]
   },
   "origin": {
     "first_seen": {
       "epoch": "E2",
       "commit": "4836e14ed180fae8a9034f2c06b884cb7a994db6",
       "date": "2026-02-10",
-      "evidence": [".claude/scripts/agent-loop.sh"]
+      "evidence": [
+        ".claude/scripts/agent-loop.sh"
+      ]
     },
     "generations": [
-      {"id": "relay-harness-surface", "epoch": "E2", "commit": "4836e14ed180fae8a9034f2c06b884cb7a994db6", "label": "Relay harness surface", "change": "agent loop와 test surface를 관찰하고 회귀를 감지했다."},
-      {"id": "archived-surface-inventory", "epoch": "E3", "commit": "1f7ed38b80f2d66d34498548448423c56154be16", "label": "Archived inventory", "change": "tracked files, test registration과 harness overhead를 계량화했다."},
-      {"id": "current-surface-report", "epoch": "E8", "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e", "label": "Current surface report", "change": "harness report와 explicit budget으로 regression surface를 검증한다."}
+      {
+        "id": "relay-harness-surface",
+        "epoch": "E2",
+        "commit": "4836e14ed180fae8a9034f2c06b884cb7a994db6",
+        "label": "Relay harness surface",
+        "change": "agent loop와 test surface를 관찰하고 회귀를 감지했다."
+      },
+      {
+        "id": "archived-surface-inventory",
+        "epoch": "E3",
+        "commit": "1f7ed38b80f2d66d34498548448423c56154be16",
+        "label": "Archived inventory",
+        "change": "tracked files, test registration과 harness overhead를 계량화했다."
+      },
+      {
+        "id": "current-surface-report",
+        "epoch": "E8",
+        "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
+        "label": "Current surface report",
+        "change": "harness report와 explicit budget으로 regression surface를 검증한다."
+      }
     ]
   },
   "problem": {
-    "solves": ["새 테스트가 실행 목록에서 빠지는 문제", "harness surface가 baseline을 넘어도 발견하지 못하는 문제", "검증 증거의 범위가 조용히 축소되는 문제"],
-    "does_not_solve": ["테스트 자체가 올바른지 보장하는 것", "Kernel completion gate를 대체하는 것"]
+    "solves": [
+      "새 테스트가 실행 목록에서 빠지는 문제",
+      "harness surface가 baseline을 넘어도 발견하지 못하는 문제",
+      "검증 증거의 범위가 조용히 축소되는 문제"
+    ],
+    "does_not_solve": [
+      "테스트 자체가 올바른지 보장하는 것",
+      "Kernel completion gate를 대체하는 것"
+    ]
   },
-  "recommended_use": ["변경 전후 tracked surface와 test registration을 report/check한다.", "budget baseline 변경은 실제 clean baseline과 이유를 남긴다."],
-  "avoid_use": ["surface report pass를 제품 기능 pass로 해석하지 않는다.", "budget을 낮춰 regression을 숨기지 않는다."],
+  "recommended_use": [
+    "변경 전후 tracked surface와 test registration을 report/check한다.",
+    "budget baseline 변경은 실제 clean baseline과 이유를 남긴다."
+  ],
+  "avoid_use": [
+    "surface report pass를 제품 기능 pass로 해석하지 않는다.",
+    "budget을 낮춰 regression을 숨기지 않는다."
+  ],
   "authority": {
-    "owns_state": ["diagnostic surface report", "budget comparison", "test registration inventory"],
-    "owns_completion": ["없음; diagnostic reference는 completion authority가 아니다."],
-    "provides_evidence": ["surface report/check output", "harness regression tests"]
+    "owns_state": [
+      "diagnostic surface report",
+      "budget comparison",
+      "test registration inventory"
+    ],
+    "owns_completion": [
+      "없음; diagnostic reference는 completion authority가 아니다."
+    ],
+    "provides_evidence": [
+      "surface report/check output",
+      "harness regression tests"
+    ]
   },
   "contracts": {
-    "inputs": ["source root", "tracked files", "package test commands", "budget baseline"],
-    "outputs": ["surface metrics", "unregistered test findings", "budget pass/fail"],
-    "invariants": ["현재 worktree를 실제로 측정한다.", "unregistered test와 invalid budget은 fail-closed한다."],
-    "guardrails": ["read-only report/check", "baseline reason required", "diagnostic-only interpretation"]
+    "inputs": [
+      "source root",
+      "tracked files",
+      "package test commands",
+      "budget baseline"
+    ],
+    "outputs": [
+      "surface metrics",
+      "unregistered test findings",
+      "budget pass/fail"
+    ],
+    "invariants": [
+      "현재 worktree를 실제로 측정한다.",
+      "unregistered test와 invalid budget은 fail-closed한다."
+    ],
+    "guardrails": [
+      "read-only report/check",
+      "baseline reason required",
+      "diagnostic-only interpretation"
+    ]
   },
   "implementations": {
     "best_known": {
       "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
-      "paths": ["scripts/harness-surface-report.mjs", "package/harness-surface-budget.json", "tests/harness-surface-report-contract.test.mjs", "tests/harness-regression-contract.test.mjs", "tests/harness-history-contract.test.mjs"],
+      "paths": [
+        "scripts/harness-surface-report.mjs",
+        "package/harness-surface-budget.json",
+        "tests/harness-surface-report-contract.test.mjs",
+        "tests/harness-regression-contract.test.mjs",
+        "tests/harness-history-contract.test.mjs"
+      ],
       "generation": "E8-current",
       "notes": "현재 read-only surface report와 explicit budget contract."
     },
     "historical": [
-      {"commit": "4836e14ed180fae8a9034f2c06b884cb7a994db6", "paths": [".claude/scripts/agent-loop.sh"], "generation": "E2-relay", "notes": "Relay loop 단계의 초기 harness boundary."},
-      {"commit": "1f7ed38b80f2d66d34498548448423c56154be16", "paths": ["archive/scripts/legacy-phase-adapters/harness-surface-inventory.mjs", "archive/scripts/legacy-phase-adapters/harness-surface-inventory.test.mjs"], "generation": "E3-relay", "notes": "harness surface inventory archive."}
+      {
+        "commit": "4836e14ed180fae8a9034f2c06b884cb7a994db6",
+        "paths": [
+          ".claude/scripts/agent-loop.sh"
+        ],
+        "generation": "E2-relay",
+        "notes": "Relay loop 단계의 초기 harness boundary."
+      },
+      {
+        "commit": "1f7ed38b80f2d66d34498548448423c56154be16",
+        "paths": [
+          "archive/scripts/legacy-phase-adapters/harness-surface-inventory.mjs",
+          "archive/scripts/legacy-phase-adapters/harness-surface-inventory.test.mjs"
+        ],
+        "generation": "E3-relay",
+        "notes": "harness surface inventory archive."
+      }
     ]
   },
   "proof": {
     "tests": [
-      {"id": "surface-report", "path": "tests/harness-surface-report-contract.test.mjs", "purpose": "surface report, registration과 budget contract를 검증한다.", "commandRef": "test", "status": "verified"},
-      {"id": "harness-regression", "path": "tests/harness-regression-contract.test.mjs", "purpose": "harness regression guard를 검증한다.", "commandRef": "test", "status": "verified"},
-      {"id": "harness-history", "path": "tests/harness-history-contract.test.mjs", "purpose": "history/baseline report contract를 검증한다.", "commandRef": "test", "status": "verified"}
+      {
+        "id": "surface-report",
+        "path": "tests/harness-surface-report-contract.test.mjs",
+        "purpose": "surface report, registration과 budget contract를 검증한다.",
+        "commandRef": "test",
+        "status": "verified",
+        "referenceStatus": "verified",
+        "executionStatus": "executed-pass"
+      },
+      {
+        "id": "harness-regression",
+        "path": "tests/harness-regression-contract.test.mjs",
+        "purpose": "harness regression guard를 검증한다.",
+        "commandRef": "test",
+        "status": "verified",
+        "referenceStatus": "verified",
+        "executionStatus": "historical-pass"
+      },
+      {
+        "id": "harness-history",
+        "path": "tests/harness-history-contract.test.mjs",
+        "purpose": "history/baseline report contract를 검증한다.",
+        "commandRef": "test",
+        "status": "verified",
+        "referenceStatus": "verified",
+        "executionStatus": "historical-pass"
+      }
     ],
     "fixtures": [
-      {"id": "surface-fixture", "path": "tests/harness-search-fixture-contract.test.mjs", "purpose": "fixture 기반 surface scan contract.", "commandRef": "test", "status": "verified"}
+      {
+        "id": "surface-fixture",
+        "path": "tests/harness-search-fixture-contract.test.mjs",
+        "purpose": "fixture 기반 surface scan contract.",
+        "commandRef": "test",
+        "status": "verified"
+      }
     ],
     "smoke": [
-      {"id": "surface-report-script", "path": "scripts/harness-surface-report.mjs", "purpose": "read-only surface report entrypoint를 확인한다.", "commandRef": null, "status": "verified"}
+      {
+        "id": "surface-report-script",
+        "path": "scripts/harness-surface-report.mjs",
+        "purpose": "read-only surface report entrypoint를 확인한다.",
+        "commandRef": null,
+        "status": "verified"
+      }
     ]
   },
   "known_failures": [
-    {"id": "stale-harness-budget", "severity": "P1", "symptom": "현재 tracked main과 일치하지 않는 stale baseline 때문에 asset 문서 추가가 false regression으로 판정될 수 있었다.", "root_cause": "budget baseline이 clean tracked surface에서 재측정되지 않았다.", "lesson": "baseline은 측정 대상과 allowed delta를 명시하고 변경 이유를 asset inventory에 기록한다.", "fixed_in": "assetization-working-tree-2026-09-04", "regression_tests": ["tests/harness-surface-report-contract.test.mjs", "tests/harness-regression-contract.test.mjs"]}
+    {
+      "id": "stale-harness-budget",
+      "severity": "P1",
+      "symptom": "현재 tracked main과 일치하지 않는 stale baseline 때문에 asset 문서 추가가 false regression으로 판정될 수 있었다.",
+      "root_cause": "budget baseline이 clean tracked surface에서 재측정되지 않았다.",
+      "lesson": "baseline은 측정 대상과 allowed delta를 명시하고 변경 이유를 asset inventory에 기록한다.",
+      "fixed_in": "assetization-working-tree-2026-09-04",
+      "regression_tests": [
+        "tests/harness-surface-report-contract.test.mjs",
+        "tests/harness-regression-contract.test.mjs"
+      ]
+    }
   ],
   "dependencies": {
-    "capabilities": ["evidence-completion-and-review-authority", "mutation-fencing-and-git-closeout"],
-    "runtime": ["harness surface report", "package test registry"],
+    "capabilities": [
+      "evidence-completion-and-review-authority",
+      "mutation-fencing-and-git-closeout"
+    ],
+    "runtime": [
+      "harness surface report",
+      "package test registry"
+    ],
     "external": []
   },
   "current_integration": {
     "layer": "verification and regression reporting",
     "active": true,
-    "paths": ["scripts/harness-surface-report.mjs", "package/harness-surface-budget.json"],
-    "entrypoints": ["package.json test scripts"],
+    "paths": [
+      "scripts/harness-surface-report.mjs",
+      "package/harness-surface-budget.json"
+    ],
+    "entrypoints": [
+      "package.json test scripts"
+    ],
     "notes": "REFERENCE diagnostic. It reports scope evidence but cannot approve completion."
   },
   "reintroduction": {
     "recommended_layer": "read-only verification/reporting plane",
     "trigger": "harness test, package surface 또는 baseline growth를 변경할 때",
-    "integration_points": ["surface report", "test registration", "budget config", "regression test"],
-    "risks": ["baseline gaming", "unregistered test omission", "diagnostic output mistaken for authority"],
-    "guardrails": ["clean baseline measurement", "fail-closed invalid config", "separate completion evidence"]
+    "integration_points": [
+      "surface report",
+      "test registration",
+      "budget config",
+      "regression test"
+    ],
+    "risks": [
+      "baseline gaming",
+      "unregistered test omission",
+      "diagnostic output mistaken for authority"
+    ],
+    "guardrails": [
+      "clean baseline measurement",
+      "fail-closed invalid config",
+      "separate completion evidence"
+    ]
   },
   "decision": {
     "disposition": "retain",
     "rationale": "자산화 자체와 future decomplexification에서 surface drift를 관찰하는 REFERENCE capability로 유지한다.",
-    "follow_up": ["budget baseline 변경은 반드시 source count와 reason을 함께 갱신한다."]
-  }
+    "follow_up": [
+      "budget baseline 변경은 반드시 source count와 reason을 함께 갱신한다."
+    ]
+  },
+  "subcapabilities": [
+    {
+      "id": "harness-surface-budget",
+      "name": "Harness surface budget",
+      "role": "저장소 파일/라인/토큰 표면 예산 측정",
+      "disposition": "REFERENCE",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": false
+      }
+    },
+    {
+      "id": "regression-audit-reporting",
+      "name": "Regression audit reporting",
+      "role": "미등록 테스트 탐지 및 회귀 보고",
+      "disposition": "REFERENCE",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": false
+      }
+    }
+  ]
 }

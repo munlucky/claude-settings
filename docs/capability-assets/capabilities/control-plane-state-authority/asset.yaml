@@ -8,88 +8,278 @@
   "product_relevance": {
     "relevant": true,
     "reason": "agent workflow의 실제 lifecycle state와 completion path가 여러 surface에 분열되지 않아야 한다.",
-    "consumers": ["agent_workflow", "project_knowledge_lifecycle"]
+    "consumers": [
+      "agent_workflow",
+      "project_knowledge_lifecycle"
+    ]
   },
   "origin": {
     "first_seen": {
       "epoch": "E4",
       "commit": "c93b6786c8ceb7a90f08d60f964d12f0b8b1cfa5",
       "date": "2026-07-22",
-      "evidence": ["scripts/kernel/control-plane.mjs", "scripts/kernel/state-store.mjs"]
+      "evidence": [
+        "scripts/kernel/control-plane.mjs",
+        "scripts/kernel/state-store.mjs"
+      ]
     },
     "generations": [
-      {"id": "kernel-policy-state", "epoch": "E4", "commit": "7806dd1870501a1171969ca8e13af8fbec26f892", "label": "Kernel state policy", "change": "state/workflow policy와 durable state store를 도입했다."},
-      {"id": "kernel-control-plane", "epoch": "E4", "commit": "c93b6786c8ceb7a90f08d60f964d12f0b8b1cfa5", "label": "Control plane", "change": "run lifecycle, proof와 finalization을 조정하는 control plane을 추가했다."},
-      {"id": "kernel-knowledge-control", "epoch": "E5", "commit": "761a0d19dc8abdccd9d32469af79f0ec600d104f", "label": "Knowledge-aware control", "change": "knowledge revision과 project identity를 lifecycle에 연결했다."},
-      {"id": "execution-first-authority", "epoch": "E8", "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e", "label": "Execution-first authority", "change": "owner-direct run, evidence, closeout과 finalization의 단일 권위를 확정했다."}
+      {
+        "id": "kernel-policy-state",
+        "epoch": "E4",
+        "commit": "7806dd1870501a1171969ca8e13af8fbec26f892",
+        "label": "Kernel state policy",
+        "change": "state/workflow policy와 durable state store를 도입했다."
+      },
+      {
+        "id": "kernel-control-plane",
+        "epoch": "E4",
+        "commit": "c93b6786c8ceb7a90f08d60f964d12f0b8b1cfa5",
+        "label": "Control plane",
+        "change": "run lifecycle, proof와 finalization을 조정하는 control plane을 추가했다."
+      },
+      {
+        "id": "kernel-knowledge-control",
+        "epoch": "E5",
+        "commit": "761a0d19dc8abdccd9d32469af79f0ec600d104f",
+        "label": "Knowledge-aware control",
+        "change": "knowledge revision과 project identity를 lifecycle에 연결했다."
+      },
+      {
+        "id": "execution-first-authority",
+        "epoch": "E8",
+        "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
+        "label": "Execution-first authority",
+        "change": "owner-direct run, evidence, closeout과 finalization의 단일 권위를 확정했다."
+      }
     ]
   },
   "problem": {
-    "solves": ["run state와 projection이 서로 다른 lifecycle을 나타내는 문제", "각 adapter가 독자적으로 completion을 선언하는 문제"],
-    "does_not_solve": ["provider 실행의 내부 state", "사용자 product state의 business workflow"]
+    "solves": [
+      "run state와 projection이 서로 다른 lifecycle을 나타내는 문제",
+      "각 adapter가 독자적으로 completion을 선언하는 문제"
+    ],
+    "does_not_solve": [
+      "provider 실행의 내부 state",
+      "사용자 product state의 business workflow"
+    ]
   },
-  "recommended_use": ["state mutation은 control plane과 durable repository를 통과시킨다.", "projection은 source state의 read model로만 취급한다."],
-  "avoid_use": ["projection/로그를 authoritative state로 쓰지 않는다.", "Relay switcher나 별도 runtime을 Kernel control plane에 병합하지 않는다."],
+  "recommended_use": [
+    "state mutation은 control plane과 durable repository를 통과시킨다.",
+    "projection은 source state의 read model로만 취급한다."
+  ],
+  "avoid_use": [
+    "projection/로그를 authoritative state로 쓰지 않는다.",
+    "Relay switcher나 별도 runtime을 Kernel control plane에 병합하지 않는다."
+  ],
   "authority": {
-    "owns_state": ["run lifecycle state", "workflow transitions", "durable state repository"],
-    "owns_completion": ["Kernel control plane이 completion lifecycle을 조정하며 evidence gate가 최종 승인한다."],
-    "provides_evidence": ["state transition tests", "lifecycle and projection receipts"]
+    "owns_state": [
+      "run lifecycle state",
+      "workflow transitions",
+      "durable state repository"
+    ],
+    "owns_completion": [
+      "Kernel control plane이 completion lifecycle을 조정하며 evidence gate가 최종 승인한다."
+    ],
+    "provides_evidence": [
+      "state transition tests",
+      "lifecycle and projection receipts"
+    ]
   },
   "contracts": {
-    "inputs": ["task contract", "run event", "step outcome", "proof/review outcome"],
-    "outputs": ["authoritative run state", "read-model projection", "transition decision"],
-    "invariants": ["invalid transition은 거절된다.", "projection은 source state와 identity를 보존한다."],
-    "guardrails": ["control plane 외부의 implicit state mutation 금지", "state와 knowledge namespace 분리", "finalization은 fresh evidence 필요"]
+    "inputs": [
+      "task contract",
+      "run event",
+      "step outcome",
+      "proof/review outcome"
+    ],
+    "outputs": [
+      "authoritative run state",
+      "read-model projection",
+      "transition decision"
+    ],
+    "invariants": [
+      "invalid transition은 거절된다.",
+      "projection은 source state와 identity를 보존한다."
+    ],
+    "guardrails": [
+      "control plane 외부의 implicit state mutation 금지",
+      "state와 knowledge namespace 분리",
+      "finalization은 fresh evidence 필요"
+    ]
   },
   "implementations": {
     "best_known": {
       "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
-      "paths": ["scripts/kernel/control-plane.mjs", "scripts/kernel/state-store.mjs", "scripts/kernel/state-projector.mjs", "scripts/kernel/transition.mjs", "scripts/kernel/run/run-loop.mjs", "schemas/kernel.runtime-state.schema.json"],
+      "paths": [
+        "scripts/kernel/control-plane.mjs",
+        "scripts/kernel/state-store.mjs",
+        "scripts/kernel/state-projector.mjs",
+        "scripts/kernel/transition.mjs",
+        "scripts/kernel/run/run-loop.mjs",
+        "schemas/kernel.runtime-state.schema.json"
+      ],
       "generation": "E8-current",
       "notes": "현재 Kernel control plane과 state authority."
     },
     "historical": [
-      {"commit": "7806dd1870501a1171969ca8e13af8fbec26f892", "paths": ["kernel/state-policy.yaml", "scripts/kernel/state-store.mjs", "scripts/kernel/transition.mjs"], "generation": "E4-kernel", "notes": "정책 기반 state transition과 storage."},
-      {"commit": "c93b6786c8ceb7a90f08d60f964d12f0b8b1cfa5", "paths": ["scripts/kernel/control-plane.mjs", "scripts/kernel/state-projector.mjs"], "generation": "E4-kernel", "notes": "control plane과 projection 도입."},
-      {"commit": "761a0d19dc8abdccd9d32469af79f0ec600d104f", "paths": ["scripts/kernel/control-plane.mjs", "scripts/kernel/knowledge/revision.mjs"], "generation": "E5-kernel", "notes": "knowledge lifecycle과 control plane 연결."}
+      {
+        "commit": "7806dd1870501a1171969ca8e13af8fbec26f892",
+        "paths": [
+          "kernel/state-policy.yaml",
+          "scripts/kernel/state-store.mjs",
+          "scripts/kernel/transition.mjs"
+        ],
+        "generation": "E4-kernel",
+        "notes": "정책 기반 state transition과 storage."
+      },
+      {
+        "commit": "c93b6786c8ceb7a90f08d60f964d12f0b8b1cfa5",
+        "paths": [
+          "scripts/kernel/control-plane.mjs",
+          "scripts/kernel/state-projector.mjs"
+        ],
+        "generation": "E4-kernel",
+        "notes": "control plane과 projection 도입."
+      },
+      {
+        "commit": "761a0d19dc8abdccd9d32469af79f0ec600d104f",
+        "paths": [
+          "scripts/kernel/control-plane.mjs",
+          "scripts/kernel/knowledge/revision.mjs"
+        ],
+        "generation": "E5-kernel",
+        "notes": "knowledge lifecycle과 control plane 연결."
+      }
     ]
   },
   "proof": {
     "tests": [
-      {"id": "control-plane-lifecycle", "path": "tests/kernel-control-plane-lifecycle.test.mjs", "purpose": "control plane lifecycle과 state authority를 검증한다.", "commandRef": "test", "status": "verified"},
-      {"id": "workflow-state-machine", "path": "tests/kernel-workflow-state-machine.test.mjs", "purpose": "허용 transition과 invalid transition rejection을 검증한다.", "commandRef": "test", "status": "verified"},
-      {"id": "state-projection", "path": "tests/kernel-state-projection.test.mjs", "purpose": "authoritative state와 projection identity를 검증한다.", "commandRef": "test", "status": "verified"}
+      {
+        "id": "control-plane-lifecycle",
+        "path": "tests/kernel-control-plane-lifecycle.test.mjs",
+        "purpose": "control plane lifecycle과 state authority를 검증한다.",
+        "commandRef": "test",
+        "status": "verified",
+        "referenceStatus": "verified",
+        "executionStatus": "historical-pass"
+      },
+      {
+        "id": "workflow-state-machine",
+        "path": "tests/kernel-workflow-state-machine.test.mjs",
+        "purpose": "허용 transition과 invalid transition rejection을 검증한다.",
+        "commandRef": "test",
+        "status": "verified",
+        "referenceStatus": "verified",
+        "executionStatus": "historical-pass"
+      },
+      {
+        "id": "state-projection",
+        "path": "tests/kernel-state-projection.test.mjs",
+        "purpose": "authoritative state와 projection identity를 검증한다.",
+        "commandRef": "test",
+        "status": "verified",
+        "referenceStatus": "verified",
+        "executionStatus": "historical-pass"
+      }
     ],
     "fixtures": [],
     "smoke": [
-      {"id": "runtime-state-schema", "path": "schemas/kernel.runtime-state.schema.json", "purpose": "durable runtime state contract를 확인한다.", "commandRef": null, "status": "verified"}
+      {
+        "id": "runtime-state-schema",
+        "path": "schemas/kernel.runtime-state.schema.json",
+        "purpose": "durable runtime state contract를 확인한다.",
+        "commandRef": null,
+        "status": "verified"
+      }
     ]
   },
   "known_failures": [
-    {"id": "projection-authority-confusion", "severity": "P1", "symptom": "read-model projection이나 legacy adapter state가 authoritative run state처럼 사용될 수 있었다.", "root_cause": "source state, projection과 completion authority의 ownership이 중복되었다.", "lesson": "control plane source state와 projection을 명시적으로 분리하고 transition receipt를 요구한다.", "fixed_in": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e", "regression_tests": ["tests/kernel-state-authority.test.mjs", "tests/kernel-state-projection.test.mjs", "tests/kernel-finalization-lifecycle.test.mjs"]}
+    {
+      "id": "projection-authority-confusion",
+      "severity": "P1",
+      "symptom": "read-model projection이나 legacy adapter state가 authoritative run state처럼 사용될 수 있었다.",
+      "root_cause": "source state, projection과 completion authority의 ownership이 중복되었다.",
+      "lesson": "control plane source state와 projection을 명시적으로 분리하고 transition receipt를 요구한다.",
+      "fixed_in": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
+      "regression_tests": [
+        "tests/kernel-state-authority.test.mjs",
+        "tests/kernel-state-projection.test.mjs",
+        "tests/kernel-finalization-lifecycle.test.mjs"
+      ]
+    }
   ],
   "dependencies": {
-    "capabilities": ["task-contract-and-bounded-work", "step-ledger-resume", "evidence-completion-and-review-authority"],
-    "runtime": ["Kernel control plane", "run/state repositories"],
+    "capabilities": [
+      "task-contract-and-bounded-work",
+      "step-ledger-resume",
+      "evidence-completion-and-review-authority"
+    ],
+    "runtime": [
+      "Kernel control plane",
+      "run/state repositories"
+    ],
     "external": []
   },
   "current_integration": {
     "layer": "Kernel control plane and lifecycle state",
     "active": true,
-    "paths": ["scripts/kernel/control-plane.mjs", "scripts/kernel/state-store.mjs", "scripts/kernel/transition.mjs"],
-    "entrypoints": ["bin/moon-relay-kernel.mjs"],
+    "paths": [
+      "scripts/kernel/control-plane.mjs",
+      "scripts/kernel/state-store.mjs",
+      "scripts/kernel/transition.mjs"
+    ],
+    "entrypoints": [
+      "bin/moon-relay-kernel.mjs"
+    ],
     "notes": "CORE execution authority. Asset Base never writes or projects control-plane state."
   },
   "reintroduction": {
     "recommended_layer": "Kernel control plane",
     "trigger": "새 lifecycle state, transition 또는 completion surface를 추가할 때",
-    "integration_points": ["task/run identity", "state transition", "proof outcome", "finalization"],
-    "risks": ["새 adapter가 별도 state authority가 될 위험", "projection을 source로 역사용할 위험"],
-    "guardrails": ["single source of truth", "schema + transition tests", "receipt-backed finalization"]
+    "integration_points": [
+      "task/run identity",
+      "state transition",
+      "proof outcome",
+      "finalization"
+    ],
+    "risks": [
+      "새 adapter가 별도 state authority가 될 위험",
+      "projection을 source로 역사용할 위험"
+    ],
+    "guardrails": [
+      "single source of truth",
+      "schema + transition tests",
+      "receipt-backed finalization"
+    ]
   },
   "decision": {
     "disposition": "retain",
     "rationale": "Kernel이 Relay의 여러 orchestration surface를 대체하면서 보존해야 하는 핵심 authority capability다.",
-    "follow_up": ["새 state field는 owner, persistence, projection과 completion impact를 함께 정의한다."]
-  }
+    "follow_up": [
+      "새 state field는 owner, persistence, projection과 completion impact를 함께 정의한다."
+    ]
+  },
+  "subcapabilities": [
+    {
+      "id": "state-transition-authority",
+      "name": "State transition authority",
+      "role": "런타임 라이프사이클 상태 전이 단일 권위",
+      "disposition": "CORE",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": true
+      }
+    },
+    {
+      "id": "minimal-durable-state",
+      "name": "Minimal durable state",
+      "role": "SQLite 어댑터 기반 실행 상태 영속화 및 투영",
+      "disposition": "CORE",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": true
+      }
+    }
+  ]
 }

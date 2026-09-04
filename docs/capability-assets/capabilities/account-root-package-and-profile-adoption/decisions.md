@@ -3,6 +3,10 @@
 - **Status**: `HOST`
 - **Disposition**: `retain`
 
+## Subcapabilities & Dispositions
+- **`package-materialization`** -> `HOST` (Workflow: true, Knowledge: false)
+- **`account-profile-projection`** -> `HOST` (Workflow: true, Knowledge: false)
+
 ## 설계 및 보존 결정
 Kernel 사용 surface를 안전하게 채택하기 위한 HOST boundary이며 runtime core와 분리해 보존한다.
 

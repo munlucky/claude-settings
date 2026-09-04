@@ -8,90 +8,330 @@
   "product_relevance": {
     "relevant": true,
     "reason": "agent workflow의 stage별 모델 선택과 provider 실행은 bounded contract와 evidence 정책을 따라야 한다.",
-    "consumers": ["agent_workflow"]
+    "consumers": [
+      "agent_workflow"
+    ]
   },
   "origin": {
     "first_seen": {
       "epoch": "E6",
       "commit": "01eac62a1c37b4b044704304992f38ef4c520603",
       "date": "2026-07-25",
-      "evidence": ["scripts/kernel/run/model-routing.mjs", "scripts/kernel/run/model-route-contract.mjs"]
+      "evidence": [
+        "scripts/kernel/run/model-routing.mjs",
+        "scripts/kernel/run/model-route-contract.mjs"
+      ]
     },
     "generations": [
-      {"id": "logical-model-routing", "epoch": "E6", "commit": "01eac62a1c37b4b044704304992f38ef4c520603", "label": "Logical model routing", "change": "stage별 logical model class와 Host 실행 기록을 도입했다."},
-      {"id": "provider-aware-routing", "epoch": "E6", "commit": "9e929f98037bc427a7707dbf844568d3eb39d99f", "label": "Provider-aware routing", "change": "provider capability와 model usage를 route 판단에 반영했다."},
-      {"id": "route-admission", "epoch": "E7", "commit": "30b317c0c8f0dee9b4a1c8f82f8b14fe30a7f692", "label": "Route admission", "change": "capability, risk, stagnation과 evidence 조건을 admission gate로 묶었다."},
-      {"id": "current-adaptive-route", "epoch": "E8", "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e", "label": "Adaptive route", "change": "실패 분류와 owner-direct execution을 route lifecycle에 연결했다."}
+      {
+        "id": "logical-model-routing",
+        "epoch": "E6",
+        "commit": "01eac62a1c37b4b044704304992f38ef4c520603",
+        "label": "Logical model routing",
+        "change": "stage별 logical model class와 Host 실행 기록을 도입했다."
+      },
+      {
+        "id": "provider-aware-routing",
+        "epoch": "E6",
+        "commit": "9e929f98037bc427a7707dbf844568d3eb39d99f",
+        "label": "Provider-aware routing",
+        "change": "provider capability와 model usage를 route 판단에 반영했다."
+      },
+      {
+        "id": "route-admission",
+        "epoch": "E7",
+        "commit": "30b317c0c8f0dee9b4a1c8f82f8b14fe30a7f692",
+        "label": "Route admission",
+        "change": "capability, risk, stagnation과 evidence 조건을 admission gate로 묶었다."
+      },
+      {
+        "id": "current-adaptive-route",
+        "epoch": "E8",
+        "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
+        "label": "Adaptive route",
+        "change": "실패 분류와 owner-direct execution을 route lifecycle에 연결했다."
+      }
     ]
   },
   "problem": {
-    "solves": ["모든 stage를 같은 모델/provider로 실행하는 비효율", "capability·risk·evidence 조건을 확인하지 않은 route 선택"],
-    "does_not_solve": ["모델의 실제 품질을 보장하는 것", "provider quota나 인증 장애를 해결하는 것"]
+    "solves": [
+      "모든 stage를 같은 모델/provider로 실행하는 비효율",
+      "capability·risk·evidence 조건을 확인하지 않은 route 선택"
+    ],
+    "does_not_solve": [
+      "모델의 실제 품질을 보장하는 것",
+      "provider quota나 인증 장애를 해결하는 것"
+    ]
   },
-  "recommended_use": ["route 입력에 stage, capability, risk와 budget을 명시한다.", "admission 결과와 model usage receipt를 evidence로 연결한다."],
-  "avoid_use": ["route preference를 completion authority로 사용하지 않는다.", "stagnation이나 failure를 감추기 위해 route를 임의로 재시도하지 않는다."],
+  "recommended_use": [
+    "route 입력에 stage, capability, risk와 budget을 명시한다.",
+    "admission 결과와 model usage receipt를 evidence로 연결한다."
+  ],
+  "avoid_use": [
+    "route preference를 completion authority로 사용하지 않는다.",
+    "stagnation이나 failure를 감추기 위해 route를 임의로 재시도하지 않는다."
+  ],
   "authority": {
-    "owns_state": ["route decision, model class, usage and escalation metadata"],
-    "owns_completion": ["route는 실행 선택만 소유하며 completion은 proof/finalization이 소유한다."],
-    "provides_evidence": ["route admission receipt", "model usage and escalation tests"]
+    "owns_state": [
+      "route decision, model class, usage and escalation metadata"
+    ],
+    "owns_completion": [
+      "route는 실행 선택만 소유하며 completion은 proof/finalization이 소유한다."
+    ],
+    "provides_evidence": [
+      "route admission receipt",
+      "model usage and escalation tests"
+    ]
   },
   "contracts": {
-    "inputs": ["stage", "required capability", "risk tier", "provider/model policy", "budget"],
-    "outputs": ["admitted route", "model usage receipt", "escalation or rejection"],
-    "invariants": ["route는 capability와 policy를 만족해야 한다.", "usage receipt는 실제 Host 실행과 연결된다."],
-    "guardrails": ["provider isolation", "stagnation detection", "cost/risk caps", "no silent route bypass"]
+    "inputs": [
+      "stage",
+      "required capability",
+      "risk tier",
+      "provider/model policy",
+      "budget"
+    ],
+    "outputs": [
+      "admitted route",
+      "model usage receipt",
+      "escalation or rejection"
+    ],
+    "invariants": [
+      "route는 capability와 policy를 만족해야 한다.",
+      "usage receipt는 실제 Host 실행과 연결된다."
+    ],
+    "guardrails": [
+      "provider isolation",
+      "stagnation detection",
+      "cost/risk caps",
+      "no silent route bypass"
+    ]
   },
   "implementations": {
     "best_known": {
       "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
-      "paths": ["scripts/kernel/run/model-routing.mjs", "scripts/kernel/run/model-route-contract.mjs", "scripts/kernel/routing/route-admission.mjs", "scripts/kernel/capability-resolver.mjs", "scripts/kernel/run/stagnation.mjs"],
+      "paths": [
+        "scripts/kernel/run/model-routing.mjs",
+        "scripts/kernel/run/model-route-contract.mjs",
+        "scripts/kernel/routing/route-admission.mjs",
+        "scripts/kernel/capability-resolver.mjs",
+        "scripts/kernel/run/stagnation.mjs"
+      ],
       "generation": "E8-current",
       "notes": "현재 Kernel route admission, model policy와 stagnation 경계."
     },
     "historical": [
-      {"commit": "01eac62a1c37b4b044704304992f38ef4c520603", "paths": ["scripts/kernel/run/model-routing.mjs", "scripts/kernel/run/model-route-contract.mjs"], "generation": "E6-kernel", "notes": "logical model class routing 도입."},
-      {"commit": "9e929f98037bc427a7707dbf844568d3eb39d99f", "paths": ["scripts/kernel/run/model-routing.mjs", "scripts/kernel/run/model-route-contract.mjs"], "generation": "E6-kernel", "notes": "provider-aware model execution optimization."},
-      {"commit": "30b317c0c8f0dee9b4a1c8f82f8b14fe30a7f692", "paths": ["scripts/kernel/routing/route-admission.mjs", "scripts/kernel/capability-resolver.mjs"], "generation": "E7-kernel", "notes": "admission과 capability resolution 연결."}
+      {
+        "commit": "01eac62a1c37b4b044704304992f38ef4c520603",
+        "paths": [
+          "scripts/kernel/run/model-routing.mjs",
+          "scripts/kernel/run/model-route-contract.mjs"
+        ],
+        "generation": "E6-kernel",
+        "notes": "logical model class routing 도입."
+      },
+      {
+        "commit": "9e929f98037bc427a7707dbf844568d3eb39d99f",
+        "paths": [
+          "scripts/kernel/run/model-routing.mjs",
+          "scripts/kernel/run/model-route-contract.mjs"
+        ],
+        "generation": "E6-kernel",
+        "notes": "provider-aware model execution optimization."
+      },
+      {
+        "commit": "30b317c0c8f0dee9b4a1c8f82f8b14fe30a7f692",
+        "paths": [
+          "scripts/kernel/routing/route-admission.mjs",
+          "scripts/kernel/capability-resolver.mjs"
+        ],
+        "generation": "E7-kernel",
+        "notes": "admission과 capability resolution 연결."
+      }
     ]
   },
   "proof": {
     "tests": [
-      {"id": "model-routing-e2e", "path": "tests/kernel-model-routing-e2e.test.mjs", "purpose": "stage/provider/model route lifecycle을 검증한다.", "commandRef": "test", "status": "verified"},
-      {"id": "route-admission", "path": "tests/kernel-route-admission.test.mjs", "purpose": "capability와 policy 기반 route admission을 검증한다.", "commandRef": "test", "status": "verified"},
-      {"id": "stagnation-routing", "path": "tests/kernel-stagnation-routing.test.mjs", "purpose": "stagnation 감지와 escalation 경계를 검증한다.", "commandRef": "test", "status": "verified"}
+      {
+        "id": "model-routing-e2e",
+        "path": "tests/kernel-model-routing-e2e.test.mjs",
+        "purpose": "stage/provider/model route lifecycle을 검증한다.",
+        "commandRef": "test",
+        "status": "verified",
+        "referenceStatus": "verified",
+        "executionStatus": "historical-pass"
+      },
+      {
+        "id": "route-admission",
+        "path": "tests/kernel-route-admission.test.mjs",
+        "purpose": "capability와 policy 기반 route admission을 검증한다.",
+        "commandRef": "test",
+        "status": "verified",
+        "referenceStatus": "verified",
+        "executionStatus": "historical-pass"
+      },
+      {
+        "id": "stagnation-routing",
+        "path": "tests/kernel-stagnation-routing.test.mjs",
+        "purpose": "stagnation 감지와 escalation 경계를 검증한다.",
+        "commandRef": "test",
+        "status": "verified",
+        "referenceStatus": "verified",
+        "executionStatus": "historical-pass"
+      }
     ],
     "fixtures": [
-      {"id": "model-routing-corpus", "path": "tests/fixtures/kernel-model-routing/corpus.json", "purpose": "model routing 평가 입력 corpus.", "commandRef": null, "status": "verified"}
+      {
+        "id": "model-routing-corpus",
+        "path": "tests/fixtures/kernel-model-routing/corpus.json",
+        "purpose": "model routing 평가 입력 corpus.",
+        "commandRef": null,
+        "status": "verified"
+      }
     ],
     "smoke": [
-      {"id": "route-admission-runtime", "path": "scripts/kernel/routing/route-admission.mjs", "purpose": "route admission 구현 진입점을 확인한다.", "commandRef": null, "status": "verified"}
+      {
+        "id": "route-admission-runtime",
+        "path": "scripts/kernel/routing/route-admission.mjs",
+        "purpose": "route admission 구현 진입점을 확인한다.",
+        "commandRef": null,
+        "status": "verified"
+      }
     ]
   },
   "known_failures": [
-    {"id": "route-without-capability-proof", "severity": "P1", "symptom": "선택한 model/provider가 required capability와 evidence 조건을 충족하지 않아도 실행될 수 있었다.", "root_cause": "routing preference와 admission policy가 분리되어 우회 가능했다.", "lesson": "route는 capability resolver, policy와 usage receipt를 함께 통과해야 한다.", "fixed_in": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e", "regression_tests": ["tests/kernel-route-admission.test.mjs", "tests/kernel-route-admission-e2e.test.mjs", "tests/kernel-model-routing-e2e.test.mjs"]}
+    {
+      "id": "route-without-capability-proof",
+      "severity": "P1",
+      "symptom": "선택한 model/provider가 required capability와 evidence 조건을 충족하지 않아도 실행될 수 있었다.",
+      "root_cause": "routing preference와 admission policy가 분리되어 우회 가능했다.",
+      "lesson": "route는 capability resolver, policy와 usage receipt를 함께 통과해야 한다.",
+      "fixed_in": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
+      "regression_tests": [
+        "tests/kernel-route-admission.test.mjs",
+        "tests/kernel-route-admission-e2e.test.mjs",
+        "tests/kernel-model-routing-e2e.test.mjs"
+      ]
+    }
   ],
   "dependencies": {
-    "capabilities": ["provider-session-and-execution-boundary", "context-prompt-cache-and-optimization", "control-plane-state-authority"],
-    "runtime": ["Kernel capability resolver", "route admission", "model usage receipt"],
-    "external": ["provider model inventory", "host execution transport"]
+    "capabilities": [
+      "provider-session-and-execution-boundary",
+      "context-prompt-cache-and-optimization",
+      "control-plane-state-authority"
+    ],
+    "runtime": [
+      "Kernel capability resolver",
+      "route admission",
+      "model usage receipt"
+    ],
+    "external": [
+      "provider model inventory",
+      "host execution transport"
+    ]
   },
   "current_integration": {
     "layer": "Kernel route admission and model policy",
     "active": true,
-    "paths": ["scripts/kernel/routing/route-admission.mjs", "scripts/kernel/run/model-routing.mjs"],
-    "entrypoints": ["bin/moon-relay-kernel.mjs"],
+    "paths": [
+      "scripts/kernel/routing/route-admission.mjs",
+      "scripts/kernel/run/model-routing.mjs"
+    ],
+    "entrypoints": [
+      "bin/moon-relay-kernel.mjs"
+    ],
     "notes": "CORE intelligence capability. Route selection is not completion evidence."
   },
   "reintroduction": {
     "recommended_layer": "route admission before Host execution",
     "trigger": "새 model class, provider capability 또는 stage policy를 추가할 때",
-    "integration_points": ["capability resolver", "route policy", "provider session", "usage receipt"],
-    "risks": ["cost/risk policy bypass", "provider mismatch", "silent retry loop", "routing as authority confusion"],
-    "guardrails": ["schema-bound route", "admission gate", "usage receipt", "stagnation cap", "fresh evidence"]
+    "integration_points": [
+      "capability resolver",
+      "route policy",
+      "provider session",
+      "usage receipt"
+    ],
+    "risks": [
+      "cost/risk policy bypass",
+      "provider mismatch",
+      "silent retry loop",
+      "routing as authority confusion"
+    ],
+    "guardrails": [
+      "schema-bound route",
+      "admission gate",
+      "usage receipt",
+      "stagnation cap",
+      "fresh evidence"
+    ]
   },
   "decision": {
     "disposition": "retain",
     "rationale": "현재 multi-stage Kernel의 선택과 비용·위험 경계를 담당하는 CORE capability다.",
-    "follow_up": ["새 route는 benchmark보다 먼저 admission invariant와 failure boundary를 추가한다."]
-  }
+    "follow_up": [
+      "새 route는 benchmark보다 먼저 admission invariant와 failure boundary를 추가한다."
+    ]
+  },
+  "subcapabilities": [
+    {
+      "id": "required-capability-contract",
+      "name": "Required capability contract",
+      "role": "작업별 필수 역량 조건 선언 및 검증 계약",
+      "disposition": "CORE",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": false
+      }
+    },
+    {
+      "id": "route-admission",
+      "name": "Route admission",
+      "role": "실행 전 라우트 안전성 승인 및 드리프트 방지",
+      "disposition": "CORE",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": false
+      }
+    },
+    {
+      "id": "model-selection",
+      "name": "Model selection",
+      "role": "논리 모델 클래스(Fast/Standard/Deep) 매핑",
+      "disposition": "HOST",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": false
+      }
+    },
+    {
+      "id": "provider-selection",
+      "name": "Provider selection",
+      "role": "실제 Provider 디스패치 및 런처 실행",
+      "disposition": "HOST",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": false
+      }
+    },
+    {
+      "id": "effort-cost-routing",
+      "name": "Effort and cost routing",
+      "role": "추론 노력(Effort) 및 토큰 비용 최적화",
+      "disposition": "HOST",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": false
+      }
+    },
+    {
+      "id": "stagnation-escalation",
+      "name": "Stagnation escalation",
+      "role": "진행 정체 감지 시 상위 모델/경로로 에스컬레이션",
+      "disposition": "OPTIONAL",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": false
+      }
+    }
+  ]
 }

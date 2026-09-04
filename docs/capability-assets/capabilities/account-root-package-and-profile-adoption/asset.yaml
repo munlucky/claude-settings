@@ -8,86 +8,273 @@
   "product_relevance": {
     "relevant": true,
     "reason": "agent workflow가 실제 사용 surface에 설치될 때 Kernel 소유 영역만 투영하고 Provider 설정을 보존해야 한다.",
-    "consumers": ["agent_workflow"]
+    "consumers": [
+      "agent_workflow"
+    ]
   },
   "origin": {
     "first_seen": {
       "epoch": "E4",
       "commit": "c93b6786c8ceb7a90f08d60f964d12f0b8b1cfa5",
       "date": "2026-07-22",
-      "evidence": ["scripts/kernel/installer.mjs", "package/kernel/manifest.json"]
+      "evidence": [
+        "scripts/kernel/installer.mjs",
+        "package/kernel/manifest.json"
+      ]
     },
     "generations": [
-      {"id": "kernel-package", "epoch": "E4", "commit": "c93b6786c8ceb7a90f08d60f964d12f0b8b1cfa5", "label": "Kernel package and installer", "change": "Kernel package manifest와 account-root installer lifecycle을 도입했다."},
-      {"id": "profile-adoption", "epoch": "E7", "commit": "30b317c0c8f0dee9b4a1c8f82f8b14fe30a7f692", "label": "Profile adoption", "change": "profile build/install/projection과 ownership guard를 분리했다."},
-      {"id": "current-boundary-audit", "epoch": "E8", "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e", "label": "Runtime boundary audit", "change": "Kernel-owned integration만 account-root에 투영하고 Provider surface를 보존한다."}
+      {
+        "id": "kernel-package",
+        "epoch": "E4",
+        "commit": "c93b6786c8ceb7a90f08d60f964d12f0b8b1cfa5",
+        "label": "Kernel package and installer",
+        "change": "Kernel package manifest와 account-root installer lifecycle을 도입했다."
+      },
+      {
+        "id": "profile-adoption",
+        "epoch": "E7",
+        "commit": "30b317c0c8f0dee9b4a1c8f82f8b14fe30a7f692",
+        "label": "Profile adoption",
+        "change": "profile build/install/projection과 ownership guard를 분리했다."
+      },
+      {
+        "id": "current-boundary-audit",
+        "epoch": "E8",
+        "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
+        "label": "Runtime boundary audit",
+        "change": "Kernel-owned integration만 account-root에 투영하고 Provider surface를 보존한다."
+      }
     ]
   },
   "problem": {
-    "solves": ["package source와 installed account-root profile의 parity drift", "installer가 Provider auth, session, cache와 user config를 덮는 문제"],
-    "does_not_solve": ["host별 설치 권한과 filesystem availability", "설치 후 provider login 상태"]
+    "solves": [
+      "package source와 installed account-root profile의 parity drift",
+      "installer가 Provider auth, session, cache와 user config를 덮는 문제"
+    ],
+    "does_not_solve": [
+      "host별 설치 권한과 filesystem availability",
+      "설치 후 provider login 상태"
+    ]
   },
-  "recommended_use": ["manifest와 package materialization을 검증한 뒤 profile ownership을 확인한다.", "install/rollback receipt와 current/target path를 기록한다."],
-  "avoid_use": ["asset index를 installer payload에 추가하지 않는다.", "account-root 전체를 Kernel 소유로 간주하지 않는다."],
+  "recommended_use": [
+    "manifest와 package materialization을 검증한 뒤 profile ownership을 확인한다.",
+    "install/rollback receipt와 current/target path를 기록한다."
+  ],
+  "avoid_use": [
+    "asset index를 installer payload에 추가하지 않는다.",
+    "account-root 전체를 Kernel 소유로 간주하지 않는다."
+  ],
   "authority": {
-    "owns_state": ["package materialization", "Kernel-owned profile projection", "install rollback state"],
-    "owns_completion": ["installer success는 task completion을 소유하지 않으며 host receipt가 필요하다."],
-    "provides_evidence": ["package layout/materialization tests", "profile ownership and isolation tests"]
+    "owns_state": [
+      "package materialization",
+      "Kernel-owned profile projection",
+      "install rollback state"
+    ],
+    "owns_completion": [
+      "installer success는 task completion을 소유하지 않으며 host receipt가 필요하다."
+    ],
+    "provides_evidence": [
+      "package layout/materialization tests",
+      "profile ownership and isolation tests"
+    ]
   },
   "contracts": {
-    "inputs": ["package manifest", "source root", "account-root", "profile target", "ownership policy"],
-    "outputs": ["materialized package", "scoped profile projection", "install receipt"],
-    "invariants": ["Kernel-owned paths만 변경한다.", "Provider/user-owned data는 보존한다."],
-    "guardrails": ["path containment", "ownership check", "atomic install/rollback", "installed parity verification"]
+    "inputs": [
+      "package manifest",
+      "source root",
+      "account-root",
+      "profile target",
+      "ownership policy"
+    ],
+    "outputs": [
+      "materialized package",
+      "scoped profile projection",
+      "install receipt"
+    ],
+    "invariants": [
+      "Kernel-owned paths만 변경한다.",
+      "Provider/user-owned data는 보존한다."
+    ],
+    "guardrails": [
+      "path containment",
+      "ownership check",
+      "atomic install/rollback",
+      "installed parity verification"
+    ]
   },
   "implementations": {
     "best_known": {
       "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
-      "paths": ["scripts/kernel/package-build.mjs", "scripts/kernel/installer.mjs", "scripts/kernel/profile-build.mjs", "scripts/kernel/profile-install.mjs", "scripts/kernel/profile-projection.mjs", "scripts/kernel/runtime-boundary-audit.mjs"],
+      "paths": [
+        "scripts/kernel/package-build.mjs",
+        "scripts/kernel/installer.mjs",
+        "scripts/kernel/profile-build.mjs",
+        "scripts/kernel/profile-install.mjs",
+        "scripts/kernel/profile-projection.mjs",
+        "scripts/kernel/runtime-boundary-audit.mjs"
+      ],
       "generation": "E8-current",
       "notes": "현재 Kernel package/install/profile adoption과 boundary audit."
     },
     "historical": [
-      {"commit": "c93b6786c8ceb7a90f08d60f964d12f0b8b1cfa5", "paths": ["scripts/kernel/installer.mjs", "scripts/kernel/package-build.mjs", "package/kernel/manifest.json"], "generation": "E4-kernel", "notes": "초기 package와 installer lifecycle."},
-      {"commit": "30b317c0c8f0dee9b4a1c8f82f8b14fe30a7f692", "paths": ["scripts/kernel/package-build.mjs", "scripts/kernel/profile-install.mjs"], "generation": "E7-kernel", "notes": "profile ownership과 projection 도입."}
+      {
+        "commit": "c93b6786c8ceb7a90f08d60f964d12f0b8b1cfa5",
+        "paths": [
+          "scripts/kernel/installer.mjs",
+          "scripts/kernel/package-build.mjs",
+          "package/kernel/manifest.json"
+        ],
+        "generation": "E4-kernel",
+        "notes": "초기 package와 installer lifecycle."
+      },
+      {
+        "commit": "30b317c0c8f0dee9b4a1c8f82f8b14fe30a7f692",
+        "paths": [
+          "scripts/kernel/package-build.mjs",
+          "scripts/kernel/profile-install.mjs"
+        ],
+        "generation": "E7-kernel",
+        "notes": "profile ownership과 projection 도입."
+      }
     ]
   },
   "proof": {
     "tests": [
-      {"id": "package-materialization", "path": "tests/kernel-package-materialization.test.mjs", "purpose": "Kernel package materialization과 manifest parity를 검증한다.", "commandRef": "test", "status": "verified"},
-      {"id": "install-isolation", "path": "tests/kernel-install-isolation.test.mjs", "purpose": "account-root install이 외부 Provider surface를 보존하는지 검증한다.", "commandRef": "test", "status": "verified"},
-      {"id": "profile-ownership", "path": "tests/kernel-profile-ownership.test.mjs", "purpose": "profile owner와 allowed projection을 검증한다.", "commandRef": "test", "status": "verified"}
+      {
+        "id": "package-materialization",
+        "path": "tests/kernel-package-materialization.test.mjs",
+        "purpose": "Kernel package materialization과 manifest parity를 검증한다.",
+        "commandRef": "test",
+        "status": "verified",
+        "referenceStatus": "verified",
+        "executionStatus": "historical-pass"
+      },
+      {
+        "id": "install-isolation",
+        "path": "tests/kernel-install-isolation.test.mjs",
+        "purpose": "account-root install이 외부 Provider surface를 보존하는지 검증한다.",
+        "commandRef": "test",
+        "status": "verified",
+        "referenceStatus": "verified",
+        "executionStatus": "historical-pass"
+      },
+      {
+        "id": "profile-ownership",
+        "path": "tests/kernel-profile-ownership.test.mjs",
+        "purpose": "profile owner와 allowed projection을 검증한다.",
+        "commandRef": "test",
+        "status": "verified",
+        "referenceStatus": "verified",
+        "executionStatus": "historical-pass"
+      }
     ],
     "fixtures": [],
     "smoke": [
-      {"id": "runtime-manifest", "path": "schemas/kernel.runtime-manifest.schema.json", "purpose": "package runtime manifest contract를 확인한다.", "commandRef": null, "status": "verified"}
+      {
+        "id": "runtime-manifest",
+        "path": "schemas/kernel.runtime-manifest.schema.json",
+        "purpose": "package runtime manifest contract를 확인한다.",
+        "commandRef": null,
+        "status": "verified"
+      }
     ]
   },
   "known_failures": [
-    {"id": "profile-ownership-drift", "severity": "P1", "symptom": "설치 시 Kernel projection이 Provider auth/session/cache 또는 user-owned profile을 덮을 수 있었다.", "root_cause": "package source와 target ownership boundary가 명시적으로 검증되지 않았다.", "lesson": "ownership, containment, installed parity와 rollback을 별도 receipt로 증명한다.", "fixed_in": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e", "regression_tests": ["tests/kernel-install-isolation.test.mjs", "tests/kernel-profile-ownership.test.mjs", "tests/kernel-runtime-boundary-static.test.mjs"]}
+    {
+      "id": "profile-ownership-drift",
+      "severity": "P1",
+      "symptom": "설치 시 Kernel projection이 Provider auth/session/cache 또는 user-owned profile을 덮을 수 있었다.",
+      "root_cause": "package source와 target ownership boundary가 명시적으로 검증되지 않았다.",
+      "lesson": "ownership, containment, installed parity와 rollback을 별도 receipt로 증명한다.",
+      "fixed_in": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
+      "regression_tests": [
+        "tests/kernel-install-isolation.test.mjs",
+        "tests/kernel-profile-ownership.test.mjs",
+        "tests/kernel-runtime-boundary-static.test.mjs"
+      ]
+    }
   ],
   "dependencies": {
-    "capabilities": ["provider-session-and-execution-boundary", "control-plane-state-authority", "mutation-fencing-and-git-closeout"],
-    "runtime": ["Kernel package manifest", "account-root installer", "profile projection"],
-    "external": ["host filesystem", "user account-root", "Provider profile surface"]
+    "capabilities": [
+      "provider-session-and-execution-boundary",
+      "control-plane-state-authority",
+      "mutation-fencing-and-git-closeout"
+    ],
+    "runtime": [
+      "Kernel package manifest",
+      "account-root installer",
+      "profile projection"
+    ],
+    "external": [
+      "host filesystem",
+      "user account-root",
+      "Provider profile surface"
+    ]
   },
   "current_integration": {
     "layer": "Kernel package, installer and account-root profile boundary",
     "active": true,
-    "paths": ["scripts/kernel/package-build.mjs", "scripts/kernel/profile-install.mjs", "scripts/kernel/runtime-boundary-audit.mjs"],
-    "entrypoints": ["bin/moonshot-relay.mjs", "bin/moon-relay-kernel.mjs"],
+    "paths": [
+      "scripts/kernel/package-build.mjs",
+      "scripts/kernel/profile-install.mjs",
+      "scripts/kernel/runtime-boundary-audit.mjs"
+    ],
+    "entrypoints": [
+      "bin/moonshot-relay.mjs",
+      "bin/moon-relay-kernel.mjs"
+    ],
     "notes": "HOST classification: package tests are local, actual account-root adoption is host-owned."
   },
   "reintroduction": {
     "recommended_layer": "Kernel package build and host installer",
     "trigger": "새 profile, package file 또는 account-root integration을 추가할 때",
-    "integration_points": ["manifest", "package materialization", "ownership audit", "install/rollback", "parity receipt"],
-    "risks": ["user data overwrite", "installed/source drift", "wrong account root", "partial rollback"],
-    "guardrails": ["ownership and path containment", "preserve external surface", "atomic projection", "host receipt"]
+    "integration_points": [
+      "manifest",
+      "package materialization",
+      "ownership audit",
+      "install/rollback",
+      "parity receipt"
+    ],
+    "risks": [
+      "user data overwrite",
+      "installed/source drift",
+      "wrong account root",
+      "partial rollback"
+    ],
+    "guardrails": [
+      "ownership and path containment",
+      "preserve external surface",
+      "atomic projection",
+      "host receipt"
+    ]
   },
   "decision": {
     "disposition": "retain",
     "rationale": "Kernel 사용 surface를 안전하게 채택하기 위한 HOST boundary이며 runtime core와 분리해 보존한다.",
-    "follow_up": ["설치·동기화는 assetization baseline과 별도 host acceptance로 닫는다."]
-  }
+    "follow_up": [
+      "설치·동기화는 assetization baseline과 별도 host acceptance로 닫는다."
+    ]
+  },
+  "subcapabilities": [
+    {
+      "id": "package-materialization",
+      "name": "Package materialization",
+      "role": "계정 루트 패키지 빌드 및 매니페스트 생성",
+      "disposition": "HOST",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": false
+      }
+    },
+    {
+      "id": "account-profile-projection",
+      "name": "Account profile projection",
+      "role": "프로필 설치, 섀도우 격리 및 동등성 검증",
+      "disposition": "HOST",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": false
+      }
+    }
+  ]
 }

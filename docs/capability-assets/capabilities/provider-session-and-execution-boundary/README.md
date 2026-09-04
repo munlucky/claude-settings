@@ -2,8 +2,13 @@
 
 - **ID**: `provider-session-and-execution-boundary`
 - **Domain**: `EXECUTION`
-- **Status**: `HOST`
+- **Family Status**: `HOST`
 - **Summary**: Host/provider session, execution capsule, workspace와 transport의 경계를 분리한다.
+
+## Subcapabilities (Decomplexification 단위)
+- **`host-session-binding`** [`HOST`]: Host/Provider 세션 식별 및 런타임 연결
+- **`execution-capsule-transport`** [`HOST`]: 실행 캡슐 격리 및 transport 경계 보장
+- **`step-worktree-isolation`** [`HOST`]: 스텝 단위 워크트리 생성 및 격리
 
 ## 해결하는 문제
 - provider/host session과 Kernel task state가 섞이는 문제

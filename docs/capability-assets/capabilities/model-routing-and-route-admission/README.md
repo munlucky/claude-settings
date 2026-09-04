@@ -2,8 +2,16 @@
 
 - **ID**: `model-routing-and-route-admission`
 - **Domain**: `INTELLIGENCE`
-- **Status**: `CORE`
+- **Family Status**: `CORE`
 - **Summary**: stage, capability, risk, cost와 provider policy를 고려해 실행 route를 admission한다.
+
+## Subcapabilities (Decomplexification 단위)
+- **`required-capability-contract`** [`CORE`]: 작업별 필수 역량 조건 선언 및 검증 계약
+- **`route-admission`** [`CORE`]: 실행 전 라우트 안전성 승인 및 드리프트 방지
+- **`model-selection`** [`HOST`]: 논리 모델 클래스(Fast/Standard/Deep) 매핑
+- **`provider-selection`** [`HOST`]: 실제 Provider 디스패치 및 런처 실행
+- **`effort-cost-routing`** [`HOST`]: 추론 노력(Effort) 및 토큰 비용 최적화
+- **`stagnation-escalation`** [`OPTIONAL`]: 진행 정체 감지 시 상위 모델/경로로 에스컬레이션
 
 ## 해결하는 문제
 - 모든 stage를 같은 모델/provider로 실행하는 비효율

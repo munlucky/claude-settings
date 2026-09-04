@@ -2,8 +2,12 @@
 
 - **ID**: `step-ledger-resume`
 - **Domain**: `WORK`
-- **Status**: `CORE`
+- **Family Status**: `CORE`
 - **Summary**: 실행 단계를 durable cursor와 lease로 기록하고 중단 후 안전하게 재개한다.
+
+## Subcapabilities (Decomplexification 단위)
+- **`run-step-ledger`** [`CORE`]: 단계별 순차 실행 상태 및 영속 원장 권위 유지
+- **`work-cursor-resume`** [`CORE`]: 실행 커서 및 안전한 세션 재개 단일 권위
 
 ## 해결하는 문제
 - 중단·재시작 시 어느 단계부터 이어야 하는지 잃는 문제

@@ -8,88 +8,316 @@
   "product_relevance": {
     "relevant": true,
     "reason": "agent workflow의 완료 판단은 fresh, scope-matched evidence와 owner binding을 필요로 한다.",
-    "consumers": ["agent_workflow", "project_knowledge_lifecycle"]
+    "consumers": [
+      "agent_workflow",
+      "project_knowledge_lifecycle"
+    ]
   },
   "origin": {
     "first_seen": {
       "epoch": "E2",
       "commit": "5ccf1c9ccfbf68ae8067d6e7e69a7555c782fdb5",
       "date": "2026-01-21",
-      "evidence": [".claude/skills/completion-verifier/SKILL.md"]
+      "evidence": [
+        ".claude/skills/completion-verifier/SKILL.md"
+      ]
     },
     "generations": [
-      {"id": "relay-tdd-completion", "epoch": "E2", "commit": "5ccf1c9ccfbf68ae8067d6e7e69a7555c782fdb5", "label": "TDD completion", "change": "검증 명령과 완료 조건을 분리된 증거로 다루기 시작했다."},
-      {"id": "relay-review-graph", "epoch": "E3", "commit": "1f7ed38b80f2d66d34498548448423c56154be16", "label": "Review graph", "change": "독립 review, code graph와 closeout artifact를 연결했다."},
-      {"id": "kernel-proof-plane", "epoch": "E4", "commit": "7806dd1870501a1171969ca8e13af8fbec26f892", "label": "Kernel proof plane", "change": "evidence pack과 release evidence schema를 Kernel 경계로 가져왔다."},
-      {"id": "current-final-authority", "epoch": "E8", "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e", "label": "Final authority correction", "change": "fresh proof, completion gate와 finalization owner를 정리했다."}
+      {
+        "id": "relay-tdd-completion",
+        "epoch": "E2",
+        "commit": "5ccf1c9ccfbf68ae8067d6e7e69a7555c782fdb5",
+        "label": "TDD completion",
+        "change": "검증 명령과 완료 조건을 분리된 증거로 다루기 시작했다."
+      },
+      {
+        "id": "relay-review-graph",
+        "epoch": "E3",
+        "commit": "1f7ed38b80f2d66d34498548448423c56154be16",
+        "label": "Review graph",
+        "change": "독립 review, code graph와 closeout artifact를 연결했다."
+      },
+      {
+        "id": "kernel-proof-plane",
+        "epoch": "E4",
+        "commit": "7806dd1870501a1171969ca8e13af8fbec26f892",
+        "label": "Kernel proof plane",
+        "change": "evidence pack과 release evidence schema를 Kernel 경계로 가져왔다."
+      },
+      {
+        "id": "current-final-authority",
+        "epoch": "E8",
+        "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
+        "label": "Final authority correction",
+        "change": "fresh proof, completion gate와 finalization owner를 정리했다."
+      }
     ]
   },
   "problem": {
-    "solves": ["문서상 완료와 실제 검증 성공이 분리되는 문제", "review 의견과 authoritative receipt가 섞이는 문제"],
-    "does_not_solve": ["증명되지 않은 외부 서비스의 live availability", "잘못 설계된 acceptance의 품질"]
+    "solves": [
+      "문서상 완료와 실제 검증 성공이 분리되는 문제",
+      "review 의견과 authoritative receipt가 섞이는 문제"
+    ],
+    "does_not_solve": [
+      "증명되지 않은 외부 서비스의 live availability",
+      "잘못 설계된 acceptance의 품질"
+    ]
   },
-  "recommended_use": ["검증 command, source identity, artifact identity와 receipt를 함께 기록한다.", "protected review가 필요한 경우 독립 receipt를 요구한다."],
-  "avoid_use": ["markdown summary나 test path 목록을 실행 evidence로 가장하지 않는다.", "reviewer 의견을 Kernel completion receipt로 수동 복사하지 않는다."],
+  "recommended_use": [
+    "검증 command, source identity, artifact identity와 receipt를 함께 기록한다.",
+    "protected review가 필요한 경우 독립 receipt를 요구한다."
+  ],
+  "avoid_use": [
+    "markdown summary나 test path 목록을 실행 evidence로 가장하지 않는다.",
+    "reviewer 의견을 Kernel completion receipt로 수동 복사하지 않는다."
+  ],
   "authority": {
-    "owns_state": ["verification plan, evidence identity, review receipt lineage"],
-    "owns_completion": ["Kernel completion gate와 finalization이 최종 판정을 소유한다."],
-    "provides_evidence": ["proof executor receipts", "review receipt schema와 completion tests"]
+    "owns_state": [
+      "verification plan, evidence identity, review receipt lineage"
+    ],
+    "owns_completion": [
+      "Kernel completion gate와 finalization이 최종 판정을 소유한다."
+    ],
+    "provides_evidence": [
+      "proof executor receipts",
+      "review receipt schema와 completion tests"
+    ]
   },
   "contracts": {
-    "inputs": ["task acceptance", "command reference", "workspace/source identity", "review requirement"],
-    "outputs": ["fresh evidence receipt", "review receipt", "completion decision"],
-    "invariants": ["proof는 bound command로 실행된다.", "evidence freshness inputs가 달라지면 재검증한다."],
-    "guardrails": ["caller assertion만으로 hard evidence를 만들지 않는다.", "completion authority를 asset index에 위임하지 않는다."]
+    "inputs": [
+      "task acceptance",
+      "command reference",
+      "workspace/source identity",
+      "review requirement"
+    ],
+    "outputs": [
+      "fresh evidence receipt",
+      "review receipt",
+      "completion decision"
+    ],
+    "invariants": [
+      "proof는 bound command로 실행된다.",
+      "evidence freshness inputs가 달라지면 재검증한다."
+    ],
+    "guardrails": [
+      "caller assertion만으로 hard evidence를 만들지 않는다.",
+      "completion authority를 asset index에 위임하지 않는다."
+    ]
   },
   "implementations": {
     "best_known": {
       "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
-      "paths": ["scripts/kernel/evidence-pack.mjs", "scripts/kernel/proof/proof-executor.mjs", "scripts/kernel/proof/review-receipt.mjs", "scripts/kernel/run/finalization.mjs", "schemas/kernel.release-evidence.schema.json", "schemas/kernel.review-receipt.schema.json"],
+      "paths": [
+        "scripts/kernel/evidence-pack.mjs",
+        "scripts/kernel/proof/proof-executor.mjs",
+        "scripts/kernel/proof/review-receipt.mjs",
+        "scripts/kernel/run/finalization.mjs",
+        "schemas/kernel.release-evidence.schema.json",
+        "schemas/kernel.review-receipt.schema.json"
+      ],
       "generation": "E8-current",
       "notes": "현재 Kernel proof/finalization 경계와 review receipt implementation."
     },
     "historical": [
-      {"commit": "5ccf1c9ccfbf68ae8067d6e7e69a7555c782fdb5", "paths": [".claude/skills/completion-verifier/SKILL.md"], "generation": "E2-relay", "notes": "명령 기반 완료 검증의 초기 자산."},
-      {"commit": "1f7ed38b80f2d66d34498548448423c56154be16", "paths": ["archive/scripts/legacy-phase-adapters/lib/code-review-graph-evidence.mjs", "archive/scripts/legacy-phase-adapters/code-review-graph-stage.mjs"], "generation": "E3-relay", "notes": "독립 review graph와 stage evidence."},
-      {"commit": "7806dd1870501a1171969ca8e13af8fbec26f892", "paths": ["scripts/kernel/evidence-pack.mjs", "schemas/kernel.release-evidence.schema.json"], "generation": "E4-kernel", "notes": "Kernel hard evidence pack의 도입."}
+      {
+        "commit": "5ccf1c9ccfbf68ae8067d6e7e69a7555c782fdb5",
+        "paths": [
+          ".claude/skills/completion-verifier/SKILL.md"
+        ],
+        "generation": "E2-relay",
+        "notes": "명령 기반 완료 검증의 초기 자산."
+      },
+      {
+        "commit": "1f7ed38b80f2d66d34498548448423c56154be16",
+        "paths": [
+          "archive/scripts/legacy-phase-adapters/lib/code-review-graph-evidence.mjs",
+          "archive/scripts/legacy-phase-adapters/code-review-graph-stage.mjs"
+        ],
+        "generation": "E3-relay",
+        "notes": "독립 review graph와 stage evidence."
+      },
+      {
+        "commit": "7806dd1870501a1171969ca8e13af8fbec26f892",
+        "paths": [
+          "scripts/kernel/evidence-pack.mjs",
+          "schemas/kernel.release-evidence.schema.json"
+        ],
+        "generation": "E4-kernel",
+        "notes": "Kernel hard evidence pack의 도입."
+      }
     ]
   },
   "proof": {
     "tests": [
-      {"id": "completion-evidence", "path": "tests/completion-evidence.test.mjs", "purpose": "completion에 필요한 evidence identity와 receipt를 검증한다.", "commandRef": "test", "status": "verified"},
-      {"id": "kernel-evidence-pack", "path": "tests/kernel-evidence-pack.test.mjs", "purpose": "Kernel evidence pack과 bound proof를 검증한다.", "commandRef": "test", "status": "verified"},
-      {"id": "review-receipt-completion", "path": "tests/kernel-review-receipt-completion.test.mjs", "purpose": "review receipt가 completion gate에 연결되는지 검증한다.", "commandRef": "test", "status": "verified"}
+      {
+        "id": "completion-evidence",
+        "path": "tests/completion-evidence.test.mjs",
+        "purpose": "completion에 필요한 evidence identity와 receipt를 검증한다.",
+        "commandRef": "test",
+        "status": "verified",
+        "referenceStatus": "verified",
+        "executionStatus": "historical-pass"
+      },
+      {
+        "id": "kernel-evidence-pack",
+        "path": "tests/kernel-evidence-pack.test.mjs",
+        "purpose": "Kernel evidence pack과 bound proof를 검증한다.",
+        "commandRef": "test",
+        "status": "verified",
+        "referenceStatus": "verified",
+        "executionStatus": "historical-pass"
+      },
+      {
+        "id": "review-receipt-completion",
+        "path": "tests/kernel-review-receipt-completion.test.mjs",
+        "purpose": "review receipt가 completion gate에 연결되는지 검증한다.",
+        "commandRef": "test",
+        "status": "verified",
+        "referenceStatus": "verified",
+        "executionStatus": "historical-pass"
+      }
     ],
     "fixtures": [],
     "smoke": [
-      {"id": "release-evidence-schema", "path": "schemas/kernel.release-evidence.schema.json", "purpose": "release evidence 구조 계약을 확인한다.", "commandRef": null, "status": "verified"}
+      {
+        "id": "release-evidence-schema",
+        "path": "schemas/kernel.release-evidence.schema.json",
+        "purpose": "release evidence 구조 계약을 확인한다.",
+        "commandRef": null,
+        "status": "verified"
+      }
     ]
   },
   "known_failures": [
-    {"id": "narrative-only-completion", "severity": "P0", "symptom": "문서나 caller assertion만으로 runtime proof 없이 완료를 선언할 수 있었다.", "root_cause": "completion projection과 proof execution의 권위가 분리되지 않았다.", "lesson": "Kernel-recorded hard evidence와 fresh source identity를 completion gate의 필수 입력으로 둔다.", "fixed_in": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e", "regression_tests": ["tests/completion-authority.test.mjs", "tests/completion-evidence.test.mjs", "tests/kernel-proof-command-not-knowledge.test.mjs"]}
+    {
+      "id": "narrative-only-completion",
+      "severity": "P0",
+      "symptom": "문서나 caller assertion만으로 runtime proof 없이 완료를 선언할 수 있었다.",
+      "root_cause": "completion projection과 proof execution의 권위가 분리되지 않았다.",
+      "lesson": "Kernel-recorded hard evidence와 fresh source identity를 completion gate의 필수 입력으로 둔다.",
+      "fixed_in": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
+      "regression_tests": [
+        "tests/completion-authority.test.mjs",
+        "tests/completion-evidence.test.mjs",
+        "tests/kernel-proof-command-not-knowledge.test.mjs"
+      ]
+    }
   ],
   "dependencies": {
-    "capabilities": ["task-contract-and-bounded-work", "control-plane-state-authority", "mutation-fencing-and-git-closeout"],
-    "runtime": ["Kernel proof executor", "verification repository", "completion finalization"],
-    "external": ["provider review transport when a protected independent review is required"]
+    "capabilities": [
+      "task-contract-and-bounded-work",
+      "control-plane-state-authority",
+      "mutation-fencing-and-git-closeout"
+    ],
+    "runtime": [
+      "Kernel proof executor",
+      "verification repository",
+      "completion finalization"
+    ],
+    "external": [
+      "provider review transport when a protected independent review is required"
+    ]
   },
   "current_integration": {
     "layer": "Kernel proof plane and completion finalization",
     "active": true,
-    "paths": ["scripts/kernel/proof/proof-executor.mjs", "scripts/kernel/run/finalization.mjs", "scripts/kernel/evidence-pack.mjs"],
-    "entrypoints": ["bin/moon-relay-kernel.mjs"],
+    "paths": [
+      "scripts/kernel/proof/proof-executor.mjs",
+      "scripts/kernel/run/finalization.mjs",
+      "scripts/kernel/evidence-pack.mjs"
+    ],
+    "entrypoints": [
+      "bin/moon-relay-kernel.mjs"
+    ],
     "notes": "CORE trust boundary. This asset is an index of the authority chain, not a replacement for receipts."
   },
   "reintroduction": {
     "recommended_layer": "Kernel verification and close gate",
     "trigger": "새 acceptance 또는 protected review obligation을 추가할 때",
-    "integration_points": ["evidence plan", "proof executor", "review receipt", "finalization gate"],
-    "risks": ["오래된 receipt 재사용", "reviewer와 owner binding 혼동", "soft evidence를 hard evidence로 승격"],
-    "guardrails": ["source/artifact/command digest freshness", "protected obligation의 independent receipt", "completion gate는 Kernel만 소유"]
+    "integration_points": [
+      "evidence plan",
+      "proof executor",
+      "review receipt",
+      "finalization gate"
+    ],
+    "risks": [
+      "오래된 receipt 재사용",
+      "reviewer와 owner binding 혼동",
+      "soft evidence를 hard evidence로 승격"
+    ],
+    "guardrails": [
+      "source/artifact/command digest freshness",
+      "protected obligation의 independent receipt",
+      "completion gate는 Kernel만 소유"
+    ]
   },
   "decision": {
     "disposition": "retain",
     "rationale": "신뢰 가능한 agent workflow의 핵심 completion boundary이므로 CORE로 유지한다.",
-    "follow_up": ["새 proof 방식은 evidence class와 freshness input을 먼저 정의한다."]
-  }
+    "follow_up": [
+      "새 proof 방식은 evidence class와 freshness input을 먼저 정의한다."
+    ]
+  },
+  "subcapabilities": [
+    {
+      "id": "evidence-binding",
+      "name": "Evidence binding",
+      "role": "실증 증거 수집 및 인수조건 의무 바인딩",
+      "disposition": "CORE",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": false
+      }
+    },
+    {
+      "id": "verification-authority",
+      "name": "Verification authority",
+      "role": "검증 실행 결과 평가 및 통과 여부 단일 권위",
+      "disposition": "CORE",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": false
+      }
+    },
+    {
+      "id": "completion-decision",
+      "name": "Completion decision",
+      "role": "최종 완료 판정 및 릴리즈 승인 게이트",
+      "disposition": "CORE",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": true
+      }
+    },
+    {
+      "id": "protected-obligation",
+      "name": "Protected obligation",
+      "role": "고위험 변경에 대한 필수 검증 의무 강제",
+      "disposition": "CORE",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": false
+      }
+    },
+    {
+      "id": "independent-reviewer-execution",
+      "name": "Independent reviewer execution",
+      "role": "독립 컨텍스트 리뷰어 실행 및 판정 도출",
+      "disposition": "OPTIONAL",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": false
+      }
+    },
+    {
+      "id": "review-transport",
+      "name": "Review transport",
+      "role": "외부 리뷰어 세션 브릿지 및 프로토콜 전송",
+      "disposition": "HOST",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": false
+      }
+    }
+  ]
 }

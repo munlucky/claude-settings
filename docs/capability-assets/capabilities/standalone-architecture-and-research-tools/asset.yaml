@@ -8,86 +8,274 @@
   "product_relevance": {
     "relevant": true,
     "reason": "agent workflow의 사전 설계와 독립 분석 품질을 높이지만 Kernel completion authority와는 별도다.",
-    "consumers": ["agent_workflow", "project_knowledge_lifecycle"]
+    "consumers": [
+      "agent_workflow",
+      "project_knowledge_lifecycle"
+    ]
   },
   "origin": {
     "first_seen": {
       "epoch": "E3",
       "commit": "1f7ed38b80f2d66d34498548448423c56154be16",
       "date": "2026-06-09",
-      "evidence": ["agents/context-builder.md", "docs/public/roadmaps"]
+      "evidence": [
+        "agents/context-builder.md",
+        "docs/public/roadmaps"
+      ]
     },
     "generations": [
-      {"id": "relay-context-helper", "epoch": "E3", "commit": "1f7ed38b80f2d66d34498548448423c56154be16", "label": "Relay planning helpers", "change": "context builder와 architecture/research 보조 문서 surface를 운영했다."},
-      {"id": "standalone-kernel-tools", "epoch": "E7", "commit": "30b317c0c8f0dee9b4a1c8f82f8b14fe30a7f692", "label": "Standalone tools", "change": "architecture, product, diff, UI audit과 project memory를 provider-neutral command로 분리했다."},
-      {"id": "current-advisory-surface", "epoch": "E8", "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e", "label": "Advisory standalone", "change": "standalone 결과를 별도 artifact와 binding 없이는 runtime authority로 승격하지 않는다."}
+      {
+        "id": "relay-context-helper",
+        "epoch": "E3",
+        "commit": "1f7ed38b80f2d66d34498548448423c56154be16",
+        "label": "Relay planning helpers",
+        "change": "context builder와 architecture/research 보조 문서 surface를 운영했다."
+      },
+      {
+        "id": "standalone-kernel-tools",
+        "epoch": "E7",
+        "commit": "30b317c0c8f0dee9b4a1c8f82f8b14fe30a7f692",
+        "label": "Standalone tools",
+        "change": "architecture, product, diff, UI audit과 project memory를 provider-neutral command로 분리했다."
+      },
+      {
+        "id": "current-advisory-surface",
+        "epoch": "E8",
+        "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
+        "label": "Advisory standalone",
+        "change": "standalone 결과를 별도 artifact와 binding 없이는 runtime authority로 승격하지 않는다."
+      }
     ]
   },
   "problem": {
-    "solves": ["runtime 변경 전 architecture와 product fit을 검토할 별도 surface 부족", "research/diff/UI 분석 결과가 실행 boundary와 섞이는 문제"],
-    "does_not_solve": ["실제 제품 구현과 배포", "standalone artifact만으로 Kernel acceptance를 충족하는 것"]
+    "solves": [
+      "runtime 변경 전 architecture와 product fit을 검토할 별도 surface 부족",
+      "research/diff/UI 분석 결과가 실행 boundary와 섞이는 문제"
+    ],
+    "does_not_solve": [
+      "실제 제품 구현과 배포",
+      "standalone artifact만으로 Kernel acceptance를 충족하는 것"
+    ]
   },
-  "recommended_use": ["architecture/product/research artifact를 implementation 전에 생성한다.", "standalone output은 source/evidence와 provenance를 함께 기록한다."],
-  "avoid_use": ["standalone 계획을 구현 완료로 간주하지 않는다.", "artifact를 runtime loader나 completion gate에 자동 연결하지 않는다."],
+  "recommended_use": [
+    "architecture/product/research artifact를 implementation 전에 생성한다.",
+    "standalone output은 source/evidence와 provenance를 함께 기록한다."
+  ],
+  "avoid_use": [
+    "standalone 계획을 구현 완료로 간주하지 않는다.",
+    "artifact를 runtime loader나 completion gate에 자동 연결하지 않는다."
+  ],
   "authority": {
-    "owns_state": ["standalone artifact lifecycle", "research and architecture package metadata"],
-    "owns_completion": ["standalone tool은 자체 artifact validation만 소유하며 product/Kernel completion은 소유하지 않는다."],
-    "provides_evidence": ["artifact schema and contract tests", "research evidence and architecture handoff tests"]
+    "owns_state": [
+      "standalone artifact lifecycle",
+      "research and architecture package metadata"
+    ],
+    "owns_completion": [
+      "standalone tool은 자체 artifact validation만 소유하며 product/Kernel completion은 소유하지 않는다."
+    ],
+    "provides_evidence": [
+      "artifact schema and contract tests",
+      "research evidence and architecture handoff tests"
+    ]
   },
   "contracts": {
-    "inputs": ["product/architecture objective", "repository evidence", "research sources", "artifact destination"],
-    "outputs": ["architecture/research/diff/UI artifact", "provenance-bound handoff"],
-    "invariants": ["artifact와 runtime source를 혼동하지 않는다.", "외부 evidence는 citation/provenance를 유지한다."],
-    "guardrails": ["provider-neutral advisory mode", "no automatic promotion", "separate output directory and ownership"]
+    "inputs": [
+      "product/architecture objective",
+      "repository evidence",
+      "research sources",
+      "artifact destination"
+    ],
+    "outputs": [
+      "architecture/research/diff/UI artifact",
+      "provenance-bound handoff"
+    ],
+    "invariants": [
+      "artifact와 runtime source를 혼동하지 않는다.",
+      "외부 evidence는 citation/provenance를 유지한다."
+    ],
+    "guardrails": [
+      "provider-neutral advisory mode",
+      "no automatic promotion",
+      "separate output directory and ownership"
+    ]
   },
   "implementations": {
     "best_known": {
       "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
-      "paths": ["scripts/kernel/standalone/architecture-artifacts.mjs", "scripts/kernel/standalone/product-definition.mjs", "scripts/kernel/standalone/project-memory.mjs", "scripts/kernel/standalone/explain-diff-html.mjs", "scripts/kernel/standalone/ui-audit.mjs", "bin/codebase-understanding.mjs", "bin/project-memory.mjs"],
+      "paths": [
+        "scripts/kernel/standalone/architecture-artifacts.mjs",
+        "scripts/kernel/standalone/product-definition.mjs",
+        "scripts/kernel/standalone/project-memory.mjs",
+        "scripts/kernel/standalone/explain-diff-html.mjs",
+        "scripts/kernel/standalone/ui-audit.mjs",
+        "bin/codebase-understanding.mjs",
+        "bin/project-memory.mjs"
+      ],
       "generation": "E8-current",
       "notes": "현재 standalone command surface. Asset Base 자체는 standalone command가 아니다."
     },
     "historical": [
-      {"commit": "1f7ed38b80f2d66d34498548448423c56154be16", "paths": ["agents/context-builder.md"], "generation": "E3-relay", "notes": "초기 context/planning helper."},
-      {"commit": "30b317c0c8f0dee9b4a1c8f82f8b14fe30a7f692", "paths": ["scripts/kernel/standalone/architecture-artifacts.mjs", "scripts/kernel/standalone/project-memory.mjs"], "generation": "E7-kernel", "notes": "standalone artifact command 분리."}
+      {
+        "commit": "1f7ed38b80f2d66d34498548448423c56154be16",
+        "paths": [
+          "agents/context-builder.md"
+        ],
+        "generation": "E3-relay",
+        "notes": "초기 context/planning helper."
+      },
+      {
+        "commit": "30b317c0c8f0dee9b4a1c8f82f8b14fe30a7f692",
+        "paths": [
+          "scripts/kernel/standalone/architecture-artifacts.mjs",
+          "scripts/kernel/standalone/project-memory.mjs"
+        ],
+        "generation": "E7-kernel",
+        "notes": "standalone artifact command 분리."
+      }
     ]
   },
   "proof": {
     "tests": [
-      {"id": "architecture-contract", "path": "tests/architecture-contract-bind.test.mjs", "purpose": "architecture artifact contract binding을 검증한다.", "commandRef": "test", "status": "verified"},
-      {"id": "architecture-handoff", "path": "tests/architecture-handoff-build.test.mjs", "purpose": "architecture handoff와 provenance를 검증한다.", "commandRef": "test", "status": "verified"},
-      {"id": "research-evidence", "path": "tests/research-evidence-contract.test.mjs", "purpose": "research evidence contract를 검증한다.", "commandRef": "test", "status": "verified"}
+      {
+        "id": "architecture-contract",
+        "path": "tests/architecture-contract-bind.test.mjs",
+        "purpose": "architecture artifact contract binding을 검증한다.",
+        "commandRef": "test",
+        "status": "verified",
+        "referenceStatus": "verified",
+        "executionStatus": "historical-pass"
+      },
+      {
+        "id": "architecture-handoff",
+        "path": "tests/architecture-handoff-build.test.mjs",
+        "purpose": "architecture handoff와 provenance를 검증한다.",
+        "commandRef": "test",
+        "status": "verified",
+        "referenceStatus": "verified",
+        "executionStatus": "historical-pass"
+      },
+      {
+        "id": "research-evidence",
+        "path": "tests/research-evidence-contract.test.mjs",
+        "purpose": "research evidence contract를 검증한다.",
+        "commandRef": "test",
+        "status": "verified",
+        "referenceStatus": "verified",
+        "executionStatus": "historical-pass"
+      }
     ],
     "fixtures": [],
     "smoke": [
-      {"id": "standalone-architecture", "path": "scripts/kernel/standalone/architecture-artifacts.mjs", "purpose": "standalone architecture command entrypoint를 확인한다.", "commandRef": null, "status": "verified"}
+      {
+        "id": "standalone-architecture",
+        "path": "scripts/kernel/standalone/architecture-artifacts.mjs",
+        "purpose": "standalone architecture command entrypoint를 확인한다.",
+        "commandRef": null,
+        "status": "verified"
+      }
     ]
   },
   "known_failures": [
-    {"id": "advisory-authority-confusion", "severity": "P2", "symptom": "standalone plan/research artifact가 실행 또는 completion authority처럼 해석될 수 있었다.", "root_cause": "advisory artifact와 runtime/control-plane ownership의 경계가 문서와 schema에 약했다.", "lesson": "artifact provenance, binding과 authority boundary를 명시하고 자동 promotion을 금지한다.", "fixed_in": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e", "regression_tests": ["tests/architecture-contract-bind.test.mjs", "tests/kernel-standalone-project-knowledge.test.mjs", "tests/research-evidence-contract.test.mjs"]}
+    {
+      "id": "advisory-authority-confusion",
+      "severity": "P2",
+      "symptom": "standalone plan/research artifact가 실행 또는 completion authority처럼 해석될 수 있었다.",
+      "root_cause": "advisory artifact와 runtime/control-plane ownership의 경계가 문서와 schema에 약했다.",
+      "lesson": "artifact provenance, binding과 authority boundary를 명시하고 자동 promotion을 금지한다.",
+      "fixed_in": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
+      "regression_tests": [
+        "tests/architecture-contract-bind.test.mjs",
+        "tests/kernel-standalone-project-knowledge.test.mjs",
+        "tests/research-evidence-contract.test.mjs"
+      ]
+    }
   ],
   "dependencies": {
-    "capabilities": ["project-identity-and-knowledge-lifecycle", "knowledge-ingestion-and-evidence-graph", "evidence-completion-and-review-authority"],
-    "runtime": ["standalone artifact utilities", "project memory binding"],
-    "external": ["research sources", "provider transport when explicitly selected"]
+    "capabilities": [
+      "project-identity-and-knowledge-lifecycle",
+      "knowledge-ingestion-and-evidence-graph",
+      "evidence-completion-and-review-authority"
+    ],
+    "runtime": [
+      "standalone artifact utilities",
+      "project memory binding"
+    ],
+    "external": [
+      "research sources",
+      "provider transport when explicitly selected"
+    ]
   },
   "current_integration": {
     "layer": "Standalone command and skill surface",
     "active": true,
-    "paths": ["scripts/kernel/standalone/architecture-artifacts.mjs", "scripts/kernel/standalone/project-memory.mjs", "scripts/kernel/standalone/explain-diff-html.mjs"],
-    "entrypoints": ["bin/moon-relay-standalone.mjs", "bin/project-memory.mjs"],
+    "paths": [
+      "scripts/kernel/standalone/architecture-artifacts.mjs",
+      "scripts/kernel/standalone/project-memory.mjs",
+      "scripts/kernel/standalone/explain-diff-html.mjs"
+    ],
+    "entrypoints": [
+      "bin/moon-relay-standalone.mjs",
+      "bin/project-memory.mjs"
+    ],
     "notes": "OPTIONAL advisory capability. It is not part of Kernel runtime completion."
   },
   "reintroduction": {
     "recommended_layer": "standalone planning/research artifact surface",
     "trigger": "구현 전 architecture, product, research 또는 UI/diff analysis가 필요할 때",
-    "integration_points": ["artifact package", "source/evidence provenance", "explicit handoff"],
-    "risks": ["계획과 구현의 혼동", "외부 자료 stale", "advisory output 자동 promotion"],
-    "guardrails": ["explicit opt-in", "citation/provenance", "separate artifact ownership", "Kernel binding required"]
+    "integration_points": [
+      "artifact package",
+      "source/evidence provenance",
+      "explicit handoff"
+    ],
+    "risks": [
+      "계획과 구현의 혼동",
+      "외부 자료 stale",
+      "advisory output 자동 promotion"
+    ],
+    "guardrails": [
+      "explicit opt-in",
+      "citation/provenance",
+      "separate artifact ownership",
+      "Kernel binding required"
+    ]
   },
   "decision": {
     "disposition": "retain",
     "rationale": "구현 품질을 보조하는 OPTIONAL productivity capability로 보존하되 runtime authority와 분리한다.",
-    "follow_up": ["새 standalone tool은 artifact schema와 authority disclaimer를 함께 제공한다."]
-  }
+    "follow_up": [
+      "새 standalone tool은 artifact schema와 authority disclaimer를 함께 제공한다."
+    ]
+  },
+  "subcapabilities": [
+    {
+      "id": "architecture-artifacts",
+      "name": "Architecture artifacts",
+      "role": "아키텍처 설계 산출물 및 계약 시드 생성",
+      "disposition": "OPTIONAL",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": true
+      }
+    },
+    {
+      "id": "codebase-understanding",
+      "name": "Codebase understanding",
+      "role": "코드베이스 인덱스 구축 및 질의 인터페이스",
+      "disposition": "OPTIONAL",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": true
+      }
+    },
+    {
+      "id": "standalone-diff-and-audit",
+      "name": "Standalone diff and audit",
+      "role": "변경 설명 HTML 렌더링 및 UI 접근성 감사",
+      "disposition": "OPTIONAL",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": false
+      }
+    }
+  ]
 }

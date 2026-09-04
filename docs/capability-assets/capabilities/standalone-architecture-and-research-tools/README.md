@@ -2,8 +2,13 @@
 
 - **ID**: `standalone-architecture-and-research-tools`
 - **Domain**: `PRODUCTIVITY`
-- **Status**: `OPTIONAL`
+- **Family Status**: `OPTIONAL`
 - **Summary**: architecture, product definition, research, diff, UI audit과 project-memory를 비런타임 도구로 제공한다.
+
+## Subcapabilities (Decomplexification 단위)
+- **`architecture-artifacts`** [`OPTIONAL`]: 아키텍처 설계 산출물 및 계약 시드 생성
+- **`codebase-understanding`** [`OPTIONAL`]: 코드베이스 인덱스 구축 및 질의 인터페이스
+- **`standalone-diff-and-audit`** [`OPTIONAL`]: 변경 설명 HTML 렌더링 및 UI 접근성 감사
 
 ## 해결하는 문제
 - runtime 변경 전 architecture와 product fit을 검토할 별도 surface 부족

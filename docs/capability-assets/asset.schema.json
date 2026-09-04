@@ -5,7 +5,7 @@
   "description": "Engineering-only provenance manifest; not a runtime or installer contract.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "id", "name", "summary", "category", "status", "product_relevance", "origin", "problem", "recommended_use", "avoid_use", "authority", "contracts", "implementations", "proof", "known_failures", "dependencies", "current_integration", "reintroduction", "decision"],
+  "required": ["schemaVersion", "id", "name", "summary", "category", "status", "product_relevance", "origin", "problem", "recommended_use", "avoid_use", "authority", "contracts", "implementations", "proof", "known_failures", "dependencies", "current_integration", "reintroduction", "decision", "subcapabilities"],
   "properties": {
     "schemaVersion": {"const": 1},
     "id": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$", "minLength": 3},
@@ -26,7 +26,8 @@
     "dependencies": {"$ref": "#/$defs/dependencies"},
     "current_integration": {"$ref": "#/$defs/currentIntegration"},
     "reintroduction": {"$ref": "#/$defs/reintroduction"},
-    "decision": {"$ref": "#/$defs/decision"}
+    "decision": {"$ref": "#/$defs/decision"},
+    "subcapabilities": {"type": "array", "items": {"$ref": "#/$defs/subcapability"}}
   },
   "$defs": {
     "text": {"type": "string", "minLength": 1},
@@ -75,7 +76,31 @@
     },
     "proofItem": {
       "type": "object", "additionalProperties": false, "required": ["id", "path", "purpose"],
-      "properties": {"id": {"$ref": "#/$defs/text"}, "path": {"type": "string", "minLength": 1}, "purpose": {"$ref": "#/$defs/text"}, "commandRef": {"type": ["string", "null"]}, "status": {"type": "string", "enum": ["verified", "partial", "missing", "historical", "unknown"]}}
+      "properties": {
+        "id": {"$ref": "#/$defs/text"},
+        "path": {"type": "string", "minLength": 1},
+        "purpose": {"$ref": "#/$defs/text"},
+        "commandRef": {"type": ["string", "null"]},
+        "status": {"type": "string", "enum": ["verified", "partial", "missing", "historical", "unknown"]},
+        "referenceStatus": {"type": "string", "enum": ["verified", "missing"]},
+        "executionStatus": {"type": "string", "enum": ["executed-pass", "executed-fail", "historical-pass", "not-run-at-freeze", "unknown"]}
+      }
+    },
+    "subcapability": {
+      "type": "object", "additionalProperties": false, "required": ["id", "name", "role", "disposition"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$", "minLength": 3},
+        "name": {"$ref": "#/$defs/text"},
+        "role": {"$ref": "#/$defs/text"},
+        "disposition": {"type": "string", "enum": ["CORE", "HOST", "OPTIONAL", "LIBRARY", "REFERENCE", "DEPRECATED", "EXPERIMENTAL"]},
+        "product_relevance": {
+          "type": "object", "additionalProperties": false, "required": ["agent_workflow", "project_knowledge_lifecycle"],
+          "properties": {
+            "agent_workflow": {"type": "boolean"},
+            "project_knowledge_lifecycle": {"type": "boolean"}
+          }
+        }
+      }
     },
     "proof": {
       "type": "object", "additionalProperties": false, "required": ["tests", "fixtures", "smoke"],

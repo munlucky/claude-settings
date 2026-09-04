@@ -2,8 +2,12 @@
 
 - **ID**: `task-contract-and-bounded-work`
 - **Domain**: `WORK`
-- **Status**: `CORE`
+- **Family Status**: `CORE`
 - **Summary**: 사용자 목적을 실행 가능한 계약과 제한된 work unit으로 바인딩한다.
+
+## Subcapabilities (Decomplexification 단위)
+- **`task-contract-binding`** [`CORE`]: 사용자 목적, 인수조건, 비목표를 불변 계약으로 바인딩
+- **`work-unit-scope`** [`CORE`]: 허용/금지 경로 및 제한된 work-unit admission 경계 소유
 
 ## 해결하는 문제
 - 모호한 요청이 무제한 변경으로 확장되는 문제

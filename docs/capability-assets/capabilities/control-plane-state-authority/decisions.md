@@ -3,6 +3,10 @@
 - **Status**: `CORE`
 - **Disposition**: `retain`
 
+## Subcapabilities & Dispositions
+- **`state-transition-authority`** -> `CORE` (Workflow: true, Knowledge: true)
+- **`minimal-durable-state`** -> `CORE` (Workflow: true, Knowledge: true)
+
 ## 설계 및 보존 결정
 Kernel이 Relay의 여러 orchestration surface를 대체하면서 보존해야 하는 핵심 authority capability다.
 

@@ -3,6 +3,10 @@
 - **Status**: `CORE`
 - **Disposition**: `retain`
 
+## Subcapabilities & Dispositions
+- **`project-identity-binding`** -> `CORE` (Workflow: true, Knowledge: true)
+- **`knowledge-lifecycle-authority`** -> `CORE` (Workflow: true, Knowledge: true)
+
 ## 설계 및 보존 결정
 프로젝트 지식의 scope와 lifecycle을 보호하는 현재 CORE capability다.
 

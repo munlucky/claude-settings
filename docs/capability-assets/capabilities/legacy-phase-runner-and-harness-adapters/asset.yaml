@@ -8,86 +8,251 @@
   "product_relevance": {
     "relevant": true,
     "reason": "현재 구현의 predecessor와 migration/decomplexification 판단을 이해하는 데 필요하지만 현재 runtime에는 채택하지 않는다.",
-    "consumers": ["agent_workflow"]
+    "consumers": [
+      "agent_workflow"
+    ]
   },
   "origin": {
     "first_seen": {
       "epoch": "E1",
       "commit": "1131912154b8c4e2c077f81bc7ee15fee440d302",
       "date": "2026-02-05",
-      "evidence": [".claude/skills/moonshot-phase-runner/SKILL.md"]
+      "evidence": [
+        ".claude/skills/moonshot-phase-runner/SKILL.md"
+      ]
     },
     "generations": [
-      {"id": "relay-phase-runner", "epoch": "E1", "commit": "1131912154b8c4e2c077f81bc7ee15fee440d302", "label": "Moonshot phase runner", "change": "phase plan, attempt, lease와 runner를 공개 workflow surface로 운영했다."},
-      {"id": "relay-archived-adapters", "epoch": "E3", "commit": "1f7ed38b80f2d66d34498548448423c56154be16", "label": "Archived phase adapters", "change": "phase runtime/artifact/harness와 AWTL adapter가 archive로 보존됐다."},
-      {"id": "kernel-retirement", "epoch": "E7", "commit": "30b317c0c8f0dee9b4a1c8f82f8b14fe30a7f692", "label": "Retired Relay runtime", "change": "Kernel step ledger와 owner-direct 실행으로 predecessor runtime을 대체했다."}
+      {
+        "id": "relay-phase-runner",
+        "epoch": "E1",
+        "commit": "1131912154b8c4e2c077f81bc7ee15fee440d302",
+        "label": "Moonshot phase runner",
+        "change": "phase plan, attempt, lease와 runner를 공개 workflow surface로 운영했다."
+      },
+      {
+        "id": "relay-archived-adapters",
+        "epoch": "E3",
+        "commit": "1f7ed38b80f2d66d34498548448423c56154be16",
+        "label": "Archived phase adapters",
+        "change": "phase runtime/artifact/harness와 AWTL adapter가 archive로 보존됐다."
+      },
+      {
+        "id": "kernel-retirement",
+        "epoch": "E7",
+        "commit": "30b317c0c8f0dee9b4a1c8f82f8b14fe30a7f692",
+        "label": "Retired Relay runtime",
+        "change": "Kernel step ledger와 owner-direct 실행으로 predecessor runtime을 대체했다."
+      }
     ]
   },
   "problem": {
-    "solves": ["역사적 Relay phase 실행을 비교하고 실패 교훈을 추적하는 문제", "legacy migration 시 어떤 artifact/lease 계약이 있었는지 모르는 문제"],
-    "does_not_solve": ["현재 Kernel task 실행", "legacy code를 다시 runtime에 로드하거나 자동 migration하는 것"]
+    "solves": [
+      "역사적 Relay phase 실행을 비교하고 실패 교훈을 추적하는 문제",
+      "legacy migration 시 어떤 artifact/lease 계약이 있었는지 모르는 문제"
+    ],
+    "does_not_solve": [
+      "현재 Kernel task 실행",
+      "legacy code를 다시 runtime에 로드하거나 자동 migration하는 것"
+    ]
   },
-  "recommended_use": ["diff, archaeology와 regression 분석의 immutable historical reference로만 사용한다.", "재도입이 필요하면 새 contract와 compatibility proof를 먼저 만든다."],
-  "avoid_use": ["archive source를 현재 runtime path로 복사하지 않는다.", "phase runner를 Kernel step ledger와 병렬 authority로 실행하지 않는다."],
+  "recommended_use": [
+    "diff, archaeology와 regression 분석의 immutable historical reference로만 사용한다.",
+    "재도입이 필요하면 새 contract와 compatibility proof를 먼저 만든다."
+  ],
+  "avoid_use": [
+    "archive source를 현재 runtime path로 복사하지 않는다.",
+    "phase runner를 Kernel step ledger와 병렬 authority로 실행하지 않는다."
+  ],
   "authority": {
-    "owns_state": ["없음; historical archive만 소유한다."],
-    "owns_completion": ["없음; deprecated asset은 completion authority가 아니다."],
-    "provides_evidence": ["historical Git provenance", "archived regression tests and failure lessons"]
+    "owns_state": [
+      "없음; historical archive만 소유한다."
+    ],
+    "owns_completion": [
+      "없음; deprecated asset은 completion authority가 아니다."
+    ],
+    "provides_evidence": [
+      "historical Git provenance",
+      "archived regression tests and failure lessons"
+    ]
   },
   "contracts": {
-    "inputs": ["immutable Git commit", "archived path", "comparison question"],
-    "outputs": ["historical comparison", "migration risk note", "regression lesson"],
-    "invariants": ["archive는 current runtime surface가 아니다.", "historical proof는 current live proof로 승격되지 않는다."],
-    "guardrails": ["copy/restore 금지", "new contract required for reintroduction", "separate compatibility test"]
+    "inputs": [
+      "immutable Git commit",
+      "archived path",
+      "comparison question"
+    ],
+    "outputs": [
+      "historical comparison",
+      "migration risk note",
+      "regression lesson"
+    ],
+    "invariants": [
+      "archive는 current runtime surface가 아니다.",
+      "historical proof는 current live proof로 승격되지 않는다."
+    ],
+    "guardrails": [
+      "copy/restore 금지",
+      "new contract required for reintroduction",
+      "separate compatibility test"
+    ]
   },
   "implementations": {
     "best_known": {
       "commit": "1f7ed38b80f2d66d34498548448423c56154be16",
-      "paths": ["archive/scripts/legacy-phase-adapters/agent-loop-phase-runner.mjs", "archive/scripts/legacy-phase-adapters/agent-loop-phase-runtime.mjs", "archive/scripts/legacy-phase-adapters/agent-loop-phase-state.mjs", "archive/scripts/legacy-phase-adapters/harness-surface-inventory.mjs"],
+      "paths": [
+        "archive/scripts/legacy-phase-adapters/agent-loop-phase-runner.mjs",
+        "archive/scripts/legacy-phase-adapters/agent-loop-phase-runtime.mjs",
+        "archive/scripts/legacy-phase-adapters/agent-loop-phase-state.mjs",
+        "archive/scripts/legacy-phase-adapters/harness-surface-inventory.mjs"
+      ],
       "generation": "E3-archived",
       "notes": "삭제 대신 archive boundary에서 보존된 best-known historical implementation."
     },
     "historical": [
-      {"commit": "1131912154b8c4e2c077f81bc7ee15fee440d302", "paths": [".claude/skills/moonshot-phase-runner/SKILL.md"], "generation": "E1-relay", "notes": "공개 Relay phase-runner skill."},
-      {"commit": "1f7ed38b80f2d66d34498548448423c56154be16", "paths": ["archive/scripts/legacy-phase-adapters/agent-loop-phase-plan.mjs", "archive/scripts/legacy-phase-adapters/agent-loop-phase-attempt.mjs"], "generation": "E3-relay", "notes": "phase plan/attempt adapter."}
+      {
+        "commit": "1131912154b8c4e2c077f81bc7ee15fee440d302",
+        "paths": [
+          ".claude/skills/moonshot-phase-runner/SKILL.md"
+        ],
+        "generation": "E1-relay",
+        "notes": "공개 Relay phase-runner skill."
+      },
+      {
+        "commit": "1f7ed38b80f2d66d34498548448423c56154be16",
+        "paths": [
+          "archive/scripts/legacy-phase-adapters/agent-loop-phase-plan.mjs",
+          "archive/scripts/legacy-phase-adapters/agent-loop-phase-attempt.mjs"
+        ],
+        "generation": "E3-relay",
+        "notes": "phase plan/attempt adapter."
+      }
     ]
   },
   "proof": {
     "tests": [
-      {"id": "legacy-phase-runner", "path": "archive/scripts/legacy-phase-adapters/agent-loop-phase-runner.test.mjs", "purpose": "historical phase runner regression을 보존한다.", "commandRef": "test:legacy-archive", "status": "historical"},
-      {"id": "legacy-phase-runtime", "path": "archive/scripts/legacy-phase-adapters/agent-loop-phase-runtime.test.mjs", "purpose": "historical phase runtime contract을 보존한다.", "commandRef": "test:legacy-archive", "status": "historical"},
-      {"id": "legacy-harness-inventory", "path": "archive/scripts/legacy-phase-adapters/harness-surface-inventory.test.mjs", "purpose": "legacy harness surface inventory regression을 보존한다.", "commandRef": "test:legacy-archive", "status": "historical"}
+      {
+        "id": "legacy-phase-runner",
+        "path": "archive/scripts/legacy-phase-adapters/agent-loop-phase-runner.test.mjs",
+        "purpose": "historical phase runner regression을 보존한다.",
+        "commandRef": "test:legacy-archive",
+        "status": "historical",
+        "referenceStatus": "verified",
+        "executionStatus": "historical-pass"
+      },
+      {
+        "id": "legacy-phase-runtime",
+        "path": "archive/scripts/legacy-phase-adapters/agent-loop-phase-runtime.test.mjs",
+        "purpose": "historical phase runtime contract을 보존한다.",
+        "commandRef": "test:legacy-archive",
+        "status": "historical",
+        "referenceStatus": "verified",
+        "executionStatus": "historical-pass"
+      },
+      {
+        "id": "legacy-harness-inventory",
+        "path": "archive/scripts/legacy-phase-adapters/harness-surface-inventory.test.mjs",
+        "purpose": "legacy harness surface inventory regression을 보존한다.",
+        "commandRef": "test:legacy-archive",
+        "status": "historical",
+        "referenceStatus": "verified",
+        "executionStatus": "historical-pass"
+      }
     ],
     "fixtures": [],
     "smoke": [
-      {"id": "archive-readme", "path": "archive/scripts/legacy-phase-adapters/README.md", "purpose": "archive가 historical-only boundary임을 확인한다.", "commandRef": null, "status": "historical"}
+      {
+        "id": "archive-readme",
+        "path": "archive/scripts/legacy-phase-adapters/README.md",
+        "purpose": "archive가 historical-only boundary임을 확인한다.",
+        "commandRef": null,
+        "status": "historical"
+      }
     ]
   },
   "known_failures": [
-    {"id": "phase-adapter-split-brain", "severity": "P1", "symptom": "phase, attempt, lease, artifact와 harness adapter가 서로 다른 실행 상태를 나타낼 수 있었다.", "root_cause": "여러 Relay adapter가 lifecycle authority를 중복 소유했다.", "lesson": "현재는 Kernel step ledger/control plane을 단일 authority로 사용하고 legacy는 비교용으로만 둔다.", "fixed_in": "30b317c0c8f0dee9b4a1c8f82f8b14fe30a7f692", "regression_tests": ["tests/kernel-run-step-ledger.test.mjs", "tests/kernel-no-relay-db-migration.test.mjs"]}
+    {
+      "id": "phase-adapter-split-brain",
+      "severity": "P1",
+      "symptom": "phase, attempt, lease, artifact와 harness adapter가 서로 다른 실행 상태를 나타낼 수 있었다.",
+      "root_cause": "여러 Relay adapter가 lifecycle authority를 중복 소유했다.",
+      "lesson": "현재는 Kernel step ledger/control plane을 단일 authority로 사용하고 legacy는 비교용으로만 둔다.",
+      "fixed_in": "30b317c0c8f0dee9b4a1c8f82f8b14fe30a7f692",
+      "regression_tests": [
+        "tests/kernel-run-step-ledger.test.mjs",
+        "tests/kernel-no-relay-db-migration.test.mjs"
+      ]
+    }
   ],
   "dependencies": {
-    "capabilities": ["task-contract-and-bounded-work", "step-ledger-resume", "mutation-fencing-and-git-closeout"],
-    "runtime": ["archive only; no current runtime dependency"],
+    "capabilities": [
+      "task-contract-and-bounded-work",
+      "step-ledger-resume",
+      "mutation-fencing-and-git-closeout"
+    ],
+    "runtime": [
+      "archive only; no current runtime dependency"
+    ],
     "external": []
   },
   "current_integration": {
     "layer": "archived Relay history",
     "active": false,
-    "paths": ["archive/scripts/legacy-phase-adapters/agent-loop-phase-runner.mjs", "archive/scripts/legacy-phase-adapters/harness-surface-inventory.mjs"],
+    "paths": [
+      "archive/scripts/legacy-phase-adapters/agent-loop-phase-runner.mjs",
+      "archive/scripts/legacy-phase-adapters/harness-surface-inventory.mjs"
+    ],
     "entrypoints": [],
     "notes": "DEPRECATED. Archive paths are not package/runtime entrypoints."
   },
   "reintroduction": {
     "recommended_layer": "separate compatibility experiment",
     "trigger": "새 요구가 legacy phase semantics를 명시적으로 다시 필요로 할 때",
-    "integration_points": ["new task contract", "compatibility adapter", "isolated fixture", "independent proof"],
-    "risks": ["duplicate state authority", "stale security assumptions", "runtime complexity regression", "data migration"],
-    "guardrails": ["explicit opt-in", "isolated path", "no archive copy", "new review and compatibility receipt"]
+    "integration_points": [
+      "new task contract",
+      "compatibility adapter",
+      "isolated fixture",
+      "independent proof"
+    ],
+    "risks": [
+      "duplicate state authority",
+      "stale security assumptions",
+      "runtime complexity regression",
+      "data migration"
+    ],
+    "guardrails": [
+      "explicit opt-in",
+      "isolated path",
+      "no archive copy",
+      "new review and compatibility receipt"
+    ]
   },
   "decision": {
     "disposition": "archive",
     "rationale": "Relay 역사와 실패 교훈은 보존하지만 현재 Kernel runtime에 재도입하지 않는다.",
-    "follow_up": ["decomplexification은 이 asset을 근거로 별도 승인·계약·migration 계획에서만 수행한다."]
-  }
+    "follow_up": [
+      "decomplexification은 이 asset을 근거로 별도 승인·계약·migration 계획에서만 수행한다."
+    ]
+  },
+  "subcapabilities": [
+    {
+      "id": "legacy-phase-runner",
+      "name": "Legacy phase runner",
+      "role": "구 Relay phase 실행 및 임차 정책 (비교용)",
+      "disposition": "DEPRECATED",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": false
+      }
+    },
+    {
+      "id": "legacy-harness-adapters",
+      "name": "Legacy harness adapters",
+      "role": "아카이브된 과거 하네스 어댑터 (재도입 금지)",
+      "disposition": "DEPRECATED",
+      "product_relevance": {
+        "agent_workflow": true,
+        "project_knowledge_lifecycle": false
+      }
+    }
+  ]
 }

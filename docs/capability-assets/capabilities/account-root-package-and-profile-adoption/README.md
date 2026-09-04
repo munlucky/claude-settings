@@ -2,8 +2,12 @@
 
 - **ID**: `account-root-package-and-profile-adoption`
 - **Domain**: `EXECUTION`
-- **Status**: `HOST`
+- **Family Status**: `HOST`
 - **Summary**: Kernel package를 build/materialize하고 account-root profile에 소유권과 parity를 지켜 투영한다.
+
+## Subcapabilities (Decomplexification 단위)
+- **`package-materialization`** [`HOST`]: 계정 루트 패키지 빌드 및 매니페스트 생성
+- **`account-profile-projection`** [`HOST`]: 프로필 설치, 섀도우 격리 및 동등성 검증
 
 ## 해결하는 문제
 - package source와 installed account-root profile의 parity drift

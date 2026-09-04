@@ -2,8 +2,15 @@
 
 - **ID**: `mutation-fencing-and-git-closeout`
 - **Domain**: `TRUST`
-- **Status**: `CORE`
+- **Family Status**: `CORE`
 - **Summary**: 허용된 mutation만 통과시키고 Git index, commit, remote parity를 안전한 closeout 경계로 묶는다.
+
+## Subcapabilities (Decomplexification 단위)
+- **`mutation-scope-safety`** [`CORE`]: 선언된 경로 외의 임의 파일 변조 차단
+- **`workspace-fencing`** [`CORE`]: 작업 공간 분리 및 외부 파일 유출 차단
+- **`git-staging-safety`** [`HOST`]: Git 스테이징 정책 및 제외 파일 보호
+- **`git-commit`** [`HOST`]: 작업 문맥 기반 커밋 메시지 생성 및 로컬 커밋
+- **`remote-parity`** [`OPTIONAL`]: 원격 저장소 푸시 및 remote parity 검증
 
 ## 해결하는 문제
 - proof가 workspace를 변경해 evidence를 오염시키는 문제

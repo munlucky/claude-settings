@@ -2,8 +2,12 @@
 
 - **ID**: `knowledge-ingestion-and-evidence-graph`
 - **Domain**: `KNOWLEDGE`
-- **Status**: `CORE`
+- **Family Status**: `CORE`
 - **Summary**: 외부·과거 signal을 redact, normalize, deduplicate하고 evidence-bound knowledge candidate로 만든다.
+
+## Subcapabilities (Decomplexification 단위)
+- **`knowledge-ingestion-normalization`** [`CORE`]: 지식 수집, 정규화, 중복 제거 및 충돌 검사
+- **`ontology-gate-promotion`** [`CORE`]: 온톨로지 제약 평가 및 프로젝트 지식 승격
 
 ## 해결하는 문제
 - 서로 다른 source에서 온 signal을 검증 없이 memory로 승격하는 문제
