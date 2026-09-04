@@ -81,7 +81,7 @@ const isActive = (id, state) => {
   if (id === 'kernel-simplification-check') return state.domainPolicies.simplification.active;
   if (id === 'kernel-verification-before-completion') return state.verification;
   if (id === 'kernel-commit-closeout') {
-    return Boolean(state.gitCloseoutRequested && state.completionAccepted && state.knowledgeCommitReceiptExists);
+    return Boolean(state.gitCloseoutRequested && state.completionAccepted);
   }
   return false;
 };

@@ -24,7 +24,7 @@ function resolveCommandPath(command) {
   return null;
 }
 
-test('Installed Provider Smoke Matrix: evaluates native availability per surface', async (t) => {
+test('Installed Provider Executable Smoke: evaluates native availability per surface', async (t) => {
   const results = {};
 
   for (const surface of SURFACES) {

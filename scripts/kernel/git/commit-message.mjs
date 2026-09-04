@@ -92,9 +92,10 @@ const boundedPathLines = (paths) => {
 };
 
 const capMessage = (message) => {
-  if (message.length <= MAX_COMMIT_MESSAGE_LENGTH) return message;
-  const suffix = '\n- 커밋 메시지 길이 제한으로 추가 작업 정보는 생략됨.\n';
-  return `${message.slice(0, MAX_COMMIT_MESSAGE_LENGTH - suffix.length).trimEnd()}${suffix}`;
+  const max = MAX_COMMIT_MESSAGE_LENGTH - 1;
+  if (message.length <= max) return message;
+  const suffix = '\n- 커밋 메시지 길이 제한으로 추가 작업 정보는 생략됨.';
+  return `${message.slice(0, max - suffix.length).trimEnd()}${suffix}`;
 };
 
 const displayValue = (value) => {
@@ -138,7 +139,8 @@ export function buildKernelCommitMessage({
   const verifications = verificationRows(completion);
   const covered = acceptanceCoverage(completion);
   const evidenceDigest = oneLine(completion?.evidenceDigest || completion?.decisionJson?.evidenceDigest || '');
-  const knowledge = oneLine(knowledgeStatus || knowledgeCommitReceipt?.status || 'not-requested');
+  const hasKnowledge = Boolean(knowledgeStatus || knowledgeCommitReceipt?.status);
+  const knowledge = hasKnowledge ? oneLine(knowledgeStatus || knowledgeCommitReceipt?.status) : null;
   const lines = [subject, ''];
 
   if (supplied.body) lines.push('요청 메시지:', supplied.body, '');
@@ -153,7 +155,9 @@ export function buildKernelCommitMessage({
     lines.push(`- 증명/근거 등급: ${oneLine(run?.proofTier || taskContract.proofTier || 'unknown')}/${oneLine(run?.evidenceTier || taskContract.evidenceTier || 'unknown')}`);
   }
   lines.push(`- 완료 판정: ${displayValue(completion?.decision || completion?.decisionJson?.decision || 'accepted-evidence-not-recorded')}`);
-  lines.push(`- 지식 마감: ${displayValue(knowledge)}`);
+  if (hasKnowledge && knowledge && knowledge !== 'not-requested') {
+    lines.push(`- 지식 마감: ${displayValue(knowledge)}`);
+  }
   if (closeoutMode) lines.push(`- Git 마감: ${displayValue(closeoutMode)}`);
   if (evidenceDigest) lines.push(`- 근거 다이제스트: ${evidenceDigest}`);
 

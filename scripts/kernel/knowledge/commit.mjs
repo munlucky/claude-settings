@@ -20,20 +20,20 @@ export async function rebuildKnowledgeProjection(projectId, { env = process.env,
     return { status: 'failed', reason: 'state_store_required' };
   }
 
-  const root = projectKnowledgeDirectory(projectId, { env });
-  const kDir = path.join(root, 'knowledge');
-
-  const allRecords = stateStore.listKnowledgeRecords({ projectId, statuses: ['committed'] });
-
-  const semanticFacts = allRecords.filter((r) => r.type === 'semantic_fact' || r.type === 'policy_anchor');
-  const architectureRecords = allRecords.filter((r) =>
-    ['architecture_decision', 'component_boundary', 'api_contract', 'domain_term', 'known_failure_pattern', 'required_verification'].includes(r.type)
-  );
-  const graphRelations = allRecords.filter((r) => r.type === 'kg_relation');
-  const ontologyConstraints = allRecords.filter((r) => r.type === 'ontology_constraint');
-  const episodicObservations = allRecords.filter((r) => r.type === 'episodic_observation' || r.type === 'tacit_practice');
-
   try {
+    const root = projectKnowledgeDirectory(projectId, { env });
+    const kDir = path.join(root, 'knowledge');
+
+    const allRecords = stateStore.listKnowledgeRecords({ projectId, statuses: ['committed'] });
+
+    const semanticFacts = allRecords.filter((r) => r.type === 'semantic_fact' || r.type === 'policy_anchor');
+    const architectureRecords = allRecords.filter((r) =>
+      ['architecture_decision', 'component_boundary', 'api_contract', 'domain_term', 'known_failure_pattern', 'required_verification'].includes(r.type)
+    );
+    const graphRelations = allRecords.filter((r) => r.type === 'kg_relation');
+    const ontologyConstraints = allRecords.filter((r) => r.type === 'ontology_constraint');
+    const episodicObservations = allRecords.filter((r) => r.type === 'episodic_observation' || r.type === 'tacit_practice');
+
     await writeAtomicJsonl(path.join(kDir, 'semantic', 'verified-facts.jsonl'), semanticFacts);
     await writeAtomicJsonl(path.join(kDir, 'architecture', 'records.jsonl'), architectureRecords);
     await writeAtomicJsonl(path.join(kDir, 'graph', 'kg-relations.jsonl'), graphRelations);

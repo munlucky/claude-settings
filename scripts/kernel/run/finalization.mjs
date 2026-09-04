@@ -1,10 +1,9 @@
 // Run finalization (§18, P0-7).
 //
 // Finalization is deliberately separate from the completion decision:
-// completion says "the evidence is accepted", finalization says "the knowledge
-// commit and any requested Git closeout actually finished". A run whose
-// completion was accepted but whose finalization is partial is NOT done, and
-// must stay retryable rather than reporting success.
+// completion says "the evidence is accepted", delivery says "the requested
+// Git closeout actually finished". Knowledge commit and projection are
+// non-authoritative side effects that do not make finalization partial.
 
 import { createHash } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
@@ -279,7 +278,7 @@ export const finalizeRun = async ({
         stateStore: store,
         repoRoot: projectRoot,
         gitCloseoutRequest: effectiveCloseoutRequest,
-        knowledgeCommitReceipt: { status: 'deferred' }, // Non-blocking: Git closeout does not require knowledge commit receipt
+        knowledgeCommitReceipt: null, // Non-blocking: Git closeout does not require knowledge commit receipt
         changedFiles: normalizedChangeSet.changedPaths,
       });
       gitCloseoutStatus = gitReceipt.status || 'completed';
@@ -322,28 +321,40 @@ export const finalizeRun = async ({
         candidateJson: candidate,
       });
     }
-    reviewResult = await reviewKnowledgeCandidates({
-      projectId: run.projectId,
-      runId,
-      stateStore: store,
-      candidates: candidatesForReview,
-      evidencePack: latestEvidencePack(store, runId),
-      env: { MOON_RELAY_KERNEL_HOME: runtimeHome },
-    });
-    persistReviewReceipt(store, runId, run.projectId, candidatesForReview.length, reviewResult);
-    const allReviewed = [
-      ...(reviewResult.verifiedCandidates || []),
-      ...(reviewResult.rejectedCandidates || []),
-      ...(reviewResult.needsApprovalCandidates || []),
-      ...(reviewResult.pendingVerificationCandidates || []),
-    ];
-    for (const candidate of allReviewed) {
-      store.recordKnowledgeCandidate(candidate.candidateId, runId, {
+    try {
+      reviewResult = await reviewKnowledgeCandidates({
         projectId: run.projectId,
-        proposedType: candidate.proposedType || 'semantic_fact',
-        status: candidate.status,
-        candidateJson: candidate,
+        runId,
+        stateStore: store,
+        candidates: candidatesForReview,
+        evidencePack: latestEvidencePack(store, runId),
+        env: { MOON_RELAY_KERNEL_HOME: runtimeHome },
       });
+      persistReviewReceipt(store, runId, run.projectId, candidatesForReview.length, reviewResult);
+      const allReviewed = [
+        ...(reviewResult.verifiedCandidates || []),
+        ...(reviewResult.rejectedCandidates || []),
+        ...(reviewResult.needsApprovalCandidates || []),
+        ...(reviewResult.pendingVerificationCandidates || []),
+      ];
+      for (const candidate of allReviewed) {
+        store.recordKnowledgeCandidate(candidate.candidateId, runId, {
+          projectId: run.projectId,
+          proposedType: candidate.proposedType || 'semantic_fact',
+          status: candidate.status,
+          candidateJson: candidate,
+        });
+      }
+    } catch (reviewError) {
+      reviewResult = {
+        status: 'error',
+        error: reviewError?.message || String(reviewError),
+        verifiedCandidates: [],
+        rejectedCandidates: [],
+        needsApprovalCandidates: [],
+        pendingVerificationCandidates: [],
+      };
+      persistReviewReceipt(store, runId, run.projectId, candidatesForReview.length, reviewResult);
     }
   } else {
     persistReviewReceipt(store, runId, run.projectId, 0, reviewResult);
@@ -370,7 +381,7 @@ export const finalizeRun = async ({
       runId,
       projectId: run.projectId,
       status: 'deferred',
-      reason: `knowledge_review_${reviewResult.status}`,
+      reason: reviewResult.status === 'error' ? 'knowledge_review_error' : `knowledge_review_${reviewResult.status}`,
       reviewResult,
       deferredAt: new Date().toISOString(),
     };
@@ -442,7 +453,7 @@ export const finalizeRun = async ({
   }
 
   const requestedCloseoutUnfinished = Boolean(effectiveCloseoutRequest?.requested) && gitCloseoutStatus !== 'completed';
-  const finalizationStatus = (gitCloseoutStatus === 'failed' || requestedCloseoutUnfinished || commitReceipt?.projectionStatus === 'failed')
+  const finalizationStatus = (gitCloseoutStatus === 'failed' || requestedCloseoutUnfinished)
     ? 'partial'
     : 'completed';
 
@@ -483,6 +494,7 @@ export const finalizeRun = async ({
     knowledgeCommitError,
     gitCloseoutReceipt: gitReceipt,
     gitCloseoutError,
+    reason: commitReceipt?.reason || null,
   };
 
   store.recordFinalizationReceipt(runId, finalizationReceipt);
@@ -509,7 +521,7 @@ export const finalizeRun = async ({
 export const recoverBoundedDeferredKnowledge = async ({ store, runtimeHome, projectId, currentRunId = null, maxDeferredRuns = 1 } = {}) => {
   if (!store || !projectId) return [];
   const deferredRuns = typeof store.getDeferredKnowledgeRuns === 'function'
-    ? store.getDeferredKnowledgeRuns(projectId, { limit: maxDeferredRuns, excludeRunId: currentRunId })
+    ? store.getDeferredKnowledgeRuns(projectId, { limit: maxDeferredRuns, excludeRunId: currentRunId, retryableOnly: true })
     : [];
 
   const recovered = [];
@@ -526,6 +538,15 @@ export const recoverBoundedDeferredKnowledge = async ({ store, runtimeHome, proj
         env: { MOON_RELAY_KERNEL_HOME: runtimeHome },
       });
       if (commitReceipt && ['committed', 'no_change'].includes(commitReceipt.status)) {
+        if (typeof store.recordKnowledgeCommitReceipt === 'function') {
+          store.recordKnowledgeCommitReceipt(deferred.runId, {
+            projectId,
+            revisionBefore: commitReceipt.revisionBefore,
+            revisionAfter: commitReceipt.revisionAfter,
+            status: commitReceipt.status,
+            receiptJson: commitReceipt,
+          });
+        }
         recovered.push({ runId: deferred.runId, status: 'recovered', commitReceipt });
       }
     } catch {

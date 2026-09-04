@@ -131,3 +131,16 @@ test('Kernel Git closeout writes the task-aware message into the created commit'
     await rm(repoRoot, { recursive: true, force: true });
   }
 });
+
+test('Invariant S1: Commit message omits knowledge closeout line when knowledge is null or pending', () => {
+  const message = buildKernelCommitMessage({
+    run: {
+      runId: 'run-no-kn',
+      projectId: 'project-no-kn',
+      objective: '지식 마감 없는 커밋 메시지',
+    },
+    knowledgeCommitReceipt: null,
+    selectedPaths: ['index.mjs'],
+  });
+  assert.doesNotMatch(message, /지식 마감:/u);
+});

@@ -457,3 +457,40 @@ test('Wave 4: Same-batch duplicate candidates are deduplicated and already-commi
     await cleanup(fixture);
   }
 });
+
+test('Invariant H1: Live owner lock is never stale even if older than timeout, and freshly created incomplete lock cannot be stolen', async () => {
+  const fixture = await setup();
+  try {
+    const projectsRoot = path.join(fixture.runtimeHome, 'state', 'projects');
+    await mkdir(projectsRoot, { recursive: true });
+    const { clearStaleNamespaceLock } = await import('../scripts/kernel/knowledge/store.mjs');
+    const fs = await import('node:fs');
+
+    const lockPath = path.join(projectsRoot, '.kernel-namespace-lock-proj-h1');
+
+    // Case 1: Live owner with createdAt 1 hour ago
+    const oldTimestamp = new Date(Date.now() - 3600 * 1000).toISOString();
+    await writeFile(lockPath, JSON.stringify({ pid: process.pid, createdAt: oldTimestamp }), 'utf8');
+    const clearedLive = clearStaleNamespaceLock(lockPath, { staleTimeoutMs: 30000 });
+    assert.equal(clearedLive, false, 'Live owner process must never be cleared as stale regardless of age');
+
+    // Case 2: Fresh incomplete lock file (empty 0-bytes, age < 30s)
+    await writeFile(lockPath, '', 'utf8');
+    const clearedFreshIncomplete = clearStaleNamespaceLock(lockPath, { staleTimeoutMs: 30000 });
+    assert.equal(clearedFreshIncomplete, false, 'Freshly created incomplete lock file must not be cleared within timeout');
+
+    // Case 3: Dead owner process
+    await writeFile(lockPath, JSON.stringify({ pid: 99999999, createdAt: new Date().toISOString() }), 'utf8');
+    const clearedDead = clearStaleNamespaceLock(lockPath, { staleTimeoutMs: 30000 });
+    assert.equal(clearedDead, true, 'Dead owner lock must be cleared as stale');
+
+    // Case 4: Corrupt old lock file (> 30s)
+    await writeFile(lockPath, 'invalid json', 'utf8');
+    const oldTime = (Date.now() - 60000) / 1000;
+    fs.utimesSync(lockPath, oldTime, oldTime);
+    const clearedOldCorrupt = clearStaleNamespaceLock(lockPath, { staleTimeoutMs: 30000 });
+    assert.equal(clearedOldCorrupt, true, 'Corrupt lock file older than timeout must be cleared as stale');
+  } finally {
+    await cleanup(fixture);
+  }
+});

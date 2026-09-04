@@ -13,6 +13,7 @@ export function buildKnowledgeCommitReceipt({
   supersededRecords = [],
   evidenceRefs = [],
   filesWritten = [],
+  projectionStatus = 'completed',
   status = 'committed',
 }) {
   const payload = {
@@ -29,6 +30,7 @@ export function buildKnowledgeCommitReceipt({
     supersededRecords,
     evidenceRefs,
     filesWritten,
+    projectionStatus,
     status,
   };
 

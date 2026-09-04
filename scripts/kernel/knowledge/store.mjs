@@ -158,10 +158,11 @@ export const clearStaleNamespaceLock = (lockPath, { staleTimeoutMs = 30000 } = {
     metadata = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
   } catch {}
   const pid = Number.isInteger(metadata?.pid) ? metadata.pid : null;
-  const createdAt = metadata?.createdAt ? Date.parse(metadata.createdAt) : null;
-  const isExpired = createdAt && Number.isFinite(createdAt) && (Date.now() - createdAt > staleTimeoutMs);
 
-  if (pid == null || !isProcessAlive(pid) || isExpired) {
+  if (pid != null) {
+    if (isProcessAlive(pid)) {
+      return false;
+    }
     try {
       fs.unlinkSync(lockPath);
       return true;
@@ -170,6 +171,20 @@ export const clearStaleNamespaceLock = (lockPath, { staleTimeoutMs = 30000 } = {
       throw error;
     }
   }
+
+  // If pid is null/missing (empty or unparseable metadata):
+  // Check file mtime. If within staleTimeoutMs, another process is actively creating/writing it.
+  const fileAgeMs = Date.now() - stat.mtimeMs;
+  if (fileAgeMs > staleTimeoutMs) {
+    try {
+      fs.unlinkSync(lockPath);
+      return true;
+    } catch (error) {
+      if (error.code === 'ENOENT') return true;
+      throw error;
+    }
+  }
+
   return false;
 };
 

@@ -5219,7 +5219,7 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       return db.prepare(`SELECT approval_id as approvalId, run_id as runId, candidate_id as candidateId, approved_by as approvedBy, approval_receipt as approvalReceipt, created_at as createdAt FROM knowledge_approvals WHERE run_id=?`).all(runId);
     },
 
-    getDeferredKnowledgeRuns(projectId, { limit = 1, excludeRunId = null } = {}) {
+    getDeferredKnowledgeRuns(projectId, { limit = 1, excludeRunId = null, retryableOnly = false } = {}) {
       if (!projectId) return [];
       let query = `SELECT run_id as runId, project_id as projectId, receipt_json as receiptJson, created_at as createdAt FROM knowledge_commit_receipts WHERE project_id=? AND status='deferred'`;
       const params = [projectId];
@@ -5227,15 +5227,34 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         query += ` AND run_id != ?`;
         params.push(excludeRunId);
       }
-      query += ` ORDER BY created_at ASC LIMIT ?`;
-      params.push(limit);
+      query += ` ORDER BY created_at ASC`;
+      if (!retryableOnly) {
+        query += ` LIMIT ?`;
+        params.push(limit);
+      } else {
+        query += ` LIMIT ?`;
+        params.push(Math.max(limit * 32, 64));
+      }
       const rows = db.prepare(query).all(...params);
-      return rows.map((r) => ({
+      const mapped = rows.map((r) => ({
         runId: r.runId,
         projectId: r.projectId,
         receipt: safeJsonParse(r.receiptJson, null),
         createdAt: r.createdAt,
       }));
+
+      if (!retryableOnly) return mapped;
+
+      const RETRYABLE_REASONS = new Set([
+        'cas_retry_exhausted',
+        'concurrent_lock_timeout',
+        'stale_revision',
+      ]);
+      const filtered = mapped.filter((r) => {
+        const reason = r.receipt?.reason;
+        return RETRYABLE_REASONS.has(reason) || (typeof reason === 'string' && (reason.includes('conflict') || reason.includes('exhausted')));
+      });
+      return filtered.slice(0, limit);
     },
 
     transition(runId, nextState, { expectedState, expectedRevision } = {}) {

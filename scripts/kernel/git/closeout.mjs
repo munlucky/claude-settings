@@ -126,10 +126,6 @@ export async function executeKernelGitCloseout({
     throw new KernelGitCloseoutError('APPROVAL_REQUIRED', 'Explicit Git closeout requires valid approvalReceipt');
   }
 
-  if (!knowledgeCommitReceipt) {
-    throw new KernelGitCloseoutError('KNOWLEDGE_RECEIPT_REQUIRED', 'Git closeout follows knowledge closeout receipt');
-  }
-
   reconcileWorkspaceBeforeCloseout({
     runId,
     projectId,
@@ -344,7 +340,7 @@ export async function executeKernelGitCloseout({
     runId,
     projectId,
     requestedMode: gitCloseoutRequest.mode,
-    knowledgeCommitReceiptRef: knowledgeCommitReceipt.digest || '',
+    knowledgeCommitReceiptRef: knowledgeCommitReceipt?.digest || '',
     commitSubject,
     commitMessage,
     selectedPaths,

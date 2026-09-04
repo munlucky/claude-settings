@@ -382,3 +382,251 @@ test('Wave 5: Restart recovery independently reconciles deferred knowledge from 
     await cleanup(fixture);
   }
 });
+
+test('Invariant S1: Git closeout does not require knowledgeCommitReceipt and succeeds when null', async () => {
+  const fixture = await setup();
+  let store = null;
+  try {
+    const { executeKernelGitCloseout } = await import('../scripts/kernel/git/closeout.mjs');
+    const { openKernelStateStore } = await import('../scripts/kernel/state-store.mjs');
+    store = await openKernelStateStore({ runtimeHome: fixture.runtimeHome });
+    const runId = 'r-git-no-kn';
+    const projectId = 'proj-git-no-kn';
+    store.createRun({
+      runId,
+      projectId,
+      sourceIdentity: 'test-source',
+      objective: 'git closeout without knowledge receipt',
+      riskTier: 'T0',
+      allowedPaths: ['app.mjs'],
+    });
+    store.recordCompletionDecision(runId, {
+      decision: 'accepted',
+      sourceIdentity: 'test-source',
+      mutationRevision: 1,
+      evidenceDigest: `sha256:${'b'.repeat(64)}`,
+      decisionJson: { decision: 'accepted' },
+    });
+
+    await writeFile(path.join(fixture.projectRoot, 'app.mjs'), 'export const updated = true;\n');
+
+    const result = await executeKernelGitCloseout({
+      runId,
+      projectId,
+      stateStore: store,
+      repoRoot: fixture.projectRoot,
+      gitCloseoutRequest: {
+        requested: true,
+        mode: 'commit',
+        approvalReceipt: 'approval://test/git-no-kn',
+        message: 'fix: deliver code without knowledge receipt',
+      },
+      knowledgeCommitReceipt: null, // S1: MUST NOT THROW KNOWLEDGE_RECEIPT_REQUIRED
+      changedFiles: ['app.mjs'],
+    });
+
+    assert.equal(result.status, 'completed');
+  } finally {
+    await store?.close();
+    await cleanup(fixture);
+  }
+});
+
+test('Invariant S2: Projection failure does not set finalizationStatus to partial and keeps completed', async () => {
+  const fixture = await setup();
+  const cp = await createKernelControlPlane(fixture);
+  try {
+    const runId = 'r-proj-fail-nonblock';
+    await cp.startRun({
+      runId,
+      objective: 'projection fail nonblock',
+      taskContract: {
+        riskTier: 'T0',
+        acceptance: [{
+          acceptance: 'unit works',
+          evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test'], obligationId: 'default' },
+        }],
+        allowedPaths: ['app.mjs'],
+      },
+    });
+    await cp.transition(runId, 'EXECUTE');
+    await cp.transition(runId, 'PROVE');
+    await cp.recordProof(runId, {
+      obligationId: 'default',
+      status: 'passed',
+      evidenceRef: 'ev-pf',
+      commandRef: 'test',
+      command: 'node -e "process.exit(0)"',
+      exitCode: 0,
+      evidenceDigest: `sha256:${'c'.repeat(64)}`,
+      acceptanceCoverage: ['unit works'],
+    });
+    await cp.transition(runId, 'CLOSE');
+
+    const store = cp.stateStore;
+    const run = store.getRun(runId);
+    store.recordCompletionDecision(runId, {
+      decision: 'accepted',
+      sourceIdentity: run.sourceIdentity,
+      mutationRevision: run.mutationRevision,
+      evidenceDigest: `sha256:${'c'.repeat(64)}`,
+      decisionJson: { decision: 'accepted' },
+    });
+
+    // Simulate projection failure reliably by making rebuildKnowledgeProjection fail
+    store.listKnowledgeRecords = () => {
+      throw new Error('simulated projection failure');
+    };
+
+    const receipt = await cp.finalizeRun(runId, {
+      knowledgeObservations: [{ proposedType: 'semantic_fact', statement: 'projection test fact' }],
+      changedPaths: ['app.mjs'],
+    });
+    assert.equal(receipt.completionStatus, 'accepted');
+    assert.equal(receipt.projectionStatus, 'failed');
+    // Invariant S2: projectionStatus === 'failed' must NOT set finalizationStatus to 'partial'
+    assert.equal(receipt.finalizationStatus, 'completed', 'finalizationStatus must remain completed despite projection failure');
+    assert.equal(store.getRun(runId).finalizationStatus, 'completed');
+  } finally {
+    await cp.close();
+    await cleanup(fixture);
+  }
+});
+
+test('Invariant H2: Unhandled exception in reviewKnowledgeCandidates does not block completion, git closeout, or finalization', async () => {
+  const fixture = await setup();
+  const cp = await createKernelControlPlane(fixture);
+  try {
+    const runId = 'r-review-crash';
+    await cp.startRun({
+      runId,
+      objective: 'review crash test',
+      taskContract: {
+        riskTier: 'T0',
+        acceptance: [{
+          acceptance: 'unit works',
+          evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test'], obligationId: 'default' },
+        }],
+        allowedPaths: ['app.mjs'],
+      },
+    });
+    await cp.transition(runId, 'EXECUTE');
+    await cp.transition(runId, 'PROVE');
+    await cp.recordProof(runId, {
+      obligationId: 'default',
+      status: 'passed',
+      evidenceRef: 'ev-rc',
+      commandRef: 'test',
+      command: 'node -e "process.exit(0)"',
+      exitCode: 0,
+      evidenceDigest: `sha256:${'e'.repeat(64)}`,
+      acceptanceCoverage: ['unit works'],
+    });
+    await cp.transition(runId, 'CLOSE');
+
+    const store = cp.stateStore;
+    const run = store.getRun(runId);
+    store.recordCompletionDecision(runId, {
+      decision: 'accepted',
+      sourceIdentity: run.sourceIdentity,
+      mutationRevision: run.mutationRevision,
+      evidenceDigest: `sha256:${'e'.repeat(64)}`,
+      decisionJson: { decision: 'accepted' },
+    });
+
+    // Plant a corrupted ontology constraint with an invalid regex pattern that will throw SyntaxError in reviewKnowledgeCandidates
+    const ontDir = path.join(fixture.runtimeHome, 'state', 'projects', run.projectId, 'knowledge', 'ontology');
+    await mkdir(ontDir, { recursive: true });
+    await writeFile(path.join(ontDir, 'constraints.jsonl'), JSON.stringify({
+      id: 'rec-broken-pattern',
+      type: 'ontology_constraint',
+      scope: ['app.mjs'],
+      pattern: '[unclosed regex',
+      severity: 'never',
+    }) + '\n');
+
+    // Invariant H2: reviewKnowledgeCandidates throwing SyntaxError must be caught gracefully
+    const receipt = await cp.finalizeRun(runId, {
+      knowledgeObservations: [{
+        proposedType: 'semantic_fact',
+        statement: 'test observation against broken regex',
+        scope: ['app.mjs'],
+      }],
+      changedPaths: ['app.mjs'],
+    });
+
+    assert.equal(receipt.completionStatus, 'accepted');
+    assert.equal(receipt.knowledgeStatus, 'deferred');
+    assert.equal(receipt.finalizationStatus, 'completed');
+    assert.equal(receipt.reason, 'knowledge_review_error');
+  } finally {
+    await cp.close();
+    await cleanup(fixture);
+  }
+});
+
+test('Invariant H3: HOL starvation prevention in deferred recovery (rejected does not starve retryable)', async () => {
+  const fixture = await setup();
+  const cp = await createKernelControlPlane(fixture);
+  try {
+    const store = cp.stateStore;
+    const projectId = 'proj-hol-starvation';
+
+    // Insert Run A as deferred with non-retryable reason ('knowledge_review_rejected')
+    const runIdA = 'r-hol-a-rejected';
+    store.createRun({ runId: runIdA, projectId, sourceIdentity: 'src-a', objective: 'rejected run', status: 'completed' });
+    store.recordCompletionDecision(runIdA, { decision: 'accepted', sourceIdentity: 'src-a', mutationRevision: 0, evidenceDigest: 'd1', decisionJson: { decision: 'accepted' } });
+    store.recordKnowledgeCommitReceipt(runIdA, {
+      projectId,
+      revisionBefore: '1',
+      revisionAfter: '1',
+      status: 'deferred',
+      receiptJson: { status: 'deferred', reason: 'knowledge_review_rejected', candidateCount: 1 },
+    });
+    // Run A has a rejected candidate
+    store.recordKnowledgeCandidate('cand-a', runIdA, {
+      projectId,
+      proposedType: 'semantic_fact',
+      status: 'rejected',
+      candidateJson: { statement: 'rejected fact' },
+    });
+
+    // Wait 25ms to ensure createdAt order
+    await new Promise((r) => setTimeout(r, 25));
+
+    // Insert Run B as deferred with retryable reason ('cas_retry_exhausted')
+    const runIdB = 'r-hol-b-retryable';
+    store.createRun({ runId: runIdB, projectId, sourceIdentity: 'src-b', objective: 'retryable run', status: 'completed' });
+    store.recordCompletionDecision(runIdB, { decision: 'accepted', sourceIdentity: 'src-b', mutationRevision: 0, evidenceDigest: 'd2', decisionJson: { decision: 'accepted' } });
+    store.recordKnowledgeCommitReceipt(runIdB, {
+      projectId,
+      revisionBefore: '1',
+      revisionAfter: '1',
+      status: 'deferred',
+      receiptJson: { status: 'deferred', reason: 'cas_retry_exhausted', candidateCount: 1 },
+    });
+    // Run B has a verified candidate
+    store.recordKnowledgeCandidate('cand-b', runIdB, {
+      projectId,
+      proposedType: 'semantic_fact',
+      status: 'verified',
+      candidateJson: { statement: 'retryable valid fact', proposedType: 'semantic_fact' },
+    });
+
+    const { recoverBoundedDeferredKnowledge } = await import('../scripts/kernel/run/finalization.mjs');
+    const recovered = await recoverBoundedDeferredKnowledge({
+      store,
+      runtimeHome: fixture.runtimeHome,
+      projectId,
+      currentRunId: 'r-current',
+      maxDeferredRuns: 1,
+    });
+
+    // Invariant H3: The single recovered run must be Run B! Run A must not cause HOL starvation!
+    assert.equal(recovered.length, 1, 'Should recover exactly 1 run');
+    assert.equal(recovered[0].runId, runIdB, 'Run B must be recovered without being starved by Run A');
+  } finally {
+    await cp.close();
+    await cleanup(fixture);
+  }
+});
