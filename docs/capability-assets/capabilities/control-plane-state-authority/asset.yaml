@@ -160,7 +160,6 @@
         "path": "tests/kernel-control-plane-lifecycle.test.mjs",
         "purpose": "control plane lifecycle과 state authority를 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       },
@@ -169,7 +168,6 @@
         "path": "tests/kernel-workflow-state-machine.test.mjs",
         "purpose": "허용 transition과 invalid transition rejection을 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       },
@@ -178,7 +176,6 @@
         "path": "tests/kernel-state-projection.test.mjs",
         "purpose": "authoritative state와 projection identity를 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       }
@@ -269,7 +266,29 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": true
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/control-plane.mjs",
+          "commit": null
+        },
+        {
+          "path": "scripts/kernel/transition.mjs",
+          "commit": null
+        },
+        {
+          "path": "bin/moon-relay-kernel.mjs",
+          "commit": null
+        },
+        {
+          "path": "skills/moon-relay-kernel/SKILL.md",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "control-plane-lifecycle",
+        "workflow-state-machine"
+      ]
     },
     {
       "id": "minimal-durable-state",
@@ -279,7 +298,24 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": true
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/state-store.mjs",
+          "commit": null
+        },
+        {
+          "path": "scripts/kernel/state-projector.mjs",
+          "commit": null
+        },
+        {
+          "path": "schemas/kernel.runtime-state.schema.json",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "state-projection"
+      ]
     }
   ]
 }

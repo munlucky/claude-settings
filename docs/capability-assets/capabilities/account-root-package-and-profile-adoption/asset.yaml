@@ -145,7 +145,6 @@
         "path": "tests/kernel-package-materialization.test.mjs",
         "purpose": "Kernel package materialization과 manifest parity를 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       },
@@ -154,7 +153,6 @@
         "path": "tests/kernel-install-isolation.test.mjs",
         "purpose": "account-root install이 외부 Provider surface를 보존하는지 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       },
@@ -163,7 +161,6 @@
         "path": "tests/kernel-profile-ownership.test.mjs",
         "purpose": "profile owner와 allowed projection을 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       }
@@ -264,7 +261,29 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": false
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/package-build.mjs",
+          "commit": null
+        },
+        {
+          "path": "scripts/kernel/installer.mjs",
+          "commit": null
+        },
+        {
+          "path": "skills/moonshot-relay-setup/SKILL.md",
+          "commit": null
+        },
+        {
+          "path": "package/kernel/manifest.json",
+          "commit": "c93b6786c8ceb7a90f08d60f964d12f0b8b1cfa5"
+        }
+      ],
+      "proofRefs": [
+        "package-materialization",
+        "install-isolation"
+      ]
     },
     {
       "id": "account-profile-projection",
@@ -274,7 +293,28 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": false
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/profile-build.mjs",
+          "commit": null
+        },
+        {
+          "path": "scripts/kernel/profile-install.mjs",
+          "commit": null
+        },
+        {
+          "path": "scripts/kernel/profile-projection.mjs",
+          "commit": null
+        },
+        {
+          "path": "skills/moonshot-relay-maintainer/SKILL.md",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "profile-ownership"
+      ]
     }
   ]
 }

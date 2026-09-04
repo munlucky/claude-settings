@@ -152,7 +152,6 @@
         "path": "tests/kernel-mutation-guard.test.mjs",
         "purpose": "금지 mutation과 proof self-mutation을 차단하는지 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       },
@@ -161,7 +160,6 @@
         "path": "tests/kernel-git-closeout.test.mjs",
         "purpose": "closeout receipt와 owner boundary를 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       },
@@ -170,7 +168,6 @@
         "path": "tests/kernel-git-closeout-index-integrity.test.mjs",
         "purpose": "staging/index integrity를 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       }
@@ -262,7 +259,16 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": false
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/run/mutation-guard.mjs",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "mutation-guard"
+      ]
     },
     {
       "id": "workspace-fencing",
@@ -272,7 +278,16 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": false
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/git/staging-policy.mjs",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "mutation-guard"
+      ]
     },
     {
       "id": "git-staging-safety",
@@ -282,7 +297,16 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": false
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/git/staging-policy.mjs",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "git-index-integrity"
+      ]
     },
     {
       "id": "git-commit",
@@ -292,7 +316,32 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": false
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/git/closeout.mjs",
+          "commit": null
+        },
+        {
+          "path": "schemas/kernel.git-closeout-receipt.schema.json",
+          "commit": null
+        },
+        {
+          "path": "skills/commit-moonshot/SKILL.md",
+          "commit": null
+        },
+        {
+          "path": "skills/kernel-commit/SKILL.md",
+          "commit": null
+        },
+        {
+          "path": "skills/kernel-commit-closeout/SKILL.md",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "git-closeout"
+      ]
     },
     {
       "id": "remote-parity",
@@ -302,7 +351,16 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": false
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/git/remote-parity.mjs",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "git-closeout"
+      ]
     }
   ]
 }

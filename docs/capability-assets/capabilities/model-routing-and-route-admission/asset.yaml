@@ -157,7 +157,6 @@
         "path": "tests/kernel-model-routing-e2e.test.mjs",
         "purpose": "stage/provider/model route lifecycle을 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       },
@@ -166,7 +165,6 @@
         "path": "tests/kernel-route-admission.test.mjs",
         "purpose": "capability와 policy 기반 route admission을 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       },
@@ -175,7 +173,6 @@
         "path": "tests/kernel-stagnation-routing.test.mjs",
         "purpose": "stagnation 감지와 escalation 경계를 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       }
@@ -281,7 +278,16 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": false
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/run/model-route-contract.mjs",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "route-admission"
+      ]
     },
     {
       "id": "route-admission",
@@ -291,7 +297,16 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": false
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/routing/route-admission.mjs",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "route-admission"
+      ]
     },
     {
       "id": "model-selection",
@@ -301,7 +316,16 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": false
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/run/model-routing.mjs",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "model-routing-e2e"
+      ]
     },
     {
       "id": "provider-selection",
@@ -311,7 +335,16 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": false
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/capability-resolver.mjs",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "model-routing-e2e"
+      ]
     },
     {
       "id": "effort-cost-routing",
@@ -321,7 +354,16 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": false
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/run/model-routing.mjs",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "model-routing-e2e"
+      ]
     },
     {
       "id": "stagnation-escalation",
@@ -331,7 +373,16 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": false
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/run/stagnation.mjs",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "stagnation-routing"
+      ]
     }
   ]
 }

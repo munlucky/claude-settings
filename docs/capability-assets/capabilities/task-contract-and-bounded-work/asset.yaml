@@ -151,7 +151,6 @@
         "path": "tests/active-contracts.test.mjs",
         "purpose": "계약 schema와 필수 경계가 유지되는지 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       },
@@ -160,7 +159,6 @@
         "path": "tests/kernel-bounded-work-unit.test.mjs",
         "purpose": "work unit scope와 owner-direct 실행 경계를 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       },
@@ -169,7 +167,6 @@
         "path": "tests/kernel-run-step-scope.test.mjs",
         "purpose": "허용/금지 경로 admission을 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       }
@@ -256,7 +253,45 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": false
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/task/task-contract.mjs",
+          "commit": null
+        },
+        {
+          "path": "scripts/kernel/run/contract-preflight.mjs",
+          "commit": null
+        },
+        {
+          "path": "schemas/kernel.task-contract.schema.json",
+          "commit": null
+        },
+        {
+          "path": "skills/moonshot-orchestrator/SKILL.md",
+          "commit": null
+        },
+        {
+          "path": "skills/codex-validate-plan/SKILL.md",
+          "commit": null
+        },
+        {
+          "path": "skills/pre-flight-check/SKILL.md",
+          "commit": null
+        },
+        {
+          "path": "skills/project-contract-gate/SKILL.md",
+          "commit": null
+        },
+        {
+          "path": ".claude/skills/moonshot-orchestrator/SKILL.md",
+          "commit": "77ed33f1e1f3c1f0c44216b86d9df5123e58cbb7"
+        }
+      ],
+      "proofRefs": [
+        "task-contract-schema",
+        "bounded-work-unit"
+      ]
     },
     {
       "id": "work-unit-scope",
@@ -266,7 +301,28 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": false
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/run/work-unit-scope.mjs",
+          "commit": null
+        },
+        {
+          "path": "skills/implementation-runner/SKILL.md",
+          "commit": null
+        },
+        {
+          "path": "skills/task-slicer/SKILL.md",
+          "commit": null
+        },
+        {
+          "path": "skills/karpathy-execution-gate/SKILL.md",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "step-scope"
+      ]
     }
   ]
 }

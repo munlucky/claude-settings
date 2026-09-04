@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "kind": "capability-asset-catalog",
-  "catalogVersion": 3,
+  "catalogVersion": 4,
   "repository": {
     "name": "moonshot-relay",
     "remote": "https://github.com/munlucky/moonshot-relay",
@@ -64,6 +64,12 @@
       "REFERENCE": 2,
       "DEPRECATED": 2,
       "EXPERIMENTAL": 0
+    },
+    "traceabilitySummary": {
+      "totalSubcapabilities": 47,
+      "withImplementationTrace": 47,
+      "withProofTrace": 47,
+      "traceabilityPct": 100
     }
   },
   "assets": [
@@ -253,7 +259,7 @@
       "DEPRECATED archive assets need a new contract before reintroduction."
     ],
     "decomplexification": "not performed; separately authorized work required",
-    "baselineVersion": 2,
+    "baselineVersion": "2.1",
     "subcapabilitySummary": {
       "total": 47,
       "CORE": 21,
@@ -264,10 +270,16 @@
     },
     "coverageSummary": {
       "totalMapped": 719,
-      "classifiedCapabilityCount": 665,
-      "ignoredCount": 54,
+      "classifiedCapabilityCount": 694,
+      "ignoredCount": 25,
       "unclassifiedCount": 0
+    },
+    "traceabilitySummary": {
+      "totalSubcapabilities": 47,
+      "withImplementationTrace": 47,
+      "withProofTrace": 47,
+      "traceabilityPct": 100
     }
   },
-  "baselineVersion": 2
+  "baselineVersion": "2.1"
 }

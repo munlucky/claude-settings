@@ -162,7 +162,6 @@
         "path": "tests/kernel-knowledge-candidate.test.mjs",
         "purpose": "candidate schema와 review boundary를 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       },
@@ -171,7 +170,6 @@
         "path": "tests/kernel-knowledge-store.test.mjs",
         "purpose": "typed knowledge store와 project scope를 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       },
@@ -180,7 +178,6 @@
         "path": "tests/kernel-knowledge-lifecycle-e2e.test.mjs",
         "purpose": "ingestion부터 review/commit까지 lifecycle을 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       }
@@ -284,7 +281,28 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": true
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/knowledge-ingestion/candidate-extract.mjs",
+          "commit": null
+        },
+        {
+          "path": "scripts/kernel/knowledge-ingestion/redact.mjs",
+          "commit": null
+        },
+        {
+          "path": "scripts/kernel/knowledge-ingestion/normalize.mjs",
+          "commit": null
+        },
+        {
+          "path": "scripts/kernel/knowledge-ingestion/deduplicate.mjs",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "knowledge-candidate"
+      ]
     },
     {
       "id": "ontology-gate-promotion",
@@ -294,7 +312,33 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": true
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/knowledge-ingestion/conflict.mjs",
+          "commit": null
+        },
+        {
+          "path": "scripts/kernel/knowledge-ingestion/transaction.mjs",
+          "commit": null
+        },
+        {
+          "path": "scripts/kernel/knowledge-ingestion/verify.mjs",
+          "commit": null
+        },
+        {
+          "path": "scripts/kernel/knowledge/evidence-binder.mjs",
+          "commit": null
+        },
+        {
+          "path": "scripts/kernel/knowledge/candidate-review.mjs",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "knowledge-store",
+        "knowledge-lifecycle"
+      ]
     }
   ]
 }

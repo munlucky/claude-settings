@@ -1,44 +1,58 @@
 # Standalone architecture and research tools
 
 - **ID**: `standalone-architecture-and-research-tools`
-- **Domain**: `PRODUCTIVITY`
-- **Family Status**: `OPTIONAL`
-- **Summary**: architecture, product definition, research, diff, UI audit과 project-memory를 비런타임 도구로 제공한다.
+- **Category**: `PRODUCTIVITY`
+- **Status**: `OPTIONAL`
+- **Catalog Version**: `4`
+- **Baseline Version**: `2.1`
 
-## Subcapabilities (Decomplexification 단위)
-- **`architecture-artifacts`** [`OPTIONAL`]: 아키텍처 설계 산출물 및 계약 시드 생성
-- **`codebase-understanding`** [`OPTIONAL`]: 코드베이스 인덱스 구축 및 질의 인터페이스
-- **`standalone-diff-and-audit`** [`OPTIONAL`]: 변경 설명 HTML 렌더링 및 UI 접근성 감사
+## Summary
+architecture, product definition, research, diff, UI audit과 project-memory를 비런타임 도구로 제공한다.
 
-## 해결하는 문제
-- runtime 변경 전 architecture와 product fit을 검토할 별도 surface 부족
-- research/diff/UI 분석 결과가 실행 boundary와 섞이는 문제
+## Subcapabilities Traceability
+### `architecture-artifacts` (OPTIONAL)
+- **Name**: Architecture artifacts
+- **Role**: 아키텍처 설계 산출물 및 계약 시드 생성
+- **Product Relevance**: Agent Workflow: true, Knowledge Lifecycle: true
+- **Implementation References**:
+  - `scripts/kernel/standalone/architecture-artifacts.mjs` (current source)
+  - `scripts/kernel/standalone/product-definition.mjs` (current source)
+  - `skills/moonshot-architecture/SKILL.md` (current source)
+  - `skills/architecture-artifacts/SKILL.md` (current source)
+  - `skills/product-definition/SKILL.md` (current source)
+  - `skills/product-orchestrator/SKILL.md` (current source)
+- **Proof References**:
+  - `architecture-contract`
 
-## 해결하지 않는 문제
-- 실제 제품 구현과 배포
-- standalone artifact만으로 Kernel acceptance를 충족하는 것
+### `codebase-understanding` (OPTIONAL)
+- **Name**: Codebase understanding
+- **Role**: 코드베이스 인덱스 구축 및 질의 인터페이스
+- **Product Relevance**: Agent Workflow: true, Knowledge Lifecycle: true
+- **Implementation References**:
+  - `bin/codebase-understanding.mjs` (current source)
+  - `skills/codebase-understanding/SKILL.md` (current source)
+- **Proof References**:
+  - `architecture-handoff`
 
-## 권장 사용
-- architecture/product/research artifact를 implementation 전에 생성한다.
-- standalone output은 source/evidence와 provenance를 함께 기록한다.
+### `standalone-diff-and-audit` (OPTIONAL)
+- **Name**: Standalone diff and audit
+- **Role**: 변경 설명 HTML 렌더링 및 UI 접근성 감사
+- **Product Relevance**: Agent Workflow: true, Knowledge Lifecycle: false
+- **Implementation References**:
+  - `scripts/kernel/standalone/explain-diff-html.mjs` (current source)
+  - `scripts/kernel/standalone/ui-audit.mjs` (current source)
+  - `skills/explain-diff-html/SKILL.md` (current source)
+  - `skills/ui-audit/SKILL.md` (current source)
+  - `skills/product-gate-reviewer/SKILL.md` (current source)
+- **Proof References**:
+  - `research-evidence`
 
-## 금지 사용
-- standalone 계획을 구현 완료로 간주하지 않는다.
-- artifact를 runtime loader나 completion gate에 자동 연결하지 않는다.
 
-## 재도입 가이드
-- **권장 레이어**: standalone planning/research artifact surface
-- **트리거**: 구현 전 architecture, product, research 또는 UI/diff analysis가 필요할 때
-- **통합 지점**:
-  - artifact package
-  - source/evidence provenance
-  - explicit handoff
-- **위험 요소**:
-  - 계획과 구현의 혼동
-  - 외부 자료 stale
-  - advisory output 자동 promotion
-- **안전 가드레일**:
-  - explicit opt-in
-  - citation/provenance
-  - separate artifact ownership
-  - Kernel binding required
+## Proof Tests
+- **architecture-contract**: `tests/architecture-contract-bind.test.mjs` (referenceStatus: `verified`, executionStatus: `historical-pass`) — command: `test`
+- **architecture-handoff**: `tests/architecture-handoff-build.test.mjs` (referenceStatus: `verified`, executionStatus: `historical-pass`) — command: `test`
+- **research-evidence**: `tests/research-evidence-contract.test.mjs` (referenceStatus: `verified`, executionStatus: `historical-pass`) — command: `test`
+
+## Decision
+- **Disposition**: `retain`
+- **Rationale**: 구현 품질을 보조하는 OPTIONAL productivity capability로 보존하되 runtime authority와 분리한다.

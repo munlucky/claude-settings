@@ -135,7 +135,6 @@
         "path": "archive/scripts/legacy-phase-adapters/agent-loop-phase-runner.test.mjs",
         "purpose": "historical phase runner regression을 보존한다.",
         "commandRef": "test:legacy-archive",
-        "status": "historical",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       },
@@ -144,7 +143,6 @@
         "path": "archive/scripts/legacy-phase-adapters/agent-loop-phase-runtime.test.mjs",
         "purpose": "historical phase runtime contract을 보존한다.",
         "commandRef": "test:legacy-archive",
-        "status": "historical",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       },
@@ -153,7 +151,6 @@
         "path": "archive/scripts/legacy-phase-adapters/harness-surface-inventory.test.mjs",
         "purpose": "legacy harness surface inventory regression을 보존한다.",
         "commandRef": "test:legacy-archive",
-        "status": "historical",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       }
@@ -242,7 +239,33 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": false
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "archive/scripts/legacy-phase-adapters/agent-loop-phase-runner.mjs",
+          "commit": null
+        },
+        {
+          "path": "archive/scripts/legacy-phase-adapters/agent-loop-phase-runtime.mjs",
+          "commit": null
+        },
+        {
+          "path": "skills/moonshot-phase-runner/SKILL.md",
+          "commit": null
+        },
+        {
+          "path": "skills/moonshot-phase-executor/SKILL.md",
+          "commit": null
+        },
+        {
+          "path": ".claude/skills/moonshot-phase-runner/SKILL.md",
+          "commit": "1131912154b8c4e2c077f81bc7ee15fee440d302"
+        }
+      ],
+      "proofRefs": [
+        "legacy-phase-runner",
+        "legacy-phase-runtime"
+      ]
     },
     {
       "id": "legacy-harness-adapters",
@@ -252,7 +275,20 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": false
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "archive/scripts/legacy-phase-adapters/agent-loop-phase-state.mjs",
+          "commit": null
+        },
+        {
+          "path": "archive/scripts/legacy-phase-adapters/harness-surface-inventory.mjs",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "legacy-harness-inventory"
+      ]
     }
   ]
 }

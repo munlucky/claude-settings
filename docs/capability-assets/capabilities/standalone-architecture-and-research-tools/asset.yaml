@@ -141,7 +141,6 @@
         "path": "tests/architecture-contract-bind.test.mjs",
         "purpose": "architecture artifact contract binding을 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       },
@@ -150,7 +149,6 @@
         "path": "tests/architecture-handoff-build.test.mjs",
         "purpose": "architecture handoff와 provenance를 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       },
@@ -159,7 +157,6 @@
         "path": "tests/research-evidence-contract.test.mjs",
         "purpose": "research evidence contract를 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       }
@@ -255,7 +252,36 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": true
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/standalone/architecture-artifacts.mjs",
+          "commit": null
+        },
+        {
+          "path": "scripts/kernel/standalone/product-definition.mjs",
+          "commit": null
+        },
+        {
+          "path": "skills/moonshot-architecture/SKILL.md",
+          "commit": null
+        },
+        {
+          "path": "skills/architecture-artifacts/SKILL.md",
+          "commit": null
+        },
+        {
+          "path": "skills/product-definition/SKILL.md",
+          "commit": null
+        },
+        {
+          "path": "skills/product-orchestrator/SKILL.md",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "architecture-contract"
+      ]
     },
     {
       "id": "codebase-understanding",
@@ -265,7 +291,20 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": true
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "bin/codebase-understanding.mjs",
+          "commit": null
+        },
+        {
+          "path": "skills/codebase-understanding/SKILL.md",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "architecture-handoff"
+      ]
     },
     {
       "id": "standalone-diff-and-audit",
@@ -275,7 +314,32 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": false
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/standalone/explain-diff-html.mjs",
+          "commit": null
+        },
+        {
+          "path": "scripts/kernel/standalone/ui-audit.mjs",
+          "commit": null
+        },
+        {
+          "path": "skills/explain-diff-html/SKILL.md",
+          "commit": null
+        },
+        {
+          "path": "skills/ui-audit/SKILL.md",
+          "commit": null
+        },
+        {
+          "path": "skills/product-gate-reviewer/SKILL.md",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "research-evidence"
+      ]
     }
   ]
 }

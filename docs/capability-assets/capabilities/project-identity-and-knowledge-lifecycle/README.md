@@ -1,43 +1,47 @@
 # Project identity and knowledge lifecycle
 
 - **ID**: `project-identity-and-knowledge-lifecycle`
-- **Domain**: `KNOWLEDGE`
-- **Family Status**: `CORE`
-- **Summary**: 프로젝트 identity, knowledge namespace와 revision lifecycle을 안전한 scope에 묶는다.
+- **Category**: `KNOWLEDGE`
+- **Status**: `CORE`
+- **Catalog Version**: `4`
+- **Baseline Version**: `2.1`
 
-## Subcapabilities (Decomplexification 단위)
-- **`project-identity-binding`** [`CORE`]: 프로젝트 고유 식별자 확정 및 네임스페이스 격리
-- **`knowledge-lifecycle-authority`** [`CORE`]: 지식 레코드 개정, 대체, 저장 권위
+## Summary
+프로젝트 identity, knowledge namespace와 revision lifecycle을 안전한 scope에 묶는다.
 
-## 해결하는 문제
-- 동일 저장소의 remote/basename alias가 서로 다른 knowledge namespace를 만드는 문제
-- 오래된 knowledge가 현재 프로젝트에 무검증으로 적용되는 문제
+## Subcapabilities Traceability
+### `project-identity-binding` (CORE)
+- **Name**: Project identity binding
+- **Role**: 프로젝트 고유 식별자 확정 및 네임스페이스 격리
+- **Product Relevance**: Agent Workflow: true, Knowledge Lifecycle: true
+- **Implementation References**:
+  - `scripts/kernel/project-identity.mjs` (current source)
+  - `scripts/kernel/project-identity-preflight.mjs` (current source)
+- **Proof References**:
+  - `project-identity`
+  - `identity-review-remediation`
 
-## 해결하지 않는 문제
-- 지식 내용의 업무적 진실성
-- provider별 외부 memory service의 availability
+### `knowledge-lifecycle-authority` (CORE)
+- **Name**: Knowledge lifecycle authority
+- **Role**: 지식 레코드 개정, 대체, 저장 권위
+- **Product Relevance**: Agent Workflow: true, Knowledge Lifecycle: true
+- **Implementation References**:
+  - `scripts/kernel/knowledge/records.mjs` (current source)
+  - `scripts/kernel/knowledge/revision.mjs` (current source)
+  - `scripts/kernel/knowledge/freshness.mjs` (current source)
+  - `skills/project-memory/SKILL.md` (current source)
+  - `skills/project-memory-refresh/SKILL.md` (current source)
+  - `skills/harness-memory-promoter/SKILL.md` (current source)
+  - `skills/project-md-refresh/SKILL.md` (current source)
+- **Proof References**:
+  - `knowledge-freshness`
 
-## 권장 사용
-- 모든 knowledge operation 전에 canonical project identity와 worktree scope를 확인한다.
-- revision, freshness, supersession을 lifecycle에 기록한다.
 
-## 금지 사용
-- basename이나 remote URL만으로 identity를 단정하지 않는다.
-- candidate를 review/commit 없이 canonical knowledge로 승격하지 않는다.
+## Proof Tests
+- **project-identity**: `tests/kernel-project-identity.test.mjs` (referenceStatus: `verified`, executionStatus: `historical-pass`) — command: `test`
+- **identity-review-remediation**: `tests/kernel-project-identity-review-remediation.test.mjs` (referenceStatus: `verified`, executionStatus: `historical-pass`) — command: `test`
+- **knowledge-freshness**: `tests/kernel-knowledge-freshness.test.mjs` (referenceStatus: `verified`, executionStatus: `historical-pass`) — command: `test`
 
-## 재도입 가이드
-- **권장 레이어**: project identity preflight and knowledge repository
-- **트리거**: 새 knowledge source, alias migration 또는 cross-run reuse를 추가할 때
-- **통합 지점**:
-  - identity preflight
-  - knowledge namespace
-  - revision/freshness
-  - supersession
-- **위험 요소**:
-  - 잘못된 프로젝트에 지식 적용
-  - stale knowledge가 current source보다 우선
-  - identity migration 중 data loss
-- **안전 가드레일**:
-  - canonical root + Git identity binding
-  - fail-closed unresolved aliases
-  - revision and freshness receipt
+## Decision
+- **Disposition**: `retain`
+- **Rationale**: 프로젝트 지식의 scope와 lifecycle을 보호하는 현재 CORE capability다.

@@ -140,7 +140,6 @@
         "path": "tests/kernel-project-identity.test.mjs",
         "purpose": "canonical identity와 legacy candidate binding을 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       },
@@ -149,7 +148,6 @@
         "path": "tests/kernel-project-identity-review-remediation.test.mjs",
         "purpose": "identity mismatch remediation 경계를 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       },
@@ -158,7 +156,6 @@
         "path": "tests/kernel-knowledge-freshness.test.mjs",
         "purpose": "knowledge freshness와 revision lifecycle을 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       }
@@ -251,7 +248,21 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": true
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/project-identity.mjs",
+          "commit": null
+        },
+        {
+          "path": "scripts/kernel/project-identity-preflight.mjs",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "project-identity",
+        "identity-review-remediation"
+      ]
     },
     {
       "id": "knowledge-lifecycle-authority",
@@ -261,7 +272,40 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": true
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/knowledge/records.mjs",
+          "commit": null
+        },
+        {
+          "path": "scripts/kernel/knowledge/revision.mjs",
+          "commit": null
+        },
+        {
+          "path": "scripts/kernel/knowledge/freshness.mjs",
+          "commit": null
+        },
+        {
+          "path": "skills/project-memory/SKILL.md",
+          "commit": null
+        },
+        {
+          "path": "skills/project-memory-refresh/SKILL.md",
+          "commit": null
+        },
+        {
+          "path": "skills/harness-memory-promoter/SKILL.md",
+          "commit": null
+        },
+        {
+          "path": "skills/project-md-refresh/SKILL.md",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "knowledge-freshness"
+      ]
     }
   ]
 }

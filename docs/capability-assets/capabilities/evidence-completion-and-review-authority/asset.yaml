@@ -154,7 +154,6 @@
         "path": "tests/completion-evidence.test.mjs",
         "purpose": "completion에 필요한 evidence identity와 receipt를 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       },
@@ -163,7 +162,6 @@
         "path": "tests/kernel-evidence-pack.test.mjs",
         "purpose": "Kernel evidence pack과 bound proof를 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       },
@@ -172,7 +170,6 @@
         "path": "tests/kernel-review-receipt-completion.test.mjs",
         "purpose": "review receipt가 completion gate에 연결되는지 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       }
@@ -267,7 +264,28 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": false
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/evidence-pack.mjs",
+          "commit": null
+        },
+        {
+          "path": "schemas/kernel.release-evidence.schema.json",
+          "commit": null
+        },
+        {
+          "path": "skills/browser-verifier/SKILL.md",
+          "commit": null
+        },
+        {
+          "path": "skills/verification-evidence-gate/SKILL.md",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "completion-evidence"
+      ]
     },
     {
       "id": "verification-authority",
@@ -277,7 +295,32 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": false
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/proof/proof-executor.mjs",
+          "commit": null
+        },
+        {
+          "path": "skills/completion-verifier/SKILL.md",
+          "commit": null
+        },
+        {
+          "path": "skills/failure-analyzer/SKILL.md",
+          "commit": null
+        },
+        {
+          "path": "skills/verification-contract-gate/SKILL.md",
+          "commit": null
+        },
+        {
+          "path": ".claude/skills/completion-verifier/SKILL.md",
+          "commit": "5ccf1c9ccfbf68ae8067d6e7e69a7555c782fdb5"
+        }
+      ],
+      "proofRefs": [
+        "completion-evidence"
+      ]
     },
     {
       "id": "completion-decision",
@@ -287,7 +330,16 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": true
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/run/finalization.mjs",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "completion-evidence"
+      ]
     },
     {
       "id": "protected-obligation",
@@ -297,7 +349,16 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": false
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/evidence-pack.mjs",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "kernel-evidence-pack"
+      ]
     },
     {
       "id": "independent-reviewer-execution",
@@ -307,7 +368,24 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": false
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/proof/review-receipt.mjs",
+          "commit": null
+        },
+        {
+          "path": "skills/plan-ceo-review/SKILL.md",
+          "commit": null
+        },
+        {
+          "path": "skills/plan-eng-review/SKILL.md",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "review-receipt-completion"
+      ]
     },
     {
       "id": "review-transport",
@@ -317,7 +395,20 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": false
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "schemas/kernel.review-receipt.schema.json",
+          "commit": null
+        },
+        {
+          "path": "scripts/kernel/proof/review-receipt.mjs",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "review-receipt-completion"
+      ]
     }
   ]
 }

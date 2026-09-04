@@ -2,11 +2,11 @@
   "schemaVersion": 1,
   "kind": "capability-asset-coverage-ledger",
   "baselineCommit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
-  "updatedAt": "2026-09-04",
+  "updatedAt": "2026-09-05",
   "summary": {
     "totalMapped": 719,
-    "classifiedCapabilityCount": 665,
-    "ignoredCount": 54,
+    "classifiedCapabilityCount": 694,
+    "ignoredCount": 25,
     "unclassifiedCount": 0
   },
   "surfaces": {
@@ -1616,7 +1616,7 @@
     },
     "skills/adr-c4-writer/SKILL.md": {
       "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "reason": "generic-development-skill"
     },
     "skills/architecture-artifacts/SKILL.md": {
       "classification": "capability",
@@ -1624,43 +1624,43 @@
     },
     "skills/architecture-gate-reviewer/SKILL.md": {
       "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "reason": "generic-development-skill"
     },
     "skills/architecture-option-generator/SKILL.md": {
       "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "reason": "generic-development-skill"
     },
     "skills/architecture-tradeoff-reviewer/SKILL.md": {
       "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "reason": "generic-development-skill"
     },
     "skills/asr-extractor/SKILL.md": {
       "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "reason": "external-domain-skill"
     },
     "skills/assumption-ledger/SKILL.md": {
       "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "reason": "external-domain-skill"
     },
     "skills/audit/SKILL.md": {
       "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "reason": "generic-development-skill"
     },
     "skills/browser-verifier/SKILL.md": {
-      "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
     },
     "skills/build-error-resolver/SKILL.md": {
       "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "reason": "generic-development-skill"
     },
     "skills/code-simplifier/SKILL.md": {
       "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "reason": "generic-development-skill"
     },
     "skills/codebase-architecture-recovery/SKILL.md": {
       "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "reason": "generic-development-skill"
     },
     "skills/codebase-understanding/SKILL.md": {
       "classification": "capability",
@@ -1668,63 +1668,63 @@
     },
     "skills/codex-review-code/SKILL.md": {
       "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "reason": "generic-development-skill"
     },
     "skills/codex-validate-plan/SKILL.md": {
-      "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "classification": "capability",
+      "capability": "task-contract-and-bounded-work"
     },
     "skills/commit-moonshot/SKILL.md": {
-      "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "classification": "capability",
+      "capability": "mutation-fencing-and-git-closeout"
     },
     "skills/completion-verifier/SKILL.md": {
-      "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
     },
     "skills/context-readiness-gate/SKILL.md": {
       "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "reason": "external-domain-skill"
     },
     "skills/design-asset-parser/SKILL.md": {
       "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "reason": "external-domain-skill"
     },
     "skills/doc-auto-sync/SKILL.md": {
       "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "reason": "external-domain-skill"
     },
     "skills/explain-diff-html/SKILL.md": {
       "classification": "capability",
       "capability": "standalone-architecture-and-research-tools"
     },
     "skills/failure-analyzer/SKILL.md": {
-      "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
     },
     "skills/figma-spec-synthesizer/SKILL.md": {
       "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "reason": "external-domain-skill"
     },
     "skills/figma-spec-synthesizer/agents/openai.yaml": {
       "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "reason": "external-domain-skill"
     },
     "skills/frontend-design/SKILL.md": {
       "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "reason": "generic-development-skill"
     },
     "skills/harness-memory-promoter/SKILL.md": {
       "classification": "capability",
       "capability": "project-identity-and-knowledge-lifecycle"
     },
     "skills/implementation-runner/SKILL.md": {
-      "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "classification": "capability",
+      "capability": "task-contract-and-bounded-work"
     },
     "skills/karpathy-execution-gate/SKILL.md": {
-      "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "classification": "capability",
+      "capability": "task-contract-and-bounded-work"
     },
     "skills/kernel-browser-proof-adapter/SKILL.md": {
       "classification": "capability",
@@ -1795,28 +1795,28 @@
       "capability": "standalone-architecture-and-research-tools"
     },
     "skills/moonshot-classify-task/SKILL.md": {
-      "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "classification": "capability",
+      "capability": "step-ledger-resume"
     },
     "skills/moonshot-decide-sequence/SKILL.md": {
-      "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "classification": "capability",
+      "capability": "step-ledger-resume"
     },
     "skills/moonshot-detect-uncertainty/SKILL.md": {
-      "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "classification": "capability",
+      "capability": "step-ledger-resume"
     },
     "skills/moonshot-evaluate-complexity/SKILL.md": {
-      "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "classification": "capability",
+      "capability": "step-ledger-resume"
     },
     "skills/moonshot-in-session-coordinator/SKILL.md": {
-      "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "classification": "capability",
+      "capability": "provider-session-and-execution-boundary"
     },
     "skills/moonshot-orchestrator/SKILL.md": {
-      "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "classification": "capability",
+      "capability": "task-contract-and-bounded-work"
     },
     "skills/moonshot-phase-executor/SKILL.md": {
       "classification": "capability",
@@ -1827,68 +1827,68 @@
       "capability": "legacy-phase-runner-and-harness-adapters"
     },
     "skills/moonshot-plan-writer/SKILL.md": {
-      "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "classification": "capability",
+      "capability": "step-ledger-resume"
     },
     "skills/moonshot-relay-maintainer/SKILL.md": {
-      "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "classification": "capability",
+      "capability": "account-root-package-and-profile-adoption"
     },
     "skills/moonshot-relay-maintainer/agents/openai.yaml": {
-      "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "classification": "capability",
+      "capability": "account-root-package-and-profile-adoption"
     },
     "skills/moonshot-relay-setup/SKILL.md": {
-      "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "classification": "capability",
+      "capability": "account-root-package-and-profile-adoption"
     },
     "skills/moonshot-retro/SKILL.md": {
       "classification": "capability",
       "capability": "retrospective-and-regression-learning"
     },
     "skills/moonshot-teams-runner/SKILL.md": {
-      "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "classification": "capability",
+      "capability": "provider-session-and-execution-boundary"
     },
     "skills/normalize/SKILL.md": {
       "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "reason": "provider-specific-helper"
     },
     "skills/plan-ceo-review/SKILL.md": {
-      "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
     },
     "skills/plan-eng-review/SKILL.md": {
-      "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
     },
     "skills/polish/SKILL.md": {
       "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "reason": "provider-specific-helper"
     },
     "skills/pre-flight-check/SKILL.md": {
-      "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "classification": "capability",
+      "capability": "task-contract-and-bounded-work"
     },
     "skills/product-definition/SKILL.md": {
       "classification": "capability",
       "capability": "standalone-architecture-and-research-tools"
     },
     "skills/product-gate-reviewer/SKILL.md": {
-      "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "classification": "capability",
+      "capability": "standalone-architecture-and-research-tools"
     },
     "skills/product-orchestrator/SKILL.md": {
-      "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "classification": "capability",
+      "capability": "standalone-architecture-and-research-tools"
     },
     "skills/project-contract-gate/SKILL.md": {
-      "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "classification": "capability",
+      "capability": "task-contract-and-bounded-work"
     },
     "skills/project-md-refresh/SKILL.md": {
-      "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
     },
     "skills/project-memory-refresh/SKILL.md": {
       "classification": "capability",
@@ -1900,27 +1900,27 @@
     },
     "skills/qa-flow/SKILL.md": {
       "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "reason": "generic-development-skill"
     },
     "skills/security-reviewer/SKILL.md": {
       "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "reason": "generic-development-skill"
     },
     "skills/session-logger/SKILL.md": {
       "classification": "capability",
       "capability": "retrospective-and-regression-learning"
     },
     "skills/task-slicer/SKILL.md": {
-      "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "classification": "capability",
+      "capability": "task-contract-and-bounded-work"
     },
     "skills/teach-impeccable/SKILL.md": {
       "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "reason": "generic-development-skill"
     },
     "skills/test-driven-development/SKILL.md": {
       "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "reason": "generic-development-skill"
     },
     "skills/ui-audit/SKILL.md": {
       "classification": "capability",
@@ -1928,23 +1928,23 @@
     },
     "skills/vercel-react-best-practices/SKILL.md": {
       "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "reason": "generic-development-skill"
     },
     "skills/verification-contract-gate/SKILL.md": {
-      "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
     },
     "skills/verification-evidence-gate/SKILL.md": {
-      "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
     },
     "skills/web-design-guidelines/SKILL.md": {
       "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "reason": "generic-development-skill"
     },
     "skills/workspace-isolation-gate/SKILL.md": {
-      "classification": "ignored",
-      "reason": "external-or-generic-prompt-skill-not-reusable-kernel-harness-core"
+      "classification": "capability",
+      "capability": "provider-session-and-execution-boundary"
     },
     "tests/kernel-account-root-profile.test.mjs": {
       "classification": "capability",

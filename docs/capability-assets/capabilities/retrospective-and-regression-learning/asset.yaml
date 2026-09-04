@@ -135,7 +135,6 @@
         "path": "tests/retro-collect-contract.test.mjs",
         "purpose": "회고 수집 contract와 evidence binding을 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       },
@@ -144,7 +143,6 @@
         "path": "tests/retro-redaction-contract.test.mjs",
         "purpose": "retro output의 redaction 경계를 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       },
@@ -153,7 +151,6 @@
         "path": "tests/retro-no-promotion-authority-contract.test.mjs",
         "purpose": "retro candidate가 자동 authority가 되지 않는지 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       }
@@ -254,7 +251,25 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": true
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/knowledge-improvement-lifecycle.mjs",
+          "commit": null
+        },
+        {
+          "path": "skills/moonshot-retro/SKILL.md",
+          "commit": null
+        },
+        {
+          "path": "skills/session-logger/SKILL.md",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "retro-collect",
+        "retro-redaction"
+      ]
     },
     {
       "id": "improvement-proposals",
@@ -264,7 +279,16 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": true
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/awtl-memory-promotion.mjs",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "retro-no-promotion"
+      ]
     }
   ]
 }

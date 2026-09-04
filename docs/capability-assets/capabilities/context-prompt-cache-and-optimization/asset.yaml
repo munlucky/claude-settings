@@ -162,7 +162,6 @@
         "path": "tests/kernel-context-compiler.test.mjs",
         "purpose": "context compilation과 bounded envelope를 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       },
@@ -171,7 +170,6 @@
         "path": "tests/kernel-context-byte-identity.test.mjs",
         "purpose": "동일 input의 byte identity와 digest를 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       },
@@ -180,7 +178,6 @@
         "path": "tests/kernel-cache-replay.test.mjs",
         "purpose": "cache replay와 invalidation을 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       }
@@ -294,7 +291,20 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": true
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/context-build.mjs",
+          "commit": null
+        },
+        {
+          "path": "scripts/kernel/context-segments.mjs",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "context-compiler"
+      ]
     },
     {
       "id": "knowledge-context-selection",
@@ -304,7 +314,20 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": true
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/context-build.mjs",
+          "commit": null
+        },
+        {
+          "path": "scripts/kernel/context-segments.mjs",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "context-compiler"
+      ]
     },
     {
       "id": "context-receipt-freshness",
@@ -314,7 +337,16 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": true
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/context-receipt.mjs",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "context-byte-identity"
+      ]
     },
     {
       "id": "prompt-envelope",
@@ -324,7 +356,20 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": false
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/context-segments.mjs",
+          "commit": null
+        },
+        {
+          "path": "scripts/kernel/canonical-digest.mjs",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "context-byte-identity"
+      ]
     },
     {
       "id": "prompt-cache",
@@ -334,7 +379,16 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": false
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/cache-replay.mjs",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "cache-replay"
+      ]
     },
     {
       "id": "optimization-cycle",
@@ -344,7 +398,20 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": false
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/optimization-cycle.mjs",
+          "commit": null
+        },
+        {
+          "path": "scripts/kernel/canonical-digest.mjs",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "cache-replay"
+      ]
     }
   ]
 }

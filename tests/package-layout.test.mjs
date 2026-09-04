@@ -128,10 +128,11 @@ const trackedImplementationPlanAllowlist = [
 
 const isAllowedTrackedDoc = (file) => (
   file.startsWith('docs/public/')
+  || file.startsWith('docs/capability-assets/')
   || trackedImplementationPlanAllowlist.some((pattern) => pattern.test(file))
 );
 
-test('tracked docs are limited to public docs and source-local implementation plans', () => {
+test('tracked docs are limited to public docs, capability assets, and source-local implementation plans', () => {
   const output = gitLsFiles(root, ['docs']).stdout;
   const violations = output
     .split(/\r?\n/)
@@ -141,7 +142,7 @@ test('tracked docs are limited to public docs and source-local implementation pl
   assert.deepEqual(
     violations,
     [],
-    `Only docs/public and allowlisted docs/implementation plan artifacts are trackable:\n${violations.join('\n')}`,
+    `Only docs/public, docs/capability-assets, and allowlisted docs/implementation plan artifacts are trackable:\n${violations.join('\n')}`,
   );
 });
 

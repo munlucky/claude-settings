@@ -1,44 +1,43 @@
 # Harness surface and regression audit
 
 - **ID**: `harness-surface-and-regression-audit`
-- **Domain**: `TRUST`
-- **Family Status**: `REFERENCE`
-- **Summary**: tracked surface, tests, budget와 regression signal을 진단해 검증 범위 drift를 드러낸다.
+- **Category**: `TRUST`
+- **Status**: `REFERENCE`
+- **Catalog Version**: `4`
+- **Baseline Version**: `2.1`
 
-## Subcapabilities (Decomplexification 단위)
-- **`harness-surface-budget`** [`REFERENCE`]: 저장소 파일/라인/토큰 표면 예산 측정
-- **`regression-audit-reporting`** [`REFERENCE`]: 미등록 테스트 탐지 및 회귀 보고
+## Summary
+tracked surface, tests, budget와 regression signal을 진단해 검증 범위 drift를 드러낸다.
 
-## 해결하는 문제
-- 새 테스트가 실행 목록에서 빠지는 문제
-- harness surface가 baseline을 넘어도 발견하지 못하는 문제
-- 검증 증거의 범위가 조용히 축소되는 문제
+## Subcapabilities Traceability
+### `harness-surface-budget` (REFERENCE)
+- **Name**: Harness surface budget
+- **Role**: 저장소 파일/라인/토큰 표면 예산 측정
+- **Product Relevance**: Agent Workflow: true, Knowledge Lifecycle: false
+- **Implementation References**:
+  - `scripts/harness-surface-report.mjs` (current source)
+  - `package/harness-surface-budget.json` (current source)
+- **Proof References**:
+  - `surface-report`
 
-## 해결하지 않는 문제
-- 테스트 자체가 올바른지 보장하는 것
-- Kernel completion gate를 대체하는 것
+### `regression-audit-reporting` (REFERENCE)
+- **Name**: Regression audit reporting
+- **Role**: 미등록 테스트 탐지 및 회귀 보고
+- **Product Relevance**: Agent Workflow: true, Knowledge Lifecycle: false
+- **Implementation References**:
+  - `tests/harness-surface-report-contract.test.mjs` (current source)
+  - `tests/harness-regression-contract.test.mjs` (current source)
+  - `tests/harness-history-contract.test.mjs` (current source)
+- **Proof References**:
+  - `harness-regression`
+  - `harness-history`
 
-## 권장 사용
-- 변경 전후 tracked surface와 test registration을 report/check한다.
-- budget baseline 변경은 실제 clean baseline과 이유를 남긴다.
 
-## 금지 사용
-- surface report pass를 제품 기능 pass로 해석하지 않는다.
-- budget을 낮춰 regression을 숨기지 않는다.
+## Proof Tests
+- **surface-report**: `tests/harness-surface-report-contract.test.mjs` (referenceStatus: `verified`, executionStatus: `executed-pass`) — command: `test`
+- **harness-regression**: `tests/harness-regression-contract.test.mjs` (referenceStatus: `verified`, executionStatus: `historical-pass`) — command: `test`
+- **harness-history**: `tests/harness-history-contract.test.mjs` (referenceStatus: `verified`, executionStatus: `historical-pass`) — command: `test`
 
-## 재도입 가이드
-- **권장 레이어**: read-only verification/reporting plane
-- **트리거**: harness test, package surface 또는 baseline growth를 변경할 때
-- **통합 지점**:
-  - surface report
-  - test registration
-  - budget config
-  - regression test
-- **위험 요소**:
-  - baseline gaming
-  - unregistered test omission
-  - diagnostic output mistaken for authority
-- **안전 가드레일**:
-  - clean baseline measurement
-  - fail-closed invalid config
-  - separate completion evidence
+## Decision
+- **Disposition**: `retain`
+- **Rationale**: 자산화 자체와 future decomplexification에서 surface drift를 관찰하는 REFERENCE capability로 유지한다.

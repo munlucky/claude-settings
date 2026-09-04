@@ -143,7 +143,6 @@
         "path": "tests/kernel-host-loop-e2e.test.mjs",
         "purpose": "Host loop와 receipt 경계를 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       },
@@ -152,7 +151,6 @@
         "path": "tests/kernel-multi-provider-session.test.mjs",
         "purpose": "provider session binding과 isolation을 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       },
@@ -161,7 +159,6 @@
         "path": "tests/kernel-execution-capsule.test.mjs",
         "purpose": "execution capsule의 source/owner/scope invariant를 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       }
@@ -259,7 +256,25 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": false
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/run/host-session.mjs",
+          "commit": null
+        },
+        {
+          "path": "scripts/kernel/run/session-binding.mjs",
+          "commit": null
+        },
+        {
+          "path": "skills/moonshot-in-session-coordinator/SKILL.md",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "host-loop",
+        "multi-provider-session"
+      ]
     },
     {
       "id": "execution-capsule-transport",
@@ -269,7 +284,28 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": false
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/run/session-holder.mjs",
+          "commit": null
+        },
+        {
+          "path": "scripts/kernel/run/execution-capsule.mjs",
+          "commit": null
+        },
+        {
+          "path": "scripts/kernel/bridge/mcp.mjs",
+          "commit": null
+        },
+        {
+          "path": "skills/moonshot-teams-runner/SKILL.md",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "execution-capsule"
+      ]
     },
     {
       "id": "step-worktree-isolation",
@@ -279,7 +315,20 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": false
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/workspace/step-worktree-manager.mjs",
+          "commit": null
+        },
+        {
+          "path": "skills/workspace-isolation-gate/SKILL.md",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "host-loop"
+      ]
     }
   ]
 }

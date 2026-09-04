@@ -152,7 +152,6 @@
         "path": "tests/kernel-run-step-ledger.test.mjs",
         "purpose": "step ledger transition과 cursor 보존을 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       },
@@ -161,7 +160,6 @@
         "path": "tests/kernel-run-step-resume.test.mjs",
         "purpose": "중단 후 resume lease와 next step을 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       },
@@ -170,7 +168,6 @@
         "path": "tests/kernel-run-step-scope.test.mjs",
         "purpose": "step scope 및 mutation 경계를 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       }
@@ -260,7 +257,33 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": true
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/run/run-step-ledger.mjs",
+          "commit": null
+        },
+        {
+          "path": "scripts/kernel/run/step-planner.mjs",
+          "commit": null
+        },
+        {
+          "path": "skills/moonshot-plan-writer/SKILL.md",
+          "commit": null
+        },
+        {
+          "path": "skills/moonshot-classify-task/SKILL.md",
+          "commit": null
+        },
+        {
+          "path": "archive/scripts/legacy-phase-adapters/agent-loop-phase-plan.mjs",
+          "commit": "1f7ed38b80f2d66d34498548448423c56154be16"
+        }
+      ],
+      "proofRefs": [
+        "run-step-ledger",
+        "run-step-safe-scope"
+      ]
     },
     {
       "id": "work-cursor-resume",
@@ -270,7 +293,32 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": true
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/kernel/run/work-cursor.mjs",
+          "commit": null
+        },
+        {
+          "path": "scripts/kernel/run/work-unit-scope.mjs",
+          "commit": null
+        },
+        {
+          "path": "skills/moonshot-decide-sequence/SKILL.md",
+          "commit": null
+        },
+        {
+          "path": "skills/moonshot-detect-uncertainty/SKILL.md",
+          "commit": null
+        },
+        {
+          "path": "skills/moonshot-evaluate-complexity/SKILL.md",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "run-step-resume"
+      ]
     }
   ]
 }

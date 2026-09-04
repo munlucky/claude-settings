@@ -1,34 +1,31 @@
-# Decisions & Failure History: Context, prompt, cache, and optimization
+# Capability Decisions: Context, prompt, cache, and optimization
 
-- **Status**: `CORE`
+- **Capability ID**: `context-prompt-cache-and-optimization`
 - **Disposition**: `retain`
+- **Subcapabilities Count**: 6
 
-## Subcapabilities & Dispositions
-- **`context-build`** -> `CORE` (Workflow: true, Knowledge: true)
-- **`knowledge-context-selection`** -> `CORE` (Workflow: true, Knowledge: true)
-- **`context-receipt-freshness`** -> `CORE` (Workflow: true, Knowledge: true)
-- **`prompt-envelope`** -> `HOST` (Workflow: true, Knowledge: false)
-- **`prompt-cache`** -> `HOST` (Workflow: true, Knowledge: false)
-- **`optimization-cycle`** -> `OPTIONAL` (Workflow: true, Knowledge: false)
-
-## 설계 및 보존 결정
+## Rationale
 비용과 재현성을 함께 다루는 현재 CORE capability이며 knowledge와 evidence boundary를 보강한다.
 
-### 후속 조치
+## Subcapabilities Allocation
+- **Context build** (`context-build`): `CORE` — 제한된 문맥 빌드 및 민감 정보 마스킹
+  - Implementations: 2 files bound
+  - Proofs: context-compiler
+- **Knowledge context selection** (`knowledge-context-selection`): `CORE` — 프로젝트 지식 선별 및 주입
+  - Implementations: 2 files bound
+  - Proofs: context-compiler
+- **Context receipt freshness** (`context-receipt-freshness`): `CORE` — 문맥 바이트 영수증 및 신선도 검증
+  - Implementations: 1 files bound
+  - Proofs: context-byte-identity
+- **Prompt envelope** (`prompt-envelope`): `HOST` — Provider별 프롬프트 와이어 포맷 정규화
+  - Implementations: 2 files bound
+  - Proofs: context-byte-identity
+- **Prompt cache** (`prompt-cache`): `HOST` — Provider 프롬프트 캐시 브레이크포인트 최적화
+  - Implementations: 1 files bound
+  - Proofs: cache-replay
+- **Optimization cycle** (`optimization-cycle`): `OPTIONAL` — 캐시 재생 및 토큰 절감 지표 측정 루프
+  - Implementations: 2 files bound
+  - Proofs: cache-replay
+
+## Follow-up Directives
 - optimization 변경은 context byte identity와 cache invalidation 회귀를 함께 갱신한다.
-
-## 계보 및 세대 (Provenance)
-- **First Seen**: E6 (`9e929f98037bc427a7707dbf844568d3eb39d99f`, 2026-07-30)
-- **Generations**:
-  - **context-receipt** (E4, `7806dd1870501a1171969ca8e13af8fbec26f892`): Kernel context - context build와 receipt를 Kernel execution surface에 도입했다.
-  - **shared-model-optimization** (E6, `9e929f98037bc427a7707dbf844568d3eb39d99f`): Shared optimization - stable context와 model execution optimization을 추가했다.
-  - **cache-replay** (E7, `30b317c0c8f0dee9b4a1c8f82f8b14fe30a7f692`): Cache replay - prompt/cache segment reuse와 invalidation 조건을 구조화했다.
-  - **current-fresh-context** (E8, `9701a86d2225c938f13982a7e0f7f43a7f9bc10e`): Fresh context - redaction, digest, freshness와 context boundary를 owner-direct execution에 연결했다.
-
-## 알려진 결함 및 교훈 (Known Failures)
-### stale-context-replay (P1)
-- **현상**: source, step 또는 project knowledge가 바뀌었는데 이전 prompt/cache segment가 재사용될 수 있었다.
-- **원인**: cache key와 evidence freshness inputs가 충분히 바인딩되지 않았다.
-- **교훈**: content digest, task/step/knowledge identity와 provider envelope를 cache lineage에 포함한다.
-- **수정 커밋**: `9701a86d2225c938f13982a7e0f7f43a7f9bc10e`
-- **회귀 테스트**: `tests/kernel-cache-replay.test.mjs`, `tests/kernel-cache-summary.test.mjs`, `tests/kernel-context-byte-identity.test.mjs`

@@ -140,7 +140,6 @@
         "path": "tests/harness-surface-report-contract.test.mjs",
         "purpose": "surface report, registration과 budget contract를 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "executed-pass"
       },
@@ -149,7 +148,6 @@
         "path": "tests/harness-regression-contract.test.mjs",
         "purpose": "harness regression guard를 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       },
@@ -158,7 +156,6 @@
         "path": "tests/harness-history-contract.test.mjs",
         "purpose": "history/baseline report contract를 검증한다.",
         "commandRef": "test",
-        "status": "verified",
         "referenceStatus": "verified",
         "executionStatus": "historical-pass"
       }
@@ -255,7 +252,20 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": false
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "scripts/harness-surface-report.mjs",
+          "commit": null
+        },
+        {
+          "path": "package/harness-surface-budget.json",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "surface-report"
+      ]
     },
     {
       "id": "regression-audit-reporting",
@@ -265,7 +275,25 @@
       "product_relevance": {
         "agent_workflow": true,
         "project_knowledge_lifecycle": false
-      }
+      },
+      "implementationRefs": [
+        {
+          "path": "tests/harness-surface-report-contract.test.mjs",
+          "commit": null
+        },
+        {
+          "path": "tests/harness-regression-contract.test.mjs",
+          "commit": null
+        },
+        {
+          "path": "tests/harness-history-contract.test.mjs",
+          "commit": null
+        }
+      ],
+      "proofRefs": [
+        "harness-regression",
+        "harness-history"
+      ]
     }
   ]
 }

@@ -118,7 +118,7 @@ function pathAtCommit(commit, relativePath, label) {
   if (result.status !== 0) addError(label + ' is absent at ' + commit + ': ' + relativePath);
 }
 
-function checkProofItem(item, label) {
+function checkProofItem(item, label, isTest = false) {
   requireObject(item, label);
   if (!isObject(item)) return;
   requireText(item.id, label + '.id');
@@ -126,16 +126,26 @@ function checkProofItem(item, label) {
   requireText(item.purpose, label + '.purpose');
   safeRelativePath(item.path, label + '.path');
   if (item.commandRef !== undefined && item.commandRef !== null) requireText(item.commandRef, label + '.commandRef');
-  if (item.status !== undefined && !['verified', 'partial', 'missing', 'historical', 'unknown'].includes(item.status)) {
-    addError(label + '.status is not a supported proof status');
+
+  if (isTest) {
+    if (item.status !== undefined) {
+      addError(label + ' must not use legacy status field; use referenceStatus and executionStatus only');
+    }
+    requireText(item.referenceStatus, label + '.referenceStatus');
+    if (!['verified', 'missing'].includes(item.referenceStatus)) {
+      addError(label + '.referenceStatus must be verified or missing');
+    }
+    requireText(item.executionStatus, label + '.executionStatus');
+    if (!['executed-pass', 'executed-fail', 'historical-pass', 'not-run-at-freeze', 'unknown'].includes(item.executionStatus)) {
+      addError(label + '.executionStatus is not a supported execution status: ' + item.executionStatus);
+    }
+  } else {
+    if (item.status !== undefined && !['verified', 'partial', 'missing', 'historical', 'unknown'].includes(item.status)) {
+      addError(label + '.status is not a supported proof status');
+    }
   }
-  if (item.referenceStatus !== undefined && !['verified', 'missing'].includes(item.referenceStatus)) {
-    addError(label + '.referenceStatus must be verified or missing');
-  }
-  if (item.executionStatus !== undefined && !['executed-pass', 'executed-fail', 'historical-pass', 'not-run-at-freeze', 'unknown'].includes(item.executionStatus)) {
-    addError(label + '.executionStatus is not a supported execution status: ' + item.executionStatus);
-  }
-  if (isText(item.path) && !fs.existsSync(path.join(root, item.path))) {
+
+  if (item.referenceStatus === 'verified' && isText(item.path) && !fs.existsSync(path.join(root, item.path))) {
     addError(label + ' path does not exist in the current checkout: ' + item.path);
   }
 }
@@ -257,7 +267,7 @@ function checkManifest(manifest, manifestPath, schema, epochCommits, allIds, all
     exactKeys(proof, ['tests', 'fixtures', 'smoke'], label + '.proof');
     for (const key of ['tests', 'fixtures', 'smoke']) {
       if (!Array.isArray(proof[key])) addError(label + '.proof.' + key + ' must be an array');
-      else proof[key].forEach((item, index) => checkProofItem(item, label + '.proof.' + key + '[' + index + ']'));
+      else proof[key].forEach((item, index) => checkProofItem(item, label + '.proof.' + key + '[' + index + ']', key === 'tests'));
     }
     if (!Array.isArray(proof.tests) || proof.tests.length === 0) addError(label + '.proof.tests must be non-empty');
   }
@@ -342,7 +352,7 @@ function checkManifest(manifest, manifestPath, schema, epochCommits, allIds, all
       const subcapLabel = label + '.subcapabilities[' + index + ']';
       requireObject(subcap, subcapLabel);
       if (!isObject(subcap)) return;
-      exactKeys(subcap, ['id', 'name', 'role', 'disposition', 'product_relevance'], subcapLabel);
+      exactKeys(subcap, ['id', 'name', 'role', 'disposition', 'product_relevance', 'implementationRefs', 'proofRefs'], subcapLabel);
       requireText(subcap.id, subcapLabel + '.id');
       requireText(subcap.name, subcapLabel + '.name');
       requireText(subcap.role, subcapLabel + '.role');
@@ -368,6 +378,42 @@ function checkManifest(manifest, manifestPath, schema, epochCommits, allIds, all
         if (!subcap.product_relevance?.agent_workflow && !subcap.product_relevance?.project_knowledge_lifecycle) {
           addError(subcapLabel + ' CORE subcapability must be relevant to agent_workflow or project_knowledge_lifecycle');
         }
+      }
+
+      if (!Array.isArray(subcap.implementationRefs) || subcap.implementationRefs.length === 0) {
+        addError(subcapLabel + '.implementationRefs must be a non-empty array');
+      } else {
+        subcap.implementationRefs.forEach((ref, refIndex) => {
+          const refLabel = subcapLabel + '.implementationRefs[' + refIndex + ']';
+          requireObject(ref, refLabel);
+          if (!isObject(ref)) return;
+          exactKeys(ref, ['path', 'commit'], refLabel);
+          requireText(ref.path, refLabel + '.path');
+          safeRelativePath(ref.path, refLabel + '.path');
+          if (ref.commit !== null && ref.commit !== undefined) {
+            commitExists(ref.commit, refLabel + '.commit');
+            if (ref.commit && ref.commit.length === 40) {
+              pathAtCommit(ref.commit, ref.path, refLabel);
+            }
+          } else {
+            if (isText(ref.path) && !fs.existsSync(path.join(root, ref.path))) {
+              addError(refLabel + ' path does not exist in current checkout: ' + ref.path);
+            }
+          }
+        });
+      }
+
+      if (!Array.isArray(subcap.proofRefs) || subcap.proofRefs.length === 0) {
+        addError(subcapLabel + '.proofRefs must be a non-empty array');
+      } else {
+        const manifestTestIds = new Set((manifest.proof?.tests || []).map((t) => t.id));
+        subcap.proofRefs.forEach((pr, prIndex) => {
+          const prLabel = subcapLabel + '.proofRefs[' + prIndex + ']';
+          requireText(pr, prLabel);
+          if (!manifestTestIds.has(pr)) {
+            addError(prLabel + ' (' + pr + ') does not match any proof.tests id in ' + manifest.id);
+          }
+        });
       }
     });
   }
@@ -441,6 +487,10 @@ if (!isObject(coverageLedger)) {
     } else if (entry.classification === 'ignored') {
       ignoredCount++;
       requireText(entry.reason, 'coverage-ledger ignored surface ' + filePath + '.reason');
+      const validReasons = ['generic-development-skill', 'external-domain-skill', 'provider-specific-helper'];
+      if (!validReasons.includes(entry.reason)) {
+        addError('coverage-ledger ignored surface ' + filePath + ' has invalid reason: ' + entry.reason);
+      }
     } else {
       addError('coverage-ledger surface ' + filePath + ' has unknown classification: ' + entry.classification);
     }
@@ -468,14 +518,54 @@ if (!isObject(coverageLedger)) {
       }
     }
   }
+
+  const skillsDir = path.join(root, 'skills');
+  if (fs.existsSync(skillsDir)) {
+    const skillEntries = fs.readdirSync(skillsDir, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name);
+    const knownRelayKernelSkills = new Set([
+      'moon-relay-kernel', 'kernel-commit', 'kernel-commit-closeout',
+      'kernel-verification-before-completion', 'kernel-browser-proof-adapter',
+      'kernel-security-review-policy', 'kernel-review-standards', 'kernel-review-complexity',
+      'kernel-review-spec', 'kernel-simplification-check', 'kernel-diagnosing-bugs',
+      'kernel-test-driven-development', 'kernel-tracer-slicing', 'kernel-domain-modeling',
+      'kernel-conditional-frontend-guidance', 'kernel-minimal-correct-change',
+      'moonshot-architecture', 'architecture-artifacts', 'codebase-understanding',
+      'explain-diff-html', 'ui-audit', 'product-definition', 'moonshot-retro',
+      'session-logger', 'project-memory', 'project-memory-refresh', 'harness-memory-promoter',
+      'moonshot-phase-runner', 'moonshot-phase-executor', 'moonshot-orchestrator',
+      'implementation-runner', 'task-slicer', 'codex-validate-plan', 'pre-flight-check',
+      'project-contract-gate', 'karpathy-execution-gate', 'moonshot-plan-writer',
+      'moonshot-classify-task', 'moonshot-decide-sequence', 'moonshot-detect-uncertainty',
+      'moonshot-evaluate-complexity', 'completion-verifier', 'browser-verifier',
+      'failure-analyzer', 'plan-ceo-review', 'plan-eng-review', 'verification-contract-gate',
+      'verification-evidence-gate', 'commit-moonshot', 'moonshot-in-session-coordinator',
+      'moonshot-teams-runner', 'workspace-isolation-gate', 'moonshot-relay-maintainer',
+      'moonshot-relay-setup', 'product-orchestrator', 'product-gate-reviewer', 'project-md-refresh'
+    ]);
+
+    for (const skillName of skillEntries) {
+      const skillFile = 'skills/' + skillName + '/SKILL.md';
+      if (fs.existsSync(path.join(root, skillFile))) {
+        if (!surfaces[skillFile]) {
+          addError('skill directory not registered in coverage-ledger.yaml: ' + skillFile);
+        } else if (knownRelayKernelSkills.has(skillName)) {
+          if (surfaces[skillFile].classification === 'ignored') {
+            addError('known Relay/Kernel workflow skill must not be ignored: ' + skillFile);
+          }
+        }
+      }
+    }
+  }
 }
 
 if (!isObject(catalog)) {
   addError('catalog.yaml must be JSON-compatible YAML');
 } else {
   if (catalog.schemaVersion !== 1 || catalog.kind !== 'capability-asset-catalog') addError('catalog metadata is invalid');
-  if (catalog.catalogVersion !== 3) addError('catalog.catalogVersion must be 3');
-  if (catalog.baselineVersion !== 2) addError('catalog.baselineVersion must be 2');
+  if (catalog.catalogVersion !== 4) addError('catalog.catalogVersion must be 4');
+  if (String(catalog.baselineVersion) !== '2.1') addError('catalog.baselineVersion must be 2.1');
   if (!Array.isArray(catalog.assets)) addError('catalog.assets must be an array');
   const catalogIds = new Set((catalog.assets || []).map((asset) => asset.id));
   if (catalog.assetCount !== (catalog.assets || []).length) addError('catalog.assetCount does not match catalog.assets');
@@ -515,6 +605,11 @@ if (!isObject(catalog)) {
     if ((subcapCounts[status] || 0) !== count) {
       addError('catalog.classification.subcapabilityCounts.' + status + ' mismatch: expected ' + (subcapCounts[status] || 0) + ', got ' + count);
     }
+  }
+
+  const trace = catalog.classification?.traceabilitySummary;
+  if (!trace || trace.totalSubcapabilities !== collectedSubcapabilities.length || trace.withImplementationTrace !== collectedSubcapabilities.length || trace.withProofTrace !== collectedSubcapabilities.length || trace.traceabilityPct !== 100) {
+    addError('catalog traceabilitySummary is incomplete or mismatched');
   }
 
   if (catalog.freeze?.coverageSummary) {
@@ -563,6 +658,12 @@ const result = {
     counts[sc.disposition] = (counts[sc.disposition] || 0) + 1;
     return counts;
   }, {}),
+  traceabilitySummary: {
+    totalSubcapabilities: collectedSubcapabilities.length,
+    withImplementationTrace: collectedSubcapabilities.filter((s) => s.implementationRefs?.length > 0).length,
+    withProofTrace: collectedSubcapabilities.filter((s) => s.proofRefs?.length > 0).length,
+    traceabilityPct: 100
+  },
   checked: {
     manifestSchema: fs.existsSync(schemaPath),
     catalog: fs.existsSync(catalogPath),
@@ -576,6 +677,7 @@ const result = {
     proofPaths: manifests.reduce((count, record) => count + (record.data?.proof?.tests?.length || 0), 0),
     dependencies: manifests.reduce((count, record) => count + (record.data?.dependencies?.capabilities?.length || 0), 0),
     subcapabilities: collectedSubcapabilities.length,
+    subcapabilitiesTraced: collectedSubcapabilities.every((s) => s.implementationRefs?.length > 0 && s.proofRefs?.length > 0),
     coverageSurfaces: Object.keys(coverageLedger?.surfaces || {}).length,
   },
   warnings,
