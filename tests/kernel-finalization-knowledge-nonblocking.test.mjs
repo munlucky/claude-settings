@@ -202,3 +202,183 @@ test('Finalization Wave 5: Knowledge conflict does not fail accepted code delive
     await cleanup(fixture);
   }
 });
+
+test('Wave 5: Knowledge review rejection defers knowledge without blocking code completion or git closeout', async () => {
+  const fixture = await setup();
+  const cp = await createKernelControlPlane(fixture);
+  try {
+    const runId = 'r-kn-rejected-nonblocking';
+    await writeFile(path.join(fixture.projectRoot, 'feature.mjs'), 'export const feature = 42;\n');
+    await cp.startRun({
+      runId,
+      objective: 'deliver feature despite rejected knowledge candidate',
+      taskContract: {
+        riskTier: 'T0',
+        acceptance: [{
+          acceptance: 'feature works',
+          evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test'], obligationId: 'default' },
+        }],
+        allowedPaths: ['feature.mjs'],
+      },
+    });
+
+    await cp.transition(runId, 'EXECUTE');
+    await cp.transition(runId, 'PROVE');
+    await cp.recordProof(runId, {
+      obligationId: 'default',
+      status: 'passed',
+      evidenceRef: 'ev-rej-pass',
+      commandRef: 'test',
+      command: 'npm test',
+      exitCode: 0,
+      evidenceDigest: `sha256:${'e'.repeat(64)}`,
+      acceptanceCoverage: ['feature works'],
+    });
+
+    // Finalize with a candidate that triggers rejection (e.g. raw_transcript_body forbidden leak)
+    const receipt = await cp.finalizeRun(runId, {
+      knowledgeObservations: [
+        { proposedType: 'semantic_fact', statement: 'observation containing raw_transcript_body forbidden leak' },
+      ],
+      gitCloseoutRequest: {
+        requested: true,
+        mode: 'soft',
+        approvalReceipt: 'approval-rejection-test',
+      },
+      changedPaths: ['feature.mjs'],
+    });
+
+    // Critical assertion: Code completion MUST be accepted and Git closeout MUST succeed!
+    assert.equal(receipt.completionStatus, 'accepted', 'Code completion must be accepted despite knowledge rejection');
+    assert.equal(receipt.finalizationStatus, 'completed', 'Finalization must be completed');
+    assert.equal(receipt.gitCloseoutStatus, 'completed', 'Git closeout must complete');
+    assert.equal(receipt.knowledgeStatus, 'deferred', 'Knowledge status must be deferred');
+    assert.equal(receipt.reviewResult.status, 'failed', 'Review result status must be failed when all candidates rejected');
+    assert.equal(receipt.reviewResult.rejectedCandidates.length, 1, 'Candidate must be in rejectedCandidates');
+
+    // Verify git commit was created
+    assert.ok(receipt.gitCloseoutReceipt?.commitSha, 'Git commitSha must be present');
+    const headLog = spawnSync('git', ['log', '-1', '--oneline', receipt.gitCloseoutReceipt.commitSha], {
+      cwd: fixture.projectRoot,
+      encoding: 'utf8',
+    });
+    assert.equal(headLog.status, 0);
+  } finally {
+    await cp.close();
+    await cleanup(fixture);
+  }
+});
+
+test('Wave 5: Restart recovery independently reconciles deferred knowledge from previous run post-finalization', async () => {
+  const fixture = await setup();
+  const cp1 = await createKernelControlPlane(fixture);
+  try {
+    const runId1 = 'r-kn-defer-restart-1';
+    await writeFile(path.join(fixture.projectRoot, 'module1.mjs'), 'export const m1 = 1;\n');
+    await cp1.startRun({
+      runId: runId1,
+      objective: 'run 1 to be deferred',
+      taskContract: {
+        riskTier: 'T0',
+        acceptance: [{
+          acceptance: 'm1 works',
+          evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test'], obligationId: 'default' },
+        }],
+        allowedPaths: ['module1.mjs'],
+      },
+    });
+    await cp1.transition(runId1, 'EXECUTE');
+    await cp1.transition(runId1, 'PROVE');
+    await cp1.recordProof(runId1, {
+      obligationId: 'default',
+      status: 'passed',
+      evidenceRef: 'ev-m1-pass',
+      commandRef: 'test',
+      command: 'npm test',
+      exitCode: 0,
+      evidenceDigest: `sha256:${'f'.repeat(64)}`,
+      acceptanceCoverage: ['m1 works'],
+    });
+
+    // Cause run 1 to be deferred by simulating revision conflict
+    const store1 = cp1.stateStore;
+    const origCommit = store1.commitKnowledgeTransaction.bind(store1);
+    let forceConflict = true;
+    store1.commitKnowledgeTransaction = (args) => {
+      if (forceConflict) {
+        throw new Error('STALE_KNOWLEDGE_REVISION: forced conflict for run 1');
+      }
+      return origCommit(args);
+    };
+
+    const receipt1 = await cp1.finalizeRun(runId1, {
+      knowledgeObservations: [
+        { proposedType: 'semantic_fact', statement: 'valid observation from run 1 that was deferred' },
+      ],
+      changedPaths: ['module1.mjs'],
+    });
+    assert.equal(receipt1.completionStatus, 'accepted');
+    assert.equal(receipt1.knowledgeStatus, 'deferred');
+
+    // Simulate process restart
+    await cp1.close();
+
+    // Reopen control plane in fresh process instance
+    const cp2 = await createKernelControlPlane(fixture);
+    try {
+      const runId2 = 'r-kn-clean-restart-2';
+      await writeFile(path.join(fixture.projectRoot, 'module2.mjs'), 'export const m2 = 2;\n');
+      await cp2.startRun({
+        runId: runId2,
+        objective: 'run 2 triggering post-finalization recovery',
+        taskContract: {
+          riskTier: 'T0',
+          acceptance: [{
+            acceptance: 'm2 works',
+            evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test'], obligationId: 'default' },
+          }],
+          allowedPaths: ['module2.mjs'],
+        },
+      });
+      await cp2.transition(runId2, 'EXECUTE');
+      await cp2.transition(runId2, 'PROVE');
+      await cp2.recordProof(runId2, {
+        obligationId: 'default',
+        status: 'passed',
+        evidenceRef: 'ev-m2-pass',
+        commandRef: 'test',
+        command: 'npm test',
+        exitCode: 0,
+        evidenceDigest: `sha256:${'1'.repeat(64)}`,
+        acceptanceCoverage: ['m2 works'],
+      });
+
+      // Finalize run 2 cleanly
+      const receipt2 = await cp2.finalizeRun(runId2, {
+        knowledgeObservations: [
+          { proposedType: 'semantic_fact', statement: 'observation from run 2' },
+        ],
+        changedPaths: ['module2.mjs'],
+      });
+
+      assert.equal(receipt2.completionStatus, 'accepted');
+      assert.equal(receipt2.knowledgeStatus, 'committed');
+      assert.equal(receipt2.finalizationStatus, 'completed');
+
+      // Post-finalization bounded recovery must have recovered runId1's deferred knowledge!
+      const store2 = cp2.stateStore;
+      const run1Receipt = store2.getKnowledgeCommitReceipt(runId1)?.receiptJson;
+      assert.equal(run1Receipt?.status, 'committed', 'Run 1 deferred knowledge should be independently recovered');
+
+      // Both Run 1 and Run 2 knowledge records should be committed in the store
+      const committedRecords = store2.listKnowledgeRecords({ projectId: receipt2.projectId, statuses: ['committed'] });
+      const statements = committedRecords.map((r) => r.statement);
+      assert.ok(statements.some((s) => s.includes('from run 1')), 'Run 1 knowledge must be present in committed records');
+      assert.ok(statements.some((s) => s.includes('from run 2')), 'Run 2 knowledge must be present in committed records');
+    } finally {
+      await cp2.close();
+    }
+  } finally {
+    await cleanup(fixture);
+  }
+});

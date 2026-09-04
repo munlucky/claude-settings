@@ -166,6 +166,7 @@ test('Preflight Wave 1: Symlink/junction escaping repository is classified as sa
       (error) => {
         assert.equal(error.blockingClass, BLOCKING_CLASSES.safety);
         assert.equal(error.recoverable, false);
+        assert.equal(error.details?.reason, 'out-of-root-symlink');
         return true;
       },
     );
@@ -176,3 +177,96 @@ test('Preflight Wave 1: Symlink/junction escaping repository is classified as sa
   }
 });
 
+test('Preflight Wave 1: Normal nested new file is allowed when parent path is physically verified', async () => {
+  const { projectRoot, runtimeHome } = await setup();
+  try {
+    const result = preflightTaskContract({
+      projectRoot,
+      contract: {
+        allowedPaths: ['src/nested/new/file.ts'],
+      },
+    });
+    assert.equal(result.valid, true);
+    assert.deepEqual(result.allowedPaths, ['src/nested/new/file.ts']);
+  } finally {
+    await cleanup({ projectRoot, runtimeHome });
+  }
+});
+
+test('Preflight Wave 1: Broken symlink ancestor is safety blocked with broken-link reason', async () => {
+  const { projectRoot, runtimeHome } = await setup();
+  const brokenLinkPath = path.join(projectRoot, 'broken-link');
+  try {
+    // create broken junction/symlink pointing to non-existent target
+    try {
+      await symlink(path.join(projectRoot, 'missing-target'), brokenLinkPath, 'junction');
+    } catch {
+      await symlink(path.join(projectRoot, 'missing-target'), brokenLinkPath, 'file');
+    }
+    assert.throws(
+      () => preflightTaskContract({
+        projectRoot,
+        contract: {
+          allowedPaths: ['broken-link/subfile.ts'],
+        },
+      }),
+      (error) => {
+        assert.equal(error.blockingClass, BLOCKING_CLASSES.safety);
+        assert.equal(error.recoverable, false);
+        assert.equal(error.details?.reason, 'broken-link');
+        return true;
+      },
+    );
+  } finally {
+    await rm(brokenLinkPath, { force: true, recursive: true }).catch(() => {});
+    await cleanup({ projectRoot, runtimeHome });
+  }
+});
+
+test('Preflight Wave 1: Injected realpath failure fails closed deterministically', async () => {
+  const { projectRoot, runtimeHome } = await setup();
+  try {
+    // Root realpath failure injection
+    assert.throws(
+      () => preflightTaskContract({
+        projectRoot,
+        contract: { allowedPaths: ['app.mjs'] },
+        resolveRealpath: () => {
+          const err = new Error('EACCES: permission denied');
+          err.code = 'EACCES';
+          throw err;
+        },
+      }),
+      (error) => {
+        assert.equal(error.blockingClass, BLOCKING_CLASSES.safety);
+        assert.equal(error.recoverable, false);
+        assert.equal(error.details?.reason, 'repository-realpath-unavailable');
+        return true;
+      },
+    );
+
+    // Ancestor realpath failure injection
+    assert.throws(
+      () => preflightTaskContract({
+        projectRoot,
+        contract: { allowedPaths: ['app.mjs'] },
+        lstatPath: (p) => {
+          if (p.includes('app.mjs')) {
+            const err = new Error('EPERM: operation not permitted');
+            err.code = 'EPERM';
+            throw err;
+          }
+          return lstatSync(p);
+        },
+      }),
+      (error) => {
+        assert.equal(error.blockingClass, BLOCKING_CLASSES.safety);
+        assert.equal(error.recoverable, false);
+        assert.equal(error.details?.reason, 'ancestor-realpath-unavailable');
+        return true;
+      },
+    );
+  } finally {
+    await cleanup({ projectRoot, runtimeHome });
+  }
+});

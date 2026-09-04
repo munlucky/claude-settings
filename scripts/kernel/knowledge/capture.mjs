@@ -40,10 +40,33 @@ export const normalizeFailureSignalText = (value) => text(value)
   .replace(/\s+/g, ' ')
   .trim();
 
-const candidateKey = (candidate) => digest({
-  type: candidate.proposedType || candidate.type || 'semantic_fact',
-  statement: text(candidate.statement).toLowerCase(),
-  scope: [...list(candidate.scope)].sort(),
+export const canonicalKnowledgeType = (type) => {
+  const t = text(type).toLowerCase().replace(/[- ]/g, '_');
+  if (t === 'policy' || t === 'policy_anchor') return 'policy_anchor';
+  if (t === 'semantic' || t === 'semantic_fact') return 'semantic_fact';
+  if (t === 'architecture' || t === 'architecture_record') return 'architecture_record';
+  if (t === 'decision' || t === 'architecture_decision') return 'architecture_decision';
+  if (t === 'observation' || t === 'episodic_observation') return 'episodic_observation';
+  if (t === 'kg_relation' || t === 'relation') return 'kg_relation';
+  if (t === 'constraint' || t === 'ontology_constraint') return 'ontology_constraint';
+  return t || 'semantic_fact';
+};
+
+export const canonicalKnowledgeIdentity = ({ recordType, proposedType, type, statement, scope = [] } = {}) => {
+  const normType = canonicalKnowledgeType(recordType || proposedType || type);
+  const normStatement = text(statement).toLowerCase().replace(/\s+/g, ' ');
+  const normScope = [...list(scope)].map((s) => s.toLowerCase()).sort();
+  return digest({
+    type: normType,
+    statement: normStatement,
+    scope: normScope,
+  });
+};
+
+export const candidateKey = (candidate) => canonicalKnowledgeIdentity({
+  type: candidate?.proposedType || candidate?.type || candidate?.recordType || candidate?.record_type,
+  statement: candidate?.statement,
+  scope: candidate?.scope,
 });
 
 const evidenceRefsFor = (signal = {}) => [...new Set([

@@ -214,3 +214,246 @@ process.exit(0);
   }
 });
 
+test('Wave 3: Non-blocking async lock retry handles barrier contention across processes', async () => {
+  const fixture = await setup();
+  try {
+    const storeModule = path.resolve('scripts/kernel/knowledge/store.mjs').replaceAll('\\', '/');
+    const projectsRoot = path.join(fixture.runtimeHome, 'state', 'projects');
+    await mkdir(projectsRoot, { recursive: true });
+    const barrierPath = path.join(fixture.runtimeHome, 'barrier.marker');
+
+    // Process A: acquires lock, writes barrier file, holds lock for 300ms, then releases
+    const holderScript = `
+import { acquireNamespaceLockWithRetry, releaseNamespaceLock } from 'file:///${storeModule}';
+import { writeFile } from 'node:fs/promises';
+const projectsRoot = process.argv[2];
+const barrier = process.argv[3];
+const lock = await acquireNamespaceLockWithRetry(projectsRoot, 'proj-barrier');
+await writeFile(barrier, 'locked');
+await new Promise((r) => setTimeout(r, 300));
+releaseNamespaceLock(lock);
+process.exit(0);
+`;
+    const holderPath = path.join(fixture.runtimeHome, 'holder.mjs');
+    await writeFile(holderPath, holderScript);
+
+    const holder = spawn(process.execPath, [holderPath, projectsRoot, barrierPath], { stdio: 'pipe' });
+
+    // Wait until holder signals it acquired the lock
+    const { existsSync } = await import('node:fs');
+    while (!existsSync(barrierPath)) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
+
+    // Now import store functions in current process and attempt to acquire lock with retry
+    const { acquireNamespaceLockWithRetry, releaseNamespaceLock } = await import('../scripts/kernel/knowledge/store.mjs');
+    const start = Date.now();
+    // Should wait non-blockingly until holder releases, then acquire
+    const lock = await acquireNamespaceLockWithRetry(projectsRoot, 'proj-barrier', { retries: 20, retryDelayMs: 50 });
+    const elapsed = Date.now() - start;
+
+    assert.ok(lock, 'Lock must be acquired after holder releases');
+    assert.ok(elapsed >= 100, `Must have waited for holder, elapsed: ${elapsed}ms`);
+    releaseNamespaceLock(lock);
+
+    if (holder.exitCode === null) {
+      await new Promise((resolve) => holder.on('close', resolve));
+    }
+  } finally {
+    await cleanup(fixture);
+  }
+});
+
+test('Wave 3: Lock timeout fails closed with IDENTITY_MIGRATION_LOCKED without blocking event loop', async () => {
+  const fixture = await setup();
+  try {
+    const storeModule = path.resolve('scripts/kernel/knowledge/store.mjs').replaceAll('\\', '/');
+    const projectsRoot = path.join(fixture.runtimeHome, 'state', 'projects');
+    await mkdir(projectsRoot, { recursive: true });
+    const { acquireNamespaceLockWithRetry, KernelKnowledgeStoreError } = await import('../scripts/kernel/knowledge/store.mjs');
+
+    // External process holds lock
+    const blockerScript = `
+import { acquireNamespaceLockWithRetry } from 'file:///${storeModule}';
+import { writeFile } from 'node:fs/promises';
+const projectsRoot = process.argv[2];
+const barrier = process.argv[3];
+await acquireNamespaceLockWithRetry(projectsRoot, 'proj-timeout');
+await writeFile(barrier, 'locked');
+await new Promise((r) => setTimeout(r, 2000));
+process.exit(0);
+`;
+    const blockerPath = path.join(fixture.runtimeHome, 'blocker.mjs');
+    const blockerBarrier = path.join(fixture.runtimeHome, 'blocker.marker');
+    await writeFile(blockerPath, blockerScript);
+
+    const blocker = spawn(process.execPath, [blockerPath, projectsRoot, blockerBarrier], { stdio: 'pipe' });
+    const { existsSync } = await import('node:fs');
+    while (!existsSync(blockerBarrier)) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
+
+    let timerFired = false;
+    const timer = setTimeout(() => { timerFired = true; }, 30);
+
+    let errorThrown = null;
+    try {
+      await acquireNamespaceLockWithRetry(projectsRoot, 'proj-timeout', { retries: 3, retryDelayMs: 30 });
+    } catch (err) {
+      errorThrown = err;
+    } finally {
+      clearTimeout(timer);
+    }
+
+    assert.ok(errorThrown instanceof KernelKnowledgeStoreError);
+    assert.equal(errorThrown.code, 'IDENTITY_MIGRATION_LOCKED');
+    assert.equal(timerFired, true, 'Event loop must have ticked during retries');
+
+    blocker.kill();
+  } finally {
+    await cleanup(fixture);
+  }
+});
+
+test('Wave 3: Dead owner stale lock is automatically cleaned up and acquired', async () => {
+  const fixture = await setup();
+  try {
+    const projectsRoot = path.join(fixture.runtimeHome, 'state', 'projects');
+    await mkdir(projectsRoot, { recursive: true });
+    const { tryAcquireNamespaceLock, releaseNamespaceLock } = await import('../scripts/kernel/knowledge/store.mjs');
+
+    // Simulate stale lock left behind by a dead process (e.g. pid 9999999)
+    const deadPid = 9999999;
+    const lockPath = path.join(projectsRoot, '.kernel-namespace-lock-proj-stale');
+    await writeFile(lockPath, JSON.stringify({ pid: deadPid, createdAt: new Date(Date.now() - 60000).toISOString() }));
+
+    // Acquiring should detect dead pid, clean up stale lock, and succeed
+    const lock = tryAcquireNamespaceLock(projectsRoot, 'proj-stale');
+    assert.ok(lock, 'Lock should be acquired after cleaning up dead owner lock');
+    assert.equal(lock.lockPath, lockPath);
+    releaseNamespaceLock(lock);
+  } finally {
+    await cleanup(fixture);
+  }
+});
+
+test('Wave 4: Same-batch duplicate candidates are deduplicated and already-committed knowledge is idempotent no-change', async () => {
+  const fixture = await setup();
+  const cp = await createKernelControlPlane({
+    runtimeHome: fixture.runtimeHome,
+    projectRoot: fixture.worktreeA,
+    env: {
+      ...process.env,
+      MOON_RELAY_KERNEL_SESSION_ID: 'codex:session-w4',
+      MOON_RELAY_KERNEL_PROVIDER: 'codex',
+    },
+  });
+
+  try {
+    const runId1 = 'r-w4-batch-dedup';
+    await cp.startRun({
+      runId: runId1,
+      objective: 'w4 dedup feature',
+      taskContract: {
+        riskTier: 'T0',
+        acceptance: [{
+          acceptance: 'unit works',
+          evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test'], obligationId: 'default' },
+        }],
+        allowedPaths: ['app.mjs'],
+      },
+    });
+
+    await cp.transition(runId1, 'EXECUTE');
+    await cp.transition(runId1, 'PROVE');
+    await cp.recordProof(runId1, {
+      obligationId: 'default',
+      status: 'passed',
+      evidenceRef: 'ev-w4-1',
+      commandRef: 'test',
+      command: 'node -e "process.exit(0)"',
+      exitCode: 0,
+      evidenceDigest: `sha256:${'c'.repeat(64)}`,
+      acceptanceCoverage: ['unit works'],
+    });
+    await cp.transition(runId1, 'CLOSE');
+
+    const store = cp.stateStore;
+    const run = store.getRun(runId1);
+    store.recordCompletionDecision(runId1, {
+      decision: 'accepted',
+      sourceIdentity: run.sourceIdentity,
+      mutationRevision: run.mutationRevision,
+      evidenceDigest: `sha256:${'c'.repeat(64)}`,
+      decisionJson: { decision: 'accepted' },
+    });
+
+    // Finalize with 2 identical observations in the same batch
+    const receipt1 = await cp.finalizeRun(runId1, {
+      knowledgeObservations: [
+        { proposedType: 'semantic_fact', statement: 'Database uses WAL mode', scope: ['db.sqlite'] },
+        { proposedType: 'semantic_fact', statement: '  Database uses WAL mode  ', scope: ['db.sqlite'] }, // duplicate with whitespace
+      ],
+    });
+
+    assert.equal(receipt1.completionStatus, 'accepted');
+    assert.equal(receipt1.knowledgeStatus, 'committed');
+    assert.equal(store.getProjectKnowledgeRevision(run.projectId), 2, 'Revision should advance from 1 to 2');
+
+    // Verify only 1 record was committed
+    const committedRecords = store.listKnowledgeRecords({ projectId: run.projectId, statuses: ['committed'] });
+    const walRecords = committedRecords.filter((r) => r.statement.toLowerCase().includes('database uses wal mode'));
+    assert.equal(walRecords.length, 1, 'Duplicate candidate within batch must be deduplicated to exactly 1 record');
+
+    // Now Run 2 attempts to commit the exact same knowledge
+    const runId2 = 'r-w4-idempotent';
+    await cp.startRun({
+      runId: runId2,
+      objective: 'w4 idempotent feature',
+      taskContract: {
+        riskTier: 'T0',
+        acceptance: [{
+          acceptance: 'unit works 2',
+          evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['test'], obligationId: 'default' },
+        }],
+        allowedPaths: ['app.mjs'],
+      },
+    });
+
+    await cp.transition(runId2, 'EXECUTE');
+    await cp.transition(runId2, 'PROVE');
+    await cp.recordProof(runId2, {
+      obligationId: 'default',
+      status: 'passed',
+      evidenceRef: 'ev-w4-2',
+      commandRef: 'test',
+      command: 'node -e "process.exit(0)"',
+      exitCode: 0,
+      evidenceDigest: `sha256:${'d'.repeat(64)}`,
+      acceptanceCoverage: ['unit works 2'],
+    });
+    await cp.transition(runId2, 'CLOSE');
+
+    const run2 = store.getRun(runId2);
+    store.recordCompletionDecision(runId2, {
+      decision: 'accepted',
+      sourceIdentity: run2.sourceIdentity,
+      mutationRevision: run2.mutationRevision,
+      evidenceDigest: `sha256:${'d'.repeat(64)}`,
+      decisionJson: { decision: 'accepted' },
+    });
+
+    const receipt2 = await cp.finalizeRun(runId2, {
+      knowledgeObservations: [
+        { proposedType: 'semantic_fact', statement: 'database uses wal mode', scope: ['db.sqlite'] },
+      ],
+    });
+
+    assert.equal(receipt2.completionStatus, 'accepted');
+    assert.equal(receipt2.knowledgeStatus, 'no_change', 'Submitting already committed knowledge should result in no_change');
+    assert.equal(store.getProjectKnowledgeRevision(run.projectId), 2, 'Revision should remain 2 without inflating');
+  } finally {
+    await cp.close();
+    await cleanup(fixture);
+  }
+});

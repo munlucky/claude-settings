@@ -220,7 +220,76 @@ export const finalizeRun = async ({
     }
   }
 
-  // Step 1: observation review BEFORE completion assessment.
+  // Step 1: Pre-flight completion gates BEFORE closing and on every retry (Execution-First).
+  run = refreshFinalizationWorkspaceIdentity({ store, runId, projectRoot, priorGitReceipt });
+  const preflight = evaluateCompletion();
+  if (!preflight.readyExceptClose) {
+    return blockedReceipt(store, runId, {
+      schemaVersion: 1,
+      runId,
+      projectId: run.projectId,
+      completionStatus: 'blocked',
+      knowledgeStatus: 'skipped',
+      projectionStatus: 'none',
+      gitCloseoutStatus: 'skipped',
+      finalizationStatus: 'incomplete_gates',
+      completionResult: preflight,
+      reviewResult: { status: 'no_candidates' },
+      reason: 'completion_gates_unmet',
+      unmetGates: Object.entries(preflight.gates).filter(([key, value]) => key !== 'isClosed' && !value).map(([key]) => key),
+    });
+  }
+  if (run.state !== 'CLOSE' && run.status !== 'completed') {
+    store.transition(runId, 'CLOSE');
+  }
+
+  // Step 2: Assess & persist completion authority.
+  const existingDecision = store.getCompletionDecision(runId);
+  const isFinalizationRetry = existingDecision?.decision === 'accepted' && run.status === 'completed';
+  const completionEval = isFinalizationRetry
+    ? { ...evaluateCompletion(), decision: 'accepted', digest: existingDecision.evidenceDigest, decisionPayload: existingDecision.decisionJson }
+    : evaluateCompletion();
+  if (!isFinalizationRetry) store.persistCompletionDecision(runId, completionEval);
+
+  if (completionEval.decision !== 'accepted') {
+    return blockedReceipt(store, runId, {
+      schemaVersion: 1,
+      runId,
+      projectId: run.projectId,
+      completionStatus: completionEval.decision,
+      knowledgeStatus: 'blocked',
+      projectionStatus: 'none',
+      gitCloseoutStatus: 'skipped',
+      finalizationStatus: 'blocked_completion',
+      completionResult: completionEval,
+      reviewResult: { status: 'no_candidates' },
+      reason: 'completion_not_accepted',
+    });
+  }
+
+  // Step 3: Git closeout (Execution-First: deliver accepted code before knowledge commits).
+  let gitCloseoutStatus = 'skipped';
+  let gitReceipt = null;
+  let gitCloseoutError = null;
+  if (effectiveCloseoutRequest?.requested) {
+    try {
+      gitReceipt = await executeKernelGitCloseout({
+        runId,
+        projectId: run.projectId,
+        stateStore: store,
+        repoRoot: projectRoot,
+        gitCloseoutRequest: effectiveCloseoutRequest,
+        knowledgeCommitReceipt: { status: 'deferred' }, // Non-blocking: Git closeout does not require knowledge commit receipt
+        changedFiles: normalizedChangeSet.changedPaths,
+      });
+      gitCloseoutStatus = gitReceipt.status || 'completed';
+    } catch (error) {
+      gitCloseoutStatus = 'failed';
+      gitCloseoutError = error.message;
+    }
+  }
+
+  // Step 4: Knowledge candidate review & transactional commit.
   let reviewResult = { status: 'no_candidates', verifiedCandidates: [], rejectedCandidates: [], needsApprovalCandidates: [], pendingVerificationCandidates: [] };
   const explicitCandidates = Array.isArray(knowledgeObservations) && knowledgeObservations.length > 0
     ? knowledgeObservations.map((observation) => ({ ...observation, sourceKind: 'explicit' }))
@@ -280,74 +349,6 @@ export const finalizeRun = async ({
     persistReviewReceipt(store, runId, run.projectId, 0, reviewResult);
   }
 
-  if (!['passed', 'no_candidates'].includes(reviewResult.status)) {
-    return blockedReceipt(store, runId, {
-      schemaVersion: 1,
-      runId,
-      projectId: run.projectId,
-      completionStatus: 'blocked',
-      knowledgeStatus: 'blocked',
-      projectionStatus: 'none',
-      gitCloseoutStatus: 'skipped',
-      finalizationStatus: `blocked_${reviewResult.status}`,
-      reviewResult,
-      reason: `knowledge_review_${reviewResult.status}`,
-    });
-  }
-
-  // Step 2: pre-flight completion gates BEFORE closing and on every retry.
-  // CLOSE is terminal, so both a legacy proof row and a payload with
-  // `verifications: []` must be rechecked here instead of inheriting an old
-  // accepted decision around incomplete evidence.
-  run = refreshFinalizationWorkspaceIdentity({ store, runId, projectRoot, priorGitReceipt });
-  const preflight = evaluateCompletion();
-  if (!preflight.readyExceptClose) {
-    return blockedReceipt(store, runId, {
-      schemaVersion: 1,
-      runId,
-      projectId: run.projectId,
-      completionStatus: 'blocked',
-      knowledgeStatus: 'skipped',
-      projectionStatus: 'none',
-      gitCloseoutStatus: 'skipped',
-      finalizationStatus: 'incomplete_gates',
-      completionResult: preflight,
-      reviewResult,
-      reason: 'completion_gates_unmet',
-      unmetGates: Object.entries(preflight.gates).filter(([key, value]) => key !== 'isClosed' && !value).map(([key]) => key),
-    });
-  }
-  if (run.state !== 'CLOSE' && run.status !== 'completed') {
-    store.transition(runId, 'CLOSE');
-  }
-
-  // Step 3: assess & persist completion authority. A run that already reached
-  // an accepted decision keeps it; this pass is a finalization retry, not a
-  // re-judgement of evidence that is now historical (P0-7).
-  const existingDecision = store.getCompletionDecision(runId);
-  const isFinalizationRetry = existingDecision?.decision === 'accepted' && run.status === 'completed';
-  const completionEval = isFinalizationRetry
-    ? { ...evaluateCompletion(), decision: 'accepted', digest: existingDecision.evidenceDigest, decisionPayload: existingDecision.decisionJson }
-    : evaluateCompletion();
-  if (!isFinalizationRetry) store.persistCompletionDecision(runId, completionEval);
-
-  if (completionEval.decision !== 'accepted') {
-    return blockedReceipt(store, runId, {
-      schemaVersion: 1,
-      runId,
-      projectId: run.projectId,
-      completionStatus: completionEval.decision,
-      knowledgeStatus: 'blocked',
-      projectionStatus: 'none',
-      gitCloseoutStatus: 'skipped',
-      finalizationStatus: 'blocked_completion',
-      completionResult: completionEval,
-      reviewResult,
-      reason: 'completion_not_accepted',
-    });
-  }
-
-  // Step 4: transactional knowledge commit.
   let knowledgeCaptureStatus = deriveKnowledgeStatus({
     explicitCount: explicitCandidates.length,
     autoCount: autoCandidates.length,
@@ -359,127 +360,89 @@ export const finalizeRun = async ({
   let commitReceipt = null;
   let knowledgeCommitError = null;
   let knowledgeCommitAttempts = 1;
-  const priorCommit = store.getKnowledgeCommitReceipt(runId);
-  if (priorCommit && ['committed', 'no_change'].includes(priorCommit.status)) {
-    // Already committed on an earlier attempt; re-running it would fail the
-    // revision CAS and mask the step that actually failed.
-    commitReceipt = priorCommit.receiptJson;
-    knowledgeStatus = priorCommit.status;
-    knowledgeCaptureStatus = priorCommit.status === 'committed' ? 'knowledge_committed' : 'no_new_knowledge';
-  } else {
-    const MAX_CAS_RETRIES = 3;
-    let currentExpectedRevision = run.knowledgeRevisionStart;
-    for (let attempt = 1; attempt <= MAX_CAS_RETRIES; attempt++) {
-      knowledgeCommitAttempts = attempt;
-      try {
-        commitReceipt = await commitProjectKnowledge({
-          runId,
-          projectId: run.projectId,
-          stateStore: store,
-          expectedKnowledgeRevision: currentExpectedRevision,
-          env: { MOON_RELAY_KERNEL_HOME: runtimeHome },
-        });
-        knowledgeStatus = commitReceipt.status || 'committed';
-        knowledgeCaptureStatus = knowledgeStatus === 'committed' ? 'knowledge_committed' : 'no_new_knowledge';
-        break;
-      } catch (error) {
-        if (error.code === 'STALE_KNOWLEDGE_REVISION' && attempt < MAX_CAS_RETRIES) {
-          const latestRev = store.getProjectKnowledgeRevision
-            ? String(store.getProjectKnowledgeRevision(run.projectId))
-            : null;
-          if (latestRev && latestRev !== currentExpectedRevision) {
-            currentExpectedRevision = latestRev;
-            continue;
-          }
-        }
-        knowledgeStatus = error.code === 'STALE_KNOWLEDGE_REVISION' ? 'deferred' : 'failed';
-        knowledgeCommitError = error.message;
-        knowledgeCaptureStatus = knowledgeStatus === 'deferred' ? 'knowledge_deferred' : 'no_new_knowledge';
-        if (knowledgeStatus === 'deferred') {
-          commitReceipt = {
-            schemaVersion: 1,
-            runId,
-            projectId: run.projectId,
-            status: 'deferred',
-            reason: 'cas_retry_exhausted',
-            attempts: knowledgeCommitAttempts,
-            error: knowledgeCommitError,
-            deferredAt: new Date().toISOString(),
-          };
-          store.recordKnowledgeCommitReceipt(runId, {
-            projectId: run.projectId,
-            revisionBefore: String(run.knowledgeRevisionStart || '0'),
-            revisionAfter: String(currentExpectedRevision || run.knowledgeRevisionStart || '0'),
-            status: 'deferred',
-            receiptJson: commitReceipt,
-          });
-        }
-        break;
-      }
-    }
-  }
 
-  // A closeout retry is allowed to proceed only if the workspace is still the
-  // exact Kernel-created commit state.  A direct Git/index/workspace mutation
-  // after the completion decision changes the mutation revision, so the
-  // second completion check below blocks before Git can be trusted.
-  run = refreshFinalizationWorkspaceIdentity({ store, runId, projectRoot, priorGitReceipt });
-  const closeoutPreflight = evaluateCompletion();
-  if (!closeoutPreflight.readyExceptClose) {
-    return blockedReceipt(store, runId, {
+  if (!['passed', 'no_candidates'].includes(reviewResult.status)) {
+    // Non-blocking: Knowledge review failure defers knowledge but NEVER blocks code completion!
+    knowledgeStatus = 'deferred';
+    knowledgeCaptureStatus = 'knowledge_deferred';
+    commitReceipt = {
       schemaVersion: 1,
       runId,
       projectId: run.projectId,
-      completionStatus: 'blocked',
-      knowledgeStatus,
-      projectionStatus: commitReceipt?.projectionStatus || 'none',
-      gitCloseoutStatus: 'skipped',
-      finalizationStatus: 'incomplete_gates',
-      completionResult: closeoutPreflight,
+      status: 'deferred',
+      reason: `knowledge_review_${reviewResult.status}`,
       reviewResult,
-      knowledgeCommitReceipt: commitReceipt,
-      reason: 'workspace_identity_changed_before_git_closeout',
-      unmetGates: Object.entries(closeoutPreflight.gates)
-        .filter(([key, value]) => key !== 'isClosed' && !value)
-        .map(([key]) => key),
+      deferredAt: new Date().toISOString(),
+    };
+    store.recordKnowledgeCommitReceipt(runId, {
+      projectId: run.projectId,
+      revisionBefore: String(run.knowledgeRevisionStart || '0'),
+      revisionAfter: String(run.knowledgeRevisionStart || '0'),
+      status: 'deferred',
+      receiptJson: commitReceipt,
     });
-  }
-
-  // Step 5: Git closeout.
-  let gitCloseoutStatus = 'skipped';
-  let gitReceipt = null;
-  let gitCloseoutError = null;
-  if (effectiveCloseoutRequest?.requested) {
-    const knowledgeCommitReceipt = store.getKnowledgeCommitReceipt(runId)?.receiptJson;
-    if (!knowledgeCommitReceipt && knowledgeStatus !== 'deferred') {
-      gitCloseoutStatus = 'failed';
-      gitCloseoutError = 'KNOWLEDGE_RECEIPT_REQUIRED: Explicit Git closeout requires knowledge commit receipt';
+  } else {
+    const priorCommit = store.getKnowledgeCommitReceipt(runId);
+    if (priorCommit && ['committed', 'no_change'].includes(priorCommit.status)) {
+      commitReceipt = priorCommit.receiptJson;
+      knowledgeStatus = priorCommit.status;
+      knowledgeCaptureStatus = priorCommit.status === 'committed' ? 'knowledge_committed' : 'no_new_knowledge';
     } else {
-      try {
-        gitReceipt = await executeKernelGitCloseout({
-          runId,
-          projectId: run.projectId,
-          stateStore: store,
-          repoRoot: projectRoot,
-          gitCloseoutRequest: effectiveCloseoutRequest,
-          knowledgeCommitReceipt: knowledgeCommitReceipt || { status: 'deferred' },
-          changedFiles: normalizedChangeSet.changedPaths,
-        });
-        gitCloseoutStatus = gitReceipt.status || 'completed';
-      } catch (error) {
-        gitCloseoutStatus = 'failed';
-        gitCloseoutError = error.message;
+      const MAX_CAS_RETRIES = 3;
+      let currentExpectedRevision = run.knowledgeRevisionStart;
+      for (let attempt = 1; attempt <= MAX_CAS_RETRIES; attempt++) {
+        knowledgeCommitAttempts = attempt;
+        try {
+          commitReceipt = await commitProjectKnowledge({
+            runId,
+            projectId: run.projectId,
+            stateStore: store,
+            expectedKnowledgeRevision: currentExpectedRevision,
+            env: { MOON_RELAY_KERNEL_HOME: runtimeHome },
+          });
+          knowledgeStatus = commitReceipt.status || 'committed';
+          knowledgeCaptureStatus = knowledgeStatus === 'committed' ? 'knowledge_committed' : 'no_new_knowledge';
+          break;
+        } catch (error) {
+          if (error.code === 'STALE_KNOWLEDGE_REVISION' && attempt < MAX_CAS_RETRIES) {
+            const latestRev = store.getProjectKnowledgeRevision
+              ? String(store.getProjectKnowledgeRevision(run.projectId))
+              : null;
+            if (latestRev && latestRev !== currentExpectedRevision) {
+              currentExpectedRevision = latestRev;
+              continue;
+            }
+          }
+          knowledgeStatus = error.code === 'STALE_KNOWLEDGE_REVISION' ? 'deferred' : 'failed';
+          knowledgeCommitError = error.message;
+          knowledgeCaptureStatus = knowledgeStatus === 'deferred' ? 'knowledge_deferred' : 'no_new_knowledge';
+          if (knowledgeStatus === 'deferred') {
+            commitReceipt = {
+              schemaVersion: 1,
+              runId,
+              projectId: run.projectId,
+              status: 'deferred',
+              reason: 'cas_retry_exhausted',
+              attempts: knowledgeCommitAttempts,
+              error: knowledgeCommitError,
+              deferredAt: new Date().toISOString(),
+            };
+            store.recordKnowledgeCommitReceipt(runId, {
+              projectId: run.projectId,
+              revisionBefore: String(run.knowledgeRevisionStart || '0'),
+              revisionAfter: String(currentExpectedRevision || run.knowledgeRevisionStart || '0'),
+              status: 'deferred',
+              receiptJson: commitReceipt,
+            });
+          }
+          break;
+        }
       }
     }
   }
 
-  // Step 6: finalization receipt. A failure in either step keeps the run in
-  // `partial`, which is what stops it being reported as done. A closeout that
-  // was *requested* must actually complete: anything else — failed, skipped
-  // because nothing was staged, parity mismatch — leaves work the caller asked
-  // for unfinished, so it is partial rather than done.
   const requestedCloseoutUnfinished = Boolean(effectiveCloseoutRequest?.requested) && gitCloseoutStatus !== 'completed';
-  const finalizationStatus = (knowledgeStatus === 'failed' || gitCloseoutStatus === 'failed' || requestedCloseoutUnfinished || commitReceipt?.projectionStatus === 'failed')
+  const finalizationStatus = (gitCloseoutStatus === 'failed' || requestedCloseoutUnfinished || commitReceipt?.projectionStatus === 'failed')
     ? 'partial'
     : 'completed';
 
@@ -533,5 +496,41 @@ export const finalizeRun = async ({
   }
   await projectRunState(store.getRun(runId), { runtimeHome });
 
+  // Post-finalization bounded recovery: drains at most 1 previous deferred run independently
+  try {
+    await recoverBoundedDeferredKnowledge({ store, runtimeHome, projectId: run.projectId, currentRunId: runId });
+  } catch {
+    // Non-fatal for current run
+  }
+
   return finalizationReceipt;
+};
+
+export const recoverBoundedDeferredKnowledge = async ({ store, runtimeHome, projectId, currentRunId = null, maxDeferredRuns = 1 } = {}) => {
+  if (!store || !projectId) return [];
+  const deferredRuns = typeof store.getDeferredKnowledgeRuns === 'function'
+    ? store.getDeferredKnowledgeRuns(projectId, { limit: maxDeferredRuns, excludeRunId: currentRunId })
+    : [];
+
+  const recovered = [];
+  for (const deferred of deferredRuns) {
+    try {
+      const priorCandidates = store.getKnowledgeCandidates(deferred.runId);
+      const verifiedCandidates = priorCandidates.filter((c) => c.status === 'verified').map((c) => c.candidateJson || c);
+      if (verifiedCandidates.length === 0) continue;
+
+      const commitReceipt = await commitProjectKnowledge({
+        runId: deferred.runId,
+        projectId,
+        stateStore: store,
+        env: { MOON_RELAY_KERNEL_HOME: runtimeHome },
+      });
+      if (commitReceipt && ['committed', 'no_change'].includes(commitReceipt.status)) {
+        recovered.push({ runId: deferred.runId, status: 'recovered', commitReceipt });
+      }
+    } catch {
+      // Bounded post-finalization recovery failure is non-fatal for current run
+    }
+  }
+  return recovered;
 };

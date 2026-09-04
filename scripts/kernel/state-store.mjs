@@ -14,7 +14,7 @@ import { ATTEMPT_PROVENANCE_KINDS, assertAttemptLineage, normalizeAttemptProvena
 import { digestOfEvidence, evaluateReviewReceipt, normalizeReviewReceipt, parseReviewEvidenceRef } from './proof/review-receipt.mjs';
 import { sanitizePersistentPayload, sanitizePersistentText } from './persistent-sanitizer.mjs';
 import { buildSuccessorKey } from './run/successor-key.mjs';
-import { emptyKnowledgeDoctorFinding } from './knowledge/capture.mjs';
+import { emptyKnowledgeDoctorFinding, canonicalKnowledgeIdentity } from './knowledge/capture.mjs';
 import { exactEvidenceIdentityMatch } from './proof/evidence-reuse.mjs';
 import { normalizeAcceptanceCoverage } from './task/task-contract.mjs';
 import { deriveKernelWorktreeId } from './run/worktree-binding.mjs';
@@ -5050,21 +5050,44 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         }
 
         const existingRecords = db.prepare(`SELECT record_id, record_type, record_json FROM knowledge_records WHERE project_id=? AND status='committed'`).all(projectId);
-        const existingStatements = new Set(existingRecords.map((r) => {
+        const existingIdentities = new Set(existingRecords.map((r) => {
           try {
             const parsed = JSON.parse(r.record_json);
-            return `${r.record_type}:${parsed.statement || ''}`;
+            return canonicalKnowledgeIdentity({
+              recordType: r.record_type,
+              statement: parsed.statement,
+              scope: parsed.scope,
+            });
           } catch {
             return null;
           }
         }).filter(Boolean));
 
-        recordsToCommit = recordsToCommit.filter((rec) => {
-          const key = `${rec.type || rec.record_type || 'semantic_fact'}:${rec.statement || ''}`;
-          return !existingStatements.has(key);
-        });
+        const seenBatchIdentities = new Set();
+        const deduplicatedRecords = [];
+        for (const rec of (recordsToCommit || [])) {
+          const recType = rec.type || rec.record_type || rec.proposedType;
+          const identity = canonicalKnowledgeIdentity({
+            recordType: recType,
+            statement: rec.statement,
+            scope: rec.scope,
+          });
+          if (seenBatchIdentities.has(identity) || existingIdentities.has(identity)) {
+            continue;
+          }
+          seenBatchIdentities.add(identity);
+          deduplicatedRecords.push(rec);
+        }
+        recordsToCommit = deduplicatedRecords;
 
-        const isNoChange = noChange || recordsToCommit.length === 0;
+        let activeSupersessions = [];
+        if (Array.isArray(supersessions) && supersessions.length > 0) {
+          const placeholders = supersessions.map(() => '?').join(',');
+          const supRows = db.prepare(`SELECT record_id FROM knowledge_records WHERE project_id=? AND record_id IN (${placeholders}) AND status='committed'`).all(projectId, ...supersessions);
+          activeSupersessions = supRows.map((r) => r.record_id);
+        }
+
+        const isNoChange = noChange || (recordsToCommit.length === 0 && activeSupersessions.length === 0);
 
         if (isNoChange) {
           const receiptPayload = {
@@ -5103,7 +5126,7 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
           `).run(projectId, recId, recType, 'committed', rec.trustTier || 'verified', JSON.stringify(recPayload), nextRev, now(), now());
         }
 
-        for (const supId of supersessions) {
+        for (const supId of activeSupersessions) {
           db.prepare(`UPDATE knowledge_records SET status='superseded', updated_at=? WHERE project_id=? AND record_id=?`).run(now(), projectId, supId);
         }
 
@@ -5194,6 +5217,25 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
 
     getKnowledgeApprovals(runId) {
       return db.prepare(`SELECT approval_id as approvalId, run_id as runId, candidate_id as candidateId, approved_by as approvedBy, approval_receipt as approvalReceipt, created_at as createdAt FROM knowledge_approvals WHERE run_id=?`).all(runId);
+    },
+
+    getDeferredKnowledgeRuns(projectId, { limit = 1, excludeRunId = null } = {}) {
+      if (!projectId) return [];
+      let query = `SELECT run_id as runId, project_id as projectId, receipt_json as receiptJson, created_at as createdAt FROM knowledge_commit_receipts WHERE project_id=? AND status='deferred'`;
+      const params = [projectId];
+      if (excludeRunId) {
+        query += ` AND run_id != ?`;
+        params.push(excludeRunId);
+      }
+      query += ` ORDER BY created_at ASC LIMIT ?`;
+      params.push(limit);
+      const rows = db.prepare(query).all(...params);
+      return rows.map((r) => ({
+        runId: r.runId,
+        projectId: r.projectId,
+        receipt: safeJsonParse(r.receiptJson, null),
+        createdAt: r.createdAt,
+      }));
     },
 
     transition(runId, nextState, { expectedState, expectedRevision } = {}) {

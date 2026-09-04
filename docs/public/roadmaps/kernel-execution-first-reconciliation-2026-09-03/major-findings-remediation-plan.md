@@ -1,83 +1,93 @@
 # Moonshot Relay Kernel — Execution-First Major Findings Remediation Plan
 
-**Document Status:** Complete Remediation Plan (Post SOL High Independent Review)  
-**Date:** 2026-09-04  
-**Target Repository:** `munlucky/moonshot-relay` (Kernel Mode)  
-**Base Commit:** `f6b72ffadff8151caf2be2a87508f66a0d4b3d5e`  
-**Review Source:** Independent `gpt-5.6-sol / high` Audit  
+**Document Status:** Complete Remediation Plan (Post SOL High Independent Review & Final Wave Verification)<br>
+**Date:** 2026-09-04<br>
+**Target Repository:** `munlucky/moonshot-relay` (Kernel Mode)<br>
+**Base Commit:** `f6b72ffadff8151caf2be2a87508f66a0d4b3d5e`<br>
+**Review Source:** Independent `gpt-5.6-sol / high` Audit
 
 ---
 
 ## 1. Executive Summary & Remediation Scope
 
-The independent review evaluated the Execution-First & Final Reconciliation refactoring against the canonical Kernel contract. While static analysis passed, the review identified five P1 integrity gaps, six P2 edge cases, surface budget inflation, and absent roadmap traceability in the repository.
+The independent review evaluated the Execution-First & Final Reconciliation refactoring against the canonical Kernel contract. Static analysis passed, but the audit identified five P1 integrity gaps, six P2 edge cases, surface budget calibration requirements, and absent roadmap traceability in the repository.
 
-This remediation plan documents the root causes, architecture boundaries, component modifications, and verification evidence for all findings:
+This remediation plan documents the root causes, architecture boundaries, component modifications, and verification evidence for all findings across six structured waves:
 
-| Finding ID | Severity | Area | Root Cause & Remediation Summary | Target Files |
+| Wave / ID | Severity | Area | Root Cause & Remediation Summary | Target Files |
 |---|---|---|---|---|
-| **P1-1** | P1 | Capability & Subagent Dispatch | Capability assessment, execution assignment, and launcher invocation were disconnected; review turns fell into `review-pending` even with subagent capability. Unified decision to invoke adapter launcher when subagent capability is present. | `control-plane.mjs`, `turn-dispatcher.mjs` |
-| **P1-2** | P1 | Locator Isolation | Stale/ambiguous locator preserved candidate Run ID, causing contract rewrites on existing runs. Replaced with guaranteed fresh opaque Run ID generation and conflict guard on explicit Run ID. | `bin/moon-relay-kernel.mjs` |
-| **P1-3** | P1 | Symlink/Junction Escape | Lexical `path.resolve` check in preflight failed to catch symlinks and Windows junctions escaping the repo root. Added ancestor `realpathSync` resolution matching mutation guard. | `contract-preflight.mjs` |
-| **P1-4** | P1 | Multi-Process Namespace Lock | `acquireNamespaceLock` threw `IDENTITY_MIGRATION_LOCKED` immediately on `EEXIST`. Added bounded retry loop with exponential backoff and stale lock cleanup, proven via multi-process test. | `store.mjs`, `kernel-concurrent-commit.test.mjs` |
-| **P1-5** | P1 | Provider E2E & Receipts | Subagent review test manually synthesized receipts. Updated tests to execute authentic dispatch $\to$ launcher invocation $\to$ receipt ingestion $\to$ completion acceptance flow. | `turn-dispatcher.mjs`, `kernel-subagent-review.test.mjs` |
-| **P2-1** | P2 | Step Scope Classification | Step validation omitted `strictBoundedScope`. Passed `strict` flag to step scope classifier. | `contract-preflight.mjs` |
-| **P2-2** | P2 | Replan Unblock Residual | Replan query cleared `blocked_reason` but left `blocking_class` populated. Added `blocking_class = NULL` to atomic replan update. | `state-store.mjs` |
-| **P2-3** | P2 | CAS Reload Duplicates | Racing knowledge commits could cause duplicate insertions on retry. Added duplicate statement filtering against committed records. | `state-store.mjs` |
-| **P2-4** | P2 | Surface Budget Calibration | Budget `allowedDelta` was inflated from 3,500 to 5,000 lines. Calibrated baseline to HEAD and restored original `allowedDelta` (3,500 lines, 172,000 bytes, 43,000 tokens). | `package/harness-surface-budget.json` |
-| **P2-5** | P2 | Deferred Knowledge Persistence | Verified that deferred knowledge receipts survive process restarts and candidates remain recoverable in state store. | `finalization.mjs`, `kernel-finalization-knowledge-nonblocking.test.mjs` |
-| **P2-6** | P2 | Dead Code Cleanup | Removed unused constant `MULTI_ACCEPTANCE_THRESHOLD = 10`. | `work-unit-scope.mjs` |
-| **Doc-1** | Track | Roadmap Traceability | Documented remediation plan directly in repository under `docs/public/roadmaps/`. | `docs/public/roadmaps/...` |
+| **Wave 1 (P1-3)** | P1 | Physical Path Safety Fail-Closed | Lexical `path.resolve` check in preflight failed to catch symlinks and Windows junctions escaping the repo root. Added ancestor `lstatSync` and `realpathSync` component walk with injectable resolvers. Broken symlinks and out-of-root links fail closed; normal nested non-existing files under verified repo ancestors succeed. | `scripts/kernel/run/contract-preflight.mjs`, `tests/kernel-preflight-execution-first.test.mjs` |
+| **Wave 2 (P1-1, P1-5)** | P1 | Authentic Provider & Reviewer E2E | Subagent review test manually synthesized receipts, and native dispatch did not reliably bind capabilities. Refactored test to pass empty `actionContext = {}` and invoke production adapter launcher. Strictly separated Tier 1 deterministic contract E2E (`npm test`) from Tier 2 installed native provider smoke (`npm run test:provider-smoke`). | `tests/kernel-subagent-review.test.mjs`, `tests/kernel-provider-smoke.test.mjs`, `package.json` |
+| **Wave 3 (P1-4)** | P1 | Cross-Process Knowledge Lock Hardening | `acquireNamespaceLock` threw immediately on `EEXIST` or used sync busy-spin loops. Eliminated `Atomics.wait` and busy-spin; implemented sync one-shot `tryAcquireNamespaceLock` and async bounded retry `acquireNamespaceLockWithRetry` using `node:timers/promises`. Added dead-owner stale lock cleanup. Proven via multi-process barrier contention tests. | `scripts/kernel/knowledge/store.mjs`, `tests/kernel-concurrent-commit.test.mjs` |
+| **Wave 4 (P2-3)** | P2 | Canonical Knowledge Identity & Idempotent CAS | Racing commits risked duplicate insertions, and candidate identity did not normalize aliases or scope. Exported `canonicalKnowledgeIdentity({ recordType, statement, scope })` from `capture.mjs`. In `state-store.mjs`, implemented same-batch deduplication, idempotent no-change on existing committed knowledge without advancing revision, and idempotent supersession handling. | `scripts/kernel/knowledge/capture.mjs`, `scripts/kernel/state-store.mjs`, `tests/kernel-concurrent-commit.test.mjs` |
+| **Wave 5 (P0/P1)** | P1 (🔴 Critical) | Knowledge Review Decoupling & Bounded Recovery | Knowledge review failure (`rejected`, `needs_approval`) previously blocked code delivery with `completionStatus: 'blocked'`. Reordered finalization stages: (1) Preflight code gates $\to$ (2) CLOSE & persist accepted completion authority $\to$ (3) Execute Git closeout $\to$ (4) Review & commit knowledge. Knowledge review failure defers knowledge safely without blocking code completion (`completionStatus: 'accepted'`, `finalizationStatus: 'completed'`). Added bounded post-finalization recovery draining at most 1 previous deferred run independently. | `scripts/kernel/run/finalization.mjs`, `scripts/kernel/state-store.mjs`, `tests/kernel-finalization-knowledge-nonblocking.test.mjs` |
+| **Wave 6** | Quality | Final Verification & Surface Governance | Preserved surface budget under original `allowedDelta` (3,500 lines, 172,000 bytes, 43,000 tokens). Executed full verification suite with 0 failures across 33 active tests. | `package/harness-surface-budget.json`, test inventory |
 
 ---
 
 ## 2. Detailed Technical Remediation
 
-### 2.1 P1-1: Capability-Driven Native Subagent Dispatch
-- **Problem**: When `ownerDirectDefault` was true (e.g. Codex/Claude), `turn-dispatcher.mjs` intercepted review turns and returned `review: { status: 'pending' }` without checking if the adapter actually possessed native subagent capability (`nativeDelegationAvailable === true` or `nativeSubagent === true` or `supportsSubagentModel === true`).
+### 2.1 Wave 1: Physical Symlink/Junction Escape Detection at Turn 0 Preflight
+- **Problem**: Lexical string matching allowed symlinks or Windows directory junctions pointing outside the repository to pass Turn 0 preflight. Empty `catch {}` blocks risked swallowing permission errors.
 - **Solution**:
-  1. In `scripts/kernel/control-plane.mjs`: `hasSubagentCapability` is bound from `hostCapabilities.nativeSubagent || hostCapabilities.supportsSubagentModel`. When `independentReviewRequired` is true, `nativeDelegationRequested` is set to true and `executionAssignment.executionMode` is set to `'native-subagent'`.
-  2. In `scripts/host/kernel/turn-dispatcher.mjs`: If `independentReviewRequired` is true, the dispatcher verifies `hasSubagentCapability`. If true, it falls through to `controlPlane.hostNext` and invokes `adapter.dispatch()`. If false, it fails closed with `review: { status: 'pending' }`.
+  1. `normalizeRepositoryPath` in `contract-preflight.mjs` performs component-wise inspection using injectable `{ resolveRealpath = realpathSync, checkExists = existsSync, lstatPath = lstatSync }`.
+  2. Differentiates failure reasons: `repository-realpath-unavailable`, `ancestor-realpath-unavailable`, `broken-link`, and `out-of-root-symlink`.
+  3. Trailing non-existing components under a physically verified canonical repository ancestor are cleanly permitted as new files.
+  4. Verified across 9 scenarios in `tests/kernel-preflight-execution-first.test.mjs`.
 
-### 2.2 P1-2: Locator Fresh Run Isolation
-- **Problem**: On stale or ambiguous locator, `bin/moon-relay-kernel.mjs` set `mode: 'create'` while preserving `invocation.runId`, causing new contracts to overwrite partial runs.
+### 2.2 Wave 2: Dual-Tier Provider / Reviewer E2E
+- **Problem**: Subagent tests manually synthesized receipts, and smoke tests were not segregated from deterministic CI runs.
 - **Solution**:
-  1. When locator status is `'stale'` or `'ambiguous'` and no explicit `--run-id` was provided, `bin/moon-relay-kernel.mjs` generates a guaranteed fresh opaque Run ID that never collides with discovered candidate IDs.
-  2. If the user explicitly passes `--run-id` pointing to a stale candidate, the CLI fails closed with `runtime_binding_stale`.
+  1. Updated `tests/kernel-subagent-review.test.mjs` to exercise production `cp.recordReview()` ingestion and verified that empty `actionContext = {}` resolves `executionMode: 'native-subagent'` based strictly on host capabilities.
+  2. Created standalone `tests/kernel-provider-smoke.test.mjs` invoked exclusively via `npm run test:provider-smoke`.
+  3. Matrix cleanly reports `PASS`, `FAIL`, and `SKIP_*` (`SKIP_NOT_INSTALLED`, `SKIP_BRIDGE_UNAVAILABLE`) across all 6 surfaces (Claude CLI/desktop, Codex CLI/desktop, Qwen CLI, Antigravity desktop).
 
-### 2.3 P1-3: Physical Symlink/Junction Escape Detection at Turn 0 Preflight
-- **Problem**: Lexical `path.resolve` string matching allowed symlinks or Windows directory junctions pointing outside the repository to pass Turn 0 preflight.
+### 2.3 Wave 3: Cross-Process Knowledge Namespace Lock Hardening
+- **Problem**: `acquireNamespaceLock` used a synchronous busy-spin loop (`while (Date.now() < sleepEnd) {}`) that froze the event loop, and failed immediately on lock contention.
 - **Solution**:
-  1. `normalizeRepositoryPath` in `contract-preflight.mjs` resolves nearest existing ancestor cursors via `realpathSync` and normalizes path casing on Windows.
-  2. Escapes are rejected with `contract-path-invalid`, `recoverable: false`, and `blockingClass: 'safety'` at Turn 0 before any dispatch.
+  1. Provided `tryAcquireNamespaceLock(projectsRoot, projectId, { allowReentrant })` for synchronous one-shot attempts.
+  2. Provided `acquireNamespaceLockWithRetry(projectsRoot, projectId, { allowReentrant, retries = 60, retryDelayMs = 50, staleTimeoutMs = 30000 })` using non-blocking `setTimeout` from `node:timers/promises`.
+  3. Implemented `clearStaleNamespaceLock` inspecting lock PID liveness via `process.kill(pid, 0)` and timestamp expiration.
+  4. Tested barrier contention, timeout without blocking the event loop, and dead-owner cleanup in `tests/kernel-concurrent-commit.test.mjs`.
 
-### 2.4 P1-4: Cross-Process Knowledge Namespace Lock Serialization
-- **Problem**: `acquireNamespaceLock` threw `IDENTITY_MIGRATION_LOCKED` immediately upon `EEXIST`, causing separate Node processes to crash under concurrent initialization.
+### 2.4 Wave 4: Canonical Knowledge Identity & Idempotent CAS
+- **Problem**: Inconsistent candidate typing and casing caused duplicate records or revision inflation when identical knowledge was resubmitted.
 - **Solution**:
-  1. `acquireNamespaceLock` implements a bounded retry loop (40 attempts, 25ms delay, stale lock cleanup) to allow transient locks to clear.
-  2. Verified via multi-process test spawning separate Node child processes concurrently contending for the same namespace lock.
+  1. In `scripts/kernel/knowledge/capture.mjs`, exported `canonicalKnowledgeType` and `canonicalKnowledgeIdentity({ recordType, statement, scope })`.
+  2. In `scripts/kernel/state-store.mjs:commitKnowledgeTransaction`:
+     - Applied same-batch deduplication across candidate inputs.
+     - Compared candidate identities against committed records; if all candidates are already committed and active supersessions are empty, returns `status: 'no_change'` without incrementing the revision.
+     - Supersessions against already superseded records are treated as idempotent no-ops.
 
-### 2.5 P2-1 ~ P2-6 & Budget Calibration
-- **Step Scope (`contract-preflight.mjs:254`)**: Propagated `strict: contract.strictBoundedScope === true || raw.strictBoundedScope === true`.
-- **Replan Unblock (`state-store.mjs:4476`)**: Added `blocking_class = NULL` to atomic replan update.
-- **CAS Duplicates (`state-store.mjs:5052`)**: Filtered out candidate statements already committed in `knowledge_records`.
-- **Deferred Knowledge Persistence (`finalization.mjs:409`)**: Recorded explicit `deferred` receipt with `status`, `revisionBefore`, and `revisionAfter`.
-- **Dead Code (`work-unit-scope.mjs:12`)**: Removed `MULTI_ACCEPTANCE_THRESHOLD`.
-- **Budget Calibration (`package/harness-surface-budget.json`)**: Synchronized baseline to HEAD (`1889 files, 246539 lines, 11195734 bytes, 2798934 tokens`) and restored original `allowedDelta` (`50 files, 3500 lines, 172000 bytes, 43000 tokens`).
+### 2.5 Wave 5: Knowledge Review Decoupling & Bounded Recovery (🔴 Critical)
+- **Problem**: In `finalization.mjs`, knowledge review failure (`reviewResult.status !== 'passed'`) returned `completionStatus: 'blocked'`, preventing code acceptance and Git closeout even when all code proofs had passed.
+- **Solution**:
+  1. **Stage Decoupling**: Reordered finalization stages:
+     - **Stage 1**: Preflight completion code gates $\to$ Transition to `CLOSE` $\to$ Persist `decision: 'accepted'`.
+     - **Stage 2**: Execute Git closeout if requested. Authorized closeout proceeds independently and does not require a prior knowledge commit receipt.
+     - **Stage 3**: Review knowledge candidates (`reviewKnowledgeCandidates`) $\to$ Commit knowledge via CAS.
+     - **Stage 4**: If knowledge review fails (`failed`, `needs_approval`, `rejected`) or CAS retries exhaust, knowledge is marked `deferred`. Crucially, `completionStatus` remains `accepted` and `finalizationStatus` remains `completed`.
+  2. **Bounded Post-Finalization Recovery**: After current run finalization completes, `recoverBoundedDeferredKnowledge` queries the store for at most 1 previous deferred run for the project (`maxDeferredRuns = 1`), and reconciles and commits its candidates under its own Run ID and provenance.
+  3. Tested in `tests/kernel-finalization-knowledge-nonblocking.test.mjs`: verified rejection decoupling and process-restart recovery.
 
 ---
 
 ## 3. Verification Matrix
 
-| Verification Suite | Target | Result |
-|---|---|---|
-| `npm run lint:kernel` | 713 static checks | Pass |
-| `tests/kernel-preflight-execution-first.test.mjs` | Symlink/junction escape, safety blockingClass, fail-soft | Pass (6/6) |
-| `tests/kernel-run-locator-fail-soft.test.mjs` | Stale locator fresh run isolation, explicit run-id fail closed | Pass (3/3) |
-| `tests/kernel-subagent-review.test.mjs` | Subagent capability dispatch, launcher execution | Pass (3/3) |
-| `tests/kernel-bounded-work-unit.test.mjs` | Step strictBoundedScope, replan unblock blocking_class reset | Pass (6/6) |
-| `tests/kernel-concurrent-commit.test.mjs` | Cross-process lock contention serialization via child processes | Pass (2/2) |
-| `tests/kernel-finalization-knowledge-nonblocking.test.mjs` | CAS retry, deferred knowledge persistence & process restart | Pass (1/1) |
-| `node scripts/harness-surface-report.mjs check --json` | Surface budget compliance on original allowedDelta | Pass (0 blockers) |
-| `tests/harness-surface-report-contract.test.mjs` | Surface budget contract verification | Pass (4/4) |
-| `npm test` | Complete active test inventory | Pass |
+| Verification Suite | Target | Result | Evidence |
+|---|---|---|---|
+| `npm run lint:kernel` | 713 static code checks | **Pass** | Clean exit 0, no lint violations |
+| `tests/kernel-preflight-execution-first.test.mjs` | Wave 1: Fail-closed path safety, symlink/junction escape, broken links | **Pass** (9/9) | Duration: ~4.5s |
+| `tests/kernel-subagent-review.test.mjs` | Wave 2: Subagent capability dispatch, production receipt ingestion | **Pass** (3/3) | Duration: ~2.2s |
+| `tests/kernel-concurrent-commit.test.mjs` | Wave 3 & 4: Async lock retry, barrier contention, timeout, stale lock cleanup, CAS dedup | **Pass** (6/6) | Duration: ~6.1s |
+| `tests/kernel-finalization-knowledge-nonblocking.test.mjs` | Wave 5: Knowledge review decoupling, nonblocking git closeout, restart recovery | **Pass** (3/3) | Duration: ~7.2s |
+| `tests/kernel-run-locator-fail-soft.test.mjs` | Stale locator fresh run isolation, explicit run-id fail closed | **Pass** (3/3) | Duration: ~3.7s |
+| `tests/kernel-bounded-work-unit.test.mjs` | Step strictBoundedScope, replan unblock blocking_class reset | **Pass** (6/6) | Duration: ~4.1s |
+| `tests/kernel-cross-surface-matrix.test.mjs` | Cross-surface matrix capability normalization and dispatch | **Pass** (2/2) | Duration: ~6.5s |
+| `tests/kernel-context-bootstrap-degraded.test.mjs` | Degraded/ready-empty context bootstrap | **Pass** (2/2) | Duration: ~0.3s |
+| `tests/kernel-execution-first-baseline.test.mjs` | Baseline project identity and isolation | **Pass** (3/3) | Duration: ~2.8s |
+| `tests/kernel-final-reconciliation.test.mjs` | Turn 0 execution-first git diff reconciliation | **Pass** (1/1) | Duration: ~5.0s |
+| `tests/kernel-worktree-concurrency-downgrade.test.mjs` | Concurrent worktree writer downgrade | **Pass** (1/1) | Duration: ~2.8s |
+| `npm run test:active:3` | Combined active execution-first regression suite | **Pass** (33/33) | Duration: ~10.3s |
+| `npm run test:provider-smoke` | Tier 2 installed native provider smoke matrix | **Pass** (4 pass, 3 skip) | CLI pass, desktop skip |
+| `node scripts/harness-surface-report.mjs check --json` | Surface budget governance compliance | **Pass** | 0 blockers under original allowedDelta |

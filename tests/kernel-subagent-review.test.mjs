@@ -139,22 +139,29 @@ test('Subagent Review: Action and Host Directive route to native-subagent when i
       'Reviewer session must be distinct from implementer session',
     );
 
-    // Record the receipt into store and verify completion can accept
-    store.recordReviewReceipt(runId, reviewReceipt);
-    store.recordVerification(runId, {
+    // Record review through production control plane method
+    await cp.recordReview(runId, {
+      stage: 'engineering',
+      verdict: 'pass',
+      findings: [],
+    }, {
+      implementerId: implementerSession,
       obligationId: 'review-judgment',
-      status: 'passed',
-      evidenceRef: 'ev-subagent-pass',
-      commandRef: 'review',
-      command: 'subagent code-review',
-      exitCode: 0,
-      evidenceDigest: `sha256:${'e'.repeat(64)}`,
-      evidenceClass: 'judgment',
       acceptanceCoverage: ['code passes qualitative judgment review'],
     });
 
     const verifications = store.getVerifications(runId);
     assert.ok(verifications.length > 0);
+    const judgmentVerification = verifications.find((v) => v.obligationId === 'review-judgment');
+    assert.ok(judgmentVerification);
+    assert.equal(judgmentVerification.status, 'passed');
+
+    const preCloseAssessment = await cp.assessCompletion(runId);
+    assert.equal(preCloseAssessment.readyExceptClose, true);
+
+    await cp.transition(runId, 'CLOSE');
+    const completion = await cp.assessCompletion(runId);
+    assert.equal(completion.decision, 'accepted');
   } finally {
     await cp.close();
     await cleanup(fixture);
@@ -221,11 +228,14 @@ test('Subagent Review: dispatchKernelTurn invokes adapter launcher when adapter 
       },
     };
 
+    const inputActionContext = {};
+    assert.equal(inputActionContext.executionMode, undefined, 'Input executionMode must be undefined');
+
     const dispatchResult = await dispatchKernelTurn({
       controlPlane: cp,
       runId,
       adapter: testAdapter,
-      actionContext: { executionMode: 'native-subagent', delegationRequested: true },
+      actionContext: inputActionContext,
     });
 
     assert.equal(launcherCalled, true, 'Adapter launcher MUST be called when subagent capability is present');

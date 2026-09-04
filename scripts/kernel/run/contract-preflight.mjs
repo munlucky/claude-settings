@@ -4,7 +4,7 @@
 // can strand lifecycle state.
 
 import path from 'node:path';
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync, lstatSync, realpathSync } from 'node:fs';
 import {
   classifyWorkUnitScope,
   requiresImplementationWorkUnitScope,
@@ -18,12 +18,14 @@ export const CONTRACT_PREFLIGHT_ERROR_CODES = Object.freeze({
 });
 
 export const BLOCKING_CLASSES = Object.freeze({
-  advisory: 'advisory',
-  completion: 'completion',
   safety: 'safety',
+  completion: 'completion',
+  context: 'context',
+  system: 'system',
 });
 
-const READ_ONLY_TASK_CLASSES = new Set(['analysis', 'review', 'read-only', 'readonly']);
+const CONTRACT_PREFLIGHT_NEXT_ACTION = 'revise-task-contract';
+const READ_ONLY_TASK_CLASSES = new Set(['analysis', 'audit', 'plan', 'review']);
 const DETAILED_STEP_BINDING_FLAGS = new Set([
   'behaviorChanging',
   'crossLayer',
@@ -32,26 +34,17 @@ const DETAILED_STEP_BINDING_FLAGS = new Set([
   'longRunning',
 ]);
 
-export const CONTRACT_PREFLIGHT_NEXT_ACTION = 'revise-task-contract';
-
-const fail = (
-  errorCode,
-  message,
-  details = {},
-  nextAction = CONTRACT_PREFLIGHT_NEXT_ACTION,
-  recoverable = true,
-  blockingClass = null,
-) => {
-  const resolvedClass = blockingClass
-    || (recoverable === false ? BLOCKING_CLASSES.safety : BLOCKING_CLASSES.completion);
-  const error = new Error(message);
-  error.name = 'ContractPreflightError';
-  error.code = errorCode;
-  error.errorCode = errorCode;
-  error.nextAction = nextAction;
+const fail = (code, message, details = {}, nextAction = CONTRACT_PREFLIGHT_NEXT_ACTION, recoverable = true) => {
+  const blockingClass = code === CONTRACT_PREFLIGHT_ERROR_CODES.pathInvalid
+    ? BLOCKING_CLASSES.safety
+    : BLOCKING_CLASSES.completion;
+  const error = new Error(`${code}: ${message}`);
+  error.code = code;
+  error.errorCode = code;
   error.details = details;
   error.recoverable = recoverable;
-  error.blockingClass = resolvedClass;
+  error.blockingClass = blockingClass;
+  error.nextAction = nextAction;
   return error;
 };
 
@@ -62,7 +55,11 @@ const isAbsoluteRepositoryPath = (value) => (
   || /^[A-Za-z]:[^/]/u.test(value)
 );
 
-const normalizeRepositoryPath = (entry, projectRoot) => {
+export const normalizeRepositoryPath = (entry, projectRoot, {
+  resolveRealpath = realpathSync,
+  checkExists = existsSync,
+  lstatPath = lstatSync,
+} = {}) => {
   if (typeof entry !== 'string') {
     throw fail(
       CONTRACT_PREFLIGHT_ERROR_CODES.pathInvalid,
@@ -113,50 +110,93 @@ const normalizeRepositoryPath = (entry, projectRoot) => {
   }
 
   const root = path.resolve(projectRoot || process.cwd());
-  const resolved = path.resolve(root, normalized);
-  if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
+  let canonicalRoot = root;
+  let rootExists = false;
+  try {
+    rootExists = checkExists(root);
+  } catch (err) {
     throw fail(
       CONTRACT_PREFLIGHT_ERROR_CODES.pathInvalid,
-      `allowedPaths entry escapes the repository: ${entry}`,
-      { entry, reason: 'out-of-root', projectRoot: root },
+      `repository root cannot be verified: ${root}`,
+      { entry, reason: 'repository-realpath-unavailable', projectRoot: root, error: String(err?.message || err) },
       CONTRACT_PREFLIGHT_NEXT_ACTION,
       false,
     );
   }
 
-  let canonicalRoot = root;
-  try {
-    if (existsSync(root)) canonicalRoot = realpathSync(root);
-  } catch {}
-  let cursor = resolved;
-  while (!existsSync(cursor)) {
-    const parent = path.dirname(cursor);
-    if (parent === cursor) break;
-    cursor = parent;
-  }
-  let realResolved = resolved;
-  try {
-    if (existsSync(cursor)) {
-      const resolvedBase = realpathSync(cursor);
-      realResolved = path.resolve(resolvedBase, path.relative(cursor, resolved));
+  if (rootExists) {
+    try {
+      canonicalRoot = resolveRealpath(root);
+    } catch (err) {
+      throw fail(
+        CONTRACT_PREFLIGHT_ERROR_CODES.pathInvalid,
+        `repository root realpath failed: ${root}`,
+        { entry, reason: 'repository-realpath-unavailable', projectRoot: root, error: String(err?.message || err) },
+        CONTRACT_PREFLIGHT_NEXT_ACTION,
+        false,
+      );
     }
-  } catch {}
-  const normalizeCase = (value) => process.platform === 'win32' ? value.toLowerCase() : value;
+  }
+
+  const normalizeCase = (val) => process.platform === 'win32' ? val.toLowerCase() : val;
   const compRoot = normalizeCase(canonicalRoot);
-  const compResolved = normalizeCase(realResolved);
-  if (compResolved !== compRoot && !compResolved.startsWith(`${compRoot}${path.sep}`)) {
-    throw fail(
-      CONTRACT_PREFLIGHT_ERROR_CODES.pathInvalid,
-      `allowedPaths entry escapes the repository via symlink/junction: ${entry}`,
-      { entry, reason: 'out-of-root-symlink', projectRoot: root, resolved: realResolved },
-      CONTRACT_PREFLIGHT_NEXT_ACTION,
-      false,
-    );
+
+  let currentPath = root;
+  for (const segment of normalized.split('/')) {
+    const nextPath = path.resolve(currentPath, segment);
+    let stats = null;
+    try {
+      stats = lstatPath(nextPath);
+    } catch (err) {
+      if (err?.code === 'ENOENT' || err?.code === 'ENOTDIR') {
+        break;
+      }
+      throw fail(
+        CONTRACT_PREFLIGHT_ERROR_CODES.pathInvalid,
+        `allowedPaths ancestor cannot be inspected: ${nextPath}`,
+        { entry, reason: 'ancestor-realpath-unavailable', projectRoot: root, path: nextPath, error: String(err?.message || err) },
+        CONTRACT_PREFLIGHT_NEXT_ACTION,
+        false,
+      );
+    }
+
+    const isSymlink = stats && (typeof stats.isSymbolicLink === 'function' ? stats.isSymbolicLink() : false);
+    let realNext = nextPath;
+    try {
+      realNext = resolveRealpath(nextPath);
+    } catch (err) {
+      const reason = isSymlink ? 'broken-link' : 'ancestor-realpath-unavailable';
+      throw fail(
+        CONTRACT_PREFLIGHT_ERROR_CODES.pathInvalid,
+        `allowedPaths path cannot be resolved physically: ${nextPath}`,
+        { entry, reason, projectRoot: root, path: nextPath, error: String(err?.message || err) },
+        CONTRACT_PREFLIGHT_NEXT_ACTION,
+        false,
+      );
+    }
+
+    const compRealNext = normalizeCase(realNext);
+    if (compRealNext !== compRoot && !compRealNext.startsWith(`${compRoot}${path.sep}`)) {
+      throw fail(
+        CONTRACT_PREFLIGHT_ERROR_CODES.pathInvalid,
+        `allowedPaths entry escapes the repository via symlink/junction: ${entry}`,
+        { entry, reason: 'out-of-root-symlink', projectRoot: root, resolved: realNext },
+        CONTRACT_PREFLIGHT_NEXT_ACTION,
+        false,
+      );
+    }
+    currentPath = nextPath;
   }
   return normalized;
 };
 
-export const normalizeBoundedPaths = ({ paths = [], projectRoot = process.cwd() } = {}) => {
+export const normalizeBoundedPaths = ({
+  paths = [],
+  projectRoot = process.cwd(),
+  resolveRealpath = realpathSync,
+  checkExists = existsSync,
+  lstatPath = lstatSync,
+} = {}) => {
   if (!Array.isArray(paths)) {
     throw fail(
       CONTRACT_PREFLIGHT_ERROR_CODES.pathInvalid,
@@ -164,7 +204,7 @@ export const normalizeBoundedPaths = ({ paths = [], projectRoot = process.cwd() 
       { valueType: typeof paths, reason: 'not-array' },
     );
   }
-  return [...new Set(paths.map((entry) => normalizeRepositoryPath(entry, projectRoot)))].sort();
+  return [...new Set(paths.map((entry) => normalizeRepositoryPath(entry, projectRoot, { resolveRealpath, checkExists, lstatPath })))].sort();
 };
 
 const acceptanceIdsFor = (contract) => new Set(
@@ -210,6 +250,9 @@ export const validateDeclaredSteps = ({
   projectRoot = process.cwd(),
   requireDetailedBindings = null,
   acceptanceIdMap = null,
+  resolveRealpath,
+  checkExists,
+  lstatPath,
 } = {}) => {
   const declared = Array.isArray(contract.steps) ? contract.steps : [];
   if (declared.length === 0) return { valid: true, steps: [] };
@@ -249,7 +292,7 @@ export const validateDeclaredSteps = ({
     const hasStepScope = Object.prototype.hasOwnProperty.call(raw, 'allowedPaths');
     const rawPaths = hasStepScope ? raw.allowedPaths : contract.allowedPaths;
     const allowedPaths = Array.isArray(rawPaths)
-      ? normalizeBoundedPaths({ paths: rawPaths, projectRoot })
+      ? normalizeBoundedPaths({ paths: rawPaths, projectRoot, resolveRealpath, checkExists, lstatPath })
       : [];
     const scope = classifyWorkUnitScope({ allowedPaths, strict: contract.strictBoundedScope === true || raw.strictBoundedScope === true });
     if (isImplementationTask && !scope.valid) {
@@ -354,6 +397,9 @@ export const preflightTaskContract = ({
   requireImplementationScope = null,
   strictVerificationCommands = false,
   acceptanceIdMap = null,
+  resolveRealpath,
+  checkExists,
+  lstatPath,
 } = {}) => {
   if (!contract || typeof contract !== 'object' || Array.isArray(contract)) {
     throw fail(CONTRACT_PREFLIGHT_ERROR_CODES.invalid, 'Task contract must be an object', { reason: 'not-object' }, CONTRACT_PREFLIGHT_NEXT_ACTION, false);
@@ -366,7 +412,7 @@ export const preflightTaskContract = ({
   const requiresScope = isImplementationTask && requiresImplementationWorkUnitScope({ contract });
   let allowedPaths = [];
   if (Array.isArray(contract.allowedPaths)) {
-    allowedPaths = normalizeBoundedPaths({ paths: contract.allowedPaths, projectRoot });
+    allowedPaths = normalizeBoundedPaths({ paths: contract.allowedPaths, projectRoot, resolveRealpath, checkExists, lstatPath });
     const scope = classifyWorkUnitScope({ allowedPaths, strict: contract.strictBoundedScope === true });
     if (requiresScope && !declaredSteps && !scope.valid) {
       const isSafety = scope.reason === 'path-traversal' || scope.scopeState === 'invalid';
@@ -385,6 +431,9 @@ export const preflightTaskContract = ({
     projectRoot,
     requireDetailedBindings: requiresScope ? true : null,
     acceptanceIdMap,
+    resolveRealpath,
+    checkExists,
+    lstatPath,
   });
   const verification = validateVerificationCommands({
     contract,

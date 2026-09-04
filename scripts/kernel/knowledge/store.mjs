@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { readFile, mkdir, access } from 'node:fs/promises';
+import { setTimeout as sleep } from 'node:timers/promises';
 import path from 'node:path';
 import { atomicWriteText } from '../durable-write.mjs';
 import { canonicalPath, resolveKernelRuntimeHome, assertIsolatedRuntimeHomes } from '../runtime-home.mjs';
@@ -149,21 +150,55 @@ const isProcessAlive = (pid) => {
 
 const heldNamespaceLocks = new Map();
 
-const clearStaleNamespaceLock = (lockPath) => {
+export const clearStaleNamespaceLock = (lockPath, { staleTimeoutMs = 30000 } = {}) => {
   const stat = lstatIfExists(lockPath);
   if (!stat) return false;
-  const pid = lockOwnerPid(lockPath);
-  if (pid == null || isProcessAlive(pid)) return false;
+  let metadata = null;
   try {
-    fs.unlinkSync(lockPath);
-    return true;
+    metadata = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+  } catch {}
+  const pid = Number.isInteger(metadata?.pid) ? metadata.pid : null;
+  const createdAt = metadata?.createdAt ? Date.parse(metadata.createdAt) : null;
+  const isExpired = createdAt && Number.isFinite(createdAt) && (Date.now() - createdAt > staleTimeoutMs);
+
+  if (pid == null || !isProcessAlive(pid) || isExpired) {
+    try {
+      fs.unlinkSync(lockPath);
+      return true;
+    } catch (error) {
+      if (error.code === 'ENOENT') return true;
+      throw error;
+    }
+  }
+  return false;
+};
+
+export const tryAcquireNamespaceLock = (projectsRoot, projectId, { allowReentrant = false, staleTimeoutMs = 30000 } = {}) => {
+  const safeId = safeNamespaceSegment(projectId);
+  const lockPath = path.join(projectsRoot, `.kernel-namespace-lock-${safeId}`);
+  assertNamespacePathSafe(lockPath, projectsRoot);
+  const held = heldNamespaceLocks.get(lockPath);
+  if (held) {
+    if (!allowReentrant) {
+      throw new KernelKnowledgeStoreError('IDENTITY_MIGRATION_LOCKED', `Knowledge namespace is locked for identity migration: ${projectsRoot}/${safeId}`, { lockPath });
+    }
+    held.references += 1;
+    return { base: held, reentrant: true };
+  }
+  clearStaleNamespaceLock(lockPath, { staleTimeoutMs });
+  try {
+    const fd = fs.openSync(lockPath, 'wx');
+    fs.writeSync(fd, JSON.stringify({ pid: process.pid, createdAt: new Date().toISOString() }));
+    const lock = { fd, lockPath, references: 1 };
+    heldNamespaceLocks.set(lockPath, lock);
+    return lock;
   } catch (error) {
-    if (error.code === 'ENOENT') return true;
+    if (error.code === 'EEXIST') return null;
     throw error;
   }
 };
 
-const acquireNamespaceLock = (projectsRoot, projectId, { allowReentrant = false, retries = 40, retryDelayMs = 25 } = {}) => {
+export const acquireNamespaceLockWithRetry = async (projectsRoot, projectId, { allowReentrant = false, retries = 60, retryDelayMs = 50, staleTimeoutMs = 30000 } = {}) => {
   const safeId = safeNamespaceSegment(projectId);
   const lockPath = path.join(projectsRoot, `.kernel-namespace-lock-${safeId}`);
   assertNamespacePathSafe(lockPath, projectsRoot);
@@ -176,7 +211,7 @@ const acquireNamespaceLock = (projectsRoot, projectId, { allowReentrant = false,
     return { base: held, reentrant: true };
   }
   for (let attempt = 0; attempt <= retries; attempt++) {
-    clearStaleNamespaceLock(lockPath);
+    clearStaleNamespaceLock(lockPath, { staleTimeoutMs });
     try {
       const fd = fs.openSync(lockPath, 'wx');
       fs.writeSync(fd, JSON.stringify({ pid: process.pid, createdAt: new Date().toISOString() }));
@@ -186,10 +221,7 @@ const acquireNamespaceLock = (projectsRoot, projectId, { allowReentrant = false,
     } catch (error) {
       if (error.code === 'EEXIST') {
         if (attempt < retries) {
-          const sleepEnd = Date.now() + retryDelayMs;
-          while (Date.now() < sleepEnd) {
-            // sync spin wait for transient lock
-          }
+          await sleep(retryDelayMs);
           continue;
         }
         throw new KernelKnowledgeStoreError('IDENTITY_MIGRATION_LOCKED', `Knowledge namespace is locked for identity migration: ${projectsRoot}/${safeId}`, { lockPath });
@@ -199,7 +231,17 @@ const acquireNamespaceLock = (projectsRoot, projectId, { allowReentrant = false,
   }
 };
 
-const releaseNamespaceLock = (lock) => {
+export const acquireNamespaceLock = (projectsRoot, projectId, { allowReentrant = false, staleTimeoutMs = 30000 } = {}) => {
+  const lock = tryAcquireNamespaceLock(projectsRoot, projectId, { allowReentrant, staleTimeoutMs });
+  if (!lock) {
+    const safeId = safeNamespaceSegment(projectId);
+    const lockPath = path.join(projectsRoot, `.kernel-namespace-lock-${safeId}`);
+    throw new KernelKnowledgeStoreError('IDENTITY_MIGRATION_LOCKED', `Knowledge namespace is locked for identity migration: ${projectsRoot}/${safeId}`, { lockPath });
+  }
+  return lock;
+};
+
+export const releaseNamespaceLock = (lock) => {
   if (!lock) return;
   const base = lock.base || lock;
   base.references -= 1;
@@ -209,10 +251,10 @@ const releaseNamespaceLock = (lock) => {
   try { fs.unlinkSync(base.lockPath); } catch (error) { if (error.code !== 'ENOENT') throw error; }
 };
 
-const acquireNamespaceLocks = (projectsRoot, projectIds, { allowReentrant = false, retries = 40, retryDelayMs = 25 } = {}) => {
+export const acquireNamespaceLocks = (projectsRoot, projectIds, { allowReentrant = false, staleTimeoutMs = 30000 } = {}) => {
   const locks = [];
   try {
-    for (const projectId of [...new Set(projectIds)].sort()) locks.push(acquireNamespaceLock(projectsRoot, projectId, { allowReentrant, retries, retryDelayMs }));
+    for (const projectId of [...new Set(projectIds)].sort()) locks.push(acquireNamespaceLock(projectsRoot, projectId, { allowReentrant, staleTimeoutMs }));
     return locks;
   } catch (error) {
     for (const lock of locks.reverse()) releaseNamespaceLock(lock);
@@ -958,7 +1000,7 @@ export async function ensureKnowledgeStoreDirectories(projectId, { env = process
   const projectsRoot = path.join(resolveKernelRuntimeHome({ env }), 'state', 'projects');
   assertNamespacePathSafe(root, projectsRoot);
   await mkdir(projectsRoot, { recursive: true });
-  const locks = acquireNamespaceLocks(projectsRoot, [projectId], { allowReentrant: true });
+  const lock = await acquireNamespaceLockWithRetry(projectsRoot, projectId, { allowReentrant: true });
   try {
   const dirs = [
     root,
@@ -995,7 +1037,7 @@ export async function ensureKnowledgeStoreDirectories(projectId, { env = process
   }
     return root;
   } finally {
-    for (const lock of locks.reverse()) releaseNamespaceLock(lock);
+    releaseNamespaceLock(lock);
   }
 }
 
@@ -1010,7 +1052,7 @@ export async function writeAtomicJson(filePath, data) {
   // lock directory before opening the namespace lock; otherwise the lock
   // itself fails with ENOENT before the atomic writer can create its parent.
   if (info) await mkdir(info.projectsRoot, { recursive: true });
-  const lock = info ? acquireNamespaceLock(info.projectsRoot, info.projectId) : null;
+  const lock = info ? await acquireNamespaceLockWithRetry(info.projectsRoot, info.projectId) : null;
   try {
     return await writeAtomicJsonUnlocked(info?.filePath || filePath, data);
   } finally {
@@ -1050,7 +1092,7 @@ const writeAtomicJsonlUnlocked = async (filePath, records) => {
 export async function writeAtomicJsonl(filePath, records) {
   const info = namespaceInfoForPath(filePath);
   if (info) await mkdir(info.projectsRoot, { recursive: true });
-  const lock = info ? acquireNamespaceLock(info.projectsRoot, info.projectId) : null;
+  const lock = info ? await acquireNamespaceLockWithRetry(info.projectsRoot, info.projectId) : null;
   try {
     return await writeAtomicJsonlUnlocked(info?.filePath || filePath, records);
   } finally {
