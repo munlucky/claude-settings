@@ -1,0 +1,62 @@
+schemaVersion: 1
+kind: capability-asset-epochs
+repository:
+  name: munlucky/moonshot-relay
+  baselineBranch: main
+  baselineCommit: 9701a86d2225c938f13982a7e0f7f43a7f9bc10e
+  provenancePolicy:
+    commitRefsMustExistInBaselineHistory: true
+    fullShaRequired: true
+    rangesAreEvidenceAnchors: true
+    inferredBoundariesMustBeMarked: true
+    snapshotCopiesForbidden: true
+epochs:
+  - id: E0
+    name: Early Relay
+    firstSeen: {commit: e0aa7a22a2bca953fee7805a8c6bf8c3956d867e, date: 2026-01-08, subject: 클로드 코드 세팅}
+    evidenceCommits: [2027b31bd19b28f3b1c06ba99f2a625b46bfe17c, 9340bdf087b9719535db57729269cc1b1de71ab9]
+    capabilityFocus: [project-setup, configuration-sync, document-conventions]
+  - id: E1
+    name: Workflow and Skill Relay
+    firstSeen: {commit: 77ed33f1e1f3c1f0c44216b86d9df5123e58cbb7, date: 2026-01-21, subject: feat: 워크플로우 고도화 Phase 1-4 구현}
+    evidenceCommits: [5ccf1c9ccfbf68ae8067d6e7e69a7555c782fdb5, 1131912154b8c4e2c077f81bc7ee15fee440d302, c894c53f96ba3a4038e22545a8b38020b5e3c66d]
+    capabilityFocus: [task-planning, task-decomposition, skill-router, session-context]
+  - id: E2
+    name: Contract and Evidence Relay
+    firstSeen: {commit: 5ccf1c9ccfbf68ae8067d6e7e69a7555c782fdb5, date: 2026-01-21, subject: feat: 테스트 기반 완료 검증 시스템 구현}
+    evidenceCommits: [4836e14ed180fae8a9034f2c06b884cb7a994db6, 5f87d4856060b133b717ac843274ca3d11897e1e, 66e85c60d477b61142efc5a51141f5367533be60]
+    capabilityFocus: [task-contract, proof-evidence, completion-authority, mutation-gate]
+  - id: E3
+    name: Architecture, Research, and Retrospective Relay
+    firstSeen: {commit: 1f7ed38b80f2d66d34498548448423c56154be16, date: 2026-06-09, subject: 문샷 아키텍처 하네스 도입}
+    evidenceCommits: [4dddac38b7aeceeeea302c628380b44b7658e260, 9b48d15691444d778de1f8f837fa874ada524d1d, 361e7e88bc826f9b0df30ad02e65df287b5ceca2]
+    capabilityFocus: [architecture-analysis, research, plan-writer, retrospective]
+  - id: E4
+    name: Kernel Introduction
+    firstSeen: {commit: 7806dd1870501a1171969ca8e13af8fbec26f892, date: 2026-07-21, subject: feat(kernel): implement Moon Relay Kernel source contracts}
+    evidenceCommits: [98737a7b8c1dc696a887cb2c6fd3986e73db2061, 4d03637b914073a147c9bc3d6f94e57ed21be1b1, c93b6786c8ceb7a90f08d60f964d12f0b8b1cfa5]
+    capabilityFocus: [task-contract, run-state, proof-evidence, independent-review, worktree-isolation]
+  - id: E5
+    name: Kernel Knowledge Lifecycle
+    firstSeen: {commit: 761a0d19dc8abdccd9d32469af79f0ec600d104f, date: 2026-07-23, subject: feat(kernel): 프로젝트 지식 라이프사이클 Phase 01~07 구현}
+    evidenceCommits: [308ed41a335be779504380e2f093b706d5b27d37, 1ce454d8ac1a9145046afaf3d2d0344b25b140f2, 058202f10052e417b903909c83673dbe8ed971f4]
+    capabilityFocus: [project-identity, project-memory, knowledge-lifecycle, failure-memory, provenance]
+  - id: E6
+    name: Model and Provider Optimization
+    firstSeen: {commit: 01eac62a1c37b4b044704304992f38ef4c520603, date: 2026-07-25, subject: feat(kernel): route each stage to a logical model class}
+    evidenceCommits: [9e929f98037bc427a7707dbf844568d3eb39d99f, 162a3a731023d177ac30c4dd9198ad27e19421ff, 33c9cf31eb0c200245d42163aa17481fef8e0e63]
+    capabilityFocus: [model-routing, provider-session, prompt-envelope, cache-stability, telemetry-economics]
+  - id: E7
+    name: Native Runtime and Execution-First Kernel
+    firstSeen: {commit: 30b317c0c8f0dee9b4a1c8f82f8b14fe30a7f692, date: 2026-08-30, subject: feat(kernel): finalize owner-direct execution and retire Relay runtime}
+    evidenceCommits: [451fe52d9cd7ca126760bd5490ffe0ffcd0dd466, 88b2a51e3afbf72fb805f28a00161e7576cf0aee, f6b72ffadff8151caf2be2a87508f66a0d4b3d5e]
+    capabilityFocus: [native-runtime, bounded-work-unit, step-ledger, worktree-isolation, resume]
+  - id: E8
+    name: Current Stabilized Kernel
+    firstSeen: {commit: 5b8828b368af09451e3e54a0bc0837607101b2a5, date: 2026-09-04, subject: feat(kernel): Execution-First Context / Knowledge Lifecycle 개선}
+    evidenceCommits: [310d5bb6528050b223c420943a2ea445c56dea8c, 9701a86d2225c938f13982a7e0f7f43a7f9bc10e]
+    capabilityFocus: [completion-authority, proof-evidence, knowledge-lifecycle, native-runtime, bounded-work-unit]
+notes:
+  - Epochs are provenance anchors, not isolated subsystem boundaries.
+  - A manifest may reference multiple epochs when a capability is inherited, replaced, or split.
+  - Wave 8 must recheck every evidence commit against baseline history.

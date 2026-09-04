@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moon-relay-kernel.local/schemas/capability-asset.schema.json",
+  "title": "Moonshot Relay Capability Asset Manifest",
+  "description": "Engineering-only provenance manifest; not a runtime or installer contract.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "name", "summary", "category", "status", "product_relevance", "origin", "problem", "recommended_use", "avoid_use", "authority", "contracts", "implementations", "proof", "known_failures", "dependencies", "current_integration", "reintroduction", "decision"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "id": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$", "minLength": 3},
+    "name": {"$ref": "#/$defs/text"},
+    "summary": {"$ref": "#/$defs/text"},
+    "category": {"type": "string", "enum": ["WORK", "TRUST", "KNOWLEDGE", "EXECUTION", "INTELLIGENCE", "OPTIMIZATION", "PRODUCTIVITY"]},
+    "status": {"type": "string", "enum": ["CORE", "HOST", "OPTIONAL", "LIBRARY", "REFERENCE", "DEPRECATED", "EXPERIMENTAL"]},
+    "product_relevance": {"$ref": "#/$defs/productRelevance"},
+    "origin": {"$ref": "#/$defs/origin"},
+    "problem": {"$ref": "#/$defs/problem"},
+    "recommended_use": {"$ref": "#/$defs/texts"},
+    "avoid_use": {"$ref": "#/$defs/texts"},
+    "authority": {"$ref": "#/$defs/authority"},
+    "contracts": {"$ref": "#/$defs/contracts"},
+    "implementations": {"$ref": "#/$defs/implementations"},
+    "proof": {"$ref": "#/$defs/proof"},
+    "known_failures": {"type": "array", "items": {"$ref": "#/$defs/failure"}},
+    "dependencies": {"$ref": "#/$defs/dependencies"},
+    "current_integration": {"$ref": "#/$defs/currentIntegration"},
+    "reintroduction": {"$ref": "#/$defs/reintroduction"},
+    "decision": {"$ref": "#/$defs/decision"}
+  },
+  "$defs": {
+    "text": {"type": "string", "minLength": 1},
+    "texts": {"type": "array", "items": {"$ref": "#/$defs/text"}},
+    "paths": {"type": "array", "items": {"type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*\\.\\.)[^\\r\\n]+$"}},
+    "commit": {"type": "string", "pattern": "^[0-9a-f]{7,64}$"},
+    "epoch": {"type": "string", "pattern": "^E[0-8]$"},
+    "productRelevance": {
+      "type": "object", "additionalProperties": false, "required": ["relevant", "reason", "consumers"],
+      "properties": {"relevant": {"type": "boolean"}, "reason": {"$ref": "#/$defs/text"}, "consumers": {"$ref": "#/$defs/texts"}}
+    },
+    "origin": {
+      "type": "object", "additionalProperties": false, "required": ["first_seen", "generations"],
+      "properties": {
+        "first_seen": {"$ref": "#/$defs/firstSeen"},
+        "generations": {"type": "array", "items": {"$ref": "#/$defs/generation"}}
+      }
+    },
+    "firstSeen": {
+      "type": "object", "additionalProperties": false, "required": ["epoch", "commit", "date", "evidence"],
+      "properties": {"epoch": {"$ref": "#/$defs/epoch"}, "commit": {"$ref": "#/$defs/commit"}, "date": {"type": "string", "format": "date"}, "evidence": {"$ref": "#/$defs/texts"}}
+    },
+    "generation": {
+      "type": "object", "additionalProperties": false, "required": ["id", "epoch", "commit", "label", "change"],
+      "properties": {"id": {"$ref": "#/$defs/text"}, "epoch": {"$ref": "#/$defs/epoch"}, "commit": {"$ref": "#/$defs/commit"}, "label": {"$ref": "#/$defs/text"}, "change": {"$ref": "#/$defs/text"}}
+    },
+    "problem": {
+      "type": "object", "additionalProperties": false, "required": ["solves", "does_not_solve"],
+      "properties": {"solves": {"$ref": "#/$defs/texts"}, "does_not_solve": {"$ref": "#/$defs/texts"}}
+    },
+    "authority": {
+      "type": "object", "additionalProperties": false, "required": ["owns_state", "owns_completion", "provides_evidence"],
+      "properties": {"owns_state": {"$ref": "#/$defs/texts"}, "owns_completion": {"$ref": "#/$defs/texts"}, "provides_evidence": {"$ref": "#/$defs/texts"}}
+    },
+    "contracts": {
+      "type": "object", "additionalProperties": false, "required": ["inputs", "outputs", "invariants", "guardrails"],
+      "properties": {"inputs": {"$ref": "#/$defs/texts"}, "outputs": {"$ref": "#/$defs/texts"}, "invariants": {"$ref": "#/$defs/texts"}, "guardrails": {"$ref": "#/$defs/texts"}}
+    },
+    "implementation": {
+      "type": "object", "additionalProperties": false, "required": ["commit", "paths", "generation", "notes"],
+      "properties": {"commit": {"anyOf": [{"$ref": "#/$defs/commit"}, {"type": "null"}]}, "paths": {"$ref": "#/$defs/paths"}, "generation": {"$ref": "#/$defs/text"}, "notes": {"$ref": "#/$defs/text"}}
+    },
+    "implementations": {
+      "type": "object", "additionalProperties": false, "required": ["best_known", "historical"],
+      "properties": {"best_known": {"$ref": "#/$defs/implementation"}, "historical": {"type": "array", "items": {"$ref": "#/$defs/implementation"}}}
+    },
+    "proofItem": {
+      "type": "object", "additionalProperties": false, "required": ["id", "path", "purpose"],
+      "properties": {"id": {"$ref": "#/$defs/text"}, "path": {"type": "string", "minLength": 1}, "purpose": {"$ref": "#/$defs/text"}, "commandRef": {"type": ["string", "null"]}, "status": {"type": "string", "enum": ["verified", "partial", "missing", "historical", "unknown"]}}
+    },
+    "proof": {
+      "type": "object", "additionalProperties": false, "required": ["tests", "fixtures", "smoke"],
+      "properties": {"tests": {"type": "array", "items": {"$ref": "#/$defs/proofItem"}}, "fixtures": {"type": "array", "items": {"$ref": "#/$defs/proofItem"}}, "smoke": {"type": "array", "items": {"$ref": "#/$defs/proofItem"}}}
+    },
+    "failure": {
+      "type": "object", "additionalProperties": false, "required": ["id", "severity", "symptom", "root_cause", "lesson"],
+      "properties": {"id": {"$ref": "#/$defs/text"}, "severity": {"type": "string", "enum": ["P0", "P1", "P2", "P3", "unknown"]}, "symptom": {"$ref": "#/$defs/text"}, "root_cause": {"$ref": "#/$defs/text"}, "lesson": {"$ref": "#/$defs/text"}, "fixed_in": {"type": ["string", "null"]}, "regression_tests": {"$ref": "#/$defs/texts"}}
+    },
+    "dependencies": {
+      "type": "object", "additionalProperties": false, "required": ["capabilities", "runtime", "external"],
+      "properties": {"capabilities": {"type": "array", "items": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"}}, "runtime": {"$ref": "#/$defs/texts"}, "external": {"$ref": "#/$defs/texts"}}
+    },
+    "currentIntegration": {
+      "type": "object", "additionalProperties": false, "required": ["layer", "active", "notes"],
+      "properties": {"layer": {"$ref": "#/$defs/text"}, "active": {"type": "boolean"}, "paths": {"$ref": "#/$defs/paths"}, "entrypoints": {"$ref": "#/$defs/texts"}, "notes": {"$ref": "#/$defs/text"}}
+    },
+    "reintroduction": {
+      "type": "object", "additionalProperties": false, "required": ["recommended_layer", "trigger", "integration_points", "risks", "guardrails"],
+      "properties": {"recommended_layer": {"$ref": "#/$defs/text"}, "trigger": {"$ref": "#/$defs/text"}, "integration_points": {"$ref": "#/$defs/texts"}, "risks": {"$ref": "#/$defs/texts"}, "guardrails": {"$ref": "#/$defs/texts"}}
+    },
+    "decision": {
+      "type": "object", "additionalProperties": false, "required": ["disposition", "rationale"],
+      "properties": {"disposition": {"type": "string", "enum": ["retain", "reintroduce", "archive", "replace", "forbid", "unknown"]}, "rationale": {"$ref": "#/$defs/text"}, "follow_up": {"$ref": "#/$defs/texts"}}
+    }
+  }
+}

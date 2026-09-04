@@ -1,0 +1,64 @@
+schemaVersion: 1
+kind: capability-asset-taxonomy
+domains:
+  WORK:
+    label: 작업 계획과 진행
+    description: bounded execution과 resume를 포함한 작업 관리
+    candidateCapabilities: [task-contract, task-planning, task-decomposition, run-state, step-ledger, resume, bounded-work-unit]
+  TRUST:
+    label: 신뢰와 완료
+    description: 권위, 검증, mutation, review, Git closeout 경계
+    candidateCapabilities: [proof-evidence, completion-authority, independent-review, review-receipt, mutation-gate, git-closeout]
+  KNOWLEDGE:
+    label: 프로젝트 지식
+    description: identity, knowledge lifecycle, failure memory와 provenance
+    candidateCapabilities: [project-memory, project-identity, knowledge-lifecycle, failure-memory, provenance]
+  EXECUTION:
+    label: 실행과 격리
+    description: provider, session, worktree, lock, sandbox, network 경계
+    candidateCapabilities: [provider-session, worktree-isolation, lock-ownership, parallel-execution, sandbox-network-boundary, native-runtime]
+  INTELLIGENCE:
+    label: 판단과 적응
+    description: routing, failure classification, stagnation, architecture, research
+    candidateCapabilities: [model-routing, failure-classification, stagnation-detection, architecture-analysis, research, adaptive-workflow]
+  OPTIMIZATION:
+    label: 비용과 문맥 최적화
+    description: context, prompt, cache, session, evidence reuse와 telemetry
+    candidateCapabilities: [context-compaction, prompt-envelope, cache-stability, session-affinity, evidence-reuse, telemetry-economics]
+  PRODUCTIVITY:
+    label: 생산성과 도구
+    description: 계획, 문서, commit, retro, diff, browser와 orchestration
+    candidateCapabilities: [plan-writer, architecture-writer, research-writer, commit-helper, session-logger, retrospective, diff-review, browser-evidence, skill-router, phase-runner]
+statuses:
+  CORE:
+    meaning: 현재 핵심 경로이며 계약과 실행 가능한 proof가 유지됨
+    minimumEvidence: [current-integration, authority-boundary, executable-proof, known-failure-review]
+  HOST:
+    meaning: Host 또는 provider가 소유하는 분리된 경계
+    minimumEvidence: [host-owner, transport-contract, failure-boundary]
+  OPTIONAL:
+    meaning: 명시적 선택 또는 조건에서만 사용하는 기능
+    minimumEvidence: [activation-condition, opt-in-contract, executable-proof]
+  LIBRARY:
+    meaning: 재사용 자산이나 자체 completion authority는 없음
+    minimumEvidence: [import-or-entrypoint, reusable-contract, executable-proof]
+  REFERENCE:
+    meaning: 역사, 설계, 비교를 위한 참고 자산
+    minimumEvidence: [provenance, use-context]
+  DEPRECATED:
+    meaning: 권장하지 않지만 provenance와 실패 교훈을 보존함
+    minimumEvidence: [provenance, deprecation-rationale, avoid-guidance]
+  EXPERIMENTAL:
+    meaning: 검증, 계약 또는 통합이 아직 불완전함
+    minimumEvidence: [provenance-or-origin-note, open-risk]
+classificationRules:
+  - id: core-requires-current-use
+    rule: CORE는 현재 통합과 실행 가능한 proof 없이 부여하지 않는다.
+  - id: library-is-not-authority
+    rule: LIBRARY는 state나 completion authority를 소유하지 않는다.
+  - id: deprecated-keeps-lessons
+    rule: DEPRECATED는 삭제하지 않고 실패 원인과 금지 사용을 남긴다.
+  - id: reference-is-not-adoption
+    rule: REFERENCE는 제품 채택이나 runtime 활성화를 의미하지 않는다.
+  - id: experimental-is-explicit
+    rule: EXPERIMENTAL은 미검증 범위와 다음 검증 조건을 명시한다.

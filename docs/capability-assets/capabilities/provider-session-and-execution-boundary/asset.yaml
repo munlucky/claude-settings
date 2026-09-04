@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 1,
+  "id": "provider-session-and-execution-boundary",
+  "name": "Provider session and execution boundary",
+  "summary": "Host/provider session, execution capsule, workspace와 transport의 경계를 분리한다.",
+  "category": "EXECUTION",
+  "status": "HOST",
+  "product_relevance": {
+    "relevant": true,
+    "reason": "agent workflow는 host가 수행한 실제 실행과 Kernel이 승인한 work unit을 혼동하지 않아야 한다.",
+    "consumers": ["agent_workflow"]
+  },
+  "origin": {
+    "first_seen": {
+      "epoch": "E4",
+      "commit": "c93b6786c8ceb7a90f08d60f964d12f0b8b1cfa5",
+      "date": "2026-07-22",
+      "evidence": ["scripts/kernel/installer.mjs", "scripts/kernel/route.mjs"]
+    },
+    "generations": [
+      {"id": "kernel-runtime-boundary", "epoch": "E4", "commit": "c93b6786c8ceb7a90f08d60f964d12f0b8b1cfa5", "label": "Kernel runtime boundary", "change": "provider route와 installer/runtime lifecycle을 Kernel boundary로 분리했다."},
+      {"id": "provider-session", "epoch": "E7", "commit": "30b317c0c8f0dee9b4a1c8f82f8b14fe30a7f692", "label": "Provider session", "change": "host session, session binding과 execution capsule을 구조화했다."},
+      {"id": "current-host-owned-execution", "epoch": "E8", "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e", "label": "Host-owned execution", "change": "owner-direct execution과 provider receipt 경계를 명시했다."}
+    ]
+  },
+  "problem": {
+    "solves": ["provider/host session과 Kernel task state가 섞이는 문제", "실제 실행을 수행한 주체와 completion owner가 달라 증거가 불명확한 문제"],
+    "does_not_solve": ["provider login·quota·network availability", "외부 host가 발행하지 않은 receipt를 추정하는 것"]
+  },
+  "recommended_use": ["session source, holder, execution capsule과 workspace를 별도 identity로 기록한다.", "host 실행 결과는 Kernel bound evidence로 반입한다."],
+  "avoid_use": ["provider API 호출을 local unit test로 대체해 live success라 주장하지 않는다.", "auth/session secret을 asset manifest에 기록하지 않는다."],
+  "authority": {
+    "owns_state": ["host/provider session binding", "execution capsule and transport boundary"],
+    "owns_completion": ["host는 실행 receipt를 제공할 수 있으나 Kernel completion authority를 소유하지 않는다."],
+    "provides_evidence": ["host session receipt", "execution capsule and transport tests"]
+  },
+  "contracts": {
+    "inputs": ["Kernel work unit", "provider capability", "host session", "workspace identity"],
+    "outputs": ["provider execution result", "host receipt", "transport error boundary"],
+    "invariants": ["session owner와 run owner를 구분한다.", "host result는 scope와 source identity에 묶인다."],
+    "guardrails": ["auth secret redaction", "provider failure fail-closed", "no fabricated live receipt", "worktree boundary enforcement"]
+  },
+  "implementations": {
+    "best_known": {
+      "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
+      "paths": ["scripts/kernel/run/host-session.mjs", "scripts/kernel/run/session-binding.mjs", "scripts/kernel/run/session-holder.mjs", "scripts/kernel/run/execution-capsule.mjs", "scripts/kernel/bridge/mcp.mjs", "scripts/kernel/workspace/step-worktree-manager.mjs"],
+      "generation": "E8-current",
+      "notes": "현재 Host/provider execution boundary와 capsule."
+    },
+    "historical": [
+      {"commit": "c93b6786c8ceb7a90f08d60f964d12f0b8b1cfa5", "paths": ["scripts/kernel/installer.mjs", "scripts/kernel/route.mjs"], "generation": "E4-kernel", "notes": "Kernel runtime/installer와 route boundary."},
+      {"commit": "30b317c0c8f0dee9b4a1c8f82f8b14fe30a7f692", "paths": ["scripts/kernel/run/host-session.mjs", "scripts/kernel/run/session-binding.mjs", "scripts/kernel/run/execution-capsule.mjs"], "generation": "E7-kernel", "notes": "provider session과 execution capsule 도입."}
+    ]
+  },
+  "proof": {
+    "tests": [
+      {"id": "host-loop", "path": "tests/kernel-host-loop-e2e.test.mjs", "purpose": "Host loop와 receipt 경계를 검증한다.", "commandRef": "test", "status": "verified"},
+      {"id": "multi-provider-session", "path": "tests/kernel-multi-provider-session.test.mjs", "purpose": "provider session binding과 isolation을 검증한다.", "commandRef": "test", "status": "verified"},
+      {"id": "execution-capsule", "path": "tests/kernel-execution-capsule.test.mjs", "purpose": "execution capsule의 source/owner/scope invariant를 검증한다.", "commandRef": "test", "status": "verified"}
+    ],
+    "fixtures": [],
+    "smoke": [
+      {"id": "mcp-bridge", "path": "scripts/kernel/bridge/mcp.mjs", "purpose": "host transport boundary의 구현 위치를 확인한다.", "commandRef": null, "status": "verified"}
+    ]
+  },
+  "known_failures": [
+    {"id": "external-session-uncertainty", "severity": "P1", "symptom": "provider auth, session 또는 transport가 준비되지 않으면 local process만으로 live execution을 입증할 수 없다.", "root_cause": "실행 주체와 외부 dependency의 상태가 Kernel process 밖에 있기 때문이다.", "lesson": "HOST capability는 host-owned receipt가 없으면 verified live capability로 승격하지 않는다.", "fixed_in": null, "regression_tests": ["tests/kernel-network-policy.test.mjs", "tests/kernel-execution-capsule-fresh-session.test.mjs", "tests/kernel-host-loop-e2e.test.mjs"]}
+  ],
+  "dependencies": {
+    "capabilities": ["task-contract-and-bounded-work", "control-plane-state-authority", "account-root-package-and-profile-adoption"],
+    "runtime": ["Kernel host loop", "provider adapter", "execution capsule"],
+    "external": ["provider auth/session", "host transport", "network policy"]
+  },
+  "current_integration": {
+    "layer": "Kernel host/provider execution boundary",
+    "active": true,
+    "paths": ["scripts/kernel/run/host-session.mjs", "scripts/kernel/run/execution-capsule.mjs", "scripts/kernel/bridge/mcp.mjs"],
+    "entrypoints": ["bin/moon-relay-kernel.mjs"],
+    "notes": "HOST classification: local tests prove contracts, while live success requires host/provider receipt."
+  },
+  "reintroduction": {
+    "recommended_layer": "Host bridge and provider session adapter",
+    "trigger": "새 provider, host surface 또는 execution transport를 추가할 때",
+    "integration_points": ["capability admission", "session binding", "execution capsule", "host receipt"],
+    "risks": ["auth leakage", "provider state와 Kernel state의 split brain", "fabricated execution proof"],
+    "guardrails": ["secret redaction", "session/run identity binding", "network policy", "host-owned receipt required"]
+  },
+  "decision": {
+    "disposition": "retain",
+    "rationale": "현재 Kernel의 provider-independent core와 Host-owned execution을 연결하는 HOST capability다.",
+    "follow_up": ["새 transport는 local contract proof와 live host proof를 분리해 catalog에 표시한다."]
+  }
+}

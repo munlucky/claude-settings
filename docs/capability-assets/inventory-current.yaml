@@ -1,0 +1,247 @@
+schemaVersion: 1
+kind: capability-asset-current-inventory
+
+repository:
+  name: moonshot-relay
+  baselineBranch: main
+  baselineCommit: 9701a86d2225c938f13982a7e0f7f43a7f9bc10e
+  capturedAt: 2026-09-04
+  sourceOfTruth: git-history-and-current-checkout
+  inventoryMode: representative-paths-plus-counts
+  finalClassification: complete
+
+observedBoundary:
+  commands: [git rev-parse HEAD, git ls-files]
+  baselineExistsInCheckout: true
+  worktreeBeforeAssetizationWasClean: true
+  runtimeLoaded: false
+  installerLoaded: false
+  productionBehaviorChanged: false
+  sourceSnapshotsCopied: false
+  decomplexificationPerformed: false
+  interpretation:
+    - Discovery inventory is now bound to 15 approved-by-contract asset manifests.
+    - A path proves location only; runtime use requires separate evidence.
+    - Archive paths are historical references, not current integrations.
+
+harnessSurfaceBudget:
+  path: package/harness-surface-budget.json
+  baseline: {files: 1930, nonblankLines: 252013, utf8Bytes: 11529426, estimatedPromptTokens: 2882357}
+  allowedDeltaUnchanged: true
+  reason: baseline frozen at the measured Asset Base completion surface; allowed delta remains unchanged for future growth
+
+trackedSurface:
+  fileCountsByTopLevel:
+    .claude-plugin: 3
+    .codex-plugin: 3
+    .github: 6
+    root: 14
+    agents: 33
+    archive: 190
+    artifacts: 5
+    bin: 10
+    catalog: 5
+    docs: 231
+    evidence: 38
+    kernel: 14
+    package: 44
+    rules: 18
+    schemas: 113
+    scripts: 290
+    skills: 247
+    templates: 53
+    tests: 543
+    tools: 43
+    totalTracked: 1903
+  currentRoots: [AGENTS.md, README.md, package.json, kernel/, scripts/kernel/, schemas/, tests/, skills/, docs/public/, archive/scripts/legacy-phase-adapters/]
+
+runtimeEntrypoints: [bin/moon-relay-kernel.mjs, bin/moonshot-relay.mjs, bin/moon-relay-standalone.mjs, bin/moonshot-node]
+runtimeEntrypointPolicy: inventory-only; this asset base does not load or modify entrypoints
+
+kernelPolicySurface:
+  fileCount: 14
+  representativeFiles: [kernel/capabilities.yaml, kernel/knowledge-policy.yaml, kernel/state-policy.yaml, kernel/workflow.yaml]
+
+contractSurface:
+  observedKernelSchemaCount: 31
+  taskRun: [schemas/kernel.task-contract.schema.json, schemas/kernel.execution-capsule.schema.json, schemas/kernel.workflow-state.schema.json]
+  trustCloseout: [schemas/kernel.release-evidence.schema.json, schemas/kernel.review-receipt.schema.json, schemas/kernel.git-closeout-receipt.schema.json]
+  knowledge: [schemas/kernel.knowledge-contract.schema.json, schemas/kernel.knowledge-record.schema.json, schemas/kernel.knowledge-candidate.schema.json]
+  routingRuntime: [schemas/kernel.model-route.schema.json, schemas/kernel.model-usage.schema.json, schemas/kernel.route-admission.schema.json, schemas/kernel.runtime-manifest.schema.json]
+
+packageContract:
+  files: [package.json, package-lock.json, package/kernel/manifest.json, package/kernel/package.json, package/kernel/skills.lock.json, skills.lock.json]
+  primaryTestCommand: npm test
+  activeTestCommands: [npm run test:active:1, npm run test:active:2, npm run test:active:3, npm run test:active]
+  commandOwnership: package.json
+
+implementationSurface:
+  scriptsKernelTopLevelFiles: 37
+  scriptsKernelDirectories: [bridge, codebase, eval, git, knowledge, knowledge-ingestion, persistence, proof, routing, run, standalone, task, workspace]
+  packageKernel: [package/kernel/manifest.json, package/kernel/package.json, package/kernel/skills.lock.json]
+  skillSurface: {trackedFiles: 247, role: provider and workflow prompt/adoption surface}
+
+documentSurface:
+  canonicalDocs: [AGENTS.md, README.md, docs/public/roadmaps/harness-control-plane-modernization/01-current-truth-baseline-and-source-preservation-v2.md, docs/public/roadmaps/kernel-project-knowledge-lifecycle-2026-07-23/00-master-plan-v1.ko.md, docs/public/roadmaps/kernel-execution-first-reconciliation-2026-09-03/README.md]
+  use: document claims require later generation and decision binding
+
+testSurface:
+  gitTrackedUnderTests: 543
+  harnessRegisteredRunnable: 368
+  harnessFixtureCount: 1
+  harnessUnregisteredCount: 0
+
+historicalSurface:
+  legacyRelay: [archive/scripts/legacy-phase-adapters/agent-loop-phase-runner.mjs, archive/scripts/legacy-phase-adapters/agent-loop-phase-runtime.mjs, archive/scripts/legacy-phase-adapters/agent-loop-phase-state.mjs, archive/scripts/legacy-phase-adapters/harness-surface-inventory.mjs]
+  legacyContracts: [archive/scripts/legacy-phase-adapters/lib/verification-contract.mjs, archive/scripts/legacy-phase-adapters/lib/phase-run-lease-policy.mjs]
+
+candidateCapabilities:
+  - id: task-contract-and-bounded-work
+    meta: {domain: WORK, candidateStatus: CORE, classificationStatus: pending, relevance: {agent_workflow: true, project_knowledge_lifecycle: false}}
+    problem: Bind objective, acceptance, scope, non-goals, risk, and allowed paths before mutation.
+    sourcePaths: [scripts/kernel/task/task-contract.mjs, scripts/kernel/task/evidence-plan.mjs, scripts/kernel/run/contract-preflight.mjs, scripts/kernel/run/work-unit-scope.mjs]
+    contractPaths: [schemas/kernel.task-contract.schema.json, schemas/kernel.execution-capsule.schema.json, schemas/kernel.workflow-state.schema.json]
+    proofPaths: [tests/kernel-contract-preflight-continuation.test.mjs, tests/kernel-evidence-plan.test.mjs, tests/kernel-bounded-work-unit.test.mjs]
+    currentIntegration: {active: true, layer: Kernel task admission and work-unit scope}
+
+  - id: step-ledger-resume
+    meta: {domain: WORK, candidateStatus: CORE, classificationStatus: pending, relevance: {agent_workflow: true, project_knowledge_lifecycle: false}}
+    problem: Preserve ordered step state, cursor ownership, and resumable progress across bounded work.
+    sourcePaths: [scripts/kernel/run/run-step-ledger.mjs, scripts/kernel/run/step-planner.mjs, scripts/kernel/run/work-cursor.mjs, scripts/kernel/run/run-loop.mjs, scripts/kernel/run/finalization.mjs]
+    contractPaths: [schemas/kernel.run-summary.schema.json, schemas/kernel.runtime-state.schema.json, schemas/kernel.state-projection.schema.json]
+    proofPaths: [tests/kernel-run-step-ledger.test.mjs, tests/kernel-run-step-resume.test.mjs, tests/kernel-run-step-scope.test.mjs, tests/kernel-finalization-report-resume.test.mjs]
+    currentIntegration: {active: true, layer: Kernel run lifecycle and state projection}
+
+  - id: evidence-completion-and-review-authority
+    meta: {domain: TRUST, candidateStatus: CORE, classificationStatus: pending, relevance: {agent_workflow: true, project_knowledge_lifecycle: false}}
+    problem: Make completion depend on bound evidence, protected obligations, and review receipts rather than prose.
+    sourcePaths: [scripts/kernel/evidence-pack.mjs, scripts/kernel/proof/proof-executor.mjs, scripts/kernel/proof/protected-obligations.mjs, scripts/kernel/proof/review-pipeline.mjs, scripts/kernel/proof/review-receipt.mjs, scripts/kernel/run/completion-outcomes.mjs]
+    contractPaths: [schemas/kernel.release-evidence.schema.json, schemas/kernel.qa-report.schema.json, schemas/kernel.review-capsule.schema.json, schemas/kernel.review-receipt.schema.json]
+    proofPaths: [tests/kernel-evidence-pack.test.mjs, tests/kernel-completion-authority-required.test.mjs, tests/kernel-review-receipt-completion.test.mjs, tests/kernel-final-reconciliation.test.mjs]
+    currentIntegration: {active: true, layer: "Kernel proof, completion, and protected review boundary"}
+
+  - id: mutation-fencing-and-git-closeout
+    meta: {domain: TRUST, candidateStatus: CORE, classificationStatus: pending, relevance: {agent_workflow: true, project_knowledge_lifecycle: false}}
+    problem: Bind writes to declared paths and closeout to validated staging, commit, and remote parity evidence.
+    sourcePaths: [scripts/kernel/run/mutation-guard.mjs, scripts/kernel/git/closeout.mjs, scripts/kernel/git/staging-policy.mjs, scripts/kernel/git/remote-parity.mjs, scripts/kernel/change-contract.mjs]
+    contractPaths: [schemas/kernel.git-closeout-request.schema.json, schemas/kernel.git-closeout-receipt.schema.json, schemas/kernel.attempt-provenance.schema.json]
+    proofPaths: [tests/kernel-mutation-guard.test.mjs, tests/kernel-git-closeout-e2e.test.mjs, tests/kernel-git-closeout-safety.test.mjs, tests/kernel-git-remote-parity.test.mjs]
+    currentIntegration: {active: true, layer: Kernel mutation boundary and Git closeout}
+
+  - id: project-identity-and-knowledge-lifecycle
+    meta: {domain: KNOWLEDGE, candidateStatus: CORE, classificationStatus: pending, relevance: {agent_workflow: true, project_knowledge_lifecycle: true}}
+    problem: Keep project identity, knowledge records, revisions, supersession, and reuse bound to the correct project.
+    sourcePaths: [scripts/kernel/project-identity.mjs, scripts/kernel/project-identity-preflight.mjs, scripts/kernel/knowledge/store.mjs, scripts/kernel/knowledge/records.mjs, scripts/kernel/knowledge/revision.mjs, scripts/kernel/knowledge/supersession.mjs]
+    contractPaths: [schemas/kernel.knowledge-contract.schema.json, schemas/kernel.knowledge-record.schema.json, schemas/kernel.knowledge-candidate.schema.json, schemas/kernel.knowledge-review-result.schema.json]
+    proofPaths: [tests/kernel-project-identity.test.mjs, tests/kernel-knowledge-lifecycle-e2e.test.mjs, tests/kernel-knowledge-store.test.mjs, tests/kernel-knowledge-reuse-e2e.test.mjs]
+    currentIntegration: {active: true, layer: Kernel project-scoped knowledge plane}
+
+  - id: knowledge-ingestion-and-evidence-graph
+    meta: {domain: KNOWLEDGE, candidateStatus: CORE, classificationStatus: pending, relevance: {agent_workflow: true, project_knowledge_lifecycle: true}}
+    problem: Normalize, redact, deduplicate, conflict-check, verify, and promote knowledge with provenance.
+    sourcePaths: [scripts/kernel/knowledge-ingestion/import.mjs, scripts/kernel/knowledge-ingestion/normalize.mjs, scripts/kernel/knowledge-ingestion/deduplicate.mjs, scripts/kernel/knowledge-ingestion/conflict.mjs, scripts/kernel/knowledge-ingestion/verify.mjs, scripts/kernel/knowledge/ontology-gate.mjs, scripts/kernel/knowledge/tacit-resolve.mjs]
+    contractPaths: [schemas/kernel.knowledge-import.schema.json, schemas/kernel.knowledge-import-receipt.schema.json, schemas/kernel.knowledge-commit-receipt.schema.json]
+    proofPaths: [tests/kernel-knowledge-candidate.test.mjs, tests/kernel-knowledge-review.test.mjs, tests/kernel-ontology-gating.test.mjs, tests/kernel-architecture-knowledge.test.mjs]
+    currentIntegration: {active: true, layer: "Kernel knowledge ingestion, review, and promotion"}
+
+  - id: control-plane-state-authority
+    meta: {domain: EXECUTION, candidateStatus: CORE, classificationStatus: pending, relevance: {agent_workflow: true, project_knowledge_lifecycle: false}}
+    problem: Provide one durable authority for lifecycle transitions, state persistence, projection, and runtime-home ownership.
+    sourcePaths: [scripts/kernel/control-plane.mjs, scripts/kernel/state-store.mjs, scripts/kernel/state-projector.mjs, scripts/kernel/transition.mjs, scripts/kernel/durable-write.mjs, scripts/kernel/sqlite-adapter.mjs]
+    contractPaths: [schemas/kernel.runtime-state.schema.json, schemas/kernel.workflow-state.schema.json, schemas/kernel.state-projection.schema.json, schemas/kernel.runtime-manifest.schema.json]
+    proofPaths: [tests/kernel-control-plane-lifecycle.test.mjs, tests/kernel-state-authority.test.mjs, tests/kernel-workflow-state-machine.test.mjs, tests/kernel-sqlite-adapter-contract.test.mjs]
+    currentIntegration: {active: true, layer: Kernel runtime control plane}
+
+  - id: provider-session-and-execution-boundary
+    meta: {domain: EXECUTION, candidateStatus: HOST, classificationStatus: pending, relevance: {agent_workflow: true, project_knowledge_lifecycle: false}}
+    problem: Bind host/provider sessions, capability admission, execution capsules, and workspace boundaries.
+    sourcePaths: [scripts/kernel/run/host-session.mjs, scripts/kernel/run/session-binding.mjs, scripts/kernel/run/session-holder.mjs, scripts/kernel/run/execution-capsule.mjs, scripts/kernel/bridge/mcp.mjs, scripts/kernel/workspace/step-worktree-manager.mjs]
+    contractPaths: [schemas/kernel.execution-capsule.schema.json, schemas/kernel.session-source.schema.json, schemas/kernel.route-admission.schema.json]
+    proofPaths: [tests/kernel-host-loop-e2e.test.mjs, tests/kernel-multi-provider-session.test.mjs, tests/kernel-session-binding.test.mjs, tests/kernel-execution-capsule-fresh-session.test.mjs]
+    currentIntegration: {active: true, layer: "Kernel host and provider execution boundary", note: host-local receipt required}
+
+  - id: model-routing-and-route-admission
+    meta: {domain: INTELLIGENCE, candidateStatus: CORE, classificationStatus: pending, relevance: {agent_workflow: true, project_knowledge_lifecycle: false}}
+    problem: Select models and providers under policy, capability, cost, risk, evidence, and stagnation constraints.
+    sourcePaths: [scripts/kernel/run/model-routing.mjs, scripts/kernel/run/model-route-contract.mjs, scripts/kernel/route.mjs, scripts/kernel/routing/route-admission.mjs, scripts/kernel/capability-resolver.mjs, scripts/kernel/run/stagnation.mjs]
+    contractPaths: [schemas/kernel.model-route.schema.json, schemas/kernel.model-usage.schema.json, schemas/kernel.route-admission.schema.json, schemas/kernel.measurement.schema.json]
+    proofPaths: [tests/kernel-model-routing-e2e.test.mjs, tests/kernel-model-route-contract.test.mjs, tests/kernel-model-usage-receipt.test.mjs, tests/kernel-route-admission-e2e.test.mjs, tests/kernel-stagnation-routing.test.mjs]
+    currentIntegration: {active: true, layer: Kernel route admission and model policy}
+
+  - id: context-prompt-cache-and-optimization
+    meta: {domain: OPTIMIZATION, candidateStatus: CORE, classificationStatus: pending, relevance: {agent_workflow: true, project_knowledge_lifecycle: true}}
+    problem: Build bounded, redacted, reproducible context and reuse safe prompt, cache, and evidence segments.
+    sourcePaths: [scripts/kernel/context-build.mjs, scripts/kernel/context-receipt.mjs, scripts/kernel/context-segments.mjs, scripts/kernel/cache-replay.mjs, scripts/kernel/canonical-digest.mjs, scripts/kernel/optimization-cycle.mjs]
+    contractPaths: [schemas/kernel.context-receipt.schema.json, schemas/kernel.model-usage.schema.json, schemas/kernel.measurement.schema.json]
+    proofPaths: [tests/kernel-context-compiler.test.mjs, tests/kernel-context-byte-identity.test.mjs, tests/kernel-cache-replay.test.mjs, tests/kernel-optimization-cycle.test.mjs, tests/kernel-prompt-size-budget.test.mjs]
+    currentIntegration: {active: true, layer: "Kernel context, cache replay, and optimization plane", note: digest and freshness gates apply}
+
+  - id: account-root-package-and-profile-adoption
+    meta: {domain: EXECUTION, candidateStatus: HOST, classificationStatus: pending, relevance: {agent_workflow: true, project_knowledge_lifecycle: false}}
+    problem: Materialize and install the Kernel package with account-root ownership and profile parity.
+    sourcePaths: [scripts/kernel/package-build.mjs, scripts/kernel/installer.mjs, scripts/kernel/profile-build.mjs, scripts/kernel/profile-install.mjs, scripts/kernel/profile-projection.mjs, scripts/kernel/project-hydrate.mjs, scripts/kernel/runtime-boundary-audit.mjs]
+    contractPaths: [schemas/kernel.runtime-manifest.schema.json, schemas/kernel.track.schema.json]
+    proofPaths: [tests/kernel-package-materialization.test.mjs, tests/kernel-install-isolation.test.mjs, tests/kernel-profile-ownership.test.mjs, tests/kernel-managed-runtime.test.mjs, tests/kernel-account-root-profile.test.mjs]
+    currentIntegration: {active: true, layer: "Kernel package and account-root profile boundary", note: host-local evidence required}
+
+  - id: standalone-architecture-and-research-tools
+    meta: {domain: PRODUCTIVITY, candidateStatus: OPTIONAL, classificationStatus: pending, relevance: {agent_workflow: true, project_knowledge_lifecycle: true}}
+    problem: Provide provider-neutral planning, architecture, research, diff, UI-audit, and project-memory tools outside runtime authority.
+    sourcePaths: [scripts/kernel/standalone/architecture-artifacts.mjs, scripts/kernel/standalone/product-definition.mjs, scripts/kernel/standalone/project-memory.mjs, scripts/kernel/standalone/explain-diff-html.mjs, scripts/kernel/standalone/ui-audit.mjs, bin/codebase-understanding.mjs, bin/project-memory.mjs]
+    contractPaths: [schemas/kernel.knowledge-contract.schema.json, schemas/kernel.codebase-index-manifest.schema.json]
+    proofPaths: [tests/architecture-contract-bind.test.mjs, tests/architecture-handoff-build.test.mjs, tests/research-evidence-contract.test.mjs, tests/kernel-standalone-project-knowledge.test.mjs]
+    currentIntegration: {active: true, layer: standalone command and skill surface, note: advisory unless separately bound}
+
+  - id: retrospective-and-regression-learning
+    meta: {domain: KNOWLEDGE, candidateStatus: OPTIONAL, classificationStatus: pending, relevance: {agent_workflow: true, project_knowledge_lifecycle: true}}
+    problem: Collect failure and improvement signals without silently promoting them into runtime authority.
+    sourcePaths: [docs/public/roadmaps/daily-retro-harness-loop-2026-07-03/README.md, docs/public/roadmaps/daily-retro-harness-loop-2026-07-03/ADR/ADR-0002-advisory-only-authority.md, tests/retro-collect-contract.test.mjs, tests/retro-improvement-proposer-contract.test.mjs]
+    contractPaths: [schemas/kernel.knowledge-candidate.schema.json, schemas/kernel.knowledge-review-result.schema.json]
+    proofPaths: [tests/retro-cli-contract.test.mjs, tests/retro-collect-contract.test.mjs, tests/retro-no-promotion-authority-contract.test.mjs]
+    currentIntegration: {active: true, layer: separate retrospective and improvement plane, note: explicit review and commit required}
+
+  - id: legacy-phase-runner-and-harness-adapters
+    meta: {domain: EXECUTION, candidateStatus: DEPRECATED, classificationStatus: pending, relevance: {agent_workflow: true, project_knowledge_lifecycle: false}}
+    problem: Preserve prior Relay phase, lease, artifact, verification, and harness behavior for comparison.
+    sourcePaths: [archive/scripts/legacy-phase-adapters/agent-loop-phase-runner.mjs, archive/scripts/legacy-phase-adapters/agent-loop-phase-runtime.mjs, archive/scripts/legacy-phase-adapters/agent-loop-phase-state.mjs, archive/scripts/legacy-phase-adapters/harness-surface-inventory.mjs]
+    contractPaths: [archive/scripts/legacy-phase-adapters/lib/verification-contract.mjs, archive/scripts/legacy-phase-adapters/lib/phase-run-lease-policy.mjs]
+    proofPaths: [archive/scripts/legacy-phase-adapters/agent-loop-phase-runner.test.mjs, archive/scripts/legacy-phase-adapters/agent-loop-phase-runtime.test.mjs, archive/scripts/legacy-phase-adapters/harness-surface-inventory.test.mjs]
+    currentIntegration: {active: false, layer: archived Relay history, note: no reintroduction without a new contract and compatibility proof}
+
+  - id: harness-surface-and-regression-audit
+    meta: {domain: TRUST, candidateStatus: REFERENCE, classificationStatus: pending, relevance: {agent_workflow: true, project_knowledge_lifecycle: false}}
+    problem: Detect unregistered tests, surface growth, regressions, and proof inventory drift.
+    sourcePaths: [archive/scripts/legacy-phase-adapters/harness-surface-inventory.mjs, tests/harness-surface-report-contract.test.mjs, tests/harness-regression-contract.test.mjs, tests/harness-history-contract.test.mjs]
+    contractPaths: [package.json, tests/harness-surface-report-contract.test.mjs]
+    proofPaths: [tests/harness-surface-report-contract.test.mjs, tests/harness-regression-contract.test.mjs, tests/harness-search-fixture-contract.test.mjs]
+    currentIntegration: {active: true, layer: verification and regression reporting, note: diagnostic; not completion authority}
+
+inventoryRules:
+  - candidateStatus is provisional until archaeology and proof binding produce an asset.yaml.
+  - CORE requires current integration plus executable proof; source presence alone is insufficient.
+  - HOST denotes host, provider, account-root, or installation dependence and needs local evidence.
+  - Archive and public-doc paths preserve provenance but do not establish current integration.
+  - Every future manifest must bind origin, implementation, contracts, authority, proof, failures, and reintroduction conditions.
+  - No entry authorizes deletion, migration, runtime loading, installer inclusion, or feature reintroduction.
+
+manifestSurface:
+  manifestRoot: docs/capability-assets/capabilities
+  manifestPattern: capabilities/<id>/asset.yaml
+  manifestCount: 15
+  proofTestCount: 45
+  historicalImplementationCount: 36
+  statuses: {CORE: 9, HOST: 2, OPTIONAL: 2, LIBRARY: 0, REFERENCE: 1, DEPRECATED: 1, EXPERIMENTAL: 0}
+  domains: {WORK: 2, TRUST: 3, KNOWLEDGE: 3, EXECUTION: 4, INTELLIGENCE: 1, OPTIMIZATION: 1, PRODUCTIVITY: 1}
+  provenanceBound: true
+  dependencyGraphBound: true
+  reintroductionGuidesBound: true
+  validatorBound: true
+  note: Manifests are JSON-compatible YAML so the validator can remain dependency-free and read-only.
+
+nextArchaeology:
+  relayHistory: complete
+  kernelHistory: complete
+  crossGenerationDeduplication: complete
+  failureAndProofBinding: complete
+  finalClassification: complete
+  perCapabilityManifests: complete

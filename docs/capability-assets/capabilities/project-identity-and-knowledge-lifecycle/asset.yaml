@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 1,
+  "id": "project-identity-and-knowledge-lifecycle",
+  "name": "Project identity and knowledge lifecycle",
+  "summary": "프로젝트 identity, knowledge namespace와 revision lifecycle을 안전한 scope에 묶는다.",
+  "category": "KNOWLEDGE",
+  "status": "CORE",
+  "product_relevance": {
+    "relevant": true,
+    "reason": "agent workflow가 올바른 프로젝트 지식만 읽고 쓰며 alias와 legacy namespace를 혼동하지 않아야 한다.",
+    "consumers": ["agent_workflow", "project_knowledge_lifecycle"]
+  },
+  "origin": {
+    "first_seen": {
+      "epoch": "E5",
+      "commit": "761a0d19dc8abdccd9d32469af79f0ec600d104f",
+      "date": "2026-07-23",
+      "evidence": ["scripts/kernel/project-identity.mjs", "scripts/kernel/knowledge/records.mjs"]
+    },
+    "generations": [
+      {"id": "relay-knowledge-records", "epoch": "E3", "commit": "1f7ed38b80f2d66d34498548448423c56154be16", "label": "Relay knowledge records", "change": "회고와 지식 기록을 workflow 보조 artifact로 보존했다."},
+      {"id": "kernel-identity-lifecycle", "epoch": "E5", "commit": "761a0d19dc8abdccd9d32469af79f0ec600d104f", "label": "Kernel identity lifecycle", "change": "project identity, namespace, revision과 knowledge record lifecycle을 구조화했다."},
+      {"id": "current-identity-preflight", "epoch": "E8", "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e", "label": "Identity preflight", "change": "legacy candidate와 canonical identity를 preflight로 분리했다."}
+    ]
+  },
+  "problem": {
+    "solves": ["동일 저장소의 remote/basename alias가 서로 다른 knowledge namespace를 만드는 문제", "오래된 knowledge가 현재 프로젝트에 무검증으로 적용되는 문제"],
+    "does_not_solve": ["지식 내용의 업무적 진실성", "provider별 외부 memory service의 availability"]
+  },
+  "recommended_use": ["모든 knowledge operation 전에 canonical project identity와 worktree scope를 확인한다.", "revision, freshness, supersession을 lifecycle에 기록한다."],
+  "avoid_use": ["basename이나 remote URL만으로 identity를 단정하지 않는다.", "candidate를 review/commit 없이 canonical knowledge로 승격하지 않는다."],
+  "authority": {
+    "owns_state": ["project identity binding", "knowledge namespace", "revision/freshness lifecycle"],
+    "owns_completion": ["knowledge lifecycle은 task completion을 소유하지 않는다."],
+    "provides_evidence": ["identity preflight receipt", "knowledge revision and freshness tests"]
+  },
+  "contracts": {
+    "inputs": ["canonical workspace root", "Git identity", "legacy candidates", "knowledge records"],
+    "outputs": ["resolved project identity", "scoped knowledge revision", "freshness decision"],
+    "invariants": ["canonical identity와 legacy candidate를 혼동하지 않는다.", "knowledge writes는 project scope에 귀속된다."],
+    "guardrails": ["unresolved legacy candidate는 자동 merge하지 않는다.", "runtime source와 account-root knowledge를 교차 오염하지 않는다."]
+  },
+  "implementations": {
+    "best_known": {
+      "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
+      "paths": ["scripts/kernel/project-identity.mjs", "scripts/kernel/project-identity-preflight.mjs", "scripts/kernel/knowledge/records.mjs", "scripts/kernel/knowledge/revision.mjs", "scripts/kernel/knowledge/freshness.mjs"],
+      "generation": "E8-current",
+      "notes": "현재 Kernel의 identity binding과 knowledge lifecycle core."
+    },
+    "historical": [
+      {"commit": "1f7ed38b80f2d66d34498548448423c56154be16", "paths": ["archive/scripts/legacy-phase-adapters/knowledge-records.test.mjs"], "generation": "E3-relay", "notes": "Relay knowledge record의 초기 회귀 증거."},
+      {"commit": "761a0d19dc8abdccd9d32469af79f0ec600d104f", "paths": ["scripts/kernel/project-identity.mjs", "scripts/kernel/knowledge/records.mjs"], "generation": "E5-kernel", "notes": "Kernel knowledge lifecycle master plan 구현."}
+    ]
+  },
+  "proof": {
+    "tests": [
+      {"id": "project-identity", "path": "tests/kernel-project-identity.test.mjs", "purpose": "canonical identity와 legacy candidate binding을 검증한다.", "commandRef": "test", "status": "verified"},
+      {"id": "identity-review-remediation", "path": "tests/kernel-project-identity-review-remediation.test.mjs", "purpose": "identity mismatch remediation 경계를 검증한다.", "commandRef": "test", "status": "verified"},
+      {"id": "knowledge-freshness", "path": "tests/kernel-knowledge-freshness.test.mjs", "purpose": "knowledge freshness와 revision lifecycle을 검증한다.", "commandRef": "test", "status": "verified"}
+    ],
+    "fixtures": [],
+    "smoke": [
+      {"id": "project-identity-preflight", "path": "scripts/kernel/project-identity-preflight.mjs", "purpose": "실행 전 identity preflight 진입점을 확인한다.", "commandRef": null, "status": "verified"}
+    ]
+  },
+  "known_failures": [
+    {"id": "legacy-identity-ambiguity", "severity": "P1", "symptom": "remote-derived legacy namespace가 canonical workspace와 같은 프로젝트인지 자동으로 확정할 수 없다.", "root_cause": "역사적 alias에는 persisted identity와 same-root evidence가 없을 수 있다.", "lesson": "identity preflight를 fail-closed하고 명시적 remediation 없이 merge하지 않는다.", "fixed_in": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e", "regression_tests": ["tests/kernel-project-identity.test.mjs", "tests/kernel-project-identity-review-remediation.test.mjs"]}
+  ],
+  "dependencies": {
+    "capabilities": ["task-contract-and-bounded-work", "knowledge-ingestion-and-evidence-graph", "control-plane-state-authority"],
+    "runtime": ["Kernel project identity", "knowledge repository", "freshness evaluator"],
+    "external": []
+  },
+  "current_integration": {
+    "layer": "Kernel project identity and knowledge lifecycle",
+    "active": true,
+    "paths": ["scripts/kernel/project-identity.mjs", "scripts/kernel/knowledge/revision.mjs", "scripts/kernel/knowledge/freshness.mjs"],
+    "entrypoints": ["bin/moon-relay-kernel.mjs", "bin/moon-relay-standalone.mjs"],
+    "notes": "CORE knowledge boundary. Asset Base records the lifecycle without importing account-root state."
+  },
+  "reintroduction": {
+    "recommended_layer": "project identity preflight and knowledge repository",
+    "trigger": "새 knowledge source, alias migration 또는 cross-run reuse를 추가할 때",
+    "integration_points": ["identity preflight", "knowledge namespace", "revision/freshness", "supersession"],
+    "risks": ["잘못된 프로젝트에 지식 적용", "stale knowledge가 current source보다 우선", "identity migration 중 data loss"],
+    "guardrails": ["canonical root + Git identity binding", "fail-closed unresolved aliases", "revision and freshness receipt"]
+  },
+  "decision": {
+    "disposition": "retain",
+    "rationale": "프로젝트 지식의 scope와 lifecycle을 보호하는 현재 CORE capability다.",
+    "follow_up": ["legacy namespace remediation은 자산화와 별도 승인 작업으로 유지한다."]
+  }
+}

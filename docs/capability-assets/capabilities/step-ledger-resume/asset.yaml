@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "id": "step-ledger-resume",
+  "name": "Step ledger and resume",
+  "summary": "실행 단계를 durable cursor와 lease로 기록하고 중단 후 안전하게 재개한다.",
+  "category": "WORK",
+  "status": "CORE",
+  "product_relevance": {
+    "relevant": true,
+    "reason": "장시간 agent workflow는 현재 단계, 시도, cursor와 다음 work unit을 잃지 않아야 한다.",
+    "consumers": ["agent_workflow", "project_knowledge_lifecycle"]
+  },
+  "origin": {
+    "first_seen": {
+      "epoch": "E1",
+      "commit": "77ed33f1e1f3c1f0c44216b86d9df5123e58cbb7",
+      "date": "2026-01-21",
+      "evidence": [".claude/rules/workflow.md"]
+    },
+    "generations": [
+      {"id": "relay-phase-plan", "epoch": "E1", "commit": "77ed33f1e1f3c1f0c44216b86d9df5123e58cbb7", "label": "Relay workflow state", "change": "phase 중심 계획과 workflow 순서를 표현했다."},
+      {"id": "legacy-phase-ledger", "epoch": "E3", "commit": "1f7ed38b80f2d66d34498548448423c56154be16", "label": "Archived phase runner", "change": "phase attempt, lease, artifact와 resume 보조 상태를 확장했다."},
+      {"id": "step-ledger", "epoch": "E6", "commit": "9e929f98037bc427a7707dbf844568d3eb39d99f", "label": "Kernel step ledger", "change": "wave/phase 상태를 bounded step과 work cursor로 압축했다."},
+      {"id": "execution-first-resume", "epoch": "E8", "commit": "f6b72ffadff8151caf2be2a87508f66a0d4b3d5e", "label": "Resume view", "change": "run locator, baseline과 resume view를 현재 실행 경계에 연결했다."}
+    ]
+  },
+  "problem": {
+    "solves": ["중단·재시작 시 어느 단계부터 이어야 하는지 잃는 문제", "단계 완료와 실제 mutation을 혼동하는 문제"],
+    "does_not_solve": ["손상된 외부 provider 세션 복구", "실패한 설계 자체를 자동으로 올바르게 만드는 것"]
+  },
+  "recommended_use": ["step ledger에 current/next cursor와 attempt provenance를 남긴다.", "resume 전 workspace identity와 lease를 확인한다."],
+  "avoid_use": ["cursor를 초기화하려고 계약을 재발행하지 않는다.", "ledger를 completion receipt의 대체물로 사용하지 않는다."],
+  "authority": {
+    "owns_state": ["run step cursor, attempt lineage, resume lease"],
+    "owns_completion": ["단계 진행 상태만 소유하며 최종 completion은 Kernel close gate가 소유한다."],
+    "provides_evidence": ["step ledger tests", "resume/lease state and workspace identity receipts"]
+  },
+  "contracts": {
+    "inputs": ["task contract", "current run state", "workspace identity", "step outcome"],
+    "outputs": ["durable step cursor", "resume view", "next bounded work unit"],
+    "invariants": ["한 번에 하나의 owner work unit만 active다.", "재개는 동일 project/worktree binding을 확인한다."],
+    "guardrails": ["stale lease를 새 실행으로 가장하지 않는다.", "proof가 ledger만으로 완료되었다고 판정하지 않는다."]
+  },
+  "implementations": {
+    "best_known": {
+      "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
+      "paths": ["scripts/kernel/run/run-step-ledger.mjs", "scripts/kernel/run/work-cursor.mjs", "scripts/kernel/run/step-planner.mjs", "scripts/kernel/run/work-unit-scope.mjs"],
+      "generation": "E8-current",
+      "notes": "현재 Kernel의 step ledger, cursor, planner와 bounded scope 구현."
+    },
+    "historical": [
+      {"commit": "77ed33f1e1f3c1f0c44216b86d9df5123e58cbb7", "paths": [".claude/rules/workflow.md"], "generation": "E1-relay", "notes": "초기 workflow 순서와 실행 규칙."},
+      {"commit": "1f7ed38b80f2d66d34498548448423c56154be16", "paths": ["archive/scripts/legacy-phase-adapters/agent-loop-phase-plan.mjs", "archive/scripts/legacy-phase-adapters/agent-loop-phase-runner.mjs"], "generation": "E3-relay", "notes": "phase/attempt 기반 계획과 runner."},
+      {"commit": "30b317c0c8f0dee9b4a1c8f82f8b14fe30a7f692", "paths": ["scripts/kernel/run/run-step-ledger.mjs", "scripts/kernel/run/step-planner.mjs"], "generation": "E7-kernel", "notes": "phase 구조를 step ledger로 통합."}
+    ]
+  },
+  "proof": {
+    "tests": [
+      {"id": "run-step-ledger", "path": "tests/kernel-run-step-ledger.test.mjs", "purpose": "step ledger transition과 cursor 보존을 검증한다.", "commandRef": "test", "status": "verified"},
+      {"id": "run-step-resume", "path": "tests/kernel-run-step-resume.test.mjs", "purpose": "중단 후 resume lease와 next step을 검증한다.", "commandRef": "test", "status": "verified"},
+      {"id": "run-step-safe-scope", "path": "tests/kernel-run-step-scope.test.mjs", "purpose": "step scope 및 mutation 경계를 검증한다.", "commandRef": "test", "status": "verified"}
+    ],
+    "fixtures": [],
+    "smoke": [
+      {"id": "run-locator", "path": "scripts/kernel/run/run-locator.mjs", "purpose": "현재 run을 deterministic하게 찾는 구현을 가리킨다.", "commandRef": null, "status": "verified"}
+    ]
+  },
+  "known_failures": [
+    {"id": "legacy-phase-split-brain", "severity": "P1", "symptom": "phase artifact, lease, runner 상태가 서로 다른 cursor를 가리킬 수 있었다.", "root_cause": "계획·실행·상태 저장이 여러 adapter에 중복되었다.", "lesson": "하나의 step ledger와 owner binding을 completion 경로의 기준으로 삼아야 한다.", "fixed_in": "30b317c0c8f0dee9b4a1c8f82f8b14fe30a7f692", "regression_tests": ["tests/kernel-run-step-ledger.test.mjs", "tests/kernel-run-step-resume.test.mjs"]}
+  ],
+  "dependencies": {
+    "capabilities": ["task-contract-and-bounded-work", "control-plane-state-authority", "mutation-fencing-and-git-closeout"],
+    "runtime": ["Kernel run repository", "workspace identity and lease"],
+    "external": []
+  },
+  "current_integration": {
+    "layer": "Kernel run loop and resume surface",
+    "active": true,
+    "paths": ["scripts/kernel/run/run-loop.mjs", "scripts/kernel/run/run-step-ledger.mjs", "scripts/kernel/run/run-locator.mjs"],
+    "entrypoints": ["bin/moon-relay-kernel.mjs"],
+    "notes": "CORE capability. Asset records the conceptual successor of Relay phase execution."
+  },
+  "reintroduction": {
+    "recommended_layer": "Kernel run state",
+    "trigger": "새 단계형 workflow 또는 recoverable execution이 필요할 때",
+    "integration_points": ["run-step-ledger", "step planner", "resume view", "workspace lease"],
+    "risks": ["새 phase abstraction이 step ledger와 중복될 위험", "stale cursor로 재개할 위험"],
+    "guardrails": ["step ID와 attempt를 immutable하게 기록", "resume 전 identity/lease 검증", "completion은 fresh proof로만 닫음"]
+  },
+  "decision": {
+    "disposition": "retain",
+    "rationale": "Relay의 phase 진행 자산을 Kernel의 단일 step ledger로 통합해 보존할 가치가 있는 CORE capability다.",
+    "follow_up": ["legacy phase runner를 재도입하지 말고 step-level compatibility가 필요한지 별도 계약으로 판단한다."]
+  }
+}
