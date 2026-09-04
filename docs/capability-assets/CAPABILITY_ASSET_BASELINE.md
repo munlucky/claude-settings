@@ -71,13 +71,20 @@
 
 ## 4. Decomplexification 인계 요약 (v2.1)
 
-후속 Decomplexification은 Family가 아닌 **47개 Subcapability**를 기준으로 집행한다:
+후속 Decomplexification은 Family가 아닌 **47개 Subcapability**를 기준으로 집행한다.
+세부 매핑 명세와 이관 가이드라인의 단일 정본은 [`docs/capability-assets/decisions/decomplexification-maps.md`](decisions/decomplexification-maps.md)이다.
 
-1. **Tier 1 (Core Retain - 21개)**: Kernel 필수 유지 의미 불변량 (`task-contract-binding`, `work-unit-scope`, `run-step-ledger`, `work-cursor-resume`, `evidence-binding`, `verification-authority`, `completion-decision`, `protected-obligation`, `mutation-scope-safety`, `workspace-fencing`, `git-staging-safety`, `git-commit`, `project-identity-binding`, `knowledge-lifecycle-authority`, `knowledge-ingestion-normalization`, `ontology-gate-promotion`, `state-transition-authority`, `minimal-durable-state`, `host-session-binding`, `required-capability-contract`, `context-build`)
-2. **Tier 2 (Host Delegate - 13개)**: Host/Adapter 레이어로 위임/이관 대상 (`package-materialization`, `account-profile-projection`, `route-admission`, `model-selection`, `provider-selection`, `prompt-envelope`, `prompt-cache`, `execution-capsule-transport`, `step-worktree-isolation` 등)
-3. **Tier 3 (Optional Module - 9개)**: 필요 시에만 선택 로드하는 독립 모듈 (`independent-reviewer-execution`, `remote-parity`, `effort-cost-routing`, `stagnation-escalation`, `optimization-cycle`, `architecture-artifacts`, `codebase-understanding`, `standalone-diff-and-audit`, `improvement-proposals`)
-4. **Tier 4 (Reference Only - 2개)**: 하네스 표면 및 회귀 진단 참조 (`harness-surface-budget`, `regression-audit-reporting`)
-5. **Tier 5 (Deprecated / Strict Fence - 2개)**: 격리 유지 및 런타임 진입 금지 (`legacy-phase-runner`, `legacy-harness-adapters`)
+### 5대 계층 인계 기준 및 Subcapability 전수 목록 (47개)
+1. **Tier 1 (Core Retain - 21개)**: Kernel 필수 유지 의미 불변량 (AI Agent Workflow & Project Knowledge Lifecycle 핵심 권위)
+   - `task-contract-binding`, `work-unit-scope`, `run-step-ledger`, `work-cursor-resume`, `evidence-binding`, `verification-authority`, `completion-decision`, `protected-obligation`, `mutation-scope-safety`, `workspace-fencing`, `project-identity-binding`, `knowledge-lifecycle-authority`, `knowledge-ingestion-normalization`, `ontology-gate-promotion`, `state-transition-authority`, `minimal-durable-state`, `required-capability-contract`, `route-admission`, `context-build`, `knowledge-context-selection`, `context-receipt-freshness`
+2. **Tier 2 (Host Delegate - 13개)**: Host Layer, CLI 어댑터, Provider Bridge로 위임/이관 대상
+   - `review-transport`, `git-staging-safety`, `git-commit`, `host-session-binding`, `execution-capsule-transport`, `step-worktree-isolation`, `model-selection`, `provider-selection`, `effort-cost-routing`, `prompt-envelope`, `prompt-cache`, `package-materialization`, `account-profile-projection`
+3. **Tier 3 (Optional Module - 9개)**: 필요 시에만 조건부로 로드하는 독립 모듈
+   - `independent-reviewer-execution`, `remote-parity`, `stagnation-escalation`, `optimization-cycle`, `architecture-artifacts`, `codebase-understanding`, `standalone-diff-and-audit`, `daily-retro-collection`, `improvement-proposals`
+4. **Tier 4 (Reference Only - 2개)**: 하네스 표면 예산 및 회귀 진단 관측용 참조 자산
+   - `harness-surface-budget`, `regression-audit-reporting`
+5. **Tier 5 (Deprecated / Strict Fence - 2개)**: 과거 분열 결함으로 퇴역하여 런타임 진입이 엄격히 차단된 역사 교훈 자산
+   - `legacy-phase-runner`, `legacy-harness-adapters`
 
 ---
 

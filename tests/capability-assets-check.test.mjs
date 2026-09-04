@@ -30,6 +30,8 @@ test('capability asset base validates manifests, provenance, catalog, subcapabil
   assert.equal(report.checked.coverageSurfaces, 719);
   assert.equal(report.checked.rootBaselineForbidden, true);
   assert.equal(report.checked.canonicalBaselineExists, true);
+  assert.equal(report.checked.decomplexificationMaps, true);
+  assert.equal(report.checked.baselineTierConsistency, true);
   assert.equal(report.statusCounts.CORE, 9);
   assert.equal(report.statusCounts.HOST, 2);
   assert.equal(report.statusCounts.OPTIONAL, 2);

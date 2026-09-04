@@ -128,10 +128,6 @@
           "type": "array",
           "minItems": 1,
           "items": {"$ref": "#/$defs/text"}
-        },
-        "contractRefs": {
-          "type": "array",
-          "items": {"$ref": "#/$defs/text"}
         }
       }
     },

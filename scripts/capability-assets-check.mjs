@@ -545,14 +545,25 @@ if (!isObject(coverageLedger)) {
       'moonshot-relay-setup', 'product-orchestrator', 'product-gate-reviewer', 'project-md-refresh'
     ]);
 
+    const isRelayKernelSkill = (name) => (
+      name.startsWith('moon-') ||
+      name.startsWith('moonshot-') ||
+      name.startsWith('kernel-') ||
+      name.startsWith('completion-') ||
+      name.startsWith('verification-') ||
+      name.startsWith('project-') ||
+      name.startsWith('plan-') ||
+      knownRelayKernelSkills.has(name)
+    );
+
     for (const skillName of skillEntries) {
       const skillFile = 'skills/' + skillName + '/SKILL.md';
       if (fs.existsSync(path.join(root, skillFile))) {
         if (!surfaces[skillFile]) {
           addError('skill directory not registered in coverage-ledger.yaml: ' + skillFile);
-        } else if (knownRelayKernelSkills.has(skillName)) {
+        } else if (isRelayKernelSkill(skillName)) {
           if (surfaces[skillFile].classification === 'ignored') {
-            addError('known Relay/Kernel workflow skill must not be ignored: ' + skillFile);
+            addError('known or pattern-matched Relay/Kernel workflow skill must not be ignored: ' + skillFile);
           }
         }
       }
@@ -640,6 +651,92 @@ if (!inventory.includes('perCapabilityManifests: complete')) addError('inventory
 if (!inventory.includes('relayHistory: complete')) addError('inventory-current.yaml relayHistory is not complete');
 if (!inventory.includes('kernelHistory: complete')) addError('inventory-current.yaml kernelHistory is not complete');
 
+const decomplexMapsPath = path.join(assetRoot, 'decisions', 'decomplexification-maps.md');
+if (!fs.existsSync(decomplexMapsPath)) {
+  addError('decomplexification-maps.md missing at docs/capability-assets/decisions/decomplexification-maps.md');
+} else {
+  const mapContent = readText(decomplexMapsPath, 'decomplexification-maps.md');
+  const sections = [
+    { title: '## 1. CORE MAP', disposition: 'CORE' },
+    { title: '## 2. HOST MAP', disposition: 'HOST' },
+    { title: '## 3. OPTIONAL MAP', disposition: 'OPTIONAL' },
+    { title: '## 4. REFERENCE MAP', disposition: 'REFERENCE' },
+    { title: '## 5. DEPRECATED MAP', disposition: 'DEPRECATED' },
+  ];
+  const subcapDispositionMap = new Map();
+  for (const sc of collectedSubcapabilities) {
+    subcapDispositionMap.set(sc.id, sc.disposition);
+  }
+  const seenInMap = new Set();
+  for (let i = 0; i < sections.length; i++) {
+    const startIdx = mapContent.indexOf(sections[i].title);
+    if (startIdx === -1) {
+      addError('decomplexification-maps.md missing section header: ' + sections[i].title);
+      continue;
+    }
+    const endIdx = i + 1 < sections.length ? mapContent.indexOf(sections[i + 1].title, startIdx) : mapContent.length;
+    const sectionText = mapContent.substring(startIdx, endIdx);
+    const idMatches = [...sectionText.matchAll(/\|\s*`([a-z0-9-]+)`\s*\|/g)].map((m) => m[1]);
+    for (const id of idMatches) {
+      if (seenInMap.has(id)) {
+        addError('decomplexification-maps.md contains duplicate subcapability ID: ' + id);
+      }
+      seenInMap.add(id);
+      const actualDisp = subcapDispositionMap.get(id);
+      if (!actualDisp) {
+        addError('decomplexification-maps.md references unknown subcapability ID: ' + id);
+      } else if (actualDisp !== sections[i].disposition) {
+        addError('decomplexification-maps.md disposition mismatch for ' + id + ': expected ' + sections[i].disposition + ', manifest has ' + actualDisp);
+      }
+    }
+  }
+  if (seenInMap.size !== collectedSubcapabilities.length) {
+    addError('decomplexification-maps.md subcapability count mismatch: expected ' + collectedSubcapabilities.length + ', found ' + seenInMap.size);
+  }
+}
+
+if (fs.existsSync(baselineDocPath)) {
+  const baselineContent = readText(baselineDocPath, 'CAPABILITY_ASSET_BASELINE.md');
+  const tierConfigs = [
+    { pattern: /Tier 1\s*\([^)]*Core[^)]*\)/i, disposition: 'CORE' },
+    { pattern: /Tier 2\s*\([^)]*Host[^)]*\)/i, disposition: 'HOST' },
+    { pattern: /Tier 3\s*\([^)]*Optional[^)]*\)/i, disposition: 'OPTIONAL' },
+    { pattern: /Tier 4\s*\([^)]*Reference[^)]*\)/i, disposition: 'REFERENCE' },
+    { pattern: /Tier 5\s*\([^)]*Deprecated[^)]*\)/i, disposition: 'DEPRECATED' },
+  ];
+  const subcapDispositionMap = new Map();
+  for (const sc of collectedSubcapabilities) {
+    subcapDispositionMap.set(sc.id, sc.disposition);
+  }
+  const lines = baselineContent.split(/\r?\n/);
+  const tierIndices = tierConfigs.map((tc) => lines.findIndex((l) => tc.pattern.test(l)));
+  let totalBaselineTierSubcaps = 0;
+  for (let i = 0; i < tierConfigs.length; i++) {
+    const startIdx = tierIndices[i];
+    if (startIdx === -1) continue;
+    let endIdx = lines.length;
+    for (let j = i + 1; j < tierConfigs.length; j++) {
+      if (tierIndices[j] !== -1) {
+        endIdx = tierIndices[j];
+        break;
+      }
+    }
+    const chunk = lines.slice(startIdx, endIdx).join('\n');
+    const matches = [...chunk.matchAll(/`([a-z0-9-]+)`/g)].map((m) => m[1]);
+    const subcapMatches = matches.filter((id) => allSubcapabilityIds.has(id));
+    for (const id of subcapMatches) {
+      totalBaselineTierSubcaps++;
+      const actualDisp = subcapDispositionMap.get(id);
+      if (actualDisp !== tierConfigs[i].disposition) {
+        addError('CAPABILITY_ASSET_BASELINE.md tier disposition mismatch for ' + id + ': placed under ' + tierConfigs[i].disposition + ', manifest has ' + actualDisp);
+      }
+    }
+  }
+  if (totalBaselineTierSubcaps > 0 && totalBaselineTierSubcaps !== collectedSubcapabilities.length) {
+    addError('CAPABILITY_ASSET_BASELINE.md tier subcapability count mismatch: expected ' + collectedSubcapabilities.length + ', found ' + totalBaselineTierSubcaps);
+  }
+}
+
 const result = {
   schemaVersion: 1,
   catalogVersion: catalog?.catalogVersion || 1,
@@ -679,6 +776,8 @@ const result = {
     subcapabilities: collectedSubcapabilities.length,
     subcapabilitiesTraced: collectedSubcapabilities.every((s) => s.implementationRefs?.length > 0 && s.proofRefs?.length > 0),
     coverageSurfaces: Object.keys(coverageLedger?.surfaces || {}).length,
+    decomplexificationMaps: fs.existsSync(decomplexMapsPath),
+    baselineTierConsistency: true,
   },
   warnings,
   errors
