@@ -545,42 +545,53 @@ const dispatchKernelTurnAttempt = async ({
     if (modelInput.status === 'not_found') return modelInput;
     const independentReviewRequired = modelInput.action?.type === 'review'
       && modelInput.action?.independentReviewRequired === true;
+    const hasSubagentCapability = adapter.nativeDelegationAvailable === true
+      || hostCapabilities.nativeSubagent === true
+      || hostCapabilities.supportsSubagentModel === true;
     if (independentReviewRequired) {
+      if (!hasSubagentCapability) {
+        return {
+          schemaVersion: 1,
+          runId,
+          dispatched: false,
+          executionMode: 'independent-review',
+          reason: 'independent-review-required',
+          review: {
+            required: true,
+            status: 'pending',
+            independent: true,
+            crossSurface: Boolean(adapter?.capabilities?.supportsCrossSurfaceReview),
+          },
+          blocker: null,
+          modelInput,
+          hostDirective: null,
+          receipt: null,
+          report: null,
+        };
+      }
+      actionContext = {
+        ...actionContext,
+        executionMode: 'native-subagent',
+        delegationRequested: true,
+      };
+    } else {
       return {
         schemaVersion: 1,
         runId,
         dispatched: false,
-        executionMode: 'independent-review',
-        reason: 'independent-review-required',
-        review: {
-          required: true,
-          status: 'pending',
-          independent: true,
-          crossSurface: Boolean(adapter?.capabilities?.supportsCrossSurfaceReview),
+        executionMode: 'owner-direct',
+        reason: 'owner-session-execution-required',
+        ownerExecution: {
+          mode: 'owner-direct',
+          delegation: { mode: 'optional', available: false },
+          report: 'kernel report',
         },
-        blocker: null,
         modelInput,
         hostDirective: null,
         receipt: null,
         report: null,
       };
     }
-    return {
-      schemaVersion: 1,
-      runId,
-      dispatched: false,
-      executionMode: 'owner-direct',
-      reason: 'owner-session-execution-required',
-      ownerExecution: {
-        mode: 'owner-direct',
-        delegation: { mode: 'optional', available: false },
-        report: 'kernel report',
-      },
-      modelInput,
-      hostDirective: null,
-      receipt: null,
-      report: null,
-    };
   }
   const parallelMode = String(env.MOON_RELAY_KERNEL_PARALLEL_MODE || 'shadow').toLowerCase();
   if (parallelMode === 'on' && suppressParallel !== true && actionContext.skipParallel !== true && controlPlane?.getExecutableSteps) {

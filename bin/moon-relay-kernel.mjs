@@ -10,6 +10,7 @@ import { computeKernelSourceIdentity } from '../scripts/kernel/control-plane.mjs
 import { resolveCanonicalHostSession } from '../scripts/kernel/run/host-session.mjs';
 import { recoveryForKernelError } from '../scripts/kernel/run/binding-preflight.mjs';
 import { discoverRunLocator } from '../scripts/kernel/run/run-locator.mjs';
+import { createOpaqueRunId } from '../scripts/kernel/run/run-identity.mjs';
 
 const args = process.argv.slice(2);
 const command = args[0] || 'doctor';
@@ -54,6 +55,7 @@ if (!process.env.MOON_RELAY_KERNEL_REEXEC) {
 }
 
 const runtimeHomeArg = getArgValue('--runtime-home');
+const configuredRuntimeHome = runtimeHomeArg || process.env.MOON_RELAY_KERNEL_HOME || null;
 const projectRoot = getArgValue('--project-root') || process.cwd();
 const positionalRunId = ['next', 'report', 'resume', 'abandon'].includes(command)
   && args[1]
@@ -63,16 +65,22 @@ const positionalRunId = ['next', 'report', 'resume', 'abandon'].includes(command
 const explicitRunId = getArgValue('--run-id') || positionalRunId || null;
 const envRunId = process.env.MOON_RELAY_KERNEL_RUN_ID || null;
 const locatorRunId = explicitRunId || envRunId || null;
-const locatorDiscovery = runtimeHomeArg
-  ? { status: 'skipped-explicit-runtime', runtimeHome: null, locator: null, candidates: [] }
-  : discoverRunLocator({ runId: locatorRunId, projectRoot });
-// `doctor` and `version` are diagnostic metadata surfaces. They may display a
-// stale locator through their normal diagnostics, but must remain usable when
-// an old address-book entry cannot be opened; lifecycle commands still fail
-// closed and never create a replacement runtime from that entry.
-const locatorDiscoveryFailureAllowed = !['doctor', 'version', '--version'].includes(command);
-const runtimeBindingDiscoveryError = ['ambiguous', 'stale'].includes(locatorDiscovery.status)
-  && !runtimeHomeArg
+const locatorDiscovery = discoverRunLocator({
+  runId: locatorRunId,
+  projectRoot,
+  runtimeHome: configuredRuntimeHome,
+});
+// `doctor` and `version` are diagnostic metadata surfaces. `context` is
+// a read-only inspection command. When bootstrapping turn 0 with a contract,
+// an ambiguous or stale address-book entry must not block immediate execution:
+// the control plane will safely issue a fresh Run instead of making an uncertain binding.
+const hasContractInput = Boolean(
+  getArgValue('--contract-json') || getArgValue('--objective-json')
+);
+const locatorDiscoveryFailureAllowed = !['doctor', 'version', '--version', 'context'].includes(command)
+  && !(command === 'next' && hasContractInput && !explicitRunId);
+const isLocatorUnresolved = ['ambiguous', 'stale'].includes(locatorDiscovery.status);
+const runtimeBindingDiscoveryError = isLocatorUnresolved
   && locatorDiscoveryFailureAllowed
   ? Object.assign(new Error(
       locatorDiscovery.status === 'stale' ? 'runtime_binding_stale' : 'runtime_binding_ambiguous',
@@ -88,7 +96,7 @@ const runtimeBindingDiscoveryError = ['ambiguous', 'stale'].includes(locatorDisc
           candidates: locatorDiscovery.candidates,
         },
         provided: {
-          runtimeHome: process.env.MOON_RELAY_KERNEL_HOME || null,
+          runtimeHome: configuredRuntimeHome,
           runId: locatorRunId,
         },
         candidates: locatorDiscovery.candidates,
@@ -167,7 +175,7 @@ try {
     provider: hostProvider,
     explicitSessionId,
     envSessionId,
-    codexThreadId,
+    codexThreadId: explicitSessionId ? null : codexThreadId,
   });
 } catch (error) {
   hostSessionResolutionError = error;
@@ -445,56 +453,96 @@ try {
     const positionalRunId = args[1] && !args[1].startsWith('--') ? args[1] : null;
     const contractFile = getArgValue('--contract-json') || getArgValue('--objective-json');
     const explicitRunId = getArgValue('--run-id') || positionalRunId;
-    const invocationIntent = getArgValue('--invocation-intent');
+    const isLocatorUnresolved = ['ambiguous', 'stale'].includes(locatorDiscovery.status);
+    const invocationIntent = getArgValue('--invocation-intent')
+      || (isLocatorUnresolved ? 'new-task' : null);
     const taskContract = contractFile
       ? JSON.parse(readFileSync(path.resolve(contractFile), 'utf8'))
       : null;
     let invocation;
-    if (contractFile) {
-      invocation = cp.resolveBoundInvocation({
-        explicitRunId,
-        envRunId: kernelEnv.MOON_RELAY_KERNEL_RUN_ID || null,
-        taskContract,
-        invocationIntent,
-      });
-    } else {
-      const runId = await cp.resolveRunId({
-        explicitRunId,
-        envRunId: kernelEnv.MOON_RELAY_KERNEL_RUN_ID || null,
-      });
-      invocation = { mode: 'resume', runId };
-    }
     let res;
-    if (contractFile) {
-      if (invocation.mode === 'successor') {
-        const successor = await cp.startSuccessor({
-          invocation,
-          objective: taskContract.objective,
-          taskContract,
-        });
-        res = successor.next;
-      } else if (invocation.mode === 'finalization-retry') {
-        throw Object.assign(new Error('finalization_incomplete'), {
-          code: 'finalization_incomplete',
-          errorCode: 'finalization_incomplete',
-          nextAction: 'retry-finalization',
-          runId: invocation.runId,
-        });
-      } else if (invocation.mode === 'done') {
-        res = await cp.next(invocation.runId);
+    try {
+      if (contractFile) {
+        if (isLocatorUnresolved && !explicitRunId) {
+          const candidateRunIds = new Set((locatorDiscovery.candidates || []).map((c) => c.runId).filter(Boolean));
+          let freshId = createOpaqueRunId();
+          while (candidateRunIds.has(freshId)) {
+            freshId = createOpaqueRunId();
+          }
+          invocation = {
+            mode: 'create',
+            runId: freshId,
+            predecessorRunId: null,
+            binding: null,
+            reason: `locator-${locatorDiscovery.status}-fresh-run`,
+            taskContract,
+            changeClass: null,
+          };
+        } else {
+          invocation = cp.resolveBoundInvocation({
+            explicitRunId,
+            envRunId: isLocatorUnresolved ? null : (kernelEnv.MOON_RELAY_KERNEL_RUN_ID || null),
+            taskContract,
+            invocationIntent,
+          });
+        }
       } else {
-        const ensured = await cp.ensureRun({
-          runId: invocation.runId,
-          objective: taskContract.objective,
-          taskContract,
+        const runId = await cp.resolveRunId({
+          explicitRunId,
+          envRunId: kernelEnv.MOON_RELAY_KERNEL_RUN_ID || null,
         });
-        res = ensured.next;
+        invocation = { mode: 'resume', runId };
       }
-    } else {
-      // ensureRun performs the host lifecycle re-entry needed after a
-      // blocker report deactivates the owner binding. Calling next directly
-      // here would turn the original blocker into host_binding_missing.
-      res = (await cp.ensureRun({ runId: invocation.runId })).next;
+    } catch (err) {
+      if (err.code === 'worktree_run_conflict') {
+        const activeRunId = err.details?.mutableRuns?.[0]?.runId || null;
+        res = {
+          schemaVersion: 1,
+          status: 'read-only',
+          activeWriterRunId: activeRunId,
+          action: {
+            type: 'analysis',
+            mode: 'read-only',
+            guidance: 'Another active session is modifying this worktree. This session is in read-only analysis mode. To perform independent mutations concurrently, create and checkout a separate Git worktree (git worktree add).',
+          },
+        };
+      } else {
+        throw err;
+      }
+    }
+
+    if (!res) {
+      if (contractFile) {
+        if (invocation.mode === 'successor') {
+          const successor = await cp.startSuccessor({
+            invocation,
+            objective: taskContract.objective,
+            taskContract,
+          });
+          res = successor.next;
+        } else if (invocation.mode === 'finalization-retry') {
+          throw Object.assign(new Error('finalization_incomplete'), {
+            code: 'finalization_incomplete',
+            errorCode: 'finalization_incomplete',
+            nextAction: 'retry-finalization',
+            runId: invocation.runId,
+          });
+        } else if (invocation.mode === 'done') {
+          res = await cp.next(invocation.runId);
+        } else {
+          const ensured = await cp.ensureRun({
+            runId: invocation.runId,
+            objective: taskContract.objective,
+            taskContract,
+          });
+          res = ensured.next;
+        }
+      } else {
+        // ensureRun performs the host lifecycle re-entry needed after a
+        // blocker report deactivates the owner binding. Calling next directly
+        // here would turn the original blocker into host_binding_missing.
+        res = (await cp.ensureRun({ runId: invocation.runId })).next;
+      }
     }
     await cp.close();
     output(res);
@@ -533,12 +581,29 @@ try {
     output(res || { status: 'not_found' });
   } else if (command === 'context') {
     const cp = await openControlPlane();
-    const runId = getArgValue('--run-id');
-    if (!runId) throw new Error('context command requires --run-id');
-    const input = readContextJson();
-    const res = await cp.buildStageContext(runId, { ...input, stage: getArgValue('--stage') || input.stage || 'EXECUTE' });
-    await cp.close();
-    output(res);
+    const positionalRunId = args[1] && !args[1].startsWith('--') ? args[1] : null;
+    const runId = getArgValue('--run-id') || positionalRunId || inferredRunId;
+    if (runId) {
+      const input = readContextJson();
+      const res = await cp.buildStageContext(runId, { ...input, stage: getArgValue('--stage') || input.stage || 'EXECUTE' });
+      await cp.close();
+      output(res);
+    } else {
+      const { buildProjectKnowledgeContext } = await import('../scripts/kernel/knowledge/context-load.mjs');
+      const { inspectKernelProjectIdentity } = await import('../scripts/kernel/project-identity-preflight.mjs');
+      const projectIdentity = await inspectKernelProjectIdentity({ projectRoot, runtimeHome: effectiveRuntimeHome, env: kernelEnv });
+      const stage = getArgValue('--stage') || 'FRAME';
+      const res = await buildProjectKnowledgeContext({
+        projectId: projectIdentity.projectId,
+        stage,
+        runId: 'bootstrap-context',
+        projectRoot,
+        stateStore: cp.stateStore,
+        env: { MOON_RELAY_KERNEL_HOME: effectiveRuntimeHome || undefined },
+      });
+      await cp.close();
+      output(res);
+    }
   } else if (command === 'transition') {
     const cp = await openControlPlane();
     const runId = getArgValue('--run-id');

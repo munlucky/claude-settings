@@ -266,7 +266,8 @@ export const discoverRunLocator = ({
   locatorRoot = null,
   runtimeHome = KERNEL_DEFAULT_HOME,
 } = {}) => {
-  const records = listRunLocators({ locatorRoot, runtimeHome });
+  const resolvedHome = runtimeHome || KERNEL_DEFAULT_HOME;
+  const records = listRunLocators({ locatorRoot, runtimeHome: resolvedHome });
   const requested = runId ? String(runId) : null;
   const scope = projectRoot ? resolveProjectTrackScope(projectRoot) : null;
   const candidates = dedupeCandidates(records.filter((record) => {

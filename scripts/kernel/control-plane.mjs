@@ -565,11 +565,13 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     const errorSummary = error?.message || String(error);
     const nextAction = error?.nextAction || 'revise-task-contract-before-run-creation';
     const recoverable = error?.recoverable ?? (errorCode !== 'contract-preflight-unauthorized-path-escape' && errorCode !== 'contract-preflight-worktree-escape');
+    const blockingClass = error?.blockingClass || (recoverable ? 'completion' : 'safety');
     const action = {
       type: 'blocked',
       reason: errorCode,
       guidance: errorSummary,
       recoverable,
+      blockingClass,
     };
     const modelInput = {
       schemaVersion: 1,
@@ -579,6 +581,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       errorSummary,
       nextAction,
       recoverable,
+      blockingClass,
       action,
     };
     return {
@@ -1851,7 +1854,13 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       // keeps the orchestrator/worker boundary mandatory.
       const independentReviewRequired = decision.role === 'reviewer' && decision.independentContextRequired === true;
       const ownerDirectAllowed = !independentReviewRequired;
-      const nativeDelegationRequested = actionContext.executionMode === 'native-subagent' || actionContext.delegationRequested === true;
+      const hasSubagentCapability = hostCapabilities?.nativeSubagent === true
+        || hostCapabilities?.supportsSubagentModel === true;
+      const nativeDelegationRequested = actionContext.executionMode === 'native-subagent'
+        || actionContext.delegationRequested === true
+        || modelInput.action?.mode === 'subagent'
+        || modelInput.action?.execution?.executionMode === 'native-subagent'
+        || (independentReviewRequired && hasSubagentCapability);
       const executionAssignment = decision.modelClass === 'kernel'
         ? null
         : {
@@ -3780,7 +3789,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
             changedPaths: report.changedPaths,
           }));
         }
-        store.markRunBlocked(runId, report.blocker.reason);
+        store.markRunBlocked(runId, report.blocker.reason, report.blocker.blockingClass || null);
         await syncRunLocator(store.getRun(runId));
         await projectRunState(store.getRun(runId), { runtimeHome });
         return buildBlockedResponse({ runId, reason: report.blocker.reason, detail: report.blocker.detail || null });

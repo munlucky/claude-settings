@@ -120,12 +120,16 @@ const withExecution = (action) => {
   const role = actorRoleForAction(action?.type);
   if (!role) return action;
   const independentReviewRequired = role === 'reviewer' && action?.independentReviewRequired === true;
+  const useSubagent = independentReviewRequired && (action?.mode === 'subagent' || action?.delegationTarget === 'subagent');
   return {
     ...action,
     execution: {
       role,
-      executionMode: independentReviewRequired ? 'independent-review' : 'owner-direct',
-      delegation: { mode: independentReviewRequired ? 'required' : 'optional' },
+      executionMode: useSubagent ? 'native-subagent' : (independentReviewRequired ? 'independent-review' : 'owner-direct'),
+      delegation: {
+        mode: independentReviewRequired ? 'required' : 'optional',
+        ...(useSubagent ? { target: 'subagent', requested: true } : {}),
+      },
     },
   };
 };
@@ -198,6 +202,7 @@ export const buildNextPayload = ({
       action: {
         type: 'blocked',
         reason: run.blockedReason,
+        blockingClass: run.blockingClass || 'safety',
         guidance: run.blockedReason === 'unsupported-verification'
           ? 'Required verification commands are missing or unsatisfiable. Add the required verification script to the project manifest or package.json, then run next again.'
           : 'Resolve the blocker with the user, then submit a new report.',
@@ -230,7 +235,8 @@ export const buildNextPayload = ({
         ...base,
         action: withExecution({
           type: 'review',
-          guidance: 'Route the outstanding judgment obligations to an independent reviewer session and submit the Kernel-recorded review receipt in kernel report.',
+          mode: 'subagent',
+          guidance: 'Route the outstanding judgment obligations to an independent reviewer session or native subagent, and submit the Kernel-recorded review receipt in kernel report.',
           outstandingObligations: outstanding,
           obligations: described,
           independentReviewRequired: true,

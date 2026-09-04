@@ -96,6 +96,8 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       workspace_baseline_changed_paths TEXT NOT NULL DEFAULT '[]',
       workspace_baseline_entries TEXT NOT NULL DEFAULT '[]',
       workspace_baseline_status TEXT NOT NULL DEFAULT 'known',
+      blocked_reason TEXT,
+      blocking_class TEXT,
       updated_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS verifications (
@@ -842,6 +844,7 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
   try { db.exec(`ALTER TABLE runs ADD COLUMN run_start_workspace_identity TEXT;`); } catch {}
   try { db.exec(`ALTER TABLE runs ADD COLUMN current_workspace_identity TEXT;`); } catch {}
   try { db.exec(`ALTER TABLE runs ADD COLUMN blocked_reason TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE runs ADD COLUMN blocking_class TEXT;`); } catch {}
   try { db.exec(`ALTER TABLE runs ADD COLUMN intervention_count INTEGER DEFAULT 0;`); } catch {}
   try { db.exec(`ALTER TABLE runs ADD COLUMN project_mode TEXT;`); } catch {}
   try { db.exec(`ALTER TABLE runs ADD COLUMN baseline_failures TEXT DEFAULT '[]';`); } catch {}
@@ -1894,13 +1897,16 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       return this.getRun(runId);
     },
 
-    markRunBlocked(runId, reason) {
+    markRunBlocked(runId, reason, blockingClass = null) {
       const run = this.getRun(runId);
       if (!run) throw new Error(`Run ${runId} not found`);
       if (run.status === 'completed') throw new Error(`Cannot block completed run ${runId}`);
+      const normReason = String(reason || 'question');
+      const resolvedClass = blockingClass
+        || (normReason.includes('verification') || normReason.includes('obligation') || normReason.includes('dependency') || normReason.includes('question') || normReason.includes('permission') || normReason.includes('scope') ? 'completion' : 'safety');
       db.transaction(() => {
-        db.prepare(`UPDATE runs SET status='blocked', blocked_reason=?, revision=revision+1, updated_at=? WHERE run_id=?`)
-          .run(String(reason || 'question'), now(), runId);
+        db.prepare(`UPDATE runs SET status='blocked', blocked_reason=?, blocking_class=?, revision=revision+1, updated_at=? WHERE run_id=?`)
+          .run(normReason, String(resolvedClass), now(), runId);
         reconcileTerminalLifecycleInTransaction({ projectId: run.projectId, runId });
       })();
       return this.getRun(runId);
@@ -1921,7 +1927,7 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
           });
           if (!lease.acquired) throwWorktreeRunConflict(lease.lease);
         }
-        db.prepare(`UPDATE runs SET status='active', blocked_reason=NULL, intervention_count=intervention_count+1, revision=revision+1, updated_at=? WHERE run_id=?`).run(now(), runId);
+        db.prepare(`UPDATE runs SET status='active', blocked_reason=NULL, blocking_class=NULL, intervention_count=intervention_count+1, revision=revision+1, updated_at=? WHERE run_id=?`).run(now(), runId);
       })();
       return this.getRun(runId);
     },
@@ -1982,7 +1988,7 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         if (updated.changes !== 1) return null;
         db.prepare(`
           UPDATE runs
-          SET status='active', blocked_reason=NULL, intervention_count=intervention_count+1,
+          SET status='active', blocked_reason=NULL, blocking_class=NULL, intervention_count=intervention_count+1,
               revision=revision+1, updated_at=?
           WHERE run_id=? AND status='blocked' AND owner_binding_id=?
         `).run(updatedAt, binding.runId, binding.bindingId);
@@ -2117,6 +2123,7 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
                run_start_workspace_identity as runStartWorkspaceIdentity,
                current_workspace_identity as currentWorkspaceIdentity,
                blocked_reason as blockedReason,
+               blocking_class as blockingClass,
                intervention_count as interventionCount,
                project_mode as projectMode,
                baseline_failures as baselineFailures,
@@ -2163,6 +2170,7 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         runStartWorkspaceIdentity: row.runStartWorkspaceIdentity || null,
         currentWorkspaceIdentity: row.currentWorkspaceIdentity || null,
         blockedReason: row.blockedReason || null,
+        blockingClass: row.blockingClass || (row.status === 'blocked' ? 'safety' : null),
         interventionCount: row.interventionCount || 0,
         projectMode: row.projectMode || null,
         baselineFailures: safeJsonParse(row.baselineFailures, []),
@@ -4464,11 +4472,14 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
                 WHEN ? IS NOT NULL AND status='blocked' AND blocked_reason=? THEN 'active' ELSE status END,
               blocked_reason=CASE
                 WHEN ? IS NOT NULL AND status='blocked' AND blocked_reason=? THEN NULL ELSE blocked_reason END,
+              blocking_class=CASE
+                WHEN ? IS NOT NULL AND status='blocked' AND blocked_reason=? THEN NULL ELSE blocking_class END,
               revision=revision+1,
               updated_at=?
           WHERE run_id=?
         `).run(
           nextPlanRevision,
+          resumeBlockedReason, resumeBlockedReason,
           resumeBlockedReason, resumeBlockedReason,
           resumeBlockedReason, resumeBlockedReason,
           resumeBlockedReason, resumeBlockedReason,
@@ -5037,6 +5048,21 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
             .filter((c) => c.status === 'verified')
             .map((c) => mapCandidateToCanonicalRecord(c.candidateJson || c, { runId, projectId, revision: currentRev + 1 }));
         }
+
+        const existingRecords = db.prepare(`SELECT record_id, record_type, record_json FROM knowledge_records WHERE project_id=? AND status='committed'`).all(projectId);
+        const existingStatements = new Set(existingRecords.map((r) => {
+          try {
+            const parsed = JSON.parse(r.record_json);
+            return `${r.record_type}:${parsed.statement || ''}`;
+          } catch {
+            return null;
+          }
+        }).filter(Boolean));
+
+        recordsToCommit = recordsToCommit.filter((rec) => {
+          const key = `${rec.type || rec.record_type || 'semantic_fact'}:${rec.statement || ''}`;
+          return !existingStatements.has(key);
+        });
 
         const isNoChange = noChange || recordsToCommit.length === 0;
 

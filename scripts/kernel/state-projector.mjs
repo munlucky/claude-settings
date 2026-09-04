@@ -202,6 +202,7 @@ export const buildResumeView = ({
       state: run.state || run.currentState || null,
       overall: resolvedCompletion.overall,
       reason,
+      blockingClass: run.blockingClass || (reason ? 'safety' : null),
     },
     implementation: {
       status: resolvedCompletion.implementation,

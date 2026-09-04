@@ -44,6 +44,7 @@ const structuredAcceptance = () => Array.from({ length: 10 }, (_, index) => ({
 }));
 
 const broadContract = (allowedPaths) => ({
+  strictBoundedScope: true,
   acceptance: structuredAcceptance(),
   ...(allowedPaths === undefined ? {} : { allowedPaths }),
 });
@@ -183,6 +184,63 @@ test('reviewer/read-only turns remain allowed without an implementation scope', 
     assert.equal(review.hostDirective.modelRouteDecision.permissions, 'read_only');
     assert.equal(review.executionCapsule.role, 'reviewer');
     assert.equal(review.executionCapsule.permissions.filesystem, 'read_only');
+  } finally {
+    await cp.close();
+    await cleanup(fixture);
+  }
+});
+
+test('strictBoundedScope rejects empty allowedPaths on declared steps', async () => {
+  const fixture = await setup();
+  const cp = await createKernelControlPlane(fixture);
+  try {
+    await assert.rejects(
+      () => cp.startRun({
+        runId: 'r-step-strict',
+        objective: 'strict step test',
+        taskContract: {
+          strictBoundedScope: true,
+          allowedPaths: ['src/app.mjs'],
+          steps: [
+            { stepId: 's1', sequence: 1, allowedPaths: [] },
+          ],
+        },
+      }),
+      (err) => err.errorCode === 'work-unit-scope-missing' || err.message?.includes('work-unit-scope-missing'),
+    );
+  } finally {
+    await cp.close();
+    await cleanup(fixture);
+  }
+});
+
+test('replaceRunPlan clears both blocked_reason and blocking_class upon unblocking', async () => {
+  const fixture = await setup();
+  const cp = await createKernelControlPlane(fixture);
+  try {
+    const runId = 'r-unblock-replan';
+    await cp.startRun({
+      runId,
+      objective: 'unblock replan test',
+      taskContract: { allowedPaths: ['src/app.mjs'] },
+    });
+    cp.stateStore.markRunBlocked(runId, 'preflight_failed', 'safety');
+    const blockedRun = cp.stateStore.getRun(runId);
+    assert.equal(blockedRun.status, 'blocked');
+    assert.equal(blockedRun.blockedReason, 'preflight_failed');
+    assert.equal(blockedRun.blockingClass, 'safety');
+
+    cp.stateStore.replaceRunPlanAtomic(runId, {
+      currentPlanRevision: blockedRun.planRevision,
+      nextPlanRevision: blockedRun.planRevision + 1,
+      steps: [{ stepId: 'step-new-1', sequence: 1, objective: 'fixed step' }],
+      resumeBlockedReason: 'preflight_failed',
+    });
+
+    const unblockedRun = cp.stateStore.getRun(runId);
+    assert.equal(unblockedRun.status, 'active');
+    assert.equal(unblockedRun.blockedReason, null);
+    assert.equal(unblockedRun.blockingClass, null);
   } finally {
     await cp.close();
     await cleanup(fixture);

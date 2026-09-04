@@ -4,6 +4,7 @@
 // can strand lifecycle state.
 
 import path from 'node:path';
+import { existsSync, realpathSync } from 'node:fs';
 import {
   classifyWorkUnitScope,
   requiresImplementationWorkUnitScope,
@@ -14,6 +15,12 @@ export const CONTRACT_PREFLIGHT_ERROR_CODES = Object.freeze({
   pathInvalid: 'contract-path-invalid',
   stepBindingInvalid: 'contract-step-binding-invalid',
   verificationCommandMissing: 'verification-command-missing',
+});
+
+export const BLOCKING_CLASSES = Object.freeze({
+  advisory: 'advisory',
+  completion: 'completion',
+  safety: 'safety',
 });
 
 const READ_ONLY_TASK_CLASSES = new Set(['analysis', 'review', 'read-only', 'readonly']);
@@ -27,7 +34,16 @@ const DETAILED_STEP_BINDING_FLAGS = new Set([
 
 export const CONTRACT_PREFLIGHT_NEXT_ACTION = 'revise-task-contract';
 
-const fail = (errorCode, message, details = {}, nextAction = CONTRACT_PREFLIGHT_NEXT_ACTION, recoverable = true) => {
+const fail = (
+  errorCode,
+  message,
+  details = {},
+  nextAction = CONTRACT_PREFLIGHT_NEXT_ACTION,
+  recoverable = true,
+  blockingClass = null,
+) => {
+  const resolvedClass = blockingClass
+    || (recoverable === false ? BLOCKING_CLASSES.safety : BLOCKING_CLASSES.completion);
   const error = new Error(message);
   error.name = 'ContractPreflightError';
   error.code = errorCode;
@@ -35,6 +51,7 @@ const fail = (errorCode, message, details = {}, nextAction = CONTRACT_PREFLIGHT_
   error.nextAction = nextAction;
   error.details = details;
   error.recoverable = recoverable;
+  error.blockingClass = resolvedClass;
   return error;
 };
 
@@ -102,6 +119,36 @@ const normalizeRepositoryPath = (entry, projectRoot) => {
       CONTRACT_PREFLIGHT_ERROR_CODES.pathInvalid,
       `allowedPaths entry escapes the repository: ${entry}`,
       { entry, reason: 'out-of-root', projectRoot: root },
+      CONTRACT_PREFLIGHT_NEXT_ACTION,
+      false,
+    );
+  }
+
+  let canonicalRoot = root;
+  try {
+    if (existsSync(root)) canonicalRoot = realpathSync(root);
+  } catch {}
+  let cursor = resolved;
+  while (!existsSync(cursor)) {
+    const parent = path.dirname(cursor);
+    if (parent === cursor) break;
+    cursor = parent;
+  }
+  let realResolved = resolved;
+  try {
+    if (existsSync(cursor)) {
+      const resolvedBase = realpathSync(cursor);
+      realResolved = path.resolve(resolvedBase, path.relative(cursor, resolved));
+    }
+  } catch {}
+  const normalizeCase = (value) => process.platform === 'win32' ? value.toLowerCase() : value;
+  const compRoot = normalizeCase(canonicalRoot);
+  const compResolved = normalizeCase(realResolved);
+  if (compResolved !== compRoot && !compResolved.startsWith(`${compRoot}${path.sep}`)) {
+    throw fail(
+      CONTRACT_PREFLIGHT_ERROR_CODES.pathInvalid,
+      `allowedPaths entry escapes the repository via symlink/junction: ${entry}`,
+      { entry, reason: 'out-of-root-symlink', projectRoot: root, resolved: realResolved },
       CONTRACT_PREFLIGHT_NEXT_ACTION,
       false,
     );
@@ -204,7 +251,7 @@ export const validateDeclaredSteps = ({
     const allowedPaths = Array.isArray(rawPaths)
       ? normalizeBoundedPaths({ paths: rawPaths, projectRoot })
       : [];
-    const scope = classifyWorkUnitScope({ allowedPaths });
+    const scope = classifyWorkUnitScope({ allowedPaths, strict: contract.strictBoundedScope === true || raw.strictBoundedScope === true });
     if (isImplementationTask && !scope.valid) {
       throw fail(scope.errorCode, scope.message, { ...details, stepId, scope }, scope.nextAction);
     }
@@ -320,13 +367,16 @@ export const preflightTaskContract = ({
   let allowedPaths = [];
   if (Array.isArray(contract.allowedPaths)) {
     allowedPaths = normalizeBoundedPaths({ paths: contract.allowedPaths, projectRoot });
-    const scope = classifyWorkUnitScope({ allowedPaths });
+    const scope = classifyWorkUnitScope({ allowedPaths, strict: contract.strictBoundedScope === true });
     if (requiresScope && !declaredSteps && !scope.valid) {
-      throw fail(scope.errorCode, scope.message, { scope }, scope.nextAction, true);
+      const isSafety = scope.reason === 'path-traversal' || scope.scopeState === 'invalid';
+      throw fail(scope.errorCode, scope.message, { scope }, scope.nextAction, !isSafety);
     }
   } else if (requiresScope && !declaredSteps) {
-    const scope = classifyWorkUnitScope({ allowedPaths: [] });
-    throw fail(scope.errorCode, scope.message, { scope }, scope.nextAction, true);
+    const scope = classifyWorkUnitScope({ allowedPaths: [], strict: contract.strictBoundedScope === true });
+    if (!scope.valid) {
+      throw fail(scope.errorCode, scope.message, { scope }, scope.nextAction, true);
+    }
   }
 
   const stepResult = validateDeclaredSteps({

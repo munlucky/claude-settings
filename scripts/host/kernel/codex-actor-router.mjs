@@ -42,16 +42,13 @@ export const resolveCodexActorRoute = ({
     || invocation.freshSessionRequired === true;
   const independentReviewRequired = role === 'reviewer' && decision.independentContextRequired === true;
   const nativeAvailable = hasNativeLauncher && capabilities.supportsSubagentModel === true;
+  const isolatedSessionAvailable = capabilities.supportsIndependentContext === true;
   const dispatchMechanism = delegationRequested && nativeAvailable
     ? 'native-subagent'
     : independentReviewRequired
-      ? 'independent-review'
+      ? (isolatedSessionAvailable ? 'independent-review' : 'review-pending')
       : 'owner-direct';
-  const executionMode = delegationRequested && nativeAvailable
-    ? 'native-subagent'
-    : independentReviewRequired
-      ? 'independent-review'
-      : 'owner-direct';
+  const executionMode = dispatchMechanism;
   const parentSessionPolicy = buildCodexMainSessionPolicy({
     parentSessionId,
     observed: parentSessionConfig,

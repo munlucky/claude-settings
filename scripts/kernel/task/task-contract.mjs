@@ -285,6 +285,7 @@ export const normalizeTaskContract = (input = {}, { objective, changedFileCount 
     allowedPaths: asStringList(contract.allowedPaths),
     forbiddenPaths: asStringList(contract.forbiddenPaths),
     filesChanged: Number.isFinite(contract.filesChanged) ? Number(contract.filesChanged) : changedFileCount,
+    strictBoundedScope: contract.strictBoundedScope === true || flags.strictBoundedScope === true,
     flags,
   };
   return { ...normalized, digest: contractDigest(normalized) };

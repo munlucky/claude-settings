@@ -358,6 +358,7 @@ export const finalizeRun = async ({
   let knowledgeStatus = 'skipped';
   let commitReceipt = null;
   let knowledgeCommitError = null;
+  let knowledgeCommitAttempts = 1;
   const priorCommit = store.getKnowledgeCommitReceipt(runId);
   if (priorCommit && ['committed', 'no_change'].includes(priorCommit.status)) {
     // Already committed on an earlier attempt; re-running it would fail the
@@ -366,19 +367,55 @@ export const finalizeRun = async ({
     knowledgeStatus = priorCommit.status;
     knowledgeCaptureStatus = priorCommit.status === 'committed' ? 'knowledge_committed' : 'no_new_knowledge';
   } else {
-    try {
-      commitReceipt = await commitProjectKnowledge({
-        runId,
-        projectId: run.projectId,
-        stateStore: store,
-        expectedKnowledgeRevision: run.knowledgeRevisionStart,
-        env: { MOON_RELAY_KERNEL_HOME: runtimeHome },
-      });
-      knowledgeStatus = commitReceipt.status || 'committed';
-      knowledgeCaptureStatus = knowledgeStatus === 'committed' ? 'knowledge_committed' : 'no_new_knowledge';
-    } catch (error) {
-      knowledgeStatus = 'failed';
-      knowledgeCommitError = error.message;
+    const MAX_CAS_RETRIES = 3;
+    let currentExpectedRevision = run.knowledgeRevisionStart;
+    for (let attempt = 1; attempt <= MAX_CAS_RETRIES; attempt++) {
+      knowledgeCommitAttempts = attempt;
+      try {
+        commitReceipt = await commitProjectKnowledge({
+          runId,
+          projectId: run.projectId,
+          stateStore: store,
+          expectedKnowledgeRevision: currentExpectedRevision,
+          env: { MOON_RELAY_KERNEL_HOME: runtimeHome },
+        });
+        knowledgeStatus = commitReceipt.status || 'committed';
+        knowledgeCaptureStatus = knowledgeStatus === 'committed' ? 'knowledge_committed' : 'no_new_knowledge';
+        break;
+      } catch (error) {
+        if (error.code === 'STALE_KNOWLEDGE_REVISION' && attempt < MAX_CAS_RETRIES) {
+          const latestRev = store.getProjectKnowledgeRevision
+            ? String(store.getProjectKnowledgeRevision(run.projectId))
+            : null;
+          if (latestRev && latestRev !== currentExpectedRevision) {
+            currentExpectedRevision = latestRev;
+            continue;
+          }
+        }
+        knowledgeStatus = error.code === 'STALE_KNOWLEDGE_REVISION' ? 'deferred' : 'failed';
+        knowledgeCommitError = error.message;
+        knowledgeCaptureStatus = knowledgeStatus === 'deferred' ? 'knowledge_deferred' : 'no_new_knowledge';
+        if (knowledgeStatus === 'deferred') {
+          commitReceipt = {
+            schemaVersion: 1,
+            runId,
+            projectId: run.projectId,
+            status: 'deferred',
+            reason: 'cas_retry_exhausted',
+            attempts: knowledgeCommitAttempts,
+            error: knowledgeCommitError,
+            deferredAt: new Date().toISOString(),
+          };
+          store.recordKnowledgeCommitReceipt(runId, {
+            projectId: run.projectId,
+            revisionBefore: String(run.knowledgeRevisionStart || '0'),
+            revisionAfter: String(currentExpectedRevision || run.knowledgeRevisionStart || '0'),
+            status: 'deferred',
+            receiptJson: commitReceipt,
+          });
+        }
+        break;
+      }
     }
   }
 
@@ -414,7 +451,7 @@ export const finalizeRun = async ({
   let gitCloseoutError = null;
   if (effectiveCloseoutRequest?.requested) {
     const knowledgeCommitReceipt = store.getKnowledgeCommitReceipt(runId)?.receiptJson;
-    if (!knowledgeCommitReceipt) {
+    if (!knowledgeCommitReceipt && knowledgeStatus !== 'deferred') {
       gitCloseoutStatus = 'failed';
       gitCloseoutError = 'KNOWLEDGE_RECEIPT_REQUIRED: Explicit Git closeout requires knowledge commit receipt';
     } else {
@@ -425,7 +462,7 @@ export const finalizeRun = async ({
           stateStore: store,
           repoRoot: projectRoot,
           gitCloseoutRequest: effectiveCloseoutRequest,
-          knowledgeCommitReceipt,
+          knowledgeCommitReceipt: knowledgeCommitReceipt || { status: 'deferred' },
           changedFiles: normalizedChangeSet.changedPaths,
         });
         gitCloseoutStatus = gitReceipt.status || 'completed';
@@ -461,6 +498,7 @@ export const finalizeRun = async ({
     completionStatus: completionEval.decision,
     knowledgeStatus,
     knowledgeCaptureStatus,
+    knowledgeCommitAttempts,
     knowledgeWarning: Boolean(knowledgeWarning),
     knowledgeWarningReason: knowledgeWarning?.reason || null,
     knowledgeWarningDetail: knowledgeWarning,
