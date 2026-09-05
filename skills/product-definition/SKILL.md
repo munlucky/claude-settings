@@ -6,4 +6,19 @@ user-invocable: true
 
 # Product Definition
 
-This pre-work utility writes product artifacts under the account-root project namespace. It emits a `TASK_CONTRACT_SEED` with artifact and source provenance. The seed is advisory: the Kernel Host must compare it with the current user request, reject stale conflicts, and normalize the final Task Contract.
+## Goal
+Transform user ideas and problem statements into concrete, provenance-bound product definition artifacts and an advisory Task Contract Seed before Kernel execution.
+
+## Context
+- **Command**: `node scripts/kernel/standalone/product-definition.mjs [options]`
+- **Storage**: Product artifacts written under the account-root project namespace (`.moon-relay-kernel/docs/tasks/...`).
+
+## Autonomy & Priorities
+- **Advisory Seed**: Emits a `TASK_CONTRACT_SEED`. The Kernel Host compares it against the user request and normalizes the authoritative contract.
+- **Pre-Work Only**: Never executes code mutations or finalizes runs.
+
+## Definition of Done
+- Product intent, solution scope, and `TASK_CONTRACT_SEED` artifacts written with source provenance.
+
+## Verification
+- Confirm `TASK_CONTRACT_SEED` JSON contains valid objective, acceptance criteria, and allowed path boundaries.

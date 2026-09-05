@@ -77,15 +77,19 @@ export function mutationAdmissionDigest({ runId, projectId, workspaceId, sourceI
 }
 
 export function resolveKernelCloseoutRun({ stateStore, projectId, workspaceId, runId = null } = {}) {
-  const candidates = runId
-    ? [stateStore.getRun(runId)].filter(Boolean)
+  const effectiveRunId = runId || process.env.MOON_RELAY_KERNEL_RUN_ID || null;
+  const candidates = effectiveRunId
+    ? [stateStore.getRun(effectiveRunId)].filter(Boolean)
     : stateStore.listRuns({ projectId, statuses: ['completed'] })
-      .filter((candidate) => candidate.workspaceId === workspaceId);
+      .filter((candidate) => candidate.workspaceId === workspaceId)
+      .slice()
+      .sort((a, b) => {
+        const timeA = new Date(a.updatedAt || a.completedAt || a.createdAt || 0).getTime();
+        const timeB = new Date(b.updatedAt || b.completedAt || b.createdAt || 0).getTime();
+        return timeB - timeA;
+      });
   if (candidates.length === 0) {
-    throw admissionError(runId ? 'UNKNOWN_RUN_ID' : 'RUN_PROVENANCE_REQUIRED', { runId, projectId, workspaceId });
-  }
-  if (!runId && candidates.length > 1) {
-    throw admissionError('RUN_PROVENANCE_AMBIGUOUS', { projectId, workspaceId, runIds: candidates.map((candidate) => candidate.runId) });
+    throw admissionError(effectiveRunId ? 'UNKNOWN_RUN_ID' : 'RUN_PROVENANCE_REQUIRED', { runId: effectiveRunId, projectId, workspaceId });
   }
   const run = candidates[0];
   if (run.projectId !== projectId) {

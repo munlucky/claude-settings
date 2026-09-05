@@ -10,7 +10,7 @@ import { observeWorkspaceIdentity } from '../../kernel/run/workspace-identity.mj
 
 export const INDEPENDENT_SUBAGENT_REVIEW_SCHEMA_VERSION = 1;
 export const INDEPENDENT_SUBAGENT_REVIEW_TRANSPORT = 'independent-subagent';
-export const INDEPENDENT_SUBAGENT_REVIEW_DEFAULT_TIMEOUT_MS = 600000;
+export const INDEPENDENT_SUBAGENT_REVIEW_DEFAULT_TIMEOUT_MS = Number(process.env.MOON_RELAY_KERNEL_REVIEW_TIMEOUT_MS) || 90000;
 
 const isObject = (value) => Boolean(value && typeof value === 'object' && !Array.isArray(value));
 const present = (value) => value !== null && value !== undefined && String(value).trim() !== '';

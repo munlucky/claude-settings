@@ -35,7 +35,7 @@
     "test:switcher": "node --test --test-concurrency=1 tests/harness-switcher-phase01.test.mjs tests/harness-switcher-transaction.test.mjs tests/harness-switcher-fault-matrix.test.mjs tests/harness-switcher-shortcut.test.mjs tests/harness-switcher-adoption.test.mjs tests/kernel-profile-switcher-lifecycle.test.mjs tests/kernel-app-switching-parity.test.mjs tests/kernel-codex-project-hydration.test.mjs tests/kernel-global-skills-isolation.test.mjs tests/account-skills-overlay.test.mjs",
     "setup": "node bin/moonshot-relay.mjs install",
     "setup:kernel": "node bin/moonshot-relay.mjs kernel",
-    "doctor": "node bin/moon-harness-switcher.mjs doctor",
+    "doctor": "node bin/moon-relay-kernel.mjs doctor",
     "k": "node bin/moon-harness-switcher.mjs launch --surface all --track kernel --execute",
     "k:all": "node bin/moon-harness-switcher.mjs launch --surface all --track kernel --execute",
     "k:codex": "node bin/moon-harness-switcher.mjs launch --surface codex --track kernel --execute",

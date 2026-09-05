@@ -5,19 +5,27 @@ description: Default Codex command-skill entrypoint for Moon Relay Kernel task r
 
 # Moon Relay Kernel
 
-0. The account command skillset defaults to Kernel. Run this workflow when `moon-relay-kernel` is selected by the native command/skillset, explicitly invoked, or the active project track resolves to `kernel`. Confirm the track before calling `kernel next` or `kernel report` (or MCP tools `kernel_next` / `kernel_report`); for a non-kernel track return `wrong_harness` without mutating the repository.
-1. Confirm the account-root track binding for the current project/worktree is `kernel`; the binding lives under the Kernel runtime home and is scoped by canonical root plus Git worktree identity (`Project → Worktree → Run`).
-2. Capture the objective, acceptance, constraints, and non-goals as a compact task contract. Before the first runtime call for the current user request, write that contract to a task-scoped temporary JSON file outside the target repository and call `kernel next --contract-json <file>` (or MCP tool `kernel_next` with `contractJson`). This contract-first call atomically creates and binds a Run when the current worktree has none; do not bootstrap a fresh session with bare `kernel next` (use bare `kernel next` only after a Host binding exists). The Kernel keeps the contract as the Run's authority, so later calls resume through the worktree lease.
-3. Drive the run with exactly two core runtime interactions:
-   - `kernel next --contract-json <file>` (or bare `kernel next` / MCP `kernel_next` once active) returns the objective, acceptance, constraints, non-goals, evidence, context capsule, and the one action/work unit to execute now.
-   - `kernel report --report-json <file>` (or MCP `kernel_report`) submits a change summary, changed paths, risks, requested verifications, and structured judgments.
-4. Perform the assigned bounded work unit directly in the current native owner surface (file editing, testing, and command execution) and stay inside its allowed paths returned by `next`. Native subagents are optional delegation for genuinely partitioned work; they are never a prerequisite for ordinary implementation. Echo the work unit's `stepId` (and `capsuleId`, when issued) in the report. A mutation outside the allowed unit is refused before any verification runs.
-5. Request verifications using the command refs `next` lists for each outstanding obligation; the Kernel runtime executes them and owns the resulting evidence receipts. A missing completion-only verification command or reviewer capability is not an implementation blocker at start; continue through EXECUTE, and resolve or bind it when the corresponding PROVE obligation becomes active.
-6. When `kernel next` returns an independent review action (for security review, protected obligations, T3 judgments, or explicit requirements), satisfy it with a review receipt recorded from an independent reviewer session (including an independent native subagent session when no external transport is available); Host review fallback transports resolve automatically without manual switching. Ordinary tasks use the current owner directly and do not require an independent reviewer.
-7. A contract-preflight rejection (`status: 'contract-rejected'`, `recoverable: true`) is normally self-repairable. Revise the temporary task contract and retry without involving the user unless the correction would change the user's requested scope or cross a safety boundary.
-8. Treat Kernel completion decisions as the only completion authority; a run is done only when `next` returns the `done` action, never from narration.
-9. When blocked, report the blocker reason (question, permission, external-dependency, unsupported-verification, unsafe-command, network-policy) instead of improvising. All code changes and evidence are preserved upon blocker, and resuming via `kernel next` re-evaluates outstanding obligations without restarting implementation.
+## Goal
+The account command skillset defaults to Kernel. Bind the current project/worktree to Moon Relay Kernel, execute assigned bounded work units, and drive the task to authoritative Kernel completion with verified proof and receipts; for a non-kernel track return `wrong_harness` without mutating the repository.
 
-10. A missing optional native worker launcher is not an implementation blocker. Continue the current owner session with the issued work unit and report its actual changes and evidence. Never turn owner-direct execution into a synthetic worker completion, and never use a provider CLI or app-server subprocess as a fallback.
+## Context
+- **Binding Scope**: `Project → Worktree → Run`, scoped by canonical root and Git worktree identity under runtime home `~/.moon-relay-kernel`.
+- **Two Core Commands**:
+  - `kernel next [--contract-json <file>]` (or MCP `kernel_next`): Returns objective, acceptance, constraints, context capsule, and the active work unit.
+  - `kernel report [--report-json <file>]` (or MCP `kernel_report`): Submits change summary, changed paths, risks, and requested verifications.
+- **Task Contract**: Captured as compact JSON (objective, acceptance, constraints, non-goals) passed via `kernel next --contract-json <file>` on the first call to atomically create/bind the Run; do not bootstrap a fresh session with bare `kernel next` (use bare `kernel next` only after a Host binding exists).
 
-When a run establishes a reusable project invariant, required verification, architecture decision, or known failure pattern, include it in knowledgeObservations with the evidence refs that support it.
+## Autonomy & Priorities
+- **Implementation Autonomy**: Perform code edits, testing, and commands directly in the native owner session and stay inside its allowed paths returned by `next`.
+- **Mutation Boundary**: Never mutate files outside `allowedPaths`. Mutations outside the allowed unit are rejected before verification runs.
+- **Delegation**: Subagents are optional for genuinely partitioned tasks; they are never a prerequisite for ordinary implementation.
+- **Fast Blockers**: When blocked, immediately report the blocker reason (`question`, `permission`, `unsupported-verification`, etc.) rather than looping or improvising.
+
+## Definition of Done
+- Treat Kernel completion decisions as the only completion authority; a run is done only when `kernel next` returns `{ action: { type: "done" } }`. Narration or plain text completion claims have zero authority.
+- Reusable invariants, required verifications, architecture decisions, and failure patterns are recorded in `knowledgeObservations` upon completion.
+
+## Verification
+- Request verifications using the command refs `next` lists for each outstanding obligation; the Kernel runtime executes them and owns the resulting evidence receipts.
+- For independent review actions (security review, protected T3 obligations, explicit flags), satisfy them via trusted review receipts recorded from an independent reviewer session (or native subagent fallback).
+- Follow a single linear verification sequence: Bounded Impact Test → Build/Typecheck → Regression Gate → Final Report.

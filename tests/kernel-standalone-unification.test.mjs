@@ -86,6 +86,27 @@ test('kernel commit admission rejects unknown, foreign, and drifted provenance',
     };
     assert.equal(admitKernelMutation({ stateStore, project, statusEntries: [{ status: ' M', path: 'app.txt' }], selected: ['app.txt'], runId: run.runId }).run.runId, run.runId);
     assert.throws(() => resolveKernelCloseoutRun({ stateStore, projectId: project.projectId, workspaceId: stable.workspaceId, runId: 'unknown' }), (error) => error.code === 'UNKNOWN_RUN_ID');
+
+    // Verify multiple completed runs auto-resolve to the latest timestamp run when runId is omitted
+    const olderRun = { ...run, runId: 'run-older', completedAt: '2026-09-01T00:00:00.000Z' };
+    const newerRun = { ...run, runId: 'run-newer', completedAt: '2026-09-05T00:00:00.000Z' };
+    const multiStateStore = {
+      ...stateStore,
+      getRun: (id) => (id === 'run-older' ? olderRun : id === 'run-newer' ? newerRun : null),
+      listRuns: () => [olderRun, newerRun],
+      getCompletionDecision: (id) => ({ runId: id, decision: 'accepted', sourceIdentity }),
+    };
+    const resolvedAuto = resolveKernelCloseoutRun({ stateStore: multiStateStore, projectId: project.projectId, workspaceId: stable.workspaceId });
+    assert.equal(resolvedAuto.run.runId, 'run-newer');
+
+    // Verify MOON_RELAY_KERNEL_RUN_ID environment variable override when runId is omitted
+    process.env.MOON_RELAY_KERNEL_RUN_ID = 'run-older';
+    try {
+      const resolvedEnv = resolveKernelCloseoutRun({ stateStore: multiStateStore, projectId: project.projectId, workspaceId: stable.workspaceId });
+      assert.equal(resolvedEnv.run.runId, 'run-older');
+    } finally {
+      delete process.env.MOON_RELAY_KERNEL_RUN_ID;
+    }
     await writeFile(path.join(temp, 'foreign.txt'), 'outside kernel\n', 'utf8');
     const foreignIdentity = observeWorkspaceIdentity({ projectRoot: temp }).identity;
     run.currentWorkspaceIdentity = foreignIdentity;

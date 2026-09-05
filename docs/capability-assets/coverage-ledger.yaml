@@ -4,8 +4,8 @@
   "baselineCommit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
   "updatedAt": "2026-09-05",
   "summary": {
-    "totalMapped": 730,
-    "classifiedCapabilityCount": 705,
+    "totalMapped": 734,
+    "classifiedCapabilityCount": 709,
     "ignoredCount": 25,
     "unclassifiedCount": 0
   },
@@ -2246,6 +2246,10 @@
       "classification": "capability",
       "capability": "control-plane-state-authority"
     },
+    "tests/kernel-efficiency-telemetry.test.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
     "tests/kernel-end-to-end-integration.test.mjs": {
       "classification": "capability",
       "capability": "control-plane-state-authority"
@@ -2367,6 +2371,10 @@
       "capability": "model-routing-and-route-admission"
     },
     "tests/kernel-independent-review-session.test.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "tests/kernel-independent-subagent-review.test.mjs": {
       "classification": "capability",
       "capability": "evidence-completion-and-review-authority"
     },
@@ -2718,6 +2726,10 @@
       "classification": "capability",
       "capability": "control-plane-state-authority"
     },
+    "tests/kernel-real-goal-golden-e2e.test.mjs": {
+      "classification": "capability",
+      "capability": "provider-session-and-execution-boundary"
+    },
     "tests/kernel-report-lease.test.mjs": {
       "classification": "capability",
       "capability": "control-plane-state-authority"
@@ -2913,6 +2925,10 @@
     "tests/kernel-upstream-registry.test.mjs": {
       "classification": "capability",
       "capability": "control-plane-state-authority"
+    },
+    "tests/kernel-work-unit-recovery-e2e.test.mjs": {
+      "classification": "capability",
+      "capability": "provider-session-and-execution-boundary"
     },
     "tests/kernel-workflow-state-machine.test.mjs": {
       "classification": "capability",

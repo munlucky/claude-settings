@@ -6,4 +6,19 @@ user-invocable: true
 
 # Architecture Artifacts
 
-This pre-work utility writes ASR, domain, options, tradeoff, C4, ADR, and traceability artifacts under the account-root project namespace. It emits a `TASK_CONTRACT_SEED` only; it has no implementation, proof, review, knowledge-commit, or completion authority.
+## Goal
+Generate rigorous architecture artifacts (ASR, domain models, options, tradeoffs, C4 diagrams, ADRs) and an advisory Task Contract Seed before Kernel implementation starts.
+
+## Context
+- **Command**: `node scripts/kernel/standalone/architecture-artifacts.mjs [options]`
+- **Namespace**: Stored under project agreement packages (`.moon-relay-kernel/docs/agreements/...`).
+
+## Autonomy & Priorities
+- **Seed Only**: Emits a provenance-bound `TASK_CONTRACT_SEED`; has zero implementation, proof, review, or completion authority.
+- **Evidence-Grounded**: Ground architectural tradeoffs in verified codebase realities, not speculative abstractions.
+
+## Definition of Done
+- Complete architecture package generated with clear component boundaries, ADRs, and Task Contract Seed.
+
+## Verification
+- Validate generated ADRs and architecture schema using `node scripts/architecture-artifact-validate.mjs`.

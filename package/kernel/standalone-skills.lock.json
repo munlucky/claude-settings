@@ -3,8 +3,8 @@
   "scope": "kernel-standalone",
   "catalogId": "moon-relay-kernel-standalone-skills.v2",
   "catalogDigest": "b386152f1fe83456c47b931d65fa46b87b284a668a085365779677df97918880",
-  "generatedAt": "2026-08-20T15:52:14.115Z",
-  "sourceCommit": "738cecd504478d62dadab78cc92e2c4864275e41",
+  "generatedAt": "2026-09-05T13:23:55.618Z",
+  "sourceCommit": null,
   "skills": [
     {
       "name": "project-memory",
@@ -12,7 +12,7 @@
       "skillPath": "skills/project-memory",
       "entrypoint": "scripts/kernel/standalone/project-memory.mjs",
       "exportName": "runProjectMemory",
-      "contentHash": "05cf352aa8115a14b2de0e9911806a86959e95670d52d9f6a9083ba0eb7b94a5",
+      "contentHash": "80ea974628b907bd1202c9947807658c5f125619e27b8b9f1cf7eb31d2c6904e",
       "cli": {
         "enabled": true,
         "binName": "project-memory"
@@ -35,7 +35,7 @@
       "skillPath": "skills/kernel-commit",
       "entrypoint": "scripts/kernel/standalone/kernel-commit.mjs",
       "exportName": "kernelCommit",
-      "contentHash": "a6db393df01a766aa6012384cf434b2352848fa248f574141d99a275fa7f9059",
+      "contentHash": "09dc1f94368b29aa70cf2d9ea9f04d318885a37f14b4d74672013b17962de0c2",
       "cli": {
         "enabled": true,
         "binName": "kernel-commit"
@@ -60,7 +60,7 @@
       "skillPath": "skills/codebase-understanding",
       "entrypoint": "scripts/kernel/standalone/codebase-understanding.mjs",
       "exportName": "runCodebaseUnderstanding",
-      "contentHash": "f0abc85a02985b5b830b6d6311328e8e50d9b161e6a2f0433c7ef702f70303f5",
+      "contentHash": "9c3ad9b061a84c01c8b63012828708c33045c040aeb99a23cef2cba411a1afc1",
       "cli": {
         "enabled": true,
         "binName": "codebase-understanding"
@@ -103,7 +103,7 @@
       "skillPath": "skills/ui-audit",
       "entrypoint": "scripts/kernel/standalone/ui-audit.mjs",
       "exportName": "runUiAudit",
-      "contentHash": "9502ed620296cf055ad9940d2d81833477c3abc5293a42aec766d4ea9ccd2242",
+      "contentHash": "db6435aac71ad5df1555ff30cfb3a5e7d047479501640cd1fcf889ed83fa27cc",
       "cli": {
         "enabled": true,
         "binName": "ui-audit"
@@ -124,7 +124,7 @@
       "skillPath": "skills/product-definition",
       "entrypoint": "scripts/kernel/standalone/product-definition.mjs",
       "exportName": "runProductDefinition",
-      "contentHash": "138b64423ab707d08e46faab244d80392532f7e84f31f73a60ac1551b34f66c2",
+      "contentHash": "d91e49cab5ce320aa3437af738c0abd4df8992cbcdeff6d28c62d93b3b065c11",
       "cli": {
         "enabled": true,
         "binName": "product-definition"
@@ -145,7 +145,7 @@
       "skillPath": "skills/architecture-artifacts",
       "entrypoint": "scripts/kernel/standalone/architecture-artifacts.mjs",
       "exportName": "runArchitectureArtifacts",
-      "contentHash": "4141938837b09d1883271ba68fad05bbc4145e0b6d03b3d50cae93fb0d6685c0",
+      "contentHash": "701ad37867baedf94413c9a9d02c10e8b86e2a3c22dbaf97883fd0d7bd29546b",
       "cli": {
         "enabled": true,
         "binName": "architecture-artifacts"

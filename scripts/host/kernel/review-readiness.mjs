@@ -222,8 +222,11 @@ export const assessReviewReadiness = ({
     : degraded.length > 0
       ? 'DEGRADED'
       : 'READY';
+  const reviewOnlyBlocker = blockers.length > 0 && blockers.every((blocker) => String(blocker).startsWith('review-'));
   const canComplete = status === 'READY';
-  const canStartMutation = canComplete || (status === 'DEGRADED' && implementationOnly === true);
+  const canStartMutation = canComplete
+    || (status === 'DEGRADED' && implementationOnly === true)
+    || (implementationOnly === true && reviewOnlyBlocker);
   return Object.freeze({
     schemaVersion: REVIEW_READINESS_SCHEMA_VERSION,
     status,
@@ -241,7 +244,7 @@ export const assessReviewReadiness = ({
     implementationOnly: implementationOnly === true,
     nextAction: status === 'READY'
       ? 'continue'
-      : status === 'DEGRADED' && implementationOnly === true
+      : (status === 'DEGRADED' || reviewOnlyBlocker) && implementationOnly === true
         ? 'continue-with-degraded-review'
         : 'stop-before-mutation',
   });
