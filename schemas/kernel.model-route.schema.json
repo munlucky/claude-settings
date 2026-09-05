@@ -1,13 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://moon-relay-kernel.local/schemas/kernel.model-route.schema.json",
-  "title": "Kernel model route decision",
-  "description": "Logical model class decided by the Kernel for one action. Provider model identity, credentials, prompts, and raw output are Host-side and forbidden here.",
+  "title": "Kernel execution-class route decision",
+  "description": "Provider-neutral execution class decided by the Kernel for one action. Provider model identity, credentials, prompts, and raw output are Host-side and forbidden here.",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "schemaVersion", "decisionId", "runId", "attemptNumber", "replanCount",
-    "planRevision", "actionKind", "role", "modelClass", "riskTier",
+    "planRevision", "actionKind", "role", "executionClass", "modelClass", "riskTier",
     "independentContextRequired", "workProfile", "permissions", "reasonCodes", "policyRevision", "createdAt"
   ],
   "properties": {
@@ -20,14 +20,16 @@
     "obligationId": { "type": ["string", "null"] },
     "actionKind": { "enum": ["understand", "design", "plan", "implement", "debug", "review_contract", "review_engineering", "replan", "prove", "close"] },
     "role": { "enum": ["planner", "implementer", "reviewer", "kernel"] },
+    "executionClass": { "enum": ["planning", "complex_implementation", "review", "standard", null] },
     "modelClass": { "enum": ["frontier_reasoning", "value_coding", "kernel"] },
     "riskTier": { "enum": ["T0", "T1", "T2", "T3"] },
     "independentContextRequired": { "type": "boolean" },
     "workProfile": {
       "type": ["object", "null"],
       "additionalProperties": false,
-      "required": ["complexity", "repeatedFailure", "independentContextRequired", "parallelizable"],
+      "required": ["executionClass", "complexity", "repeatedFailure", "independentContextRequired", "parallelizable"],
       "properties": {
+        "executionClass": { "enum": ["planning", "complex_implementation", "review", "standard", null] },
         "complexity": { "enum": ["routine", "standard", "complex", "large-refactor"] },
         "repeatedFailure": { "type": "boolean" },
         "independentContextRequired": { "type": "boolean" },

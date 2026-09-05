@@ -1,0 +1,32 @@
+schemaVersion: 1
+boundaryId: moon-relay-kernel-host-boundary.v1
+principle: "Kernel decides what is needed; Host decides how it is executed."
+kernelOwns:
+  - task
+  - work-unit
+  - required-evidence
+  - required-review
+  - execution-class
+  - completion
+  - knowledge
+hostOwns:
+  - provider
+  - model
+  - reasoning-effort
+  - session
+  - process
+  - worktree
+  - git
+  - prompt-envelope
+  - prompt-cache
+  - package-materialization
+  - account-profile-projection
+bridge:
+  kernelContract: scripts/kernel/run/host-execution-contract.mjs
+  hostAdapter: scripts/host/kernel/host-boundary.mjs
+  schemaVersion: 1
+invariants:
+  - kernel-contract-has-no-provider-model-or-session-identifiers
+  - host-validates-contract-before-provider-resolution
+  - requested-and-observed-provider-settings-live-only-in-host-receipts
+  - model-visible-prompt-contains-work-not-routing-internals

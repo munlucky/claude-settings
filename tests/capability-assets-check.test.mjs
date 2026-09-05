@@ -27,7 +27,7 @@ test('capability asset base validates manifests, provenance, catalog, subcapabil
   assert.equal(report.traceabilitySummary.traceabilityPct, 100);
   assert.equal(report.traceabilitySummary.withImplementationTrace, 47);
   assert.equal(report.traceabilitySummary.withProofTrace, 47);
-  assert.equal(report.checked.coverageSurfaces, 719);
+  assert.equal(report.checked.coverageSurfaces, 730);
   assert.equal(report.checked.rootBaselineForbidden, true);
   assert.equal(report.checked.canonicalBaselineExists, true);
   assert.equal(report.checked.decomplexificationMaps, true);

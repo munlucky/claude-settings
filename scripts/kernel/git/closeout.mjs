@@ -5,7 +5,6 @@ import { rm } from 'node:fs/promises';
 import { runGit, gitCurrentBranch } from '../../lib/git-safe.mjs';
 import { filterStagingSelection, stageSelectedPaths, validateGitCloseoutPath } from './staging-policy.mjs';
 import { buildKernelCommitMessage } from './commit-message.mjs';
-import { verifyRemoteParity } from './remote-parity.mjs';
 import { observeWorkspaceIdentity } from '../run/workspace-identity.mjs';
 
 export class KernelGitCloseoutError extends Error {
@@ -294,6 +293,7 @@ export async function executeKernelGitCloseout({
     const pushRes = runGit(repoRoot, ['push', 'origin', `${commitSha}:refs/heads/${currentBranch}`]);
     if (pushRes.status === 0) {
       pushStatus = 'completed';
+      const { verifyRemoteParity } = await import('./remote-parity.mjs');
       const parityCheck = verifyRemoteParity(repoRoot, { branch: currentBranch, remote: 'origin' });
       parity = parityCheck.parity;
       remoteHeadSha = parityCheck.remoteHeadSha;
@@ -428,6 +428,7 @@ export async function retryGitCloseout(runId, { stateStore, repoRoot = process.c
     throw new KernelGitCloseoutError('GIT_PUSH_FAILED', `Git push failed during retry: ${pushRes.stderr}`);
   }
 
+  const { verifyRemoteParity } = await import('./remote-parity.mjs');
   const parityCheck = verifyRemoteParity(repoRoot, { branch, remote: 'origin' });
   if (parityCheck.parity !== 'matched') {
     stateStore.recordGitCloseoutReceipt(runId, {

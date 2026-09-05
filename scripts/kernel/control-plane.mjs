@@ -3,8 +3,6 @@ import path from 'node:path';
 import { openKernelStateStore } from './state-store.mjs';
 import { buildContextReceipt } from './context-build.mjs';
 import { resolveProofRoute } from './proof-route.mjs';
-import { detectStagnation } from './run/stagnation.mjs';
-import { recommendModelRouting, resolveModelRoute } from './run/model-routing.mjs';
 import { buildExecutionAssignmentId, normalizeHostCapabilities, resolveEnforcementStrategy, summarizeModelRouting } from './run/model-route-contract.mjs';
 import { buildReleaseEvidencePack } from './evidence-pack.mjs';
 import { projectRunState, buildResumeView } from './state-projector.mjs';
@@ -43,9 +41,6 @@ import {
 } from './run/obligation-compiler.mjs';
 import { discoverProjectCommands } from './proof/command-catalog.mjs';
 import { resolveHostSessionHolder, REPORT_LEASE_TTL_MS, SESSION_LEASE_TTL_MS } from './run/session-holder.mjs';
-import { planWalkingSkeleton } from './task/greenfield-bootstrap.mjs';
-import { buildImpactAnalysis } from './task/migration-workflow.mjs';
-import { resolveReviewPlan, normalizeReviewVerdict, assertIndependentReview, assertIndependentReviewSession, classifyReviewFindings } from './proof/review-pipeline.mjs';
 import { digestOfEvidence, digestOfPaths, evaluateReviewReceipt, reviewEvidenceRef } from './proof/review-receipt.mjs';
 import { isProtectedObligation } from './proof/protected-obligations.mjs';
 import { hashSessionId } from './run/model-route-contract.mjs';
@@ -68,12 +63,18 @@ import { registerKernelWorktreeBinding, assertRunWorktreeMutationAuthority } fro
 import { resolveRunArtifactPaths } from './artifact-paths.mjs';
 import { writeRunLocator } from './run/run-locator.mjs';
 import { buildStructuredRunSignals, failureFingerprint } from './knowledge/capture.mjs';
+import { buildKnowledgeAuthorityView } from './knowledge/knowledge-authority.mjs';
 import { buildEvidenceIdentity, buildEvidenceReuseReceipt, VERIFICATION_SCOPE_FIELD, EVIDENCE_IDENTITY_FIELDS } from './proof/evidence-reuse.mjs';
 import { assertImplementationWorkUnitScope, workUnitScopeFailure } from './run/work-unit-scope.mjs';
 import { preflightTaskContract } from './run/contract-preflight.mjs';
 import { buildReviewCapsule, capsuleStaleness } from './run/execution-capsule.mjs';
+import { buildHostExecutionContract } from './run/host-execution-contract.mjs';
+import { buildWorkAuthorityView } from './run/work-authority.mjs';
+import { buildTrustAuthorityView } from './proof/trust-authority.mjs';
 import { digestOfChangedFiles, findScopeViolations } from './run/capsule-selection.mjs';
 import { assertOwnerWorkspaceMutationCAS } from './run/mutation-guard.mjs';
+import { actionKindForModelAction, createHostRoutingBridge } from './bridge/host-routing.mjs';
+import { buildCoordinatorSurface } from './bridge/coordinator-surface.mjs';
 
 const canonicalChangedPaths = (paths) => [...new Set((Array.isArray(paths) ? paths : [])
   .map((entry) => String(entry).replaceAll('\\', '/').replace(/^\.\//u, ''))
@@ -233,18 +234,6 @@ export const buildKernelMeasurement = ({ run, completion, principles = loadKerne
   evidenceCoverage: observed({ passed: verifications.filter((verification) => verification.status === 'passed').length, total: verifications.length, required: run.requiredObligations.length }),
   workflowEfficiency: workflowEfficiencyMeasurement({ run, verifications, verificationHistory, attempts, usageReceipts, reviewReceipts }),
   contaminationSignals: observed({ relayStateMutation: false, profileMutation: false, source: 'kernel-runtime-boundary' }),
-});
-
-// Model-visible actions carry no routing vocabulary, so the Host maps the one
-// action the model was handed onto the action kind the router understands.
-const ACTION_FOR_MODEL_ACTION = Object.freeze({
-  implement: 'implement',
-  fix: 'debug',
-  review: 'review_engineering',
-  report: 'prove',
-  finalize: 'close',
-  done: 'close',
-  blocked: 'understand',
 });
 
 // The route a run follows is fixed at start (P1-1). Structural planning is an
@@ -549,6 +538,17 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
           permissions: 'workspace_write',
           reasonCodes: [failure.errorCode],
         },
+        executionContract: buildHostExecutionContract({
+          decision: {
+            runId,
+            actionKind: 'work-unit-scope-guard',
+            role: 'implementer',
+            executionClass: null,
+            permissions: 'workspace_write',
+            decisionId: `route-${'0'.repeat(24)}`,
+            reasonCodes: [failure.errorCode],
+          },
+        }),
         executionAssignment: null,
         hostCapabilities: capabilities,
         enforcementStrategy: 'kernel',
@@ -607,6 +607,17 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
           permissions: 'workspace_write',
           reasonCodes: [errorCode],
         },
+        executionContract: buildHostExecutionContract({
+          decision: {
+            runId,
+            actionKind: 'contract-preflight',
+            role: 'implementer',
+            executionClass: null,
+            permissions: 'workspace_write',
+            decisionId: `route-${'0'.repeat(24)}`,
+            reasonCodes: [errorCode],
+          },
+        }),
         executionAssignment: null,
         executionCapsule: null,
         attemptId: null,
@@ -674,12 +685,72 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     verificationScopeIdentities: verificationScopeIdentities(runId, obligations || store.getRunObligations(runId)),
   });
 
+  const buildTrustAuthorityForRun = (currentRun, {
+    completion = null,
+    obligations = null,
+    verifications = null,
+    reviews = null,
+    completionDecision = null,
+    step = null,
+  } = {}) => {
+    if (!currentRun) return null;
+    const resolvedObligations = obligations || store.getRunObligations(currentRun.runId);
+    const resolvedVerifications = verifications || store.getVerifications(currentRun.runId);
+    const resolvedCompletion = completion || evaluateRunCompletion(currentRun.runId, { obligations: resolvedObligations });
+    const resolvedSteps = typeof store.getRunSteps === 'function'
+      ? store.getRunSteps(currentRun.runId, { planRevision: currentRun.planRevision })
+      : [];
+    const resolvedStep = step || selectCurrentStep(resolvedSteps, { planRevision: currentRun.planRevision });
+    return buildTrustAuthorityView({
+      run: currentRun,
+      obligations: resolvedObligations,
+      verifications: resolvedVerifications,
+      reviews: reviews || store.listReviewReceipts(currentRun.runId),
+      completion: resolvedCompletion,
+      completionDecision: completionDecision || store.getCompletionDecision(currentRun.runId),
+      verificationScopeIdentities: verificationScopeIdentities(currentRun.runId, resolvedObligations),
+      routeAdmissions: typeof store.listRouteAdmissions === 'function' ? store.listRouteAdmissions(currentRun.runId) : [],
+      step: resolvedStep,
+    });
+  };
+
+  const buildKnowledgeAuthorityForRun = (currentRun, {
+    context = null,
+    stage = null,
+  } = {}) => {
+    if (!currentRun?.projectId) return null;
+    const stages = ['FRAME', 'EXECUTE', 'PROVE', 'CLOSE'];
+    const contextReceipts = stages
+      .map((entry) => store.getKnowledgeContextReceipt(currentRun.runId, entry))
+      .filter(Boolean);
+    const resolvedContext = context
+      || store.getKnowledgeContextReceipt(currentRun.runId, stage || currentRun.state)?.receiptJson
+      || store.getKnowledgeContextReceipt(currentRun.runId, 'FRAME')?.receiptJson
+      || null;
+    return buildKnowledgeAuthorityView({
+      projectId: currentRun.projectId,
+      run: currentRun,
+      knowledgeRevision: store.getProjectKnowledgeRevision(currentRun.projectId),
+      context: resolvedContext,
+      contextReceipts,
+      stage: stage || currentRun.state,
+      candidates: typeof store.getKnowledgeCandidates === 'function' ? store.getKnowledgeCandidates(currentRun.runId) : [],
+      reviewReceipt: typeof store.getKnowledgeReviewReceipt === 'function' ? store.getKnowledgeReviewReceipt(currentRun.runId) : null,
+      commitReceipt: typeof store.getKnowledgeCommitReceipt === 'function' ? store.getKnowledgeCommitReceipt(currentRun.runId) : null,
+      records: typeof store.listKnowledgeRecords === 'function'
+        ? store.listKnowledgeRecords({ projectId: currentRun.projectId, statuses: ['committed', 'superseded', 'verified', 'rejected'] })
+        : [],
+      imports: typeof store.listKnowledgeImports === 'function' ? store.listKnowledgeImports({ projectId: currentRun.projectId }) : [],
+    });
+  };
+
   const resumeViewForRun = (currentRun, {
     completion = null,
     obligations = null,
     verifications = null,
     step = null,
     context = null,
+    workAuthority = null,
   } = {}) => {
     if (!currentRun) return null;
     const resolvedObligations = obligations || store.getRunObligations(currentRun.runId);
@@ -693,6 +764,13 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       ? store.getRunSteps(currentRun.runId, { planRevision: currentRun.planRevision })
       : [];
     const resolvedStep = step || selectCurrentStep(steps, { planRevision: currentRun.planRevision });
+    const routeDecisions = store.listModelRouteDecisions(currentRun.runId);
+    const resolvedWorkAuthority = workAuthority || buildWorkAuthorityView({
+      run: currentRun,
+      steps,
+      step: resolvedStep,
+      routeDecision: routeDecisions.at(-1) || null,
+    });
     return buildResumeView({
       run: currentRun,
       step: resolvedStep,
@@ -702,10 +780,11 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       completionDecision: store.getCompletionDecision(currentRun.runId),
       finalizationReceipt: store.getFinalizationReceipt(currentRun.runId),
       gitCloseout: store.getGitCloseoutReceipt(currentRun.runId),
-      routeDecisions: store.listModelRouteDecisions(currentRun.runId),
+      routeDecisions,
       usageReceipts: store.listModelUsageReceipts(currentRun.runId),
       completion: resolvedCompletion,
       context: resolvedContext,
+      workAuthority: resolvedWorkAuthority,
     });
   };
 
@@ -715,7 +794,25 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     const obligations = options.obligations || refreshProofPolicyBindings(currentRun.runId);
     const completion = options.completion || evaluateRunCompletion(currentRun.runId, { obligations });
     const verifications = options.verifications || store.getVerifications(currentRun.runId);
-    return buildNextPayload({
+    const steps = typeof store.getRunSteps === 'function'
+      ? store.getRunSteps(currentRun.runId, { planRevision: currentRun.planRevision })
+      : [];
+    const workAuthority = options.workAuthority || buildWorkAuthorityView({
+      run: currentRun,
+      steps,
+      step: options.step || null,
+      routeDecision: store.listModelRouteDecisions(currentRun.runId).at(-1) || null,
+    });
+    const trustAuthority = options.trustAuthority || buildTrustAuthorityForRun(currentRun, {
+      completion,
+      obligations,
+      verifications,
+      step: options.step || null,
+    });
+    const knowledgeAuthority = options.knowledgeAuthority || buildKnowledgeAuthorityForRun(currentRun, {
+      context: options.context || null,
+    });
+    const payload = buildNextPayload({
       ...options,
       run: currentRun,
       verifications,
@@ -730,8 +827,13 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         verifications,
         step: options.step || null,
         context: options.context || null,
+        workAuthority,
       }),
+      workAuthority,
+      trustAuthority,
     });
+    payload.knowledgeAuthority = knowledgeAuthority;
+    return payload;
   };
 
   const proofRequestsForReport = ({ runId, report, completion, step = null }) => {
@@ -854,15 +956,33 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     return { identity: observation.identity, run: store.getRun(runId) || expectedRun };
   };
 
+  // Work cursor and Host routing are bridges around the coordinator. Their
+  // compatibility methods remain available to existing Host callers, but the
+  // route/stagnation policy is no longer implemented in this module.
+  const workCursorApi = createWorkCursorApi({ store, projectRoot, runtimeHome, worktree: currentWorktree });
+  const hostRouting = createHostRoutingBridge({
+    store,
+    detectStepStagnation: (runId, options) => workCursorApi.detectStepStagnation(runId, options),
+  });
+
   return {
     // Internal Host hooks. They do not add a model-visible command or stage;
     // the Host derives any parallel selection behind next/report.
     projectRoot,
     stateStore: store,
     discoverProjectCommands: () => discoverProjectCommands({ projectRoot }),
-    // K1 + K2 live in one module: the current work unit and the bounded context
-    // it is executed with. Spread as methods so `this` stays the control plane.
-    ...createWorkCursorApi({ store, projectRoot, runtimeHome, worktree: currentWorktree }),
+    // K1 + K2 live behind the Work Cursor bridge. Spread as methods so `this`
+    // stays the control plane for the compatibility surface.
+    ...workCursorApi,
+
+    // Structural coordinator contract. Host-only helpers remain callable for
+    // compatibility, but model-facing lifecycle commands are next/report.
+    coordinatorSurface() {
+      return buildCoordinatorSurface({
+        next: (runId, options) => this.next(runId, options),
+        report: (runId, payload) => this.report(runId, payload),
+      });
+    },
 
     // Keep the reviewer capsule's public shape in the existing Work Cursor,
     // but source its evidence from the complete current-revision history. The
@@ -940,15 +1060,28 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       const knowledgeRevisionStart = String(store.getProjectKnowledgeRevision(projectId));
       const hasKernelKnowledge = store.listKnowledgeRecords({ projectId }).length > 0;
       const projectMode = detectProjectMode({ projectRoot, hasKernelKnowledge });
-      const repositoryScan = projectMode.mode === 'greenfield' ? null : scanRepositoryEvidence({ projectRoot });
-      const implementationContext = projectMode.mode === 'greenfield'
-        ? { walkingSkeleton: planWalkingSkeleton({ projectType: contract.flags?.projectType || 'library', objective: contract.objective, taskContract: contract }) }
-        : {
+      // Greenfield walking-skeleton planning is optional prework. Load it only
+      // for a greenfield run; ordinary brownfield runs do not import the
+      // architecture/planning helper into their default execution graph.
+      let implementationContext;
+      if (projectMode.mode === 'greenfield') {
+        const { planWalkingSkeleton } = await import('./task/greenfield-bootstrap.mjs');
+        implementationContext = {
+          walkingSkeleton: planWalkingSkeleton({
+            projectType: contract.flags?.projectType || 'library',
+            objective: contract.objective,
+            taskContract: contract,
+          }),
+        };
+      } else {
+        const repositoryScan = scanRepositoryEvidence({ projectRoot });
+        implementationContext = {
           entrypoints: repositoryScan.entrypoints,
           manifests: repositoryScan.manifests,
           knownCommands: [...repositoryScan.testCommands, ...repositoryScan.buildCommands].map((entry) => entry.commandRef),
           baseline: { status: contract.flags?.baselineRequired ? 'required' : 'deferred' },
         };
+      }
 
       const normalizedChangeSet = normalizeChangedContract(taskContract);
 
@@ -1082,24 +1215,26 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       const knowledgeRevisionStart = String(store.getProjectKnowledgeRevision(projectId));
       const hasKernelKnowledge = store.listKnowledgeRecords({ projectId }).length > 0;
       const projectMode = detectProjectMode({ projectRoot, hasKernelKnowledge });
-      const repositoryScan = projectMode.mode === 'greenfield'
-        ? null
-        : scanRepositoryEvidence({ projectRoot });
-      const implementationContext = projectMode.mode === 'greenfield'
-        ? {
+      let implementationContext;
+      if (projectMode.mode === 'greenfield') {
+        const { planWalkingSkeleton } = await import('./task/greenfield-bootstrap.mjs');
+        implementationContext = {
           walkingSkeleton: planWalkingSkeleton({
             projectType: contract.flags?.projectType || 'library',
             objective: contract.objective,
             taskContract: contract,
           }),
-        }
-        : {
+        };
+      } else {
+        const repositoryScan = scanRepositoryEvidence({ projectRoot });
+        implementationContext = {
           entrypoints: repositoryScan.entrypoints,
           manifests: repositoryScan.manifests,
           knownCommands: [...repositoryScan.testCommands, ...repositoryScan.buildCommands]
             .map((entry) => entry.commandRef),
           baseline: { status: contract.flags?.baselineRequired ? 'required' : 'deferred' },
         };
+      }
       const normalizedChangeSet = normalizeChangedContract(taskContract);
       const riskSummary = {
         ...riskSummaryFromContract(contract),
@@ -1599,6 +1734,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     async analyzeMigration(runId, impact = {}) {
       const run = store.getRun(runId);
       if (!run) throw new Error(`Run ${runId} not found`);
+      const { buildImpactAnalysis } = await import('./task/migration-workflow.mjs');
       const result = buildImpactAnalysis(impact);
 
       if (result.blockingFindings.length > 0) {
@@ -1622,9 +1758,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     // Stagnation detection (§25 P3): repeated failing attempts with no
     // progress on the same obligation.
     detectStagnation(runId, { threshold } = {}) {
-      const run = store.getRun(runId);
-      if (!run) throw new Error(`Run ${runId} not found`);
-      return detectStagnation({ attempts: store.getAttempts(runId), verifications: store.getVerifications(runId), threshold });
+      return hostRouting.detectStagnation(runId, { threshold });
     },
 
     // Records a replan event (durable, measured). Used when stagnation or a new
@@ -1645,67 +1779,28 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     // replan recommendation. Parallel selection is derived again from the
     // resulting Step Ledger, so no execution lifecycle needs suspension.
     stagnationSignal(runId) {
-      const runLevel = this.detectStagnation(runId);
-      const stepLevel = this.detectStepStagnation(runId);
-      const stepEscalates = stepLevel.signals?.consecutiveFailures === true;
-      return {
-        stagnant: runLevel.stagnant || stepEscalates,
-        runLevel,
-        stepLevel,
-        source: runLevel.stagnant ? 'run' : (stepEscalates ? 'step' : null),
-      };
+      return hostRouting.stagnationSignal(runId);
     },
 
     // Measurement-based routing recommendation (policy only; no provider call).
     recommendRouting(runId, { independentReviewRequired = false } = {}) {
-      const run = store.getRun(runId);
-      if (!run) throw new Error(`Run ${runId} not found`);
-      const stagnation = this.stagnationSignal(runId);
-      const attempts = store.getAttempts(runId);
-      return recommendModelRouting({
-        riskTier: run.proofTier,
-        stagnant: stagnation.stagnant,
-        retryCount: attempts.filter((attempt) => attempt.status === 'failed').length,
-        independentReviewRequired,
-      });
+      return hostRouting.recommendRouting(runId, { independentReviewRequired });
     },
 
     // Decides the LOGICAL model class for the action the model is about to
     // perform and persists it before the Host dispatches (§16.5). Provider
     // identity is never decided here — only the class the Host must satisfy.
     async decideModelRoute(runId, { actionKind, obligationId = null, independentReviewRequired = false, planInvalid = false, architectureDeviation = false, protectedObligationFailed = false, workProfile = null, complexity = null } = {}) {
-      const run = store.getRun(runId);
-      if (!run) throw new Error(`Run ${runId} not found`);
-      const attempts = store.getAttempts(runId);
-      const priorDecisions = store.listModelRouteDecisions(runId);
-      const decision = resolveModelRoute({
-        runId,
+      return hostRouting.decideModelRoute(runId, {
         actionKind,
-        riskTier: run.proofTier,
-        attemptNumber: attempts.length || 1,
-        replanCount: run.replanCount || 0,
-        // Retries are counted as FAILED attempts, not attempts made. Counting
-        // every attempt would push the retry threshold onto the same turn as
-        // the stagnation threshold, and stagnation outranks it — which would
-        // make retry escalation unreachable on the failing-report path.
-        retryCount: attempts.filter((attempt) => attempt.status === 'failed').length,
-        stagnant: this.stagnationSignal(runId).stagnant,
-        protectedObligationFailed,
+        obligationId,
+        independentReviewRequired,
         planInvalid,
         architectureDeviation,
-        independentReviewRequired,
+        protectedObligationFailed,
         workProfile,
         complexity,
-        currentPlanRevision: Number(run.planRevision || 1),
-        obligationId,
-        // §5.4: an escalation holds for the rest of this plan revision, but a
-        // replan produces a new revision that may return to the value class.
-        escalatedObligations: priorDecisions
-          .filter((entry) => entry.modelClass === 'frontier_reasoning' && entry.role === 'implementer' && entry.obligationId)
-          .map((entry) => ({ planRevision: entry.planRevision, obligationId: entry.obligationId })),
-        sequence: priorDecisions.length,
       });
-      return store.recordModelRouteDecision(runId, decision);
     },
 
     // Host-only turn API (§8.2). `next` stays exactly as the model sees it;
@@ -1765,7 +1860,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         }
       }
       const decision = await this.decideModelRoute(runId, {
-        actionKind: actionContext.actionKind || ACTION_FOR_MODEL_ACTION[modelInput.action?.type] || 'implement',
+        actionKind: actionContext.actionKind || actionKindForModelAction(modelInput.action?.type),
         obligationId: actionContext.obligationId ?? modelInput.action?.outstandingObligations?.[0] ?? null,
         independentReviewRequired: actionContext.independentReviewRequired === true,
         planInvalid: actionContext.planInvalid === true,
@@ -1873,6 +1968,13 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
             || decision.workProfile?.independentContextRequired === true
             || decision.role === 'reviewer',
         };
+      const executionContract = buildHostExecutionContract({
+        decision,
+        assignment: executionAssignment,
+        capsule: executionCapsule,
+        attemptId: attempt?.attemptId || null,
+        workUnit: modelInput.action?.step || null,
+      });
       return {
         schemaVersion: 1,
         runId,
@@ -1880,6 +1982,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         executionCapsule,
         hostDirective: {
           modelRouteDecision: decision,
+          executionContract,
           executionAssignment,
           hostCapabilities: capabilities,
           enforcementStrategy: resolveEnforcementStrategy(capabilities, decision),
@@ -2489,9 +2592,10 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
 
     // Two-stage review plan (§31): which reviews apply and whether an
     // independent reviewer is required, derived from the run's tier and risk.
-    reviewPlan(runId, { publicContract = false, acceptanceAmbiguity = false, behaviorChanging = false } = {}) {
+    async reviewPlan(runId, { publicContract = false, acceptanceAmbiguity = false, behaviorChanging = false } = {}) {
       const run = store.getRun(runId);
       if (!run) throw new Error(`Run ${runId} not found`);
+      const { resolveReviewPlan } = await import('./proof/review-pipeline.mjs');
       return resolveReviewPlan({ riskTier: run.proofTier, publicContract, acceptanceAmbiguity, behaviorChanging });
     },
 
@@ -2513,6 +2617,14 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       let run = store.getRun(runId);
       if (!run) throw new Error(`Run ${runId} not found`);
       run = assertLiveReviewWorkspace(runId, run, 'review-recording').run;
+      // Review is an optional evidence producer. Its transport/normalization
+      // code is loaded only after a caller has requested a review turn.
+      const {
+        normalizeReviewVerdict,
+        assertIndependentReview,
+        assertIndependentReviewSession,
+        classifyReviewFindings,
+      } = await import('./proof/review-pipeline.mjs');
       const normalized = normalizeReviewVerdict(verdict);
       const implementationSession = store.getImplementationPrincipal(runId);
       const usageReceipt = reviewReceiptId ? store.getModelUsageReceipt(reviewReceiptId, { runId }) : null;
@@ -3150,6 +3262,16 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         reviews: store.listReviewReceipts(runId),
         completionDecision: store.getCompletionDecision(runId),
       });
+      payload.trustAuthority = buildTrustAuthorityForRun(run, {
+        completion,
+        obligations,
+        verifications: store.getVerifications(runId),
+        step,
+      });
+      payload.knowledgeAuthority = buildKnowledgeAuthorityForRun(run, {
+        context: stageContext,
+        stage: run.state,
+      });
       payload.resume = resumeViewForRun(run, {
         completion,
         obligations,
@@ -3166,6 +3288,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     // the model-visible payload; only its consequences are.
     async buildImplementationContext(runId, run) {
       if (run.projectMode === 'greenfield') {
+        const { planWalkingSkeleton } = await import('./task/greenfield-bootstrap.mjs');
         return {
           walkingSkeleton: planWalkingSkeleton({
             projectType: run.taskContract?.flags?.projectType || 'library',
@@ -3212,6 +3335,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     async greenfieldPlan(runId, { projectType = 'library', taskContract = {} } = {}) {
       const run = store.getRun(runId);
       if (!run) throw new Error(`Run ${runId} not found`);
+      const { planWalkingSkeleton } = await import('./task/greenfield-bootstrap.mjs');
       return {
         projectMode: run.projectMode,
         applicable: run.projectMode === 'greenfield',
@@ -4349,6 +4473,40 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       return evaluateRunCompletion(runId);
     },
 
+    // Work Authority is a derived, provider-free view over the durable Run and
+    // Step Ledger. It is the single semantic answer for current work,
+    // completed/remaining units, execution class, and resume cursor.
+    workAuthority(runId, { actionKind = null } = {}) {
+      const run = store.getRun(runId);
+      if (!run) return null;
+      const steps = typeof store.getRunSteps === 'function'
+        ? store.getRunSteps(runId, { planRevision: run.planRevision })
+        : [];
+      return buildWorkAuthorityView({
+        run,
+        steps,
+        routeDecision: store.listModelRouteDecisions(runId).at(-1) || null,
+        actionKind,
+      });
+    },
+
+    // Trust Authority is a derived, provider-free graph over requirements,
+    // fresh evidence, protected review lineage, and the completion decision.
+    trustAuthority(runId, { step = null } = {}) {
+      const run = store.getRun(runId);
+      if (!run) return null;
+      return buildTrustAuthorityForRun(run, { step });
+    },
+
+    // Knowledge Authority is a derived lifecycle view. SQLite records are
+    // authoritative; context packs and filesystem projections are summarized
+    // as non-authoritative outputs.
+    knowledgeAuthority(runId, { stage = null, context = null } = {}) {
+      const run = store.getRun(runId);
+      if (!run) return null;
+      return buildKnowledgeAuthorityForRun(run, { stage, context });
+    },
+
     async status(runId) {
       try { preflight(runId, 'status'); } catch (error) { return bindingErrorPayload(error, { projectRoot, provider: hostProvider }); }
       const run = store.getRun(runId);
@@ -4361,6 +4519,9 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         || null;
       return {
         run,
+        workAuthority: this.workAuthority(runId),
+        trustAuthority: this.trustAuthority(runId),
+        knowledgeAuthority: this.knowledgeAuthority(runId, { stage: run.state, context }),
         completion,
         resume: resumeViewForRun(run, {
           completion,

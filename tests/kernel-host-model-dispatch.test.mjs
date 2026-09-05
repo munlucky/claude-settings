@@ -84,9 +84,46 @@ test('a Host that cannot report tokens leaves them unavailable rather than zero'
     assert.equal(result.dispatch.invocation.mechanism, 'worker-model-override');
     assert.equal(result.dispatch.invocation.sandbox, 'workspace-write');
     assert.equal(result.receipt.enforcementStatus, 'enforced');
+    assert.equal(result.receipt.requestedModel, result.resolution.model);
+    assert.equal(result.receipt.requestedEffort, result.resolution.effort);
     assert.equal(result.receipt.inputTokens, null);
     assert.equal(result.receipt.outputTokens, null);
     assert.equal(cp.modelRoutingSummary(runId).tokens.reportedTurns, 0);
+  });
+});
+
+test('Codex actual model and effort mismatch is recorded as a fallback, never silently accepted', async () => {
+  await withRun(async (cp, runId) => {
+    const adapter = createCodexAdapter({
+      parentSessionObserver: stableParentObserver,
+      launch: async () => ({
+        resolvedModel: 'gpt-6-astra',
+        resolvedEffort: 'high',
+        observedModel: 'gpt-6-astra',
+        observedEffort: 'high',
+        observedSessionConfig: { model: 'gpt-6-astra', effort: 'high' },
+        effortObserved: true,
+        sessionId: 'codex-mismatched-worker',
+      }),
+    });
+    const result = await dispatchKernelTurn({
+      controlPlane: cp,
+      runId,
+      adapter,
+      parentSessionId: 'codex-parent-session',
+      registry: registryFor('codex', {}),
+      actionContext: { executionMode: 'native-subagent', delegationRequested: true },
+    });
+    assert.equal(result.resolution.model, 'gpt-5.6-luna');
+    assert.equal(result.resolution.effort, 'max');
+    assert.equal(result.receipt.requestedModel, 'gpt-5.6-luna');
+    assert.equal(result.receipt.requestedEffort, 'max');
+    assert.equal(result.receipt.resolvedModel, 'gpt-6-astra');
+    assert.equal(result.receipt.resolvedEffort, 'high');
+    assert.equal(result.receipt.observedModel, 'gpt-6-astra');
+    assert.equal(result.receipt.observedEffort, 'high');
+    assert.equal(result.dispatch.errorCode, 'model-enforcement-failed');
+    assert.equal(result.receipt.enforcementStatus, 'failed');
   });
 });
 

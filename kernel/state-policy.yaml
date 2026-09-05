@@ -5,3 +5,22 @@ projectionDirection: sqlite-to-file
 projectionWritable: false
 relayDatabaseMigration: forbidden
 completionRequiresFreshEvidence: true
+durableAuthority:
+  source: sqlite
+  retained:
+    - project
+    - task
+    - work-cursor
+    - execution-class
+    - evidence
+    - completion
+    - knowledge-revision
+  derivedOrHostOwned:
+    - provider-selection-internals
+    - model-preference
+    - prompt-cache-state
+    - git-state
+    - optional-reviewer-execution-internals
+    - stagnation-internals
+    - optimization-internals
+  receiptsRemainEvidenceOnly: true

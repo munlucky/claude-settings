@@ -1,7 +1,7 @@
-// Codex GPT-5.6 model routing. Luna/Max is the default implementation and
-// debugging actor; Sol is reserved for planning, complex work, protected
-// review, and explicit repeated-failure escalation. This is Host-only policy:
-// the Kernel still chooses only a logical model class.
+// Codex Host execution policy. The Kernel supplies one of four provider-neutral
+// execution classes; this module is the only place that maps those classes to
+// Codex model/effort settings. No retry score, risk score, or provider matrix
+// participates in the default mapping.
 //
 // This module lives on the Host side. The Kernel decides a logical model class;
 // only here does that become a provider model id.
@@ -13,6 +13,20 @@ export const CODEX_MODELS = Object.freeze({
   luna: 'gpt-5.6-luna',
 });
 export const CODEX_REASONING_EFFORTS = Object.freeze(['low', 'medium', 'high', 'xhigh', 'max']);
+
+export const CODEX_EXECUTION_CLASSES = Object.freeze([
+  'planning',
+  'complex_implementation',
+  'review',
+  'standard',
+]);
+
+export const CODEX_EXECUTION_POLICY = Object.freeze({
+  planning: Object.freeze({ model: CODEX_MODELS.astra, effort: 'high' }),
+  complex_implementation: Object.freeze({ model: CODEX_MODELS.astra, effort: 'high' }),
+  review: Object.freeze({ model: CODEX_MODELS.astra, effort: 'high' }),
+  standard: Object.freeze({ model: CODEX_MODELS.luna, effort: 'max' }),
+});
 
 // `gpt-5.6` is an alias that resolves to the Sol tier. `gpt-6` resolves to Astra.
 // The Host records the explicit id in the receipt so a replay is reproducible even if the alias moves.
@@ -28,10 +42,9 @@ const PLANNING_ACTIONS = new Set(['understand', 'design', 'plan', 'replan']);
 const REVIEW_ACTIONS = new Set(['review_contract', 'review_engineering']);
 const HIGH_RISK_SHAPES = Object.freeze(['security', 'migration', 'authentication', 'authorization', 'payment', 'data-loss', 'irreversible']);
 
-// The Codex "launch-profile" dispatch mechanism selects one of the
-// four standard profiles (default/plan/review/batch), not a Kernel model class name — a model class
-// alone cannot distinguish a protected review from a routine one, and the
-// profile choice needs exactly that distinction. No `complexity`/`shapes`
+// The Codex "launch-profile" dispatch mechanism selects one of the standard
+// profiles (default/plan/review/batch), not a model class name. The profile is
+// an execution mechanism; the model/effort mapping remains the class policy.
 export const selectCodexProfileName = ({ actionKind = 'implement', complexity = 'standard' } = {}) => {
   if (REVIEW_ACTIONS.has(actionKind)) return 'review';
   if (PLANNING_ACTIONS.has(actionKind)) return 'plan';
@@ -39,37 +52,54 @@ export const selectCodexProfileName = ({ actionKind = 'implement', complexity = 
   return 'default';
 };
 
+const ACTION_EXECUTION_CLASSES = Object.freeze({
+  understand: 'planning',
+  design: 'planning',
+  plan: 'planning',
+  replan: 'planning',
+  review_contract: 'review',
+  review_engineering: 'review',
+  implement: 'standard',
+  debug: 'standard',
+});
+
+export const resolveCodexExecutionClass = ({ executionClass = null, actionKind = 'implement', complexity = 'standard' } = {}) => {
+  const candidate = executionClass || (['complex', 'large-refactor'].includes(String(complexity)) && ['implement', 'debug'].includes(actionKind)
+    ? 'complex_implementation'
+    : ACTION_EXECUTION_CLASSES[actionKind]);
+  if (candidate === null || candidate === undefined || candidate === '') return null;
+  if (!CODEX_EXECUTION_CLASSES.includes(String(candidate))) {
+    throw new TypeError(`Codex executionClass must be one of: ${CODEX_EXECUTION_CLASSES.join(', ')}`);
+  }
+  return String(candidate);
+};
+
 export const resolveCodexModelPolicy = ({
+  executionClass = null,
   actionKind = 'implement',
-  riskTier = 'T1',
   complexity = 'standard',
-  shapes = [],
-  repeatedFailure = false,
   userRequested = null,
 } = {}) => {
-  const reasons = [];
-  let model = CODEX_MODELS.luna;
-  let reasoning = 'max';
-
-  if (PLANNING_ACTIONS.has(actionKind)) {
-    model = CODEX_MODELS.astra; reasoning = 'high'; reasons.push('planning-action');
-  } else if (REVIEW_ACTIONS.has(actionKind)) {
-    const protectedReview = riskTier === 'T3' || shapes.some((shape) => HIGH_RISK_SHAPES.includes(String(shape)));
-    model = protectedReview ? CODEX_MODELS.sol : CODEX_MODELS.astra;
-    reasoning = protectedReview ? 'xhigh' : 'high';
-    reasons.push(protectedReview ? 'protected-review' : 'engineering-review');
-  } else if (complexity === 'routine' || complexity === 'routine-batch') {
-    // Routine batches stay on the same bounded Luna actor; Max is the policy
-    // default so mechanical work does not silently downgrade enforcement.
-    model = CODEX_MODELS.luna; reasoning = 'max'; reasons.push('routine-batch');
-  } else if (complexity === 'complex' || complexity === 'large-refactor') {
-    model = CODEX_MODELS.astra; reasoning = 'high'; reasons.push('complex-implementation');
-  } else {
-    reasons.push('default-implementation');
+  const resolvedExecutionClass = resolveCodexExecutionClass({ executionClass, actionKind, complexity });
+  if (resolvedExecutionClass === null) {
+    return Object.freeze({
+      schemaVersion: 2,
+      executionClass: null,
+      model: null,
+      effort: null,
+      reasoning: null,
+      reasons: Object.freeze(['kernel-owned-action']),
+      offDefaultPath: false,
+      policyRevision: 'kernel-codex-execution-class.v1',
+    });
   }
+  const base = CODEX_EXECUTION_POLICY[resolvedExecutionClass];
+  let model = base.model;
+  let reasoning = base.effort;
+  const reasons = [`execution-class:${resolvedExecutionClass}`];
 
-  if (repeatedFailure) { model = CODEX_MODELS.sol; reasoning = 'xhigh'; reasons.push('repeated-failure-escalation'); }
-
+  // An explicit invocation override is an intentional exception to the
+  // default class mapping. It is never inferred from failure or risk signals.
   if (userRequested?.model) { model = resolveCodexModelAlias(userRequested.model); reasons.push('user-requested-model'); }
   const requestedReasoning = userRequested?.reasoning ?? userRequested?.effort;
   if (requestedReasoning && CODEX_REASONING_EFFORTS.includes(requestedReasoning)) {
@@ -77,12 +107,14 @@ export const resolveCodexModelPolicy = ({
   }
 
   return Object.freeze({
-    schemaVersion: 1,
+    schemaVersion: 2,
+    executionClass: resolvedExecutionClass,
     model,
+    effort: reasoning,
     reasoning,
     reasons: Object.freeze(reasons),
-    offDefaultPath: false,
-    policyRevision: 'kernel-codex-model.v2',
+    offDefaultPath: Boolean(userRequested?.model || requestedReasoning),
+    policyRevision: 'kernel-codex-execution-class.v1',
   });
 };
 

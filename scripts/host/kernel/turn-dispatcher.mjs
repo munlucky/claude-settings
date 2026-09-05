@@ -18,6 +18,7 @@ import { isNativeDelegationRequested } from './codex-actor-router.mjs';
 import { resolveEnforcementStrategy } from '../../kernel/run/model-route-contract.mjs';
 import { observeWorkspaceIdentity } from '../../kernel/run/workspace-identity.mjs';
 import { attestReviewTransport, resolveReviewTransports } from './review-transport-resolver.mjs';
+import { normalizeHostBoundaryRequest } from './host-boundary.mjs';
 
 const REVIEW_ATTEMPT_META = Symbol('reviewAttemptMeta');
 
@@ -275,12 +276,17 @@ export const resolveTurnModelPolicy = ({ decision, hostCapabilities } = {}) => {
   const repeatedFailure = isRepeatedFailure(decision);
   if (hostCapabilities.surface === 'codex') {
     const policy = resolveCodexModelPolicy({
+      executionClass: decision.executionClass ?? decision.workProfile?.executionClass ?? null,
       actionKind: decision.actionKind,
-      riskTier: decision.riskTier,
       complexity: decision.workProfile?.complexity || 'standard',
-      repeatedFailure,
     });
-    return { model: policy.model, effort: policy.reasoning, reasons: policy.reasons };
+    return {
+      executionClass: policy.executionClass,
+      model: policy.model,
+      effort: policy.effort,
+      reasons: policy.reasons,
+      policyRevision: policy.policyRevision,
+    };
   }
   if (hostCapabilities.surface === 'claude') {
     const policy = resolveClaudeEffort({ actionKind: decision.actionKind, riskTier: decision.riskTier, triggers: repeatedFailure ? ['repeated-failure'] : [] });
@@ -403,7 +409,12 @@ export const buildTurnPromptEnvelope = ({ modelInput = {}, decision, resolution,
     riskTier: decision.riskTier,
     toolManifest: buildToolManifest([]),
     contextSegments,
-    modelPolicy: { modelClass: decision.modelClass, resolvedModel: resolution.model, resolvedEffort: resolution.effort },
+    modelPolicy: {
+      executionClass: decision.executionClass ?? null,
+      modelClass: decision.modelClass,
+      resolvedModel: resolution.model,
+      resolvedEffort: resolution.effort,
+    },
     capabilities: hostCapabilities,
     control: { runId: decision.runId, stepId: step.stepId, capsuleId: action.capsuleId },
     env,
@@ -434,10 +445,13 @@ export const prepareParallelWorkerDispatch = async ({
   const hostDirective = hosted?.hostDirective || {};
   const decision = hostDirective.modelRouteDecision;
   if (!decision) return { status: 'failed', failureCode: 'worker-route-missing' };
-  if (decision.modelClass === 'kernel') return { status: 'failed', failureCode: 'kernel-owned-worker-action' };
+  const hostBoundary = normalizeHostBoundaryRequest({ modelInput, hostDirective });
+  if (decision.executionClass === null || decision.modelClass === 'kernel') return { status: 'failed', failureCode: 'kernel-owned-worker-action' };
 
   const modelRegistry = registry || createModelRegistry({ surface: hostCapabilities.surface, runtimeHome, env, overrides });
-  let resolution = modelRegistry.resolve(decision.modelClass, overrides);
+  let resolution = typeof modelRegistry.resolveExecutionClass === 'function'
+    ? modelRegistry.resolveExecutionClass(decision.executionClass, overrides)
+    : modelRegistry.resolve(decision.modelClass, overrides);
   const modes = resolveOptimizationModes(env);
   const modelPolicyMode = hostCapabilities.surface === 'codex' ? modes.codexModelPolicyMode : modes.modelPolicyMode;
   const modelPolicyRecommendation = resolveTurnModelPolicy({ decision, hostCapabilities });
@@ -499,6 +513,7 @@ export const prepareParallelWorkerDispatch = async ({
     executionCapsule,
     modelVisibleCapsule: executionCapsule ? buildModelCapsuleView(executionCapsule, { role: decision.role }) : null,
     executionContract: buildExecutionContract(modelInput, decision),
+    hostExecutionContract: hostBoundary.contract,
     admission,
     strategy: hostDirective.enforcementStrategy,
     envelope: buildTurnPromptEnvelope({ modelInput, decision, resolution, hostCapabilities, env }),
@@ -644,6 +659,7 @@ const dispatchKernelTurnAttempt = async ({
   const { modelInput, hostDirective } = turn;
   if (!hostDirective?.modelRouteDecision) return turn;
   const decision = hostDirective.modelRouteDecision;
+  const hostBoundary = normalizeHostBoundaryRequest({ modelInput, hostDirective });
   const boundAttempt = attemptOverride || hostDirective.attempt || null;
   const attemptId = boundAttempt?.attemptId || hostDirective.attemptId || null;
   const enforcementStrategy = useHostDirectiveStrategy
@@ -658,12 +674,14 @@ const dispatchKernelTurnAttempt = async ({
   };
   // prove/close belong to the trusted proof runtime; dispatching a model for
   // them would hand completion authority to a provider.
-  if (decision.modelClass === 'kernel') {
+  if (decision.executionClass === null || decision.modelClass === 'kernel') {
     return { schemaVersion: 1, runId, dispatched: false, reason: 'kernel-owned-action', modelInput, hostDirective, receipt: null };
   }
 
   const modelRegistry = registry || createModelRegistry({ surface: hostCapabilities.surface, runtimeHome, env, overrides });
-  let resolution = modelRegistry.resolve(decision.modelClass, overrides);
+  let resolution = typeof modelRegistry.resolveExecutionClass === 'function'
+    ? modelRegistry.resolveExecutionClass(decision.executionClass, overrides)
+    : modelRegistry.resolve(decision.modelClass, overrides);
   // Wave 5/6: the model-policy recommendation is computed unconditionally so
   // its reasons can be recorded on the receipt even in shadow mode, but it is
   // only applied to the resolution admission and dispatch actually use when
@@ -766,6 +784,7 @@ const dispatchKernelTurnAttempt = async ({
       strategy: enforcementStrategy,
       executionCapsule: modelVisibleCapsule,
       executionContract: buildExecutionContract(modelInput, decision),
+      hostExecutionContract: hostBoundary.contract,
       envelope,
       workingDirectory: controlPlane.projectRoot || null,
       environment: env,

@@ -5,7 +5,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildStandaloneLock, loadStandaloneCatalog, STANDALONE_CATALOG_REL, STANDALONE_LOCK_REL } from './standalone/catalog.mjs';
 import { auditActiveRuntimeBoundary } from './runtime-boundary-audit.mjs';
-import { validateOptimizationCycle } from './optimization-cycle.mjs';
 
 const scriptPath = fileURLToPath(import.meta.url);
 const repoRootDefault = path.resolve(path.dirname(scriptPath), '../..');
@@ -78,6 +77,10 @@ export async function runUnificationAudit({ repoRoot = repoRootDefault } = {}) {
   const findings = [];
   const activeRuntimeBoundary = await auditActiveRuntimeBoundary({ repoRoot });
   findings.push(...activeRuntimeBoundary.findings);
+  // Optimization is an explicit audit concern, not a dependency of the
+  // default Kernel execution graph. Load it only when this optional audit is
+  // actually invoked.
+  const { validateOptimizationCycle } = await import('./optimization-cycle.mjs');
   const optimizationCycle = validateOptimizationCycle();
   findings.push(...optimizationCycle.findings.map((entry) => finding(`optimization-${entry.code}`, entry.message)));
   const legacy = await readJson(path.join(repoRoot, 'catalog', 'moonshot-catalog.json'));

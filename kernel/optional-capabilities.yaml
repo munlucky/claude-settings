@@ -1,0 +1,33 @@
+schemaVersion: 1
+owner: kernel
+defaultExecutionGraph:
+  required:
+    - work
+    - evidence
+    - knowledge
+  optional:
+    independent-review:
+      enabledByDefault: false
+      activation: review-required
+    stagnation-escalation:
+      enabledByDefault: false
+      activation: repeated-failure-or-explicit-request
+    optimization-cycle:
+      enabledByDefault: false
+      activation: explicit-audit-request
+    architecture-planning:
+      enabledByDefault: false
+      activation: planning-or-architecture-request
+    retro-collection:
+      enabledByDefault: false
+      activation: explicit-retro-request
+    audit:
+      enabledByDefault: false
+      activation: explicit-audit-request
+    remote-parity:
+      enabledByDefault: false
+      activation: commit-and-push
+boundaryRules:
+  - Optional capability state is request-scoped and is not persisted as a default run dependency.
+  - Protected review evidence remains fail-closed when a review is required.
+  - Remote parity is loaded only after an explicit commit-and-push request.

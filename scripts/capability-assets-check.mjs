@@ -503,8 +503,10 @@ if (!isObject(coverageLedger)) {
   }
 
   const gitFilesResult = git(['ls-files']);
+  const deletedFilesResult = git(['ls-files', '--deleted']);
   if (gitFilesResult.status === 0) {
     const gitFiles = gitFilesResult.stdout.split(/\r?\n/).filter(Boolean);
+    const deletedFiles = new Set(deletedFilesResult.status === 0 ? deletedFilesResult.stdout.split(/\r?\n/).filter(Boolean) : []);
     const corePrefixes = ['scripts/kernel/', 'kernel/', 'package/kernel/', 'archive/scripts/legacy-phase-adapters/'];
     for (const gf of gitFiles) {
       const isCore = corePrefixes.some((prefix) => gf.startsWith(prefix))
@@ -513,7 +515,7 @@ if (!isObject(coverageLedger)) {
         || gf === 'bin/moon-relay-kernel.mjs'
         || gf === 'bin/moonshot-relay.mjs'
         || gf === 'bin/moon-relay-standalone.mjs';
-      if (isCore && !surfaces[gf]) {
+      if (isCore && !surfaces[gf] && !deletedFiles.has(gf)) {
         addError('core file not mapped in coverage-ledger.yaml: ' + gf);
       }
     }

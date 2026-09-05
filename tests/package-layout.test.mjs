@@ -129,6 +129,7 @@ const trackedImplementationPlanAllowlist = [
 const isAllowedTrackedDoc = (file) => (
   file.startsWith('docs/public/')
   || file.startsWith('docs/capability-assets/')
+  || file.startsWith('docs/decomplexification/')
   || trackedImplementationPlanAllowlist.some((pattern) => pattern.test(file))
 );
 

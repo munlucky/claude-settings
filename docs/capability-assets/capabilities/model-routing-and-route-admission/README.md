@@ -60,7 +60,7 @@ stage, capability, risk, cost와 provider policy를 고려해 실행 route를 ad
 - **Role**: 진행 정체 감지 시 상위 모델/경로로 에스컬레이션
 - **Product Relevance**: Agent Workflow: true, Knowledge Lifecycle: false
 - **Implementation References**:
-  - `scripts/kernel/run/stagnation.mjs` (current source)
+  - `scripts/kernel/run/optional-capabilities.mjs` (current source)
 - **Proof References**:
   - `stagnation-routing`
 

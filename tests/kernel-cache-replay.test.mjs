@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { runCacheReplay, loadFixtures, replayFixture } from '../scripts/kernel/cache-replay.mjs';
+import { runCacheReplay, loadFixtures, replayFixture } from '../scripts/host/kernel/cache-replay.mjs';
 
 test('the corpus covers every declared replay scenario', async () => {
   const names = (await loadFixtures()).map((fixture) => fixture.name).sort();

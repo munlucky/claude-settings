@@ -154,19 +154,14 @@ test('model-policy mode never claims enforced on Claude with no concrete model c
   });
 });
 
-test('an ESCALATION_LOCKED decision keeps the Codex recommendation on Sol/xhigh', () => {
-  // Regression: resolveModelRoute() emits 'ESCALATION_LOCKED' to hold an
-  // already-escalated obligation on frontier_reasoning across its retries.
-  // isRepeatedFailure() previously did not recognize this reason code, so a
-  // subsequent implement turn under MOON_RELAY_KERNEL_MODEL_POLICY_MODE=on
-  // fell through to the default Terra/medium recommendation and silently
-  // undid the lock.
+test('an escalation signal does not change the Codex standard execution class', () => {
   const recommendation = resolveTurnModelPolicy({
     decision: { actionKind: 'implement', riskTier: 'T1', reasonCodes: ['ESCALATION_LOCKED'] },
     hostCapabilities: { surface: 'codex' },
   });
-  assert.equal(recommendation.model, CODEX_MODELS.sol);
-  assert.equal(recommendation.effort, 'xhigh');
+  assert.equal(recommendation.executionClass, 'standard');
+  assert.equal(recommendation.model, CODEX_MODELS.luna);
+  assert.equal(recommendation.effort, 'max');
 });
 
 test('an explicit invocation-override model survives model-policy mode', async () => {
@@ -218,6 +213,6 @@ test('shadow mode still records the model-policy escalation reason on the receip
     });
     assert.equal(result.receipt.cacheMode, 'shadow');
     assert.notEqual(result.resolution.model, CODEX_MODELS.sol, 'shadow must not apply the recommendation to the actual resolution');
-    assert.equal(result.receipt.modelEscalationReason, 'review-policy');
+    assert.equal(result.receipt.modelEscalationReason, null);
   });
 });

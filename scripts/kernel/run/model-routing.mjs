@@ -13,6 +13,10 @@ import {
   normalizeModelRouteDecision,
   normalizeWorkProfile,
 } from './model-route-contract.mjs';
+import {
+  executionClassForAction,
+  legacyModelClassForExecutionClass,
+} from './execution-class.mjs';
 
 // Fixed priority (§5.3). Stagnation outranks retry escalation, because more
 // attempts with a stronger model do not fix a plan that cannot work.
@@ -38,15 +42,22 @@ export const resolveWorkProfile = ({
   independentContextRequired = false,
   workProfile = null,
   complexity = null,
+  executionClass = null,
   policy,
 } = {}) => {
-  const supplied = workProfile === null || workProfile === undefined ? null : normalizeWorkProfile(workProfile);
+  const supplied = workProfile === null || workProfile === undefined
+    ? null
+    : normalizeWorkProfile(workProfile, { actionKind });
+  const selectedExecutionClass = supplied?.executionClass
+    ?? executionClass
+    ?? executionClassForAction(actionKind, { complexity: supplied?.complexity ?? complexity });
   return normalizeWorkProfile({
+    executionClass: selectedExecutionClass,
     complexity: supplied?.complexity ?? complexity ?? 'standard',
     repeatedFailure: supplied?.repeatedFailure ?? (Number(retryCount) >= Number(policy?.thresholds?.retryEscalationThreshold || 2)),
     independentContextRequired: supplied?.independentContextRequired ?? independentContextRequired,
     parallelizable: supplied?.parallelizable ?? false,
-  });
+  }, { actionKind });
 };
 
 // The full Kernel→Host decision for the action the model is about to perform.
@@ -68,6 +79,7 @@ export const resolveModelRoute = ({
   sequence = 0,
   workProfile = null,
   complexity = null,
+  executionClass = null,
   createdAt,
   policy = loadModelPolicy(),
 } = {}) => {
@@ -77,10 +89,11 @@ export const resolveModelRoute = ({
   const tier = RISK_TIERS.includes(riskTier) ? riskTier : 'T0';
   const base = policy.actionDefaults[actionKind];
   const reasonCodes = [];
-  const baseWorkProfile = resolveWorkProfile({ actionKind, riskTier: tier, retryCount, independentContextRequired: false, workProfile, complexity, policy });
+  const baseWorkProfile = resolveWorkProfile({ actionKind, riskTier: tier, retryCount, independentContextRequired: false, workProfile, complexity, executionClass, policy });
+  const baseExecutionClass = base.executionClass ?? (base.modelClass === 'kernel' ? null : executionClassForAction(actionKind, { complexity }));
 
   // prove/close belong to the Kernel runtime; no signal may hand them a model.
-  if (base.modelClass === 'kernel') {
+  if (baseExecutionClass === null) {
     return normalizeModelRouteDecision({
       decisionId: buildDecisionId({ runId, attemptNumber, sequence, actionKind }),
       runId,
@@ -90,6 +103,7 @@ export const resolveModelRoute = ({
       obligationId,
       actionKind,
       role: base.role,
+      executionClass: null,
       modelClass: base.modelClass,
       riskTier: tier,
       independentContextRequired: false,
@@ -120,9 +134,13 @@ export const resolveModelRoute = ({
   if (escalation) reasonCodes.push(escalation.reasonCode);
   else reasonCodes.push(`ACTION_${effectiveAction.toUpperCase()}_DEFAULT`);
 
-  // An escalated build action is the one case where implementation leaves the
-  // value class; reviews and planning are frontier by default already.
-  const modelClass = escalation ? 'frontier_reasoning' : spec.modelClass;
+  // The Kernel records the requested workload class. The legacy modelClass is
+  // retained only as a compatibility projection for pre-B1 consumers; old
+  // retry/replan behavior may still make that projection frontier-shaped.
+  const selectedExecutionClass = escalation && effectiveAction !== actionKind
+    ? spec.executionClass
+    : executionClass ?? spec.executionClass;
+  const modelClass = escalation ? 'frontier_reasoning' : legacyModelClassForExecutionClass(selectedExecutionClass);
 
   const isReview = REVIEW_ACTIONS.includes(effectiveAction);
   const independentContextRequired = isReview && (tier === 'T3' || independentReviewRequired === true);
@@ -135,6 +153,7 @@ export const resolveModelRoute = ({
     independentContextRequired,
     workProfile,
     complexity,
+    executionClass: selectedExecutionClass,
     policy,
   });
 
@@ -147,6 +166,7 @@ export const resolveModelRoute = ({
     obligationId,
     actionKind: effectiveAction,
     role: spec.role,
+    executionClass: selectedExecutionClass,
     modelClass,
     riskTier: tier,
     independentContextRequired,

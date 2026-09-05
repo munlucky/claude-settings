@@ -9,12 +9,21 @@
 
 import { resolveModelRoute } from '../run/model-routing.mjs';
 import { resolveEnforcementStrategy } from '../run/model-route-contract.mjs';
-import { buildUsageReceipt } from '../../host/kernel/usage-receipt.mjs';
 
 const ENFORCING_HOST = Object.freeze({ surface: 'eval-enforcing', supportsSubagentModel: true, supportsIndependentContext: true, supportsUsageTokens: true, supportsResolvedModelIdentity: true });
 const UNSUPPORTED_HOST = Object.freeze({ surface: 'eval-unsupported' });
 
 const sessionFor = (caseId, index) => `${caseId}-session-${index}`;
+
+// This is an evaluation-only observation, not the Host usage receipt. Keeping
+// the fixture local prevents the Kernel evaluation harness from importing the
+// provider/session/cache receipt implementation it is evaluating.
+const buildEvaluationReceipt = ({ strategy, resolution, dispatch }) => ({
+  enforcementStatus: strategy === 'unsupported'
+    ? 'unsupported'
+    : (dispatch.status === 'completed' && resolution.model ? 'enforced' : 'advisory'),
+  resolvedModel: resolution.model || null,
+});
 
 // Baseline A pins every provider turn to frontier; candidate B applies policy.
 const routeTurn = ({ arm, testCase, turn, index, escalatedObligations }) => {
@@ -66,9 +75,7 @@ const runArm = ({ arm, corpus, hostCapabilities }) => {
 
       const strategy = resolveEnforcementStrategy(hostCapabilities, decision);
       const resolution = { model: `eval-${decision.modelClass}`, effort: null, enforcementIntent: 'enforced' };
-      const receipt = buildUsageReceipt({
-        decision,
-        capabilities: hostCapabilities,
+      const receipt = buildEvaluationReceipt({
         strategy,
         resolution,
         dispatch: strategy === 'unsupported'
@@ -81,7 +88,6 @@ const runArm = ({ arm, corpus, hostCapabilities }) => {
             inputTokens: turn.estimatedTokens || 0,
             outputTokens: Math.round((turn.estimatedTokens || 0) / 5),
           },
-        actorSessionId: sessionFor(testCase.id, index),
       });
       receipts += 1;
       // The single invariant that makes every other number trustworthy.

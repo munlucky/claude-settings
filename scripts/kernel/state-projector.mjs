@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { resolveRunArtifactPaths } from './artifact-paths.mjs';
 import { computeCompletionView } from './run/completion-view.mjs';
+import { buildKernelDurableStateView } from './persistence/durable-state.mjs';
 
 const digest = (v) => createHash('sha256').update(JSON.stringify(v)).digest('hex');
 
@@ -166,6 +167,7 @@ export const buildResumeView = ({
   usageReceipts = [],
   completion = null,
   context = null,
+  workAuthority = null,
 } = {}) => {
   if (!run) return null;
   // Control-plane callers often pass the full evaluateCompletion result,
@@ -195,8 +197,11 @@ export const buildResumeView = ({
       ? 'blocked'
       : run.finalizationStatus || finalizationReceipt?.finalizationStatus || 'pending';
   const resolvedContextStatus = contextStatus(context);
+  const durableState = buildKernelDurableStateView({ run, workAuthority, verifications, obligations, completion: resolvedCompletion, completionDecision });
   return {
     schemaVersion: 1,
+    durableState,
+    ...(workAuthority ? { workAuthority } : {}),
     task: ['active', 'blocked'].includes(run.status) ? 'active' : 'idle',
     kernel: {
       state: run.state || run.currentState || null,

@@ -112,12 +112,12 @@
   },
   "implementations": {
     "best_known": {
-      "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
+      "commit": null,
       "paths": [
         "scripts/kernel/context-build.mjs",
         "scripts/kernel/context-receipt.mjs",
         "scripts/kernel/context-segments.mjs",
-        "scripts/kernel/cache-replay.mjs",
+        "scripts/host/kernel/cache-replay.mjs",
         "scripts/kernel/canonical-digest.mjs",
         "scripts/kernel/optimization-cycle.mjs"
       ],
@@ -243,7 +243,7 @@
     "active": true,
     "paths": [
       "scripts/kernel/context-build.mjs",
-      "scripts/kernel/cache-replay.mjs",
+      "scripts/host/kernel/cache-replay.mjs",
       "scripts/kernel/optimization-cycle.mjs"
     ],
     "entrypoints": [
@@ -382,7 +382,7 @@
       },
       "implementationRefs": [
         {
-          "path": "scripts/kernel/cache-replay.mjs",
+          "path": "scripts/host/kernel/cache-replay.mjs",
           "commit": null
         }
       ],

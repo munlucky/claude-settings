@@ -1,61 +1,62 @@
 schemaVersion: 1
 policyRevision: kernel-model-routing.v1
 
-# Logical model classes only. Provider model ids are resolved by the Host
-# registry, never here: the Kernel must stay free of provider identity.
+# Provider-neutral workload classes only. Provider model ids and effort values
+# are resolved by the Host registry, never here.
 thresholds:
   retryEscalationThreshold: 2
   stagnationThreshold: 3
 
-modelClasses:
-  frontier_reasoning:
+executionClasses:
+  planning:
     requiredCapabilities: [complex_reasoning, planning, review]
     providerModelRequired: true
-  value_coding:
+  complex_implementation:
+    requiredCapabilities: [complex_reasoning, code_edit, test_authoring, debugging]
+    providerModelRequired: true
+  review:
+    requiredCapabilities: [complex_reasoning, planning, review]
+    providerModelRequired: true
+  standard:
     requiredCapabilities: [code_edit, test_authoring, debugging]
     providerModelRequired: true
-  kernel:
-    requiredCapabilities: []
-    providerModelRequired: false
 
 actionDefaults:
   understand:
-    modelClass: frontier_reasoning
+    executionClass: planning
     role: planner
     permissions: read_only
   design:
-    modelClass: frontier_reasoning
+    executionClass: planning
     role: planner
     permissions: plan_write
   plan:
-    modelClass: frontier_reasoning
+    executionClass: planning
     role: planner
     permissions: plan_write
   implement:
-    modelClass: value_coding
+    executionClass: standard
     role: implementer
     permissions: workspace_write
   debug:
-    modelClass: value_coding
+    executionClass: standard
     role: implementer
     permissions: workspace_write
   review_contract:
-    modelClass: frontier_reasoning
+    executionClass: review
     role: reviewer
     permissions: read_only
   review_engineering:
-    modelClass: frontier_reasoning
+    executionClass: review
     role: reviewer
     permissions: read_only
   replan:
-    modelClass: frontier_reasoning
+    executionClass: planning
     role: planner
     permissions: plan_write
   prove:
-    modelClass: kernel
     role: kernel
     permissions: kernel_runtime
   close:
-    modelClass: kernel
     role: kernel
     permissions: kernel_runtime

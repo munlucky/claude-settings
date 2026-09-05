@@ -39,9 +39,9 @@ test('the recommendation is deterministic for identical input', () => {
 });
 
 test('every routing decision carries the reasons that produced it', () => {
-  const escalated = resolveCodexModelPolicy({ actionKind: 'implement', repeatedFailure: true });
-  assert.ok(escalated.reasons.includes('repeated-failure-escalation'));
-  assert.equal(escalated.policyRevision, 'kernel-codex-model.v2');
+  const standard = resolveCodexModelPolicy({ executionClass: 'standard', repeatedFailure: true });
+  assert.ok(standard.reasons.includes('execution-class:standard'));
+  assert.equal(standard.policyRevision, 'kernel-codex-execution-class.v1');
   const claude = resolveClaudeEffort({ actionKind: 'implement', triggers: ['broad-refactor'] });
   assert.ok(claude.reasons.includes('broad-refactor'));
 });

@@ -4,18 +4,18 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
-import { detectStagnation } from '../scripts/kernel/run/stagnation.mjs';
+import { detectOptionalStagnation } from '../scripts/kernel/run/optional-capabilities.mjs';
 import { recommendModelRouting } from '../scripts/kernel/run/model-routing.mjs';
 import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
 
 test('stagnation needs repeated failed attempts on a still-failing obligation', () => {
-  const belowThreshold = detectStagnation({ attempts: [{ status: 'failed' }, { status: 'failed' }], verifications: [{ obligationId: 'x', status: 'failed' }] });
+  const belowThreshold = detectOptionalStagnation({ attempts: [{ status: 'failed' }, { status: 'failed' }], verifications: [{ obligationId: 'x', status: 'failed' }], flags: { stagnationEscalation: true } });
   assert.equal(belowThreshold.stagnant, false);
 
-  const noFailing = detectStagnation({ attempts: [{ status: 'failed' }, { status: 'failed' }, { status: 'failed' }], verifications: [{ obligationId: 'x', status: 'passed' }] });
+  const noFailing = detectOptionalStagnation({ attempts: [{ status: 'failed' }, { status: 'failed' }, { status: 'failed' }], verifications: [{ obligationId: 'x', status: 'passed' }] });
   assert.equal(noFailing.stagnant, false);
 
-  const stagnant = detectStagnation({
+  const stagnant = detectOptionalStagnation({
     attempts: [{ status: 'failed' }, { status: 'failed' }, { status: 'failed' }],
     verifications: [{ obligationId: 'x', status: 'failed' }],
   });

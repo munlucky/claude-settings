@@ -7,12 +7,25 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import {
+  EXECUTION_CLASSES,
+  LEGACY_MODEL_CLASSES,
+  executionClassForAction,
+  executionClassFromLegacyModelClass,
+  isProviderExecutionClass,
+  legacyModelClassForExecutionClass,
+  normalizeExecutionClass,
+} from './execution-class.mjs';
 
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 
 export const MODEL_POLICY_SOURCE = 'kernel/model-policy.yaml';
 export const ACTION_KINDS = Object.freeze(['understand', 'design', 'plan', 'implement', 'debug', 'review_contract', 'review_engineering', 'replan', 'prove', 'close']);
-export const MODEL_CLASSES = Object.freeze(['frontier_reasoning', 'value_coding', 'kernel']);
+// Deprecated compatibility export. New Kernel contracts use executionClass;
+// this name remains readable until the Host consumers are migrated in the
+// later decomplexification waves.
+export const MODEL_CLASSES = LEGACY_MODEL_CLASSES;
+export { EXECUTION_CLASSES };
 export const ROLES = Object.freeze(['planner', 'implementer', 'reviewer', 'kernel']);
 export const PERMISSIONS = Object.freeze(['read_only', 'plan_write', 'workspace_write', 'kernel_runtime']);
 export const RISK_TIERS = Object.freeze(['T0', 'T1', 'T2', 'T3']);
@@ -47,10 +60,16 @@ const normalizeComplexity = (value) => {
   return normalized;
 };
 
+const executionClassForWorkProfile = (profile = {}, { actionKind = 'implement' } = {}) => {
+  const explicit = profile.executionClass;
+  if (Object.hasOwn(profile, 'executionClass')) return normalizeExecutionClass(explicit);
+  return executionClassForAction(actionKind, { complexity: profile.complexity });
+};
+
 // The work profile is intentionally provider-neutral. It tells a Host actor
 // what shape of work it is receiving; it never carries a model id, provider,
 // prompt, or effort setting across the Kernel boundary.
-export const normalizeWorkProfile = (profile = null) => {
+export const normalizeWorkProfile = (profile = null, { actionKind = 'implement' } = {}) => {
   if (profile === null || profile === undefined) return null;
   if (!profile || typeof profile !== 'object' || Array.isArray(profile)) {
     fail('kernel_work_profile_invalid', 'workProfile must be an object or null');
@@ -59,12 +78,17 @@ export const normalizeWorkProfile = (profile = null) => {
     if (Object.hasOwn(profile, field)) fail('kernel_work_profile_forbidden_field', `workProfile must not carry provider field: ${field}`);
   }
   const complexity = normalizeComplexity(profile.complexity ?? 'standard');
+  const executionClass = executionClassForWorkProfile(profile, { actionKind });
+  if (executionClass === null && !['prove', 'close'].includes(actionKind)) {
+    fail('kernel_work_profile_invalid', `workProfile.executionClass is required for action: ${actionKind}`);
+  }
   const booleanField = (name, fallback = false) => {
     if (profile[name] === undefined) return fallback;
     if (typeof profile[name] !== 'boolean') fail('kernel_work_profile_invalid', `workProfile.${name} must be boolean`);
     return profile[name];
   };
   return Object.freeze({
+    executionClass,
     complexity,
     repeatedFailure: booleanField('repeatedFailure'),
     independentContextRequired: booleanField('independentContextRequired'),
@@ -82,7 +106,7 @@ const parseValue = (raw) => {
 
 export const parseModelPolicyText = (text, { sourceRef = MODEL_POLICY_SOURCE } = {}) => {
   const raw = String(text ?? '');
-  const doc = { schemaVersion: null, policyRevision: null, thresholds: {}, modelClasses: {}, actionDefaults: {} };
+  const doc = { schemaVersion: null, policyRevision: null, thresholds: {}, executionClasses: {}, modelClasses: {}, actionDefaults: {} };
   let section = null;
   let key = null;
   for (const line of raw.split(/\r?\n/)) {
@@ -107,14 +131,30 @@ export const parseModelPolicyText = (text, { sourceRef = MODEL_POLICY_SOURCE } =
 
   if (doc.schemaVersion !== 1) fail('kernel_model_policy_schema_invalid', `${sourceRef} schemaVersion must be 1`);
   if (!doc.policyRevision) fail('kernel_model_policy_revision_missing', `${sourceRef} policyRevision is required`);
-  for (const [name, spec] of Object.entries(doc.modelClasses)) {
-    if (!MODEL_CLASSES.includes(name)) fail('kernel_model_policy_class_unknown', `${sourceRef} declares an unknown model class: ${name}`);
-    if (typeof spec.providerModelRequired !== 'boolean') fail('kernel_model_policy_class_invalid', `${sourceRef} model class ${name} requires providerModelRequired`);
+  const declaredExecutionClasses = Object.keys(doc.executionClasses).length > 0
+    ? doc.executionClasses
+    : Object.fromEntries(Object.entries(doc.modelClasses)
+      .filter(([name]) => name !== 'kernel')
+      .map(([name, spec]) => [
+        name === 'frontier_reasoning' ? 'planning' : name === 'value_coding' ? 'standard' : name,
+        spec,
+      ]));
+  for (const [name, spec] of Object.entries(declaredExecutionClasses)) {
+    if (!EXECUTION_CLASSES.includes(name)) fail('kernel_model_policy_class_unknown', `${sourceRef} declares an unknown execution class: ${name}`);
+    if (typeof spec.providerModelRequired !== 'boolean') fail('kernel_model_policy_class_invalid', `${sourceRef} execution class ${name} requires providerModelRequired`);
   }
   for (const action of ACTION_KINDS) {
     const spec = doc.actionDefaults[action];
     if (!spec) fail('kernel_model_policy_action_missing', `${sourceRef} has no default for action: ${action}`);
-    if (!MODEL_CLASSES.includes(spec.modelClass)) fail('kernel_model_policy_action_invalid', `${sourceRef} action ${action} has an invalid modelClass`);
+    const executionClass = spec.executionClass
+      || (spec.modelClass ? executionClassFromLegacyModelClass(spec.modelClass) : null);
+    const expected = executionClassForAction(action);
+    if (executionClass !== null && executionClass !== expected && !(action === 'implement' && executionClass === 'complex_implementation')) {
+      fail('kernel_model_policy_action_invalid', `${sourceRef} action ${action} has an invalid executionClass`);
+    }
+    if (action !== 'prove' && action !== 'close' && !executionClass) {
+      fail('kernel_model_policy_action_invalid', `${sourceRef} action ${action} requires an executionClass`);
+    }
     if (!ROLES.includes(spec.role)) fail('kernel_model_policy_action_invalid', `${sourceRef} action ${action} has an invalid role`);
     if (!PERMISSIONS.includes(spec.permissions)) fail('kernel_model_policy_action_invalid', `${sourceRef} action ${action} has invalid permissions`);
   }
@@ -122,15 +162,43 @@ export const parseModelPolicyText = (text, { sourceRef = MODEL_POLICY_SOURCE } =
   if (!Number.isInteger(retryEscalationThreshold) || retryEscalationThreshold < 1) fail('kernel_model_policy_threshold_invalid', `${sourceRef} retryEscalationThreshold must be a positive integer`);
   if (!Number.isInteger(stagnationThreshold) || stagnationThreshold < 1) fail('kernel_model_policy_threshold_invalid', `${sourceRef} stagnationThreshold must be a positive integer`);
 
-  return Object.freeze({
+  const actionDefaults = Object.fromEntries(Object.entries(doc.actionDefaults).map(([action, spec]) => {
+    const executionClass = spec.executionClass
+      || (spec.modelClass ? executionClassFromLegacyModelClass(spec.modelClass) : null);
+    const normalized = { ...spec, executionClass };
+    // Read-only compatibility for the pre-B1 Kernel consumers. It is not part
+    // of the canonical serialized policy surface.
+    Object.defineProperty(normalized, 'modelClass', {
+      enumerable: false,
+      configurable: false,
+      get: () => executionClass === null ? 'kernel' : legacyModelClassForExecutionClass(executionClass),
+    });
+    return [action, Object.freeze(normalized)];
+  }));
+  const normalizedPolicy = {
     schemaVersion: 1,
     policyRevision: doc.policyRevision,
     thresholds: Object.freeze(doc.thresholds),
-    modelClasses: Object.freeze(doc.modelClasses),
-    actionDefaults: Object.freeze(doc.actionDefaults),
+    executionClasses: Object.freeze(declaredExecutionClasses),
+    actionDefaults: Object.freeze(actionDefaults),
     sourceRef,
     sourceDigest: createHash('sha256').update(raw).digest('hex'),
+  };
+  Object.defineProperty(normalizedPolicy, 'modelClasses', {
+    enumerable: false,
+    configurable: false,
+    get: () => {
+      const providerClasses = Object.entries(declaredExecutionClasses);
+      const frontier = providerClasses.find(([name]) => ['planning', 'review', 'complex_implementation'].includes(name))?.[1];
+      const standard = providerClasses.find(([name]) => name === 'standard')?.[1];
+      return Object.freeze({
+        frontier_reasoning: frontier || { requiredCapabilities: [], providerModelRequired: true },
+        value_coding: standard || { requiredCapabilities: [], providerModelRequired: true },
+        kernel: { requiredCapabilities: [], providerModelRequired: false },
+      });
+    },
   });
+  return Object.freeze(normalizedPolicy);
 };
 
 let cached = null;
@@ -164,7 +232,28 @@ export const normalizeModelRouteDecision = (decision = {}) => {
   if (!decision.decisionId || !/^route-[a-f0-9]{8,64}$/.test(String(decision.decisionId))) fail('kernel_model_route_invalid', 'model route decision requires a route-<hex> decisionId');
   if (!decision.runId) fail('kernel_model_route_invalid', 'model route decision requires a runId');
   if (!ACTION_KINDS.includes(decision.actionKind)) fail('kernel_model_action_invalid', `actionKind must be one of: ${ACTION_KINDS.join(', ')}`);
-  if (!MODEL_CLASSES.includes(decision.modelClass)) fail('kernel_model_class_invalid', `modelClass must be one of: ${MODEL_CLASSES.join(', ')}`);
+  if (Object.hasOwn(decision, 'modelClass') && !MODEL_CLASSES.includes(decision.modelClass)) fail('kernel_model_class_invalid', `modelClass must be one of: ${MODEL_CLASSES.join(', ')}`);
+  let executionClass;
+  if (Object.hasOwn(decision, 'executionClass')) {
+    try {
+      executionClass = normalizeExecutionClass(decision.executionClass);
+    } catch (error) {
+      fail('kernel_execution_class_invalid', error.message);
+    }
+  } else if (Object.hasOwn(decision, 'modelClass')) {
+    try {
+      executionClass = executionClassFromLegacyModelClass(decision.modelClass);
+    } catch (error) {
+      fail('kernel_model_class_invalid', error.message);
+    }
+  } else {
+    executionClass = executionClassForAction(decision.actionKind, {
+      complexity: decision.workProfile?.complexity,
+    });
+  }
+  const modelClass = Object.hasOwn(decision, 'modelClass')
+    ? decision.modelClass
+    : legacyModelClassForExecutionClass(executionClass);
   if (!ROLES.includes(decision.role)) fail('kernel_model_route_invalid', `role must be one of: ${ROLES.join(', ')}`);
   if (!PERMISSIONS.includes(decision.permissions)) fail('kernel_model_route_invalid', `permissions must be one of: ${PERMISSIONS.join(', ')}`);
   if (!RISK_TIERS.includes(decision.riskTier)) fail('kernel_model_route_invalid', `riskTier must be one of: ${RISK_TIERS.join(', ')}`);
@@ -172,7 +261,7 @@ export const normalizeModelRouteDecision = (decision = {}) => {
   if (reasonCodes.length === 0) fail('kernel_model_route_invalid', 'model route decision requires at least one reason code');
   if (!decision.policyRevision) fail('kernel_model_route_invalid', 'model route decision requires a policyRevision');
   const positiveInt = (value, fallbackValue) => (Number.isInteger(value) && value >= 0 ? value : fallbackValue);
-  const workProfile = normalizeWorkProfile(decision.workProfile);
+  const workProfile = normalizeWorkProfile(decision.workProfile, { actionKind: decision.actionKind });
   return Object.freeze({
     schemaVersion: 1,
     decisionId: String(decision.decisionId),
@@ -183,7 +272,8 @@ export const normalizeModelRouteDecision = (decision = {}) => {
     obligationId: decision.obligationId ? String(decision.obligationId) : null,
     actionKind: decision.actionKind,
     role: decision.role,
-    modelClass: decision.modelClass,
+    executionClass,
+    modelClass,
     riskTier: decision.riskTier,
     independentContextRequired: decision.independentContextRequired === true,
     workProfile,
@@ -195,8 +285,14 @@ export const normalizeModelRouteDecision = (decision = {}) => {
 };
 
 // prove/close are Kernel-owned: they must never ask the Host for a model.
-export const requiresProviderModel = (modelClass, policy = loadModelPolicy()) =>
-  policy.modelClasses[modelClass]?.providerModelRequired === true;
+export const requiresProviderModel = (executionClassOrModelClass, policy = loadModelPolicy()) => {
+  const executionClass = EXECUTION_CLASSES.includes(executionClassOrModelClass)
+    ? executionClassOrModelClass
+    : executionClassFromLegacyModelClass(executionClassOrModelClass);
+  if (executionClass === null) return false;
+  return policy.executionClasses?.[executionClass]?.providerModelRequired === true
+    || policy.modelClasses?.[executionClassOrModelClass]?.providerModelRequired === true;
+};
 
 export const ENFORCEMENT_STRATEGIES = Object.freeze(['subagent', 'session', 'advisory', 'unsupported']);
 
@@ -224,7 +320,7 @@ export const normalizeHostCapabilities = (capabilities = {}) => {
 // and one that cannot select a model at all is unsupported.
 export const resolveEnforcementStrategy = (capabilities, decision = null) => {
   const host = normalizeHostCapabilities(capabilities);
-  if (decision && decision.modelClass === 'kernel') return 'unsupported';
+  if (decision && (decision.executionClass === null || decision.modelClass === 'kernel')) return 'unsupported';
   // Independent review is a separate native session/surface concern. A Host
   // may be unable to launch a child worker and still accept a review receipt
   // from another native surface, so this is not an ordinary execution blocker.
@@ -358,7 +454,7 @@ export const normalizeModelUsageReceipt = (receipt = {}) => {
     observedEffort,
     role: optionalText(receipt.role),
     actionKind: optionalText(receipt.actionKind),
-    workProfile: normalizeWorkProfile(receipt.workProfile),
+    workProfile: normalizeWorkProfile(receipt.workProfile, { actionKind: receipt.actionKind || 'implement' }),
     dispatchMechanism: optionalText(receipt.dispatchMechanism),
     enforcementReason: optionalText(receipt.enforcementReason),
     fallbackReason: optionalText(receipt.fallbackReason),

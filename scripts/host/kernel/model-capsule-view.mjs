@@ -8,6 +8,55 @@
 // listed here ever reach a provider.
 
 const list = (value) => Object.freeze(Array.isArray(value) ? [...value] : []);
+const firstNonEmptyList = (...values) => {
+  const first = values.find((value) => Array.isArray(value) && value.length > 0);
+  if (first) return list(first);
+  return list(values.find((value) => Array.isArray(value)) || []);
+};
+const firstMeaningfulValue = (...values) => values.find((value) => value !== null && value !== undefined && value !== '') ?? null;
+
+// Final prompt vocabulary is intentionally smaller than the persisted capsule
+// and the full `next` response. These are work-facing concepts; routing,
+// provider, lease, cache, CAS, and Git metadata stay on the Host/Kernel side.
+export const MODEL_VISIBLE_PROMPT_FIELDS = Object.freeze([
+  'objective',
+  'acceptance',
+  'constraints',
+  'currentWork',
+  'relevantProjectKnowledge',
+  'requiredEvidence',
+]);
+
+const text = (value) => (value === null || value === undefined ? '' : String(value));
+
+export const buildModelVisiblePromptView = ({ modelInput = {}, capsule = null } = {}) => {
+  const action = modelInput.action || {};
+  const step = action.step || capsule?.workUnit || null;
+  const currentWork = step || action.type || action.guidance
+    ? Object.freeze({
+      type: text(action.type),
+      guidance: text(action.guidance),
+      objective: text(step?.objective || modelInput.objective),
+      allowedPaths: list(step?.allowedPaths),
+      forbiddenPaths: list(step?.forbiddenPaths),
+      expectedOutputs: list(step?.expectedOutputs),
+    })
+    : null;
+  const requiredEvidence = firstNonEmptyList(
+    modelInput.requiredEvidence,
+    modelInput.action?.obligations,
+    modelInput.verification?.pending,
+    capsule?.verification?.obligations,
+  );
+  return Object.freeze({
+    objective: text(modelInput.objective || capsule?.objective),
+    acceptance: firstNonEmptyList(modelInput.acceptance, capsule?.acceptance),
+    constraints: firstNonEmptyList(modelInput.constraints, capsule?.constraints),
+    currentWork,
+    relevantProjectKnowledge: firstMeaningfulValue(modelInput.knowledge, capsule?.repositoryContext?.knowledgeRecords),
+    requiredEvidence: list(requiredEvidence),
+  });
+};
 
 export const MODEL_VISIBLE_CAPSULE_FIELDS = Object.freeze([
   'role', 'objective', 'acceptance', 'constraints', 'nonGoals',

@@ -4,8 +4,8 @@
   "baselineCommit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
   "updatedAt": "2026-09-05",
   "summary": {
-    "totalMapped": 719,
-    "classifiedCapabilityCount": 694,
+    "totalMapped": 730,
+    "classifiedCapabilityCount": 705,
     "ignoredCount": 25,
     "unclassifiedCount": 0
   },
@@ -794,11 +794,19 @@
       "classification": "capability",
       "capability": "control-plane-state-authority"
     },
+    "kernel/host-boundary.yaml": {
+      "classification": "capability",
+      "capability": "provider-session-and-execution-boundary"
+    },
     "kernel/knowledge-policy.yaml": {
       "classification": "capability",
       "capability": "project-identity-and-knowledge-lifecycle"
     },
     "kernel/model-policy.yaml": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "kernel/optional-capabilities.yaml": {
       "classification": "capability",
       "capability": "control-plane-state-authority"
     },
@@ -1018,17 +1026,25 @@
       "classification": "capability",
       "capability": "task-contract-and-bounded-work"
     },
+    "scripts/host/kernel/cache-replay.mjs": {
+      "classification": "capability",
+      "capability": "context-prompt-cache-and-optimization"
+    },
     "scripts/kernel/artifact-paths.mjs": {
       "classification": "capability",
       "capability": "control-plane-state-authority"
     },
+    "scripts/kernel/bridge/coordinator-surface.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
+    "scripts/kernel/bridge/host-routing.mjs": {
+      "classification": "capability",
+      "capability": "model-routing-and-route-admission"
+    },
     "scripts/kernel/bridge/mcp.mjs": {
       "classification": "capability",
       "capability": "provider-session-and-execution-boundary"
-    },
-    "scripts/kernel/cache-replay.mjs": {
-      "classification": "capability",
-      "capability": "context-prompt-cache-and-optimization"
     },
     "scripts/kernel/canonical-digest.mjs": {
       "classification": "capability",
@@ -1194,6 +1210,10 @@
       "classification": "capability",
       "capability": "project-identity-and-knowledge-lifecycle"
     },
+    "scripts/kernel/knowledge/knowledge-authority.mjs": {
+      "classification": "capability",
+      "capability": "project-identity-and-knowledge-lifecycle"
+    },
     "scripts/kernel/knowledge/ontology-evaluate.mjs": {
       "classification": "capability",
       "capability": "project-identity-and-knowledge-lifecycle"
@@ -1249,6 +1269,10 @@
     "scripts/kernel/package-build.mjs": {
       "classification": "capability",
       "capability": "account-root-package-and-profile-adoption"
+    },
+    "scripts/kernel/persistence/durable-state.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
     },
     "scripts/kernel/persistence/knowledge-repository.mjs": {
       "classification": "capability",
@@ -1350,6 +1374,10 @@
       "classification": "capability",
       "capability": "evidence-completion-and-review-authority"
     },
+    "scripts/kernel/proof/trust-authority.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
     "scripts/kernel/risk-surfaces.mjs": {
       "classification": "capability",
       "capability": "control-plane-state-authority"
@@ -1390,9 +1418,17 @@
       "classification": "capability",
       "capability": "provider-session-and-execution-boundary"
     },
+    "scripts/kernel/run/execution-class.mjs": {
+      "classification": "capability",
+      "capability": "model-routing-and-route-admission"
+    },
     "scripts/kernel/run/finalization.mjs": {
       "classification": "capability",
       "capability": "step-ledger-resume"
+    },
+    "scripts/kernel/run/host-execution-contract.mjs": {
+      "classification": "capability",
+      "capability": "provider-session-and-execution-boundary"
     },
     "scripts/kernel/run/host-session.mjs": {
       "classification": "capability",
@@ -1417,6 +1453,10 @@
     "scripts/kernel/run/obligation-compiler.mjs": {
       "classification": "capability",
       "capability": "control-plane-state-authority"
+    },
+    "scripts/kernel/run/optional-capabilities.mjs": {
+      "classification": "capability",
+      "capability": "model-routing-and-route-admission"
     },
     "scripts/kernel/run/provider-mutation-adapter.mjs": {
       "classification": "capability",
@@ -1450,10 +1490,6 @@
       "classification": "capability",
       "capability": "provider-session-and-execution-boundary"
     },
-    "scripts/kernel/run/stagnation.mjs": {
-      "classification": "capability",
-      "capability": "model-routing-and-route-admission"
-    },
     "scripts/kernel/run/step-planner.mjs": {
       "classification": "capability",
       "capability": "step-ledger-resume"
@@ -1461,6 +1497,10 @@
     "scripts/kernel/run/successor-key.mjs": {
       "classification": "capability",
       "capability": "control-plane-state-authority"
+    },
+    "scripts/kernel/run/work-authority.mjs": {
+      "classification": "capability",
+      "capability": "task-contract-and-bounded-work"
     },
     "scripts/kernel/run/work-cursor.mjs": {
       "classification": "capability",
@@ -2201,6 +2241,10 @@
     "tests/kernel-cross-surface-matrix.test.mjs": {
       "classification": "capability",
       "capability": "provider-session-and-execution-boundary"
+    },
+    "tests/kernel-decomplexification-characterization.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
     },
     "tests/kernel-end-to-end-integration.test.mjs": {
       "classification": "capability",

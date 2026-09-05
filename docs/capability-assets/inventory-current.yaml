@@ -163,7 +163,7 @@ candidateCapabilities:
   - id: model-routing-and-route-admission
     meta: {domain: INTELLIGENCE, candidateStatus: CORE, classificationStatus: pending, relevance: {agent_workflow: true, project_knowledge_lifecycle: false}}
     problem: Select models and providers under policy, capability, cost, risk, evidence, and stagnation constraints.
-    sourcePaths: [scripts/kernel/run/model-routing.mjs, scripts/kernel/run/model-route-contract.mjs, scripts/kernel/route.mjs, scripts/kernel/routing/route-admission.mjs, scripts/kernel/capability-resolver.mjs, scripts/kernel/run/stagnation.mjs]
+    sourcePaths: [scripts/kernel/run/model-routing.mjs, scripts/kernel/run/model-route-contract.mjs, scripts/kernel/route.mjs, scripts/kernel/routing/route-admission.mjs, scripts/kernel/capability-resolver.mjs, scripts/kernel/run/optional-capabilities.mjs]
     contractPaths: [schemas/kernel.model-route.schema.json, schemas/kernel.model-usage.schema.json, schemas/kernel.route-admission.schema.json, schemas/kernel.measurement.schema.json]
     proofPaths: [tests/kernel-model-routing-e2e.test.mjs, tests/kernel-model-route-contract.test.mjs, tests/kernel-model-usage-receipt.test.mjs, tests/kernel-route-admission-e2e.test.mjs, tests/kernel-stagnation-routing.test.mjs]
     currentIntegration: {active: true, layer: Kernel route admission and model policy}
@@ -171,7 +171,7 @@ candidateCapabilities:
   - id: context-prompt-cache-and-optimization
     meta: {domain: OPTIMIZATION, candidateStatus: CORE, classificationStatus: pending, relevance: {agent_workflow: true, project_knowledge_lifecycle: true}}
     problem: Build bounded, redacted, reproducible context and reuse safe prompt, cache, and evidence segments.
-    sourcePaths: [scripts/kernel/context-build.mjs, scripts/kernel/context-receipt.mjs, scripts/kernel/context-segments.mjs, scripts/kernel/cache-replay.mjs, scripts/kernel/canonical-digest.mjs, scripts/kernel/optimization-cycle.mjs]
+    sourcePaths: [scripts/kernel/context-build.mjs, scripts/kernel/context-receipt.mjs, scripts/kernel/context-segments.mjs, scripts/host/kernel/cache-replay.mjs, scripts/kernel/canonical-digest.mjs, scripts/kernel/optimization-cycle.mjs]
     contractPaths: [schemas/kernel.context-receipt.schema.json, schemas/kernel.model-usage.schema.json, schemas/kernel.measurement.schema.json]
     proofPaths: [tests/kernel-context-compiler.test.mjs, tests/kernel-context-byte-identity.test.mjs, tests/kernel-cache-replay.test.mjs, tests/kernel-optimization-cycle.test.mjs, tests/kernel-prompt-size-budget.test.mjs]
     currentIntegration: {active: true, layer: "Kernel context, cache replay, and optimization plane", note: digest and freshness gates apply}

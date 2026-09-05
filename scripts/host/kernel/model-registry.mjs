@@ -4,8 +4,20 @@
 
 import path from 'node:path';
 import { readFileSync } from 'node:fs';
+import {
+  EXECUTION_CLASSES,
+  executionClassFromLegacyModelClass,
+  legacyModelClassForExecutionClass,
+  normalizeExecutionClass,
+} from '../../kernel/run/execution-class.mjs';
 
 export const CLASS_ENV_TOKEN = Object.freeze({ frontier_reasoning: 'FRONTIER', value_coding: 'VALUE' });
+export const EXECUTION_ENV_TOKEN = Object.freeze({
+  planning: 'PLANNING',
+  complex_implementation: 'COMPLEX_IMPLEMENTATION',
+  review: 'REVIEW',
+  standard: 'STANDARD',
+});
 // 'model-policy' is applied by the turn dispatcher (Wave 5/6), not this
 // registry, when MOON_RELAY_KERNEL_MODEL_POLICY_MODE=on overrides the class
 // mapping below with the provider's own Sol/Terra/Luna or effort policy.
@@ -47,14 +59,17 @@ export const loadModelProfiles = ({ runtimeHome, env = process.env, configPath }
 // §10.2 precedence: invocation override → host environment → profile config →
 // installed Host default. Only the first three can ever be `enforced`, because
 // only they mean the Kernel's requested class was explicitly applied.
-export const resolveModelForClass = ({ surface, modelClass, overrides = {}, env = process.env, profiles = {} } = {}) => {
-  if (modelClass === 'kernel') {
-    return { modelClass, surface, model: null, effort: null, source: 'kernel-runtime', enforcementIntent: 'not-applicable' };
+export const resolveModelForExecutionClass = ({ surface, executionClass, overrides = {}, env = process.env, profiles = {} } = {}) => {
+  const normalizedExecutionClass = normalizeExecutionClass(executionClass);
+  const modelClass = legacyModelClassForExecutionClass(normalizedExecutionClass);
+  if (normalizedExecutionClass === null) {
+    return { executionClass: null, modelClass, surface, model: null, effort: null, source: 'kernel-runtime', enforcementIntent: 'not-applicable' };
   }
-  const token = CLASS_ENV_TOKEN[modelClass];
-  if (!token) throw new Error(`Unknown Kernel model class: ${modelClass}`);
+  const token = EXECUTION_ENV_TOKEN[normalizedExecutionClass];
+  if (!token) throw new Error(`Unknown Kernel execution class: ${executionClass}`);
   const upperSurface = String(surface || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
   const pick = (model, effort, source) => ({
+    executionClass: normalizedExecutionClass,
     modelClass,
     surface,
     model: model || null,
@@ -63,22 +78,37 @@ export const resolveModelForClass = ({ surface, modelClass, overrides = {}, env 
     enforcementIntent: model ? (source === 'host-default' ? 'advisory' : 'enforced') : 'advisory',
   });
 
-  const override = overrides[modelClass];
+  const override = overrides[normalizedExecutionClass] ?? overrides[modelClass];
   if (override && (typeof override === 'string' ? override : override.model)) {
     const value = typeof override === 'string' ? { model: override } : override;
     return pick(value.model, value.effort, 'invocation-override');
   }
-  const surfaceEnv = env[`MOON_RELAY_KERNEL_${upperSurface}_${token}`];
-  const genericEnv = env[`MOON_RELAY_KERNEL_MODEL_${token}`];
+  const surfaceEnv = env[`MOON_RELAY_KERNEL_${upperSurface}_EXECUTION_${token}`]
+    || env[`MOON_RELAY_KERNEL_${upperSurface}_${token}`]
+    || env[`MOON_RELAY_KERNEL_${upperSurface}_${CLASS_ENV_TOKEN[modelClass] || token}`];
+  const genericEnv = env[`MOON_RELAY_KERNEL_EXECUTION_${token}`]
+    || env[`MOON_RELAY_KERNEL_MODEL_${CLASS_ENV_TOKEN[modelClass] || token}`];
   if (surfaceEnv || genericEnv) {
-    const effort = env[`MOON_RELAY_KERNEL_${upperSurface}_${token}_EFFORT`] || env[`MOON_RELAY_KERNEL_MODEL_${token}_EFFORT`];
+    const effort = env[`MOON_RELAY_KERNEL_${upperSurface}_EXECUTION_${token}_EFFORT`]
+      || env[`MOON_RELAY_KERNEL_${upperSurface}_${token}_EFFORT`]
+      || env[`MOON_RELAY_KERNEL_MODEL_${CLASS_ENV_TOKEN[modelClass] || token}_EFFORT`];
     return pick(surfaceEnv || genericEnv, effort, 'environment');
   }
-  const configured = profiles?.[surface]?.[modelClass];
+  const configured = profiles?.[surface]?.[normalizedExecutionClass] || profiles?.[surface]?.[modelClass];
   if (configured?.model) return pick(configured.model, configured.effort, 'profile-config');
   // Nothing configured: the installed Host default runs, which is honest but
   // is NOT the Kernel enforcing a class, so it can only ever be advisory.
   return pick(null, null, 'host-default');
+};
+
+export const resolveModelForClass = ({ surface, modelClass, overrides = {}, env = process.env, profiles = {} } = {}) => {
+  let executionClass;
+  try {
+    executionClass = executionClassFromLegacyModelClass(modelClass);
+  } catch (error) {
+    throw new Error(`Unknown Kernel model class: ${modelClass}`, { cause: error });
+  }
+  return resolveModelForExecutionClass({ surface, executionClass, overrides, env, profiles });
 };
 
 export const createModelRegistry = ({ surface, runtimeHome, env = process.env, configPath, overrides = {} } = {}) => {
@@ -86,6 +116,9 @@ export const createModelRegistry = ({ surface, runtimeHome, env = process.env, c
   return {
     surface,
     profiles,
+    resolveExecutionClass(executionClass, callOverrides = {}) {
+      return resolveModelForExecutionClass({ surface, executionClass, overrides: { ...overrides, ...callOverrides }, env, profiles });
+    },
     resolve(modelClass, callOverrides = {}) {
       return resolveModelForClass({ surface, modelClass, overrides: { ...overrides, ...callOverrides }, env, profiles });
     },

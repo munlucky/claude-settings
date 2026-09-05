@@ -23,6 +23,7 @@ import {
   projectKnowledgeNamespaceHasData,
   recoverProjectKnowledgeNamespaceMigrations,
 } from './knowledge/store.mjs';
+import { buildKernelDurableStateView } from './persistence/durable-state.mjs';
 
 const TIER_RANK = { T0: 0, T1: 1, T2: 2, T3: 3 };
 const EVIDENCE_RANK = { E0: 0, E1: 1, E2: 2 };
@@ -2208,6 +2209,20 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         runSignals: row.runSignalsJson ? safeJsonParse(row.runSignalsJson, {}) : {},
         updatedAt: row.updatedAt,
       };
+    },
+
+    // The durable authority view intentionally omits Host policy, prompt/cache,
+    // Git, and optional execution internals. Those tables remain queryable as
+    // receipts for audit/recovery, but are not a second Kernel state machine.
+    getKernelDurableState(runId) {
+      const run = this.getRun(runId);
+      if (!run) return null;
+      return buildKernelDurableStateView({
+        run,
+        verifications: this.getVerifications(runId),
+        obligations: this.getRunObligations(runId),
+        completionDecision: this.getCompletionDecision(runId),
+      });
     },
 
     // A report describes the delta since the last accepted mutable boundary.

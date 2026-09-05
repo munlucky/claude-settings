@@ -111,6 +111,7 @@ export const buildPromptEnvelope = ({
     segments: Object.freeze(segments),
     cacheIdentity: Object.freeze({ ...cacheIdentity, prefixDigest: buildPrefixDigest(cacheIdentity) }),
     modelPolicy: Object.freeze({
+      executionClass: modelPolicy.executionClass ?? null,
       modelClass: modelPolicy.modelClass ?? null,
       resolvedModel: modelPolicy.resolvedModel ?? null,
       resolvedEffort: modelPolicy.resolvedEffort ?? null,

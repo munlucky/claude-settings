@@ -1,25 +1,20 @@
 #!/usr/bin/env node
-// Cache replay harness (Wave 0 / Wave 9). Answers one question per fixture:
-// given two turns that differ in exactly one declared way, which prompt
-// segments actually changed?
-//
-// This is the measurement that decides whether the optimization ships. A
-// fixture whose only difference is a timestamp must produce an identical
-// prefix; a fixture that changes the task contract must not. Without the
-// corpus, "the cache works" is an assertion instead of a result.
+// Host cache replay harness. Prompt envelopes, cache policy, and session
+// lineage are Host concerns; the Kernel supplies only provider-neutral context
+// segments to this measurement harness.
 
 import path from 'node:path';
 import process from 'node:process';
 import { readFile, readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { buildKernelContextSegments } from './context-segments.mjs';
-import { buildPromptEnvelope } from '../host/kernel/prompt-envelope.mjs';
-import { buildToolManifest } from '../host/kernel/tool-manifest.mjs';
-import { resolveSessionLineage } from '../host/kernel/session-affinity.mjs';
-import { resolveOptimizationModes } from '../host/kernel/provider-prompt-policy.mjs';
+import { buildKernelContextSegments } from '../../kernel/context-segments.mjs';
+import { buildPromptEnvelope } from './prompt-envelope.mjs';
+import { buildToolManifest } from './tool-manifest.mjs';
+import { resolveSessionLineage } from './session-affinity.mjs';
+import { resolveOptimizationModes } from './provider-prompt-policy.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-export const DEFAULT_FIXTURE_DIR = path.resolve(here, '../../tests/fixtures/kernel-cache-replay');
+export const DEFAULT_FIXTURE_DIR = path.resolve(here, '../../../tests/fixtures/kernel-cache-replay');
 
 const compileTurn = (turn = {}, { provider = 'claude', env = process.env } = {}) => {
   const context = buildKernelContextSegments({
@@ -49,9 +44,6 @@ const compileTurn = (turn = {}, { provider = 'claude', env = process.env } = {})
 const segmentDigests = (envelope) =>
   Object.fromEntries(envelope.segments.map((segment) => [segment.kind, segment.digest]));
 
-// A fixture declares which segments it *expects* to move. Reporting both the
-// observed and the expected set is what makes a failure diagnosable rather than
-// just red.
 export const replayFixture = (fixture, { provider = 'claude', env = process.env } = {}) => {
   const before = compileTurn(fixture.before, { provider, env });
   const after = compileTurn(fixture.after, { provider, env });
@@ -109,3 +101,4 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToP
   console.log(JSON.stringify(report, null, 2));
   process.exitCode = report.failures.length ? 1 : 0;
 }
+

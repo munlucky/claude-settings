@@ -1,16 +1,20 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ACTION_KINDS, loadModelPolicy, parseModelPolicyText, requiresProviderModel } from '../scripts/kernel/run/model-route-contract.mjs';
+import { ACTION_KINDS, EXECUTION_CLASSES, loadModelPolicy, parseModelPolicyText, requiresProviderModel } from '../scripts/kernel/run/model-route-contract.mjs';
 import { resolveModelRoute } from '../scripts/kernel/run/model-routing.mjs';
 
-test('canonical model policy declares two provider classes plus the kernel class', () => {
+test('canonical model policy declares exactly four provider-neutral execution classes', () => {
   const policy = loadModelPolicy();
   assert.equal(policy.schemaVersion, 1);
   assert.equal(policy.policyRevision, 'kernel-model-routing.v1');
-  assert.deepEqual(Object.keys(policy.modelClasses).sort(), ['frontier_reasoning', 'kernel', 'value_coding']);
-  assert.equal(requiresProviderModel('frontier_reasoning'), true);
-  assert.equal(requiresProviderModel('value_coding'), true);
+  assert.deepEqual([...EXECUTION_CLASSES], ['planning', 'complex_implementation', 'review', 'standard']);
+  assert.deepEqual(Object.keys(policy.executionClasses).sort(), [...EXECUTION_CLASSES].sort());
+  assert.equal(requiresProviderModel('planning'), true);
+  assert.equal(requiresProviderModel('complex_implementation'), true);
+  assert.equal(requiresProviderModel('review'), true);
+  assert.equal(requiresProviderModel('standard'), true);
   assert.equal(requiresProviderModel('kernel'), false);
+  assert.deepEqual(Object.keys(policy.modelClasses).sort(), ['frontier_reasoning', 'kernel', 'value_coding']);
   for (const action of ACTION_KINDS) assert.ok(policy.actionDefaults[action], action);
 });
 
@@ -29,20 +33,32 @@ test('a malformed or incomplete policy fails closed', () => {
   assert.throws(() => parseModelPolicyText('schemaVersion: 1\nunknownField: 1\n'), /Unknown field/);
 });
 
-test('action defaults route planning to frontier, implementation to value, proof to the kernel', () => {
+test('action defaults route work to execution classes and proof to the Kernel', () => {
   const frontier = ['understand', 'design', 'plan', 'replan', 'review_contract', 'review_engineering'];
   for (const action of frontier) {
-    assert.equal(resolveModelRoute({ runId: 'r', actionKind: action }).modelClass, 'frontier_reasoning', action);
+    const decision = resolveModelRoute({ runId: 'r', actionKind: action });
+    assert.equal(decision.executionClass, action.startsWith('review') ? 'review' : 'planning', action);
+    assert.equal(decision.modelClass, 'frontier_reasoning', action);
   }
   for (const action of ['implement', 'debug']) {
-    assert.equal(resolveModelRoute({ runId: 'r', actionKind: action }).modelClass, 'value_coding', action);
+    const decision = resolveModelRoute({ runId: 'r', actionKind: action });
+    assert.equal(decision.executionClass, 'standard', action);
+    assert.equal(decision.modelClass, 'value_coding', action);
   }
   for (const action of ['prove', 'close']) {
     const decision = resolveModelRoute({ runId: 'r', actionKind: action });
+    assert.equal(decision.executionClass, null);
     assert.equal(decision.modelClass, 'kernel');
     assert.equal(requiresProviderModel(decision.modelClass), false);
     assert.deepEqual([...decision.reasonCodes], ['KERNEL_ONLY_ACTION']);
   }
+});
+
+test('complex implementation is an explicit workload class, not a score or provider name', () => {
+  const decision = resolveModelRoute({ runId: 'r-complex', actionKind: 'implement', executionClass: 'complex_implementation' });
+  assert.equal(decision.executionClass, 'complex_implementation');
+  assert.equal(decision.modelClass, 'frontier_reasoning');
+  assert.throws(() => resolveModelRoute({ runId: 'r-invalid', actionKind: 'implement', executionClass: 'ultrabrain' }), /executionClass must be one of/);
 });
 
 test('reviews demand read-only permissions and implementation demands workspace write', () => {

@@ -47,6 +47,7 @@ test('T3 implementation stays on value coding but its review demands an independ
 test('Kernel route carries provider-neutral work shape and rejects provider fields', () => {
   const standard = resolveModelRoute({ ...base, actionKind: 'implement' });
   assert.deepEqual(standard.workProfile, {
+    executionClass: 'standard',
     complexity: 'standard',
     repeatedFailure: false,
     independentContextRequired: false,

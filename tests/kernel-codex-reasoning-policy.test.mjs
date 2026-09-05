@@ -6,25 +6,25 @@ test('max is the starting point for ordinary work', () => {
   assert.equal(resolveCodexModelPolicy({ actionKind: 'implement' }).reasoning, 'max');
 });
 
-test('engineering review uses Astra high; a protected review uses Sol xhigh', () => {
+test('all review execution classes use Astra high, including protected reviews', () => {
   const engineeringReview = resolveCodexModelPolicy({ actionKind: 'review_engineering' });
   assert.equal(engineeringReview.reasoning, 'high');
   assert.equal(engineeringReview.model, CODEX_MODELS.astra);
   for (const shape of ['security', 'migration', 'authentication', 'authorization', 'payment', 'data-loss', 'irreversible']) {
     const policy = resolveCodexModelPolicy({ actionKind: 'review_contract', shapes: [shape] });
-    assert.equal(policy.reasoning, 'xhigh', shape);
-    assert.equal(policy.model, CODEX_MODELS.sol);
+    assert.equal(policy.reasoning, 'high', shape);
+    assert.equal(policy.model, CODEX_MODELS.astra);
   }
   const t3Review = resolveCodexModelPolicy({ actionKind: 'review_engineering', riskTier: 'T3' });
-  assert.equal(t3Review.reasoning, 'xhigh');
-  assert.equal(t3Review.model, CODEX_MODELS.sol);
+  assert.equal(t3Review.reasoning, 'high');
+  assert.equal(t3Review.model, CODEX_MODELS.astra);
 });
 
-test('repeated failure escalates model and reasoning together', () => {
+test('repeated failure does not change the standard execution class policy', () => {
   const policy = resolveCodexModelPolicy({ actionKind: 'implement', repeatedFailure: true });
-  assert.equal(policy.model, CODEX_MODELS.sol);
-  assert.equal(policy.reasoning, 'xhigh');
-  assert.ok(policy.reasons.includes('repeated-failure-escalation'));
+  assert.equal(policy.model, CODEX_MODELS.luna);
+  assert.equal(policy.reasoning, 'max');
+  assert.ok(!policy.reasons.includes('repeated-failure-escalation'));
 });
 
 test('an unrecognized requested reasoning is ignored rather than passed through', () => {

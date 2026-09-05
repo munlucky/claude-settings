@@ -54,7 +54,7 @@ bounded context, redaction, prompt envelope, stable cache와 optimization eviden
 - **Role**: Provider 프롬프트 캐시 브레이크포인트 최적화
 - **Product Relevance**: Agent Workflow: true, Knowledge Lifecycle: false
 - **Implementation References**:
-  - `scripts/kernel/cache-replay.mjs` (current source)
+  - `scripts/host/kernel/cache-replay.mjs` (current source)
 - **Proof References**:
   - `cache-replay`
 

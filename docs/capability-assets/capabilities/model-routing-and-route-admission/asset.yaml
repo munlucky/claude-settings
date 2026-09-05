@@ -109,13 +109,13 @@
   },
   "implementations": {
     "best_known": {
-      "commit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
+      "commit": null,
       "paths": [
         "scripts/kernel/run/model-routing.mjs",
         "scripts/kernel/run/model-route-contract.mjs",
         "scripts/kernel/routing/route-admission.mjs",
         "scripts/kernel/capability-resolver.mjs",
-        "scripts/kernel/run/stagnation.mjs"
+        "scripts/kernel/run/optional-capabilities.mjs"
       ],
       "generation": "E8-current",
       "notes": "현재 Kernel route admission, model policy와 stagnation 경계."
@@ -376,7 +376,7 @@
       },
       "implementationRefs": [
         {
-          "path": "scripts/kernel/run/stagnation.mjs",
+          "path": "scripts/kernel/run/optional-capabilities.mjs",
           "commit": null
         }
       ],

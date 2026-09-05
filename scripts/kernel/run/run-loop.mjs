@@ -148,6 +148,8 @@ export const buildNextPayload = ({
   satisfiedObligations = null,
   outstandingObligationIds = null,
   resume = null,
+  workAuthority = null,
+  trustAuthority = null,
 }) => {
   const acceptancePlans = Array.isArray(contract?.acceptance)
     ? contract.acceptance.map((item) => ({
@@ -178,6 +180,8 @@ export const buildNextPayload = ({
     knowledge: knowledgePromptBlock,
     acceptancePlans,
     capabilities,
+    ...(workAuthority ? { workAuthority } : {}),
+    ...(trustAuthority ? { trustAuthority } : {}),
     ...(resume ? { resume } : {}),
   };
 
