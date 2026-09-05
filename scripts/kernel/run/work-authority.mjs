@@ -83,6 +83,18 @@ export const buildWorkAuthorityView = ({
     currentSequence: currentView?.sequence || null,
     stepCount: currentPlanSteps.length,
   };
+  const totalAcceptanceCount = Array.isArray(run.acceptanceCriteria) ? run.acceptanceCriteria.length : (run.taskContract?.acceptance?.length || 0);
+  const completedAcceptanceIds = new Set(
+    currentPlanSteps
+      .filter((s) => s.state === 'passed')
+      .flatMap((s) => (Array.isArray(s.acceptanceIds) ? s.acceptanceIds : [])),
+  );
+  const isGoalComplete = run.status === 'completed' && (run.finalizationStatus || 'completed') === 'completed';
+  const goalStatus = isGoalComplete ? 'complete' : run.status === 'blocked' ? 'blocked' : 'active';
+  const workUnitStatus = currentView?.state === 'passed' ? 'complete'
+    : (currentView?.state === 'failed' || currentView?.state === 'blocked') ? 'blocked'
+    : 'active';
+
   const view = {
     schemaVersion: WORK_AUTHORITY_SCHEMA_VERSION,
     task: {
@@ -99,6 +111,17 @@ export const buildWorkAuthorityView = ({
       state: String(run.state || run.currentState || ''),
       planRevision,
       mutationRevision: Number(run.mutationRevision || 0),
+    },
+    workUnitStatus,
+    goalStatus,
+    goal: {
+      status: goalStatus,
+      objective: String(run.objective || ''),
+      coverage: {
+        completedAcceptanceCount: completedAcceptanceIds.size,
+        totalAcceptanceCount,
+        summary: `${completedAcceptanceIds.size} / ${totalAcceptanceCount} acceptance complete`,
+      },
     },
     currentWorkUnit: currentView,
     progress: {

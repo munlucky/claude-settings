@@ -328,10 +328,13 @@ export const deriveRunChangedPaths = ({ observation = null, baselineChangedPaths
   const currentPaths = new Set(observation.changedPaths);
   const baselineDriftPaths = [...baselinePaths].filter((entry) => !currentPaths.has(entry)).sort();
 
+  const preExistingChanges = [...baselinePaths].filter((entry) => !actualChangedPaths.includes(entry)).sort();
   return {
     status: 'observed',
     reason: null,
     actualChangedPaths: [...new Set([...actualChangedPaths, ...baselineDriftPaths])].sort(),
+    currentWorkUnitChanges: actualChangedPaths,
+    preExistingChanges,
     fullChangedPaths: [...observation.changedPaths].sort(),
     baselineChangedPaths: [...baselinePaths].sort(),
     baselineDriftPaths,

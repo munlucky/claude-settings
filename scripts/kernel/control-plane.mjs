@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { openKernelStateStore } from './state-store.mjs';
+import { canonicalJson } from './canonical-digest.mjs';
 import { buildContextReceipt } from './context-build.mjs';
 import { resolveProofRoute } from './proof-route.mjs';
 import { buildExecutionAssignmentId, normalizeHostCapabilities, resolveEnforcementStrategy, summarizeModelRouting } from './run/model-route-contract.mjs';
@@ -90,6 +91,22 @@ const receiptValuesEqual = (left, right, { paths = false } = {}) => JSON.stringi
   canonicalReceiptValue(paths ? canonicalChangedPaths(left) : left),
 ) === JSON.stringify(canonicalReceiptValue(paths ? canonicalChangedPaths(right) : right));
 
+// Report idempotency is keyed by the complete normalized report, not only by
+// its verification fields. Two attempts can target the same workspace and
+// command while carrying different summaries, judgments, closeout requests,
+// or knowledge observations; collapsing those attempts would erase retry and
+// stagnation evidence. Canonical serialization keeps equivalent object-key
+// orderings on the same key while ignoring unknown caller fields through the
+// report normalizer.
+const reportIdempotencyKey = ({ runId, payload, workspaceIdentity } = {}) => {
+  const normalized = normalizeReport(payload || {});
+  return createHash('sha256').update(canonicalJson({
+    runId,
+    workspaceIdentity: workspaceIdentity || null,
+    report: normalized,
+  })).digest('hex');
+};
+
 // Only executions produced by this module may enter the report-local cache.
 // The WeakMap is deliberately private: a public caller cannot manufacture the
 // cache entry or replay one from another report/run through executeProof().
@@ -153,6 +170,56 @@ export const computeKernelSourceIdentity = ({ projectRoot = process.cwd(), objec
 const observed = (value) => ({ status: 'observed', value });
 const unavailable = (reason) => ({ status: 'unavailable', reason });
 
+const EFFICIENCY_TIMESTAMP_FIELDS = Object.freeze([
+  'runStartedAt', 'goalResolvedAt', 'readinessCompletedAt', 'firstRepositoryReadAt',
+  'firstMutationAt', 'lastMutationAt', 'focusedVerificationStartedAt',
+  'focusedVerificationFinishedAt', 'goalRegressionStartedAt', 'goalRegressionFinishedAt',
+  'reviewRequestedAt', 'reviewSpawnedAt', 'reviewFinishedAt', 'blockedAt',
+]);
+const EFFICIENCY_COUNTER_FIELDS = Object.freeze([
+  'reportCount', 'reportRejectedCount', 'contractRepairCount', 'scopeRejectedCount',
+  'verificationTimeoutCount', 'waitTimeoutCount', 'contextCompactionCount',
+  'repositorySearchCount', 'sameFileReadCount',
+]);
+const EFFICIENCY_KPI_FIELDS = Object.freeze([
+  'timeToGoalResolutionMs', 'timeToReadinessMs', 'timeToFirstMutationMs',
+  'implementationWallMs', 'verificationWallMs', 'reviewQueueMs', 'reviewWallMs',
+  'reportRepairTimeMs', 'blockedDiscoveryLatencyMs',
+]);
+
+const finiteTimestamp = (value) => {
+  const parsed = Date.parse(String(value || ''));
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const durationBetween = (start, finish) => {
+  const startMs = finiteTimestamp(start);
+  const finishMs = finiteTimestamp(finish);
+  return startMs !== null && finishMs !== null && finishMs >= startMs ? finishMs - startMs : null;
+};
+
+const efficiencyTelemetryMeasurement = ({ run, workflowEfficiency = null } = {}) => {
+  const raw = run?.runSignals && typeof run.runSignals === 'object' && !Array.isArray(run.runSignals)
+    ? run.runSignals.efficiency
+    : null;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return unavailable('efficiency-telemetry-not-recorded');
+  }
+  const value = {};
+  for (const field of EFFICIENCY_TIMESTAMP_FIELDS) value[field] = raw[field] || null;
+  for (const field of EFFICIENCY_COUNTER_FIELDS) value[field] = Number.isFinite(Number(raw[field])) ? Number(raw[field]) : 0;
+  value.timeToGoalResolutionMs = durationBetween(raw.runStartedAt, raw.goalResolvedAt);
+  value.timeToReadinessMs = durationBetween(raw.runStartedAt, raw.readinessCompletedAt);
+  value.timeToFirstMutationMs = durationBetween(raw.runStartedAt, raw.firstMutationAt);
+  value.implementationWallMs = workflowEfficiency?.value?.executeMs ?? null;
+  value.verificationWallMs = durationBetween(raw.focusedVerificationStartedAt, raw.focusedVerificationFinishedAt);
+  value.reviewQueueMs = durationBetween(raw.reviewRequestedAt, raw.reviewSpawnedAt);
+  value.reviewWallMs = durationBetween(raw.reviewSpawnedAt, raw.reviewFinishedAt);
+  value.reportRepairTimeMs = null;
+  value.blockedDiscoveryLatencyMs = durationBetween(raw.runStartedAt, raw.blockedAt);
+  return observed(value);
+};
+
 // Provider usage becomes observable only when the Host files receipts. Without
 // them the fields stay `unavailable` — an unmeasured run must never look free.
 const providerUsageMeasurement = (receipts = []) => {
@@ -207,34 +274,38 @@ const workflowEfficiencyMeasurement = ({ run, verifications = [], verificationHi
   });
 };
 
-export const buildKernelMeasurement = ({ run, completion, principles = loadKernelPrinciples(), verifications = [], verificationHistory = [], attempts = [], routeDecisions = [], usageReceipts = [], reviewReceipts = [] }) => ({
-  schemaVersion: 2,
-  harnessIdentity: 'moon-relay-kernel',
-  sourceIdentity: run.sourceIdentity,
-  currentWorkspaceIdentity: run.currentWorkspaceIdentity ? observed(run.currentWorkspaceIdentity) : unavailable('workspace-identity-not-observed'),
-  hardEvidenceCoverage: observed({
-    kernelRuntimePassed: verifications.filter((verification) => verification.executor === 'kernel-runtime' && verification.status === 'passed').length,
-    callerAttestedPassed: verifications.filter((verification) => verification.executor !== 'kernel-runtime' && verification.status === 'passed').length,
-    total: verifications.length,
-    requiredForCompletion: run.mutationRevision > 0,
-  }),
-  promptTokenBudget: observed({
-    stableTokenBudget: KERNEL_POLICY.context.stableTokenBudget,
-    stageTokenBudget: KERNEL_POLICY.context.stageTokenBudget,
-  }),
-  taskIdentity: `task-${createHash('sha256').update(run.objective).digest('hex').slice(0, 16)}`,
-  ...providerUsageMeasurement(usageReceipts),
-  modelRouting: routeDecisions.length > 0 ? observed(summarizeModelRouting(routeDecisions, usageReceipts)) : unavailable('model-routing-not-recorded'),
-  estimatedStaticTokens: Math.ceil(JSON.stringify(principles.principles).length / 4),
-  successDecision: observed(completion.decision === 'accepted'),
-  falseCompletionDecision: unavailable('false-completion-evaluation-not-run'),
-  retryCount: observed(Math.max(0, attempts.length - 1)),
-  replanCount: observed(run.replanCount || 0),
-  userInterventionCount: observed(run.interventionCount || 0),
-  evidenceCoverage: observed({ passed: verifications.filter((verification) => verification.status === 'passed').length, total: verifications.length, required: run.requiredObligations.length }),
-  workflowEfficiency: workflowEfficiencyMeasurement({ run, verifications, verificationHistory, attempts, usageReceipts, reviewReceipts }),
-  contaminationSignals: observed({ relayStateMutation: false, profileMutation: false, source: 'kernel-runtime-boundary' }),
-});
+export const buildKernelMeasurement = ({ run, completion, principles = loadKernelPrinciples(), verifications = [], verificationHistory = [], attempts = [], routeDecisions = [], usageReceipts = [], reviewReceipts = [] }) => {
+  const workflowEfficiency = workflowEfficiencyMeasurement({ run, verifications, verificationHistory, attempts, usageReceipts, reviewReceipts });
+  return {
+    schemaVersion: 2,
+    harnessIdentity: 'moon-relay-kernel',
+    sourceIdentity: run.sourceIdentity,
+    currentWorkspaceIdentity: run.currentWorkspaceIdentity ? observed(run.currentWorkspaceIdentity) : unavailable('workspace-identity-not-observed'),
+    hardEvidenceCoverage: observed({
+      kernelRuntimePassed: verifications.filter((verification) => verification.executor === 'kernel-runtime' && verification.status === 'passed').length,
+      callerAttestedPassed: verifications.filter((verification) => verification.executor !== 'kernel-runtime' && verification.status === 'passed').length,
+      total: verifications.length,
+      requiredForCompletion: run.mutationRevision > 0,
+    }),
+    promptTokenBudget: observed({
+      stableTokenBudget: KERNEL_POLICY.context.stableTokenBudget,
+      stageTokenBudget: KERNEL_POLICY.context.stageTokenBudget,
+    }),
+    taskIdentity: `task-${createHash('sha256').update(run.objective).digest('hex').slice(0, 16)}`,
+    ...providerUsageMeasurement(usageReceipts),
+    modelRouting: routeDecisions.length > 0 ? observed(summarizeModelRouting(routeDecisions, usageReceipts)) : unavailable('model-routing-not-recorded'),
+    estimatedStaticTokens: Math.ceil(JSON.stringify(principles.principles).length / 4),
+    successDecision: observed(completion.decision === 'accepted'),
+    falseCompletionDecision: unavailable('false-completion-evaluation-not-run'),
+    retryCount: observed(Math.max(0, attempts.length - 1)),
+    replanCount: observed(run.replanCount || 0),
+    userInterventionCount: observed(run.interventionCount || 0),
+    evidenceCoverage: observed({ passed: verifications.filter((verification) => verification.status === 'passed').length, total: verifications.length, required: run.requiredObligations.length }),
+    workflowEfficiency,
+    efficiencyTelemetry: efficiencyTelemetryMeasurement({ run, workflowEfficiency }),
+    contaminationSignals: observed({ relayStateMutation: false, profileMutation: false, source: 'kernel-runtime-boundary' }),
+  };
+};
 
 // The route a run follows is fixed at start (P1-1). Structural planning is an
 // internal judgment of the work unit, not a persisted workflow state.
@@ -292,6 +363,7 @@ const planDiffersFromContract = (steps = [], declared = []) => {
 
 export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRuntimeHome(), relayHome, projectRoot = process.cwd(), holder: holderOption, env = process.env, requireHostBinding = false } = {}) => {
   const store = await openKernelStateStore({ runtimeHome, relayHome });
+  const reportIdempotencyCache = new Map();
   let currentProject = resolveKernelProjectIdentity({
     cwd: projectRoot,
     env: { ...env, MOON_RELAY_KERNEL_HOME: runtimeHome },
@@ -403,6 +475,26 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       // baseline and SQLite lifecycle receipts remain authoritative if the
       // convenience cursor cannot be refreshed.
     }
+  };
+  const recordEfficiency = (runId, patch = {}) => {
+    if (!runId || typeof store.recordRunEfficiency !== 'function') return;
+    try { store.recordRunEfficiency(runId, patch); } catch { /* telemetry never changes lifecycle authority */ }
+  };
+  const recordReportOutcome = (runId, result) => {
+    if (!result || result.status === 'lease-conflict' || result.idempotentReplay === true) return;
+    const rejected = new Set(['scope-rejected', 'step-rejected', 'evidence-rejected', 'execution-readiness-blocked']).has(result.status);
+    recordEfficiency(runId, {
+      increments: {
+        ...(rejected ? { reportRejectedCount: 1 } : {}),
+        ...(result.status === 'scope-rejected' || result.status === 'step-rejected' ? { scopeRejectedCount: 1 } : {}),
+      },
+    });
+  };
+  const publicReportResult = (result) => {
+    if (!result || result.idempotentReplay !== true) return result;
+    const { idempotentReplay, ...publicResult } = result;
+    void idempotentReplay;
+    return publicResult;
   };
   let deliveryRecoveryInProgress = false;
   // Reconcile terminal bindings and stale mutation locks at the public Kernel
@@ -1023,6 +1115,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     resolveBoundInvocation({
       explicitRunId = null,
       envRunId = null,
+      sessionId = null,
       taskContract = null,
       invocationIntent = null,
       intent = null,
@@ -1031,7 +1124,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         stateStore: store,
         projectId: currentProject.projectId,
         provider: hostProvider,
-        sessionId: hostSessionId,
+        sessionId: sessionId || hostSessionId,
         workspaceId: effectiveWorkspaceId,
         worktreeId: effectiveWorktreeId,
         explicitRunId,
@@ -1043,6 +1136,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     },
 
     async startRun({ runId, objective, sourceIdentity, taskContract = {}, hostCapabilities = null } = {}) {
+      const runStartedAt = new Date().toISOString();
       const trustedSourceIdentity = computeKernelSourceIdentity({ projectRoot, objective: objective || taskContract.objective || 'Kernel execution task', taskContract });
       if (sourceIdentity && sourceIdentity !== trustedSourceIdentity) {
         throw new Error('sourceIdentity is computed by Kernel and cannot be caller-authored');
@@ -1114,6 +1208,8 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       });
 
       const workspaceObservation = observeWorkspaceIdentity({ projectRoot });
+      const readinessCompletedAt = new Date().toISOString();
+      const firstRepositoryReadAt = new Date().toISOString();
       let run = null;
       try {
         run = store.createRun({
@@ -1139,6 +1235,15 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
           baselineWorkspaceEntries: workspaceObservation.changeEntries || [],
           reportBaselineChangedPaths: workspaceObservation.changedPaths || [],
           reportBaselineWorkspaceEntries: workspaceObservation.changeEntries || [],
+        });
+        recordEfficiency(runId, {
+          timestamps: {
+            runStartedAt,
+            goalResolvedAt: readinessCompletedAt,
+            readinessCompletedAt,
+            firstRepositoryReadAt,
+          },
+          increments: { repositorySearchCount: projectMode.mode === 'greenfield' ? 0 : 1 },
         });
         store.declareRunObligations(runId, obligations);
 
@@ -1191,6 +1296,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     },
 
     async startSuccessor({ invocation, objective, taskContract = {}, hostCapabilities = null } = {}) {
+      const runStartedAt = new Date().toISOString();
       if (invocation?.mode !== 'successor' || !invocation.predecessorRunId) {
         throw Object.assign(new Error('successor_not_allowed'), {
           code: 'successor_not_allowed',
@@ -1259,6 +1365,8 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         obligations,
       });
       const workspaceObservation = observeWorkspaceIdentity({ projectRoot });
+      const readinessCompletedAt = new Date().toISOString();
+      const firstRepositoryReadAt = new Date().toISOString();
       const successorRun = {
         runId,
         objective: contract.objective,
@@ -1327,6 +1435,15 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
           : null,
       });
       if (result.created) {
+        recordEfficiency(runId, {
+          timestamps: {
+            runStartedAt,
+            goalResolvedAt: readinessCompletedAt,
+            readinessCompletedAt,
+            firstRepositoryReadAt,
+          },
+          increments: { repositorySearchCount: projectMode.mode === 'greenfield' ? 0 : 1 },
+        });
         const frameKnowledgeCtx = await buildProjectKnowledgeContext({
           projectId,
           stage: 'FRAME',
@@ -1560,6 +1677,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       const updated = typeof store.reviseTaskContractAtomic === 'function'
         ? store.reviseTaskContractAtomic(runId, contract, { obligations })
         : store.updateTaskContract(runId, contract);
+      recordEfficiency(runId, { increments: { contractRepairCount: 1 } });
       if (typeof store.reviseTaskContractAtomic !== 'function') {
         store.declareRunObligations(runId, obligations);
         const merged = [...new Set([...updated.requiredObligations, ...obligations.map((obligation) => obligation.obligationId)])];
@@ -1657,6 +1775,26 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         ],
         references,
         evidence: [...persistedEvidence, ...evidence],
+      });
+      const contextItems = [...stageRecords, ...references, ...evidence]
+        .filter((entry) => entry && typeof entry === 'object');
+      const seenSourceRefs = new Set();
+      let sameFileReadCount = 0;
+      for (const entry of contextItems) {
+        const sourceRef = entry.sourceRef || entry.path || entry.file;
+        if (!sourceRef) continue;
+        const normalizedSourceRef = String(sourceRef).replaceAll('\\', '/');
+        if (seenSourceRefs.has(normalizedSourceRef)) sameFileReadCount += 1;
+        seenSourceRefs.add(normalizedSourceRef);
+      }
+      const omittedEntries = Array.isArray(context.omitted) ? context.omitted : [];
+      const contextWasCompacted = omittedEntries.some((entry) => entry?.reason === 'context-budget')
+        || String(context.promptBlock || '').includes('[TRUNCATED]');
+      recordEfficiency(runId, {
+        increments: {
+          ...(sameFileReadCount > 0 ? { sameFileReadCount } : {}),
+          ...(contextWasCompacted ? { contextCompactionCount: 1 } : {}),
+        },
       });
       context.knowledgeContext = knowledgeCtx;
       return context;
@@ -2786,6 +2924,11 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     async executeProof(runId, { obligationId = 'default', commandRef, timeoutMs, acceptanceCoverage = [], flakyRerun = false, discovered = null, networkPolicy = 'inherited', evidenceIdentity: requestedEvidenceIdentity = null, freshnessInputs = null, allowEvidenceReuse = true, sharedExecution = null, [proofExecutionCacheRequest]: proofExecutionCacheContext = null } = {}) {
       const run = store.getRun(runId);
       if (!run) throw new Error(`Run ${runId} not found`);
+      recordEfficiency(runId, { timestamps: { focusedVerificationStartedAt: new Date().toISOString() } });
+      const finishVerificationTelemetry = (execution = null) => recordEfficiency(runId, {
+        timestamps: { focusedVerificationFinishedAt: new Date().toISOString() },
+        increments: execution?.timedOut === true ? { verificationTimeoutCount: 1 } : {},
+      });
 
       // Direct Host callers use this method without reportUnderLease's
       // preflight. Reject an unbound command before observing/executing it so
@@ -2898,6 +3041,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         persistReleaseEvidenceIfNeeded(runId, updated);
         await projectRunState(updated, { runtimeHome });
         const verification = store.getVerifications(runId).find((entry) => entry.obligationId === obligationId);
+        finishVerificationTelemetry(sharedExecution);
         return {
           run: updated,
           execution: {
@@ -2984,6 +3128,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
           reuseOfVerificationId: reusable.id,
         };
         rememberProofExecutionCacheEntry(cacheExecution, proofExecutionCacheContext);
+        finishVerificationTelemetry(cacheExecution);
         return {
           run: updated,
           execution: cacheExecution,
@@ -2999,6 +3144,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         ? () => executeApprovedProof({ projectRoot, command: discovered.command, args: discovered.args || [], approval: discovered.approval, label: obligationId, timeoutMs, evidenceDir, networkPolicy })
         : () => executeTrustedProof({ projectRoot, commandRef, timeoutMs, evidenceDir, networkPolicy });
       const execution = flakyRerun ? executeWithFlakyRerun(runner) : runner();
+      finishVerificationTelemetry(execution);
 
       // Re-observe the workspace AFTER execution. If the verification command
       // itself mutated tracked source (e.g. a formatter or codegen step), the
@@ -3009,6 +3155,8 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       const workspaceMutatedByProof = postObservation.identity !== observation.identity;
       if (workspaceMutatedByProof) {
         store.observeWorkspaceIdentity(runId, postObservation.identity);
+        const mutationAt = new Date().toISOString();
+        recordEfficiency(runId, { timestamps: { firstMutationAt: mutationAt, lastMutationAt: mutationAt } });
       }
 
       // A flaky result (divergent pass/fail across identical runs) is blocking
@@ -3587,7 +3735,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       }
       const fencingToken = leaseResult.lease.fencingToken;
       try {
-        return await this.reportUnderLease(runId, payload, {
+        const result = await this.reportUnderLease(runId, payload, {
           fencingToken,
           parallelSettlement: {
             expectedMutationRevision: Number(snapshot.expectedMutationRevision),
@@ -3598,6 +3746,8 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
             result,
           },
         });
+        recordReportOutcome(runId, result);
+        return publicReportResult(result);
       } finally {
         store.releaseLease(runId, { holder, fencingToken });
       }
@@ -3613,12 +3763,25 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         return bindingErrorPayload(error, { projectRoot, provider: hostProvider });
       }
       const run = store.getRun(runId);
-      if (!run) throw new Error(`Run ${runId} not found`);
+      let workspaceObservation = null;
+      try { workspaceObservation = observeWorkspaceIdentity({ projectRoot }); } catch {}
+      const reportKey = reportIdempotencyKey({
+        runId,
+        payload,
+        workspaceIdentity: workspaceObservation?.identity || null,
+      });
+      if (reportIdempotencyCache.has(reportKey)) {
+        const cached = reportIdempotencyCache.get(reportKey);
+        return {
+          ...cached,
+          next: await this.next(runId),
+        };
+      }
       // A completed run is only *done* when finalization also completed
       // (P0-7); a partial finalization stays retryable instead of reporting a
       // success the Kernel did not actually achieve.
       if (run.status === 'completed' && run.finalizationStatus === 'completed') {
-        return { schemaVersion: 1, runId, status: 'completed', next: await this.next(runId) };
+        return { schemaVersion: 1, runId, status: 'completed', workUnitStatus: 'complete', goalStatus: 'complete', next: await this.next(runId) };
       }
 
       // Enforce the run lease before mutating any state (F4). If another runner
@@ -3630,7 +3793,9 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       }
       const fencingToken = leaseResult.lease.fencingToken;
       try {
-        return await this.reportUnderLease(runId, payload, { fencingToken });
+        const result = await this.reportUnderLease(runId, payload, { fencingToken });
+        recordReportOutcome(runId, result);
+        return publicReportResult(result);
       } finally {
         // The lease is released when the command finishes so the next CLI
         // process — a different PID, same session — is never locked out (P0-6).
@@ -3640,6 +3805,22 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
 
     async reportUnderLease(runId, payload, { fencingToken, parallelSettlement = null }) {
       const run = store.getRun(runId);
+      let currentObservation = null;
+      try { currentObservation = observeWorkspaceIdentity({ projectRoot }); } catch {}
+      const reportKey = reportIdempotencyKey({
+        runId,
+        payload,
+        workspaceIdentity: currentObservation?.identity || null,
+      });
+      if (reportIdempotencyCache.has(reportKey)) {
+        const cached = reportIdempotencyCache.get(reportKey);
+        return {
+          ...cached,
+          idempotentReplay: true,
+          next: await this.next(runId),
+        };
+      }
+      recordEfficiency(runId, { increments: { reportCount: 1 } });
       const evidenceRejected = (failures) => {
         const currentRun = store.getRun(runId);
         return {
@@ -3779,6 +3960,13 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
           };
         }
         report = { ...report, changedPaths: actualChangedPaths };
+      }
+
+      if (actualChangedPaths.length > 0) {
+        const mutationAt = new Date().toISOString();
+        recordEfficiency(runId, {
+          timestamps: { firstMutationAt: mutationAt, lastMutationAt: mutationAt },
+        });
       }
 
       // Project-owned required_verification records are compiled when the
@@ -4234,7 +4422,14 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
             if (effectiveStatus !== 'passed') {
               const flakyNote = execution.flaky ? ' (flaky: divergent pass/fail — requires a waiver to pass)' : '';
               const mutationNote = execution.workspaceMutatedByProof ? ' (verification command mutated tracked source; evidence invalid)' : '';
-              failures.push({ obligationId, commandRef: request.commandRef, command: [execution.command, ...execution.args].join(' '), errorSummary: `${execution.errorSummary || ''}${flakyNote}${mutationNote}`.trim() || null });
+              failures.push({
+                obligationId,
+                commandRef: request.commandRef,
+                command: [execution.command, ...execution.args].join(' '),
+                errorSummary: `${execution.errorSummary || ''}${flakyNote}${mutationNote}`.trim() || null,
+                timedOut: execution.timedOut === true,
+                reason: execution.timedOut ? 'verification-timeout' : 'verification-failed',
+              });
             }
           } catch (error) {
             if (error instanceof UntrustedCommandError) {
@@ -4391,12 +4586,17 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
             finalizationChangedPaths = canonicalChangedPaths(finalizationChangeSet.actualChangedPaths);
           }
         }
-        finalization = await this.finalizeRun(runId, {
-          gitCloseoutRequest: report.gitCloseoutRequest,
-          changedPaths: finalizationChangedPaths,
-          knowledgeObservations: report.knowledgeObservations,
-          structuredSignals,
-        });
+        recordEfficiency(runId, { timestamps: { goalRegressionStartedAt: new Date().toISOString() } });
+        try {
+          finalization = await this.finalizeRun(runId, {
+            gitCloseoutRequest: report.gitCloseoutRequest,
+            changedPaths: finalizationChangedPaths,
+            knowledgeObservations: report.knowledgeObservations,
+            structuredSignals,
+          });
+        } finally {
+          recordEfficiency(runId, { timestamps: { goalRegressionFinishedAt: new Date().toISOString() } });
+        }
       }
 
       const proofMutatedWorkspace = executed.some((entry) => entry.workspaceMutatedByProof === true);
@@ -4425,10 +4625,32 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         : null;
 
       await syncRunLocator(finalRun);
-      return {
+      const workAuth = buildWorkAuthorityView({
+        run: finalRun,
+        steps: store.getRunSteps(runId, { planRevision: finalRun.planRevision }),
+        step: this.getCurrentStep(runId),
+        routeDecision: store.listModelRouteDecisions(runId).at(-1) || null,
+      });
+      const stepState = stepOutcome?.state || stepOutcome?.step?.state || null;
+      const workUnitStatus = stepOutcome
+        ? (stepState === 'passed' ? 'complete' : (stepState === 'failed' || stepState === 'blocked' || failures.length > 0) ? 'blocked' : 'active')
+        : (finalization?.completionStatus === 'accepted' ? 'complete' : failures.length > 0 ? 'blocked' : (workAuth?.workUnitStatus || 'active'));
+      const goalStatus = workAuth?.goalStatus || (status === 'completed' ? 'complete' : finalRun.status === 'blocked' ? 'blocked' : 'active');
+      const nextStep = workAuth?.currentWorkUnit || null;
+      const continuation = {
+        action: goalStatus === 'complete' ? 'none'
+          : finalRun.status === 'blocked' ? 'blocked'
+          : (nextStep ? 'implement' : 'continue'),
+        stepId: nextStep?.stepId || null,
+      };
+
+      const reportResult = {
         schemaVersion: 1,
         runId,
         status,
+        workUnitStatus,
+        goalStatus,
+        continuation,
         attemptNumber: attempt.attemptNumber,
         mutationDetected: observed.changed,
         actualChangedPaths,
@@ -4445,6 +4667,8 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
           failures,
         }),
       };
+      if (reportKey) reportIdempotencyCache.set(reportKey, reportResult);
+      return reportResult;
     },
 
     async recordKnowledgeObservations(runId, { observations = [] } = {}) {

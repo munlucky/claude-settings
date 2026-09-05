@@ -9,7 +9,7 @@
     "providerModelIdentity", "estimatedStaticTokens", "actualInputTokens",
     "actualOutputTokens", "successDecision", "falseCompletionDecision",
     "retryCount", "replanCount", "userInterventionCount", "wallClockMs",
-    "evidenceCoverage", "workflowEfficiency", "contaminationSignals", "modelRouting"
+    "evidenceCoverage", "workflowEfficiency", "efficiencyTelemetry", "contaminationSignals", "modelRouting"
   ],
   "properties": {
     "schemaVersion": { "const": 2 },
@@ -32,6 +32,7 @@
     "wallClockMs": { "$ref": "#/$defs/measurementValue" },
     "evidenceCoverage": { "$ref": "#/$defs/measurementValue" },
     "workflowEfficiency": { "$ref": "#/$defs/measurementValue" },
+    "efficiencyTelemetry": { "$ref": "#/$defs/measurementValue" },
     "contaminationSignals": { "$ref": "#/$defs/measurementValue" }
   },
   "$defs": {

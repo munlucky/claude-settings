@@ -1910,6 +1910,7 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
           .run(normReason, String(resolvedClass), now(), runId);
         reconcileTerminalLifecycleInTransaction({ projectId: run.projectId, runId });
       })();
+      this.recordRunEfficiency(runId, { timestamps: { blockedAt: now() } });
       return this.getRun(runId);
     },
 
@@ -2014,6 +2015,68 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         supersessionEvidence: mergeSignals(prior.supersessionEvidence, signals.supersessionEvidence),
       };
       db.prepare(`UPDATE runs SET run_signals_json=?, updated_at=? WHERE run_id=?`).run(persistentJson(merged), now(), runId);
+      return this.getRun(runId);
+    },
+
+    // Efficiency telemetry is an additive projection on the existing Run
+    // signals ledger. It deliberately has no table of its own and does not
+    // advance the lifecycle revision: timing/counter observations must not
+    // invalidate evidence or create a second completion authority.
+    recordRunEfficiency(runId, { timestamps = {}, increments = {}, counters = {} } = {}) {
+      const run = this.getRun(runId);
+      if (!run) throw new Error(`Run ${runId} not found`);
+      const priorSignals = run.runSignals && typeof run.runSignals === 'object' && !Array.isArray(run.runSignals)
+        ? run.runSignals
+        : {};
+      const prior = priorSignals.efficiency && typeof priorSignals.efficiency === 'object'
+        && !Array.isArray(priorSignals.efficiency)
+        ? priorSignals.efficiency
+        : {};
+      const firstTimestampFields = new Set([
+        'runStartedAt', 'goalResolvedAt', 'readinessCompletedAt', 'firstRepositoryReadAt',
+        'firstMutationAt', 'focusedVerificationStartedAt', 'goalRegressionStartedAt',
+        'reviewRequestedAt', 'reviewSpawnedAt',
+      ]);
+      const timestampFields = [
+        'runStartedAt', 'goalResolvedAt', 'readinessCompletedAt', 'firstRepositoryReadAt',
+        'firstMutationAt', 'lastMutationAt', 'focusedVerificationStartedAt',
+        'focusedVerificationFinishedAt', 'goalRegressionStartedAt', 'goalRegressionFinishedAt',
+        'reviewRequestedAt', 'reviewSpawnedAt', 'reviewFinishedAt', 'blockedAt',
+      ];
+      const counterFields = [
+        'reportCount', 'reportRejectedCount', 'contractRepairCount', 'scopeRejectedCount',
+        'verificationTimeoutCount', 'waitTimeoutCount', 'contextCompactionCount',
+        'repositorySearchCount', 'sameFileReadCount',
+      ];
+      const next = { ...prior };
+      for (const field of timestampFields) {
+        const incoming = timestamps[field];
+        if (!incoming || !Number.isFinite(Date.parse(String(incoming)))) continue;
+        const existing = next[field];
+        if (!existing || !Number.isFinite(Date.parse(String(existing)))) {
+          next[field] = String(incoming);
+          continue;
+        }
+        const incomingMs = Date.parse(String(incoming));
+        const existingMs = Date.parse(String(existing));
+        next[field] = firstTimestampFields.has(field)
+          ? (incomingMs < existingMs ? String(incoming) : String(existing))
+          : (incomingMs > existingMs ? String(incoming) : String(existing));
+      }
+      for (const field of counterFields) {
+        const increment = Number(increments[field] || 0);
+        if (Number.isFinite(increment) && increment > 0) {
+          next[field] = Math.max(0, Number(next[field] || 0)) + increment;
+        }
+        const absolute = Number(counters[field]);
+        if (Number.isFinite(absolute) && absolute >= 0) {
+          next[field] = Math.max(Number(next[field] || 0), absolute);
+        }
+        if (next[field] !== undefined) next[field] = Math.max(0, Math.trunc(Number(next[field]) || 0));
+      }
+      const merged = { ...priorSignals, efficiency: next };
+      db.prepare(`UPDATE runs SET run_signals_json=?, updated_at=? WHERE run_id=?`)
+        .run(persistentJson(merged), now(), runId);
       return this.getRun(runId);
     },
 

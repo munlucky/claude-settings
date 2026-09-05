@@ -1,0 +1,307 @@
+import assert from 'node:assert/strict';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { test } from 'node:test';
+import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
+import { dispatchKernelTurn } from '../scripts/host/kernel/turn-dispatcher.mjs';
+import { createKernelHostReviewBridge } from '../scripts/host/kernel/lifecycle-bridge.mjs';
+import { createIndependentSubagentReviewTransport, validateIndependentSubagentReviewAttestation } from '../scripts/host/kernel/independent-subagent-review.mjs';
+import { createModelRegistry } from '../scripts/host/kernel/model-registry.mjs';
+import { createClaudeAdapter } from '../scripts/host/kernel/adapters/claude.mjs';
+import { createCodexAdapter } from '../scripts/host/kernel/adapters/codex.mjs';
+
+const REVIEW_ACTION = {
+  actionKind: 'review_engineering',
+  obligationId: 'security-review',
+  executionMode: 'native-subagent',
+  delegationRequested: true,
+  changedPaths: ['app.mjs'],
+};
+
+const prepareReviewRun = async (prefix, runId) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), `${prefix}-`));
+  const runtimeHome = await mkdtemp(path.join(os.tmpdir(), `${prefix}-state-`));
+  await mkdir(path.join(root, '.moon-relay'), { recursive: true });
+  await writeFile(path.join(root, '.moon-relay', 'track.yaml'), 'track: kernel\n');
+  await writeFile(path.join(root, 'package.json'), JSON.stringify({ scripts: { test: 'node --test', lint: 'node -e "process.exit(0)"' } }));
+  await writeFile(path.join(root, 'app.mjs'), 'export const value = 0;\n');
+  const cp = await createKernelControlPlane({ runtimeHome, projectRoot: root });
+  try {
+    await cp.startRun({
+      runId,
+      objective: 'secure change',
+      taskContract: {
+        surfaces: ['security_boundary'],
+        acceptance: ['secure'],
+        allowedPaths: ['app.mjs'],
+      },
+    });
+    const implementer = createClaudeAdapter({
+      launch: async ({ invocation }) => ({
+        resolvedModel: invocation.model,
+        observedModel: invocation.model,
+        resolvedEffort: invocation.effort,
+        observedEffort: invocation.effort,
+        sessionId: `${runId}-implementer`,
+      }),
+    });
+    const implementation = await dispatchKernelTurn({
+      controlPlane: cp,
+      runId,
+      adapter: implementer,
+      registry: createModelRegistry({
+        surface: 'claude',
+        env: { MOON_RELAY_KERNEL_MODEL_FRONTIER: 'configured-frontier', MOON_RELAY_KERNEL_MODEL_VALUE: 'configured-value' },
+      }),
+      actionContext: { executionMode: 'native-subagent', delegationRequested: true },
+    });
+    await writeFile(path.join(root, 'app.mjs'), 'export const value = 1;\n');
+    await cp.report(runId, {
+      summary: 'implemented',
+      capsuleId: implementation.executionCapsule.capsuleId,
+      stepId: implementation.executionCapsule.stepId,
+      changedPaths: ['app.mjs'],
+    });
+    await cp.transition(runId, 'EXECUTE');
+    await cp.transition(runId, 'PROVE');
+    return { cp, root, runtimeHome };
+  } catch (error) {
+    await cp.close();
+    await rm(runtimeHome, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true });
+    throw error;
+  }
+};
+
+const cleanupReviewRun = async ({ cp, root, runtimeHome }) => {
+  await cp.close();
+  await rm(runtimeHome, { recursive: true, force: true });
+  await rm(root, { recursive: true, force: true });
+};
+
+const attestationFor = (request, childSessionId = 'independent-reviewer-session') => ({
+  schemaVersion: 1,
+  transport: 'independent-subagent',
+  executionId: 'independent-review-execution-1',
+  childSessionId,
+  parentSessionId: request.parentSessionId || null,
+  requestedModel: request.model,
+  requestedEffort: request.reasoningEffort,
+  observedModel: request.model,
+  observedEffort: request.reasoningEffort,
+  freshContext: true,
+  readOnly: true,
+  canCommit: false,
+  canDelegate: false,
+  cleanupStatus: 'clean',
+  workspaceIdentityBefore: request.reviewSubject.workspaceIdentity,
+  workspaceIdentityAfter: request.reviewSubject.workspaceIdentity,
+  mutationRevisionBefore: request.reviewSubject.mutationRevision,
+  mutationRevisionAfter: request.reviewSubject.mutationRevision,
+  capsuleDigest: request.reviewSubject.capsuleDigest,
+});
+
+test('independent subagent transport becomes the last fallback when native reviewer is absent', async () => {
+  const fixture = await prepareReviewRun('kernel-independent-subagent', 'independent-subagent-chain');
+  try {
+    let request = null;
+    const transport = createIndependentSubagentReviewTransport({
+      host: {
+        spawn_independent_reviewer: async (payload) => {
+          request = payload;
+          return {
+            outcome: { verdict: 'pass', findings: [], risks: [], evidenceRefs: ['review://independent-subagent'] },
+            reviewTransportAttestation: attestationFor(payload),
+          };
+        },
+      },
+    });
+    const result = await dispatchKernelTurn({
+      controlPlane: fixture.cp,
+      runId: 'independent-subagent-chain',
+      adapter: createCodexAdapter({ nativeAgentHost: {} }),
+      registry: createModelRegistry({ surface: 'codex', env: {} }),
+      parentSessionId: 'owner-session',
+      actionContext: REVIEW_ACTION,
+      reviewTransports: [transport],
+    });
+
+    assert.equal(result.dispatch.dispatchMechanism, 'independent-subagent');
+    assert.equal(result.dispatch.actorSessionId, 'independent-reviewer-session');
+    assert.equal(result.review.review.verdict, 'pass');
+    assert.match(result.reviewReceiptId, /^review-receipt-[a-f0-9]{24}$/);
+    assert.equal(fixture.cp.listReviewReceipts('independent-subagent-chain').length, 1);
+    assert.equal(request.task_name, 'kernel_reviewer');
+    assert.equal(request.child_session.freshSessionRequired, true);
+    assert.equal(request.child_session.canCommit, false);
+    assert.equal(request.child_session.canDelegate, false);
+    assert.equal(request.child_session.permissions, 'read_only');
+    assert.match(request.message, /Return exactly one JSON object/u);
+    assert.doesNotMatch(request.message, /reviewSubject|mutationRevision.*\d/u);
+  } finally {
+    await cleanupReviewRun(fixture);
+  }
+});
+
+test('Kernel Host bridge auto-injects the independent subagent fallback and reports ready', async () => {
+  const fixture = await prepareReviewRun('kernel-independent-bridge', 'independent-bridge-chain');
+  try {
+    let request = null;
+    const bridge = createKernelHostReviewBridge({
+      nativeAgentHost: {
+        spawn_independent_reviewer: async (payload) => {
+          request = payload;
+          return {
+            outcome: { verdict: 'pass', findings: [], risks: [], evidenceRefs: ['review://bridge-subagent'] },
+            reviewTransportAttestation: attestationFor(payload, 'bridge-reviewer-session'),
+          };
+        },
+      },
+      env: {},
+    });
+    const run = await fixture.cp.getRun('independent-bridge-chain');
+    const readiness = await bridge.assess({
+      controlPlane: fixture.cp,
+      runId: 'independent-bridge-chain',
+      modelInput: {
+        action: { type: 'review', independentReviewRequired: true },
+      },
+    });
+    assert.equal(readiness.status, 'READY', JSON.stringify(readiness));
+    assert.equal(readiness.review.reviewExecutionAvailable, true);
+    assert.equal(readiness.review.reviewIndependentContextAvailable, true);
+    assert.equal(readiness.review.model, 'gpt-6-astra');
+    assert.equal(readiness.review.effort, 'high');
+
+    const result = await bridge.dispatchReview({
+      controlPlane: fixture.cp,
+      runId: 'independent-bridge-chain',
+      modelInput: {
+        objective: run.objective,
+        action: {
+          type: 'review',
+          independentReviewRequired: true,
+          outstandingObligations: ['security-review'],
+        },
+        changedPaths: ['app.mjs'],
+      },
+    });
+    assert.equal(result.reviewReceiptId !== null, true, JSON.stringify(result));
+    assert.equal(result.hostReview.status, 'receipt-recorded');
+    assert.equal(result.hostReview.transport, 'independent-subagent');
+    assert.equal(request.parent_session_id, null);
+  } finally {
+    await cleanupReviewRun(fixture);
+  }
+});
+
+test('the same review point reuses its current receipt instead of reviewing twice', async () => {
+  const fixture = await prepareReviewRun('kernel-independent-dedupe', 'independent-dedupe-chain');
+  try {
+    let launchCount = 0;
+    const bridge = createKernelHostReviewBridge({
+      nativeAgentHost: {
+        spawn_independent_reviewer: async (payload) => {
+          launchCount += 1;
+          return {
+            outcome: { verdict: 'pass', findings: [], risks: [], evidenceRefs: ['review://dedupe'] },
+            reviewTransportAttestation: attestationFor(payload, 'dedupe-reviewer-session'),
+          };
+        },
+      },
+      env: {},
+    });
+    const modelInput = {
+      objective: 'secure change',
+      action: {
+        type: 'review',
+        independentReviewRequired: true,
+        outstandingObligations: ['security-review'],
+      },
+      changedPaths: ['app.mjs'],
+    };
+
+    const first = await bridge.dispatchReview({
+      controlPlane: fixture.cp,
+      runId: 'independent-dedupe-chain',
+      modelInput,
+    });
+    const second = await bridge.dispatchReview({
+      controlPlane: fixture.cp,
+      runId: 'independent-dedupe-chain',
+      modelInput,
+    });
+
+    assert.equal(first.reviewReceiptId, second.reviewReceiptId);
+    assert.equal(second.deduplicated, true);
+    assert.equal(second.hostReview.status, 'receipt-recorded');
+    assert.equal(second.hostReview.transport, 'deduplicated-review-receipt');
+    assert.equal(launchCount, 1);
+    assert.equal(fixture.cp.listReviewReceipts('independent-dedupe-chain').length, 1);
+  } finally {
+    await cleanupReviewRun(fixture);
+  }
+});
+
+test('independent subagent attestation rejects same-session, writable, stale, and mismatched results', () => {
+  const base = {
+    dispatch: {
+      actorSessionId: 'owner',
+      reviewTransportAttestation: {
+        schemaVersion: 1,
+        transport: 'independent-subagent',
+        executionId: 'execution',
+        childSessionId: 'owner',
+        parentSessionId: 'owner',
+        requestedModel: 'gpt-6-astra',
+        requestedEffort: 'high',
+        observedModel: 'wrong-model',
+        observedEffort: 'xhigh',
+        freshContext: false,
+        readOnly: false,
+        canCommit: true,
+        canDelegate: true,
+        cleanupStatus: 'unknown',
+        workspaceIdentityBefore: 'old-workspace',
+        workspaceIdentityAfter: 'new-workspace',
+        actualWorkspaceIdentityBefore: 'old-workspace',
+        actualWorkspaceIdentityAfter: 'new-workspace',
+        mutationRevisionBefore: 1,
+        mutationRevisionAfter: 2,
+        capsuleDigest: 'old-capsule',
+      },
+    },
+    invocation: { model: 'gpt-6-astra', effort: 'high' },
+    reviewSubject: {
+      workspaceIdentity: 'current-workspace',
+      mutationRevision: 1,
+      capsuleDigest: 'current-capsule',
+    },
+    parentSessionId: 'owner',
+  };
+  const result = validateIndependentSubagentReviewAttestation(base);
+  assert.equal(result.valid, false);
+  for (const reason of [
+    'attestation-fresh-context-not-proven',
+    'attestation-read-only-not-proven',
+    'attestation-commit-capability-not-denied',
+    'attestation-delegation-capability-not-denied',
+    'attestation-cleanup-not-proven',
+    'attestation-observed-model-mismatch',
+    'attestation-observed-effort-mismatch',
+    'attestation-child-session-not-distinct',
+    'attestation-workspace-before-mismatch',
+    'attestation-workspace-after-mismatch',
+    'attestation-mutation-after-mismatch',
+    'attestation-capsule-digest-mismatch',
+    'attestation-workspace-mutated',
+  ]) assert.ok(result.reasons.includes(reason), reason);
+});
+
+test('missing independent subagent launcher remains unavailable and cannot claim capability', () => {
+  const transport = createIndependentSubagentReviewTransport({ host: {} });
+  assert.equal(transport.nativeDelegationAvailable, false);
+  assert.equal(transport.capabilities.supportsIndependentContext, false);
+  assert.equal(transport.capabilities.supportsIndependentSubagentReview, false);
+});

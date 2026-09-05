@@ -186,6 +186,15 @@ export const buildNextPayload = ({
   };
 
   if (run.status === 'completed' && (run.finalizationStatus || 'completed') === 'completed') {
+    if (workAuthority?.goalStatus === 'active' || workAuthority?.goal?.status === 'active') {
+      return {
+        ...base,
+        action: withExecution({
+          type: 'implement',
+          guidance: 'Work unit finished, but goal is still active. Continue with the remaining acceptance criteria.',
+        }),
+      };
+    }
     return { ...base, action: { type: 'done', guidance: 'Run is complete. No further work is required.' } };
   }
   // Accepted completion whose knowledge commit or Git closeout did not finish
@@ -258,6 +267,16 @@ export const buildNextPayload = ({
           : 'Implement the objective, then submit kernel report with a summary and changed paths. The Kernel will run only outstanding bound proof.',
         outstandingObligations: outstanding,
         obligations: described,
+      }),
+    };
+  }
+
+  if (workAuthority?.progress?.remainingCount > 0 && (workAuthority?.goalStatus === 'active' || workAuthority?.goal?.status === 'active')) {
+    return {
+      ...base,
+      action: withExecution({
+        type: 'implement',
+        guidance: `Work unit ${workAuthority.currentWorkUnit?.stepId || ''} is in progress. Continue implementation.`.trim(),
       }),
     };
   }

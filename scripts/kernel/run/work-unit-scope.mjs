@@ -121,8 +121,9 @@ export const resolveWorkUnitAllowedPaths = ({ step = null, contract = null } = {
 
 export const inspectWorkUnitScope = ({ step = null, contract = null, strict = false } = {}) => {
   const allowedPaths = resolveWorkUnitAllowedPaths({ step, contract });
-  const isStrict = strict || contract?.strictBoundedScope === true;
-  if (!requiresImplementationWorkUnitScope({ contract, step }) && !isStrict) {
+  const requiresScope = requiresImplementationWorkUnitScope({ contract, step });
+  const isStrict = strict || contract?.strictBoundedScope === true || requiresScope;
+  if (!requiresScope && !isStrict) {
     return { valid: true, required: false, provisional: true, reason: null, errorCode: null, allowedPaths };
   }
   return {

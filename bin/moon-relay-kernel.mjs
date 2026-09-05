@@ -495,7 +495,7 @@ try {
       }
     } catch (err) {
       if (err.code === 'worktree_run_conflict') {
-        const activeRunId = err.details?.mutableRuns?.[0]?.runId || null;
+        const activeRunId = err.details?.holderRunId || err.details?.holders?.[0]?.runId || err.details?.mutableRuns?.[0]?.runId || null;
         res = {
           schemaVersion: 1,
           status: 'read-only',

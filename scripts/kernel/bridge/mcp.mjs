@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { createKernelControlPlane } from '../control-plane.mjs';
 import { resolveKernelWorktreeIdentity } from '../run/worktree-binding.mjs';
 import { resolveKernelRuntimeHome } from '../runtime-home.mjs';
+import { createKernelHostReviewBridge, isKernelReviewAction } from '../../host/kernel/lifecycle-bridge.mjs';
 
 const MCP_PROTOCOL_VERSION = '2024-11-05';
 const SERVER_NAME = 'moon-relay-kernel-bridge';
@@ -92,7 +93,99 @@ export const KERNEL_MCP_TOOLS = [
   },
 ];
 
-export const handleMcpToolCall = async ({ name, parameters = {}, runtimeHome = null, env = process.env }) => {
+const resolveConfiguredHostBridge = (hostBridge, parameters) => {
+  if (typeof hostBridge === 'function') return hostBridge({ surface: parameters.surface || null });
+  return hostBridge;
+};
+
+const readinessBlockedPayload = ({ modelInput, readiness }) => ({
+  ...modelInput,
+  status: 'execution-readiness-blocked',
+  executionReadiness: readiness,
+  action: {
+    type: 'blocked',
+    reason: 'execution-readiness',
+    blockingClass: 'completion',
+    guidance: 'The current Host cannot complete the required review and receipt path. Resolve the Host capability, then call kernel next again.',
+  },
+  next: modelInput,
+});
+
+const processHostLifecycleOutput = async ({ bridge, controlPlane, runId, modelInput, parameters = {} }) => {
+  if (!bridge || !modelInput || modelInput.status === 'contract-rejected') return { output: modelInput, hostReview: null };
+  const readiness = typeof bridge.assess === 'function'
+    ? await bridge.assess({ controlPlane, runId, modelInput })
+    : null;
+  const reviewRequired = Boolean(readiness?.review?.required || isKernelReviewAction(modelInput));
+
+  // A required review must be executable and receipt-attestable before the Host
+  // lets an owner mutate through this lifecycle. The model cannot opt out by
+  // adding a parameter to the MCP call; implementation-only is a trusted Host
+  // policy decision, not model input.
+  if (reviewRequired && (!readiness || !readiness.canStartMutation || !readiness.canComplete)) {
+    return {
+      output: readinessBlockedPayload({ modelInput, readiness: readiness || {
+        schemaVersion: 1,
+        status: 'BLOCKED',
+        canStartMutation: false,
+        canComplete: false,
+        review: { required: true },
+        blockers: ['host-review-readiness-unavailable'],
+        degraded: [],
+        nextAction: 'stop-before-mutation',
+      } }),
+      hostReview: null,
+    };
+  }
+
+  if (!isKernelReviewAction(modelInput) || typeof bridge.dispatchReview !== 'function') {
+    return {
+      output: reviewRequired ? { ...modelInput, executionReadiness: readiness } : modelInput,
+      hostReview: null,
+    };
+  }
+
+  const dispatched = await bridge.dispatchReview({
+    controlPlane,
+    runId,
+    modelInput,
+    actionContext: {
+      actionKind: 'review_engineering',
+      obligationId: modelInput.action?.outstandingObligations?.[0] || null,
+    },
+  });
+  const hostReview = dispatched.hostReview || {
+    schemaVersion: 1,
+    status: dispatched.reviewReceiptId ? 'receipt-recorded' : 'blocked',
+    reviewReceiptId: dispatched.reviewReceiptId || null,
+    verdict: dispatched.review?.review?.verdict || null,
+    findings: dispatched.review?.review?.findings || [],
+    evidenceRefs: dispatched.review?.review?.evidenceRefs || [],
+    blocker: dispatched.blocker || null,
+    readiness,
+    wait: { owner: 'host', strategy: 'single-bounded-dispatch', repeatedPolling: false },
+  };
+  const refreshedNext = dispatched.reviewReceiptId && typeof controlPlane.next === 'function'
+    ? await controlPlane.next(runId)
+    : modelInput;
+  return {
+    output: {
+      ...refreshedNext,
+      executionReadiness: readiness,
+      hostReview,
+    },
+    hostReview,
+  };
+};
+
+export const handleMcpToolCall = async ({
+  name,
+  parameters = {},
+  runtimeHome = null,
+  env = process.env,
+  hostBridge = null,
+  nativeHost = globalThis,
+} = {}) => {
   const workspaceRoot = parameters.workspaceRoot;
   if (!workspaceRoot || typeof workspaceRoot !== 'string') {
     throw new Error('workspaceRoot is required and must be a string path');
@@ -116,6 +209,14 @@ export const handleMcpToolCall = async ({ name, parameters = {}, runtimeHome = n
     },
     requireHostBinding: false,
   });
+  const configuredHostBridge = resolveConfiguredHostBridge(hostBridge, parameters)
+    || createKernelHostReviewBridge({
+      surface: 'codex',
+      nativeAgentHost: nativeHost,
+      runtimeHome: runtimeHome || resolveKernelRuntimeHome({ env }),
+      env,
+    });
+  const lifecycleBridge = configuredHostBridge;
 
   try {
     if (name === 'kernel_attach' || name === 'kernel_next') {
@@ -160,7 +261,14 @@ export const handleMcpToolCall = async ({ name, parameters = {}, runtimeHome = n
         const ensured = await cp.ensureRun({ runId });
         res = ensured.next;
       }
-      return res;
+      const processed = await processHostLifecycleOutput({
+        bridge: lifecycleBridge,
+        controlPlane: cp,
+        runId: res.runId || explicitRunId,
+        modelInput: res,
+        parameters,
+      });
+      return processed.output;
     }
 
     if (name === 'kernel_report') {
@@ -170,7 +278,19 @@ export const handleMcpToolCall = async ({ name, parameters = {}, runtimeHome = n
         envRunId: env.MOON_RELAY_KERNEL_RUN_ID || null,
       });
       const res = await cp.report(runId, parameters.report || {});
-      return res;
+      const processed = await processHostLifecycleOutput({
+        bridge: lifecycleBridge,
+        controlPlane: cp,
+        runId,
+        modelInput: res.next || null,
+        parameters,
+      });
+      if (!processed.hostReview && processed.output?.status !== 'execution-readiness-blocked') return res;
+      return {
+        ...res,
+        next: processed.output,
+        ...(processed.hostReview ? { hostReview: processed.hostReview } : {}),
+      };
     }
 
     if (name === 'kernel_status') {
@@ -197,7 +317,7 @@ export const handleMcpToolCall = async ({ name, parameters = {}, runtimeHome = n
   }
 };
 
-export const createMcpBridgeHandler = ({ runtimeHome = null, env = process.env } = {}) => {
+export const createMcpBridgeHandler = ({ runtimeHome = null, env = process.env, hostBridge = null, nativeHost = globalThis } = {}) => {
   return async (request) => {
     const { id, method, params } = request || {};
 
@@ -244,6 +364,8 @@ export const createMcpBridgeHandler = ({ runtimeHome = null, env = process.env }
           parameters: toolArgs || {},
           runtimeHome,
           env,
+          hostBridge,
+          nativeHost,
         });
         return {
           jsonrpc: '2.0',
@@ -295,8 +417,10 @@ export const startMcpBridgeServer = ({
   stdout = process.stdout,
   runtimeHome = null,
   env = process.env,
+  hostBridge = null,
+  nativeHost = globalThis,
 } = {}) => {
-  const handler = createMcpBridgeHandler({ runtimeHome, env });
+  const handler = createMcpBridgeHandler({ runtimeHome, env, hostBridge, nativeHost });
   const rl = readline.createInterface({ input: stdin, output: stdout, terminal: false });
 
   rl.on('line', async (line) => {

@@ -10,6 +10,7 @@ import { createCodexAdapter } from '../scripts/host/kernel/adapters/codex.mjs';
 import { createClaudeAdapter } from '../scripts/host/kernel/adapters/claude.mjs';
 import { createModelRegistry } from '../scripts/host/kernel/model-registry.mjs';
 import { resolveReviewTransports } from '../scripts/host/kernel/review-transport-resolver.mjs';
+import { resolveCodexModelPolicy } from '../scripts/host/kernel/codex-model-policy.mjs';
 
 const REVIEW_ACTION = {
   actionKind: 'review_engineering',
@@ -103,7 +104,6 @@ test('reviewer outcome cannot pass without the complete host-recorded chain', as
     await cp.close();
   }
 });
-
 test('an owner-bound two-command run supplies truthful implementation provenance to review', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'kernel-review-owner-'));
   const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-review-owner-state-'));
@@ -179,6 +179,7 @@ test('the native Host review bridge ingests the observed outcome into a Kernel r
     await cp.transition('native-review-chain', 'EXECUTE');
     await cp.transition('native-review-chain', 'PROVE');
     const reviewedRun = await cp.getRun('native-review-chain');
+    const reviewPolicy = resolveCodexModelPolicy({ executionClass: 'review' });
     let nativeRequest = null;
     const reviewer = createCodexAdapter({
       nativeAgentHost: {
@@ -186,22 +187,22 @@ test('the native Host review bridge ingests the observed outcome into a Kernel r
           nativeRequest = payload;
           return {
             session_id: 'native-reviewer-session',
-            terminalEvents: [{ type: 'turn.completed', model: 'gpt-5.6-sol', reasoning_effort: 'xhigh' }],
+            terminalEvents: [{ type: 'turn.completed', model: reviewPolicy.model, reasoning_effort: reviewPolicy.effort }],
             outcome: { verdict: 'pass', findings: [], risks: [], evidenceRefs: ['review://native'] },
           };
         },
       },
       parentSessionObserver: async ({ parentSessionId }) => ({
         sessionId: parentSessionId,
-        model: 'gpt-5.6-sol',
-        effort: 'xhigh',
+        model: reviewPolicy.model,
+        effort: reviewPolicy.effort,
       }),
     });
     const result = await dispatchKernelTurn({
       controlPlane: cp,
       runId: 'native-review-chain',
       adapter: reviewer,
-      registry: createModelRegistry({ surface: 'codex', env: { MOON_RELAY_KERNEL_MODEL_FRONTIER: 'gpt-5.6-sol' } }),
+      registry: createModelRegistry({ surface: 'codex', env: { MOON_RELAY_KERNEL_MODEL_FRONTIER: reviewPolicy.model } }),
       parentSessionId: 'native-owner-session',
       actionContext: {
         actionKind: 'review_engineering',
@@ -220,6 +221,42 @@ test('the native Host review bridge ingests the observed outcome into a Kernel r
     assert.equal(result.reviewReceipt.reviewer.usageReceiptId, result.receipt.receiptId);
     assert.equal(result.reviewReceipt.subject.mutationRevision, reviewedRun.mutationRevision);
     assert.equal(cp.listReviewReceipts('native-review-chain').length, 1);
+  } finally {
+    await cp.close();
+    await rm(runtimeHome, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('report idempotency only coalesces the same normalized report', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'kernel-report-idempotency-'));
+  const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-report-idempotency-state-'));
+  await mkdir(path.join(root, '.moon-relay'), { recursive: true });
+  await writeFile(path.join(root, '.moon-relay', 'track.yaml'), 'track: kernel\n');
+  await writeFile(path.join(root, 'package.json'), JSON.stringify({
+    scripts: { 'test:fail': 'node -e "process.exit(1)"' },
+  }));
+  const cp = await createKernelControlPlane({ runtimeHome, projectRoot: root });
+  try {
+    await cp.startRun({ runId: 'report-idempotency', objective: 'retry reporting' });
+    const firstPayload = {
+      summary: 'first attempt',
+      verifications: [{ obligationId: 'default', commandRef: 'test:fail' }],
+    };
+    const first = await cp.report('report-idempotency', firstPayload);
+    const duplicate = await cp.report('report-idempotency', firstPayload);
+    assert.equal(first.status, 'evidence-failed');
+    assert.equal(duplicate.status, 'evidence-failed');
+    assert.equal(duplicate.attemptNumber, first.attemptNumber);
+
+    const retry = await cp.report('report-idempotency', {
+      ...firstPayload,
+      summary: 'second attempt',
+    });
+    assert.equal(retry.status, 'evidence-failed');
+    assert.equal(retry.attemptNumber, first.attemptNumber + 1);
+    const status = await cp.status('report-idempotency');
+    assert.equal(status.measurement.retryCount.value, 1);
   } finally {
     await cp.close();
     await rm(runtimeHome, { recursive: true, force: true });
@@ -1604,6 +1641,7 @@ test('Case A DoD: a pure Codex environment completes independent review with a f
     await cp.transition(runId, 'PROVE');
     const reviewedRun = await cp.getRun(runId);
 
+    const reviewPolicy = resolveCodexModelPolicy({ executionClass: 'review' });
     let spawnedReviewerRequest = null;
     const freshReviewerSessionId = 'codex-fresh-reviewer-session-b';
     const reviewer = createCodexAdapter({
@@ -1612,15 +1650,15 @@ test('Case A DoD: a pure Codex environment completes independent review with a f
           spawnedReviewerRequest = payload;
           return {
             session_id: freshReviewerSessionId,
-            terminalEvents: [{ type: 'turn.completed', model: 'gpt-5.6-sol', reasoning_effort: 'xhigh' }],
+            terminalEvents: [{ type: 'turn.completed', model: reviewPolicy.model, reasoning_effort: reviewPolicy.effort }],
             outcome: { verdict: 'pass', findings: [], risks: [], evidenceRefs: ['review://codex-native'] },
           };
         },
       },
       parentSessionObserver: async ({ parentSessionId }) => ({
         sessionId: parentSessionId,
-        model: 'gpt-5.6-sol',
-        effort: 'xhigh',
+        model: reviewPolicy.model,
+        effort: reviewPolicy.effort,
       }),
     });
 
@@ -1629,7 +1667,7 @@ test('Case A DoD: a pure Codex environment completes independent review with a f
       controlPlane: cp,
       runId,
       adapter: reviewer,
-      registry: createModelRegistry({ surface: 'codex', env: { MOON_RELAY_KERNEL_MODEL_FRONTIER: 'gpt-5.6-sol' } }),
+      registry: createModelRegistry({ surface: 'codex', env: { MOON_RELAY_KERNEL_MODEL_FRONTIER: reviewPolicy.model } }),
       parentSessionId: ownerSessionId,
       actionContext: {
         actionKind: 'review_engineering',
@@ -1654,6 +1692,93 @@ test('Case A DoD: a pure Codex environment completes independent review with a f
     assert.equal(result.reviewReceipt.reviewer.usageReceiptId, result.receipt.receiptId);
     assert.equal(result.reviewReceipt.subject.mutationRevision, reviewedRun.mutationRevision);
     assert.equal(cp.listReviewReceipts(runId).length, 1);
+  } finally {
+    await cp.close();
+    await rm(runtimeHome, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('reviewer admission fails closed when observed model mismatches requested policy (requested Astra/high, observed Sol/xhigh)', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'kernel-review-mismatch-'));
+  const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-review-mismatch-state-'));
+  await mkdir(path.join(root, '.moon-relay'), { recursive: true });
+  await writeFile(path.join(root, '.moon-relay', 'track.yaml'), 'track: kernel\n');
+  await writeFile(path.join(root, 'package.json'), JSON.stringify({ scripts: { test: 'node --test', lint: 'node -e "process.exit(0)"' } }));
+  await writeFile(path.join(root, 'app.mjs'), 'export const value = 0;\n');
+  const runId = 'mismatch-review-chain';
+  const cp = await createKernelControlPlane({ runtimeHome, projectRoot: root });
+  try {
+    await cp.startRun({
+      runId,
+      objective: 'secure change with model mismatch',
+      taskContract: {
+        surfaces: ['security_boundary'],
+        acceptance: ['secure'],
+        allowedPaths: ['app.mjs'],
+      },
+    });
+    const implementer = createClaudeAdapter({
+      launch: async ({ invocation }) => ({
+        resolvedModel: invocation.model,
+        observedModel: invocation.model,
+        resolvedEffort: invocation.effort,
+        observedEffort: invocation.effort,
+        sessionId: `${runId}-implementer`,
+      }),
+    });
+    const implementation = await dispatchKernelTurn({
+      controlPlane: cp,
+      runId,
+      adapter: implementer,
+      registry: createModelRegistry({
+        surface: 'claude',
+        env: { MOON_RELAY_KERNEL_MODEL_FRONTIER: 'configured-frontier', MOON_RELAY_KERNEL_MODEL_VALUE: 'configured-value' },
+      }),
+      actionContext: { executionMode: 'native-subagent', delegationRequested: true },
+    });
+    await writeFile(path.join(root, 'app.mjs'), 'export const value = 1;\n');
+    await cp.report(runId, {
+      summary: 'implemented',
+      capsuleId: implementation.executionCapsule.capsuleId,
+      stepId: implementation.executionCapsule.stepId,
+      changedPaths: ['app.mjs'],
+    });
+    await cp.transition(runId, 'EXECUTE');
+    await cp.transition(runId, 'PROVE');
+
+    // Observed model is gpt-5.6-sol / xhigh while requested policy is gpt-6-astra / high
+    const reviewer = createCodexAdapter({
+      nativeAgentHost: {
+        spawn_agent: async () => ({
+          session_id: 'mismatched-session',
+          terminalEvents: [{ type: 'turn.completed', model: 'gpt-5.6-sol', reasoning_effort: 'xhigh' }],
+          outcome: { verdict: 'pass', findings: [], risks: [], evidenceRefs: ['review://mismatch'] },
+        }),
+      },
+      parentSessionObserver: async ({ parentSessionId }) => ({
+        sessionId: parentSessionId,
+        model: 'gpt-6-astra',
+        effort: 'high',
+      }),
+    });
+
+    const result = await dispatchKernelTurn({
+      controlPlane: cp,
+      runId,
+      adapter: reviewer,
+      registry: createModelRegistry({ surface: 'codex' }),
+      parentSessionId: 'mismatch-owner-session',
+      actionContext: {
+        actionKind: 'review_engineering',
+        obligationId: 'security-review',
+        changedPaths: ['app.mjs'],
+      },
+    });
+
+    // Mismatched model must fail admission: no review receipt minted
+    assert.equal(result.reviewReceiptId || null, null);
+    assert.equal(cp.listReviewReceipts(runId).length, 0);
   } finally {
     await cp.close();
     await rm(runtimeHome, { recursive: true, force: true });

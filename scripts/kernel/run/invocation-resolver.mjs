@@ -54,6 +54,34 @@ const normalizedContract = (taskContract) => {
   });
 };
 
+const normalizeObjective = (value) => String(value || '')
+  .toLowerCase()
+  .trim()
+  .replace(/\s+/g, ' ');
+
+const isSameGoalIdentity = ({ existingRun, contract, binding, requestedRunId }) => {
+  if (!existingRun) return false;
+  if (requestedRunId && requestedRunId === existingRun.runId) return true;
+  if (contract?.predecessorRunId && contract.predecessorRunId === existingRun.runId) return true;
+  if (contract?.seedProvenance?.predecessorRunId && contract.seedProvenance.predecessorRunId === existingRun.runId) return true;
+  // A missing objective is not evidence of continuity. Treating it as a
+  // wildcard silently absorbs a stale Run when a new task arrives with a
+  // legacy/incomplete contract; only an explicit Run ID or predecessor link
+  // may bypass this identity check.
+  if (!contract?.objective) return false;
+
+  const existingNorm = normalizeObjective(existingRun.objective);
+  const nextNorm = normalizeObjective(contract.objective);
+  if (existingNorm && nextNorm && existingNorm === nextNorm) return true;
+
+  if (existingRun.taskContract?.seedProvenance?.seedId && contract.seedProvenance?.seedId
+    && existingRun.taskContract.seedProvenance.seedId === contract.seedProvenance.seedId) {
+    return true;
+  }
+
+  return false;
+};
+
 export const resolveBoundInvocation = ({
   stateStore,
   projectId,
@@ -209,7 +237,15 @@ export const resolveBoundInvocation = ({
   const newTaskCursor = isNewTask
     ? [latestRun, compatibleBoundRun].find((run) => run?.status === 'completed' || run?.status === 'abandoned') || null
     : latestRun || compatibleBoundRun;
-  const cursorRun = requestedRun || mutableRun || newTaskCursor;
+  let cursorRun = requestedRun || mutableRun || newTaskCursor;
+
+  if (cursorRun && !requestedRunId && !binding?.runId && contract) {
+    if (!isSameGoalIdentity({ existingRun: cursorRun, contract, binding, requestedRunId })) {
+      if (cursorRun.status === 'blocked' && (!worktreeLease || worktreeLease.holderRunId !== cursorRun.runId)) {
+        cursorRun = null;
+      }
+    }
+  }
 
   if (!cursorRun) {
     if (!contract) throw codedError('host_binding_missing', 'supply-a-task-contract');

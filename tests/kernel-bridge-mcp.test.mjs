@@ -6,6 +6,11 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createMcpBridgeHandler } from '../scripts/kernel/bridge/mcp.mjs';
 import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
+import { dispatchKernelTurn } from '../scripts/host/kernel/turn-dispatcher.mjs';
+import { createClaudeAdapter } from '../scripts/host/kernel/adapters/claude.mjs';
+import { createKernelHostReviewBridge } from '../scripts/host/kernel/lifecycle-bridge.mjs';
+import { assessReviewReadiness } from '../scripts/host/kernel/review-readiness.mjs';
+import { createModelRegistry } from '../scripts/host/kernel/model-registry.mjs';
 
 const tempRoots = [];
 
@@ -20,6 +25,65 @@ const createFixtureRepo = async () => {
   spawnSync('git', ['add', '.'], { cwd: root, encoding: 'utf8' });
   spawnSync('git', ['commit', '-m', 'initial', '--quiet'], { cwd: root, encoding: 'utf8' });
   return root;
+};
+
+const prepareMcpReviewRun = async (runId) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'kernel-mcp-review-'));
+  const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-mcp-review-state-'));
+  await mkdir(path.join(root, '.moon-relay'), { recursive: true });
+  await writeFile(path.join(root, '.moon-relay', 'track.yaml'), 'track: kernel\n');
+  await writeFile(path.join(root, 'package.json'), JSON.stringify({ scripts: { test: 'node --test', lint: 'node -e "process.exit(0)"' } }));
+  await writeFile(path.join(root, 'app.mjs'), 'export const value = 0;\n');
+  const cp = await createKernelControlPlane({ runtimeHome, projectRoot: root });
+  try {
+    await cp.startRun({
+      runId,
+      objective: 'secure change',
+      taskContract: {
+        surfaces: ['security_boundary'],
+        acceptance: ['secure'],
+        allowedPaths: ['app.mjs'],
+      },
+    });
+    const implementer = createClaudeAdapter({
+      launch: async ({ invocation }) => ({
+        resolvedModel: invocation.model,
+        observedModel: invocation.model,
+        resolvedEffort: invocation.effort,
+        observedEffort: invocation.effort,
+        sessionId: `${runId}-implementer`,
+      }),
+    });
+    const implementation = await dispatchKernelTurn({
+      controlPlane: cp,
+      runId,
+      adapter: implementer,
+      registry: createModelRegistry({
+        surface: 'claude',
+        env: { MOON_RELAY_KERNEL_MODEL_FRONTIER: 'configured-frontier', MOON_RELAY_KERNEL_MODEL_VALUE: 'configured-value' },
+      }),
+      actionContext: { executionMode: 'native-subagent', delegationRequested: true },
+    });
+    await writeFile(path.join(root, 'app.mjs'), 'export const value = 1;\n');
+    await cp.report(runId, {
+      summary: 'implemented',
+      capsuleId: implementation.executionCapsule.capsuleId,
+      stepId: implementation.executionCapsule.stepId,
+      changedPaths: ['app.mjs'],
+    });
+    await cp.transition(runId, 'EXECUTE');
+    await cp.transition(runId, 'PROVE');
+  } finally {
+    await cp.close();
+  }
+  return { root, runtimeHome };
+};
+
+const parseToolText = (response) => JSON.parse(response.result.content[0].text);
+
+const cleanupMcpReviewRun = async ({ root, runtimeHome }) => {
+  await rm(runtimeHome, { recursive: true, force: true });
+  await rm(root, { recursive: true, force: true });
 };
 
 test('mcp bridge provides initialize, ping, tools/list, and tool execution', async (t) => {
@@ -162,4 +226,242 @@ test('mcp bridge fails closed when workspaceRoot is missing or invalid', async (
   assert.equal(missingRootCall.result.isError, true);
   const errPayload = JSON.parse(missingRootCall.result.content[0].text);
   assert.ok(errPayload.error.includes('workspaceRoot is required'));
+});
+
+test('mcp next automatically dispatches an independent Host review and returns the Kernel receipt', async () => {
+  const runId = 'mcp-host-review-chain';
+  const fixture = await prepareMcpReviewRun(runId);
+  try {
+    const reviewer = createClaudeAdapter({
+      launch: async ({ invocation }) => ({
+        resolvedModel: invocation.model,
+        observedModel: invocation.model,
+        resolvedEffort: invocation.effort,
+        observedEffort: invocation.effort,
+        sessionId: 'mcp-reviewer-session',
+        outcome: { verdict: 'pass', findings: [], risks: [], evidenceRefs: ['review://mcp'] },
+      }),
+    });
+    const bridge = createKernelHostReviewBridge({
+      adapter: reviewer,
+      registry: createModelRegistry({
+        surface: 'claude',
+        env: {
+          MOON_RELAY_KERNEL_MODEL_FRONTIER: 'mcp-review-frontier',
+          MOON_RELAY_KERNEL_MODEL_FRONTIER_EFFORT: 'high',
+        },
+      }),
+      runtimeHome: fixture.runtimeHome,
+      env: {},
+      parentSessionId: 'mcp-owner-session',
+    });
+    const handler = createMcpBridgeHandler({ runtimeHome: fixture.runtimeHome, env: {}, hostBridge: bridge });
+    const response = await handler({
+      jsonrpc: '2.0',
+      id: 20,
+      method: 'tools/call',
+      params: {
+        name: 'kernel_next',
+        arguments: { workspaceRoot: fixture.root, runId, surface: 'claude_app' },
+      },
+    });
+
+    assert.equal(response.result.isError, false);
+    const result = parseToolText(response);
+    assert.equal(result.hostReview.status, 'receipt-recorded');
+    assert.match(result.hostReview.reviewReceiptId, /^review-receipt-[a-f0-9]{24}$/);
+    assert.equal(result.hostReview.verdict, 'pass');
+    assert.equal(result.hostReview.wait.repeatedPolling, false);
+    assert.notEqual(result.action?.type, 'review');
+
+    // A second next must see the recorded judgment rather than re-entering the
+    // readiness gate or dispatching the same review again.
+    const secondResponse = await handler({
+      jsonrpc: '2.0',
+      id: 21,
+      method: 'tools/call',
+      params: {
+        name: 'kernel_next',
+        arguments: { workspaceRoot: fixture.root, runId, surface: 'claude_app' },
+      },
+    });
+    assert.equal(secondResponse.result.isError, false);
+    const secondResult = parseToolText(secondResponse);
+    assert.notEqual(secondResult.status, 'execution-readiness-blocked');
+
+    const cp = await createKernelControlPlane({ runtimeHome: fixture.runtimeHome, projectRoot: fixture.root });
+    try {
+      const receipts = cp.listReviewReceipts(runId);
+      assert.equal(receipts.length, 1);
+      assert.equal(receipts[0].verdict, 'pass');
+    } finally {
+      await cp.close();
+    }
+  } finally {
+    await cleanupMcpReviewRun(fixture);
+  }
+});
+
+test('mcp next coalesces concurrent review delivery for the same run revision', async () => {
+  const runId = 'mcp-host-review-concurrent';
+  const fixture = await prepareMcpReviewRun(runId);
+  try {
+    let launchCount = 0;
+    const reviewer = createClaudeAdapter({
+      launch: async ({ invocation }) => {
+        launchCount += 1;
+        await new Promise((resolve) => setTimeout(resolve, 75));
+        return {
+          resolvedModel: invocation.model,
+          observedModel: invocation.model,
+          resolvedEffort: invocation.effort,
+          observedEffort: invocation.effort,
+          sessionId: 'mcp-concurrent-reviewer-session',
+          outcome: { verdict: 'pass', findings: [], risks: [], evidenceRefs: ['review://mcp-concurrent'] },
+        };
+      },
+    });
+    const bridge = createKernelHostReviewBridge({
+      adapter: reviewer,
+      registry: createModelRegistry({
+        surface: 'claude',
+        env: {
+          MOON_RELAY_KERNEL_MODEL_FRONTIER: 'mcp-review-frontier',
+          MOON_RELAY_KERNEL_MODEL_FRONTIER_EFFORT: 'high',
+        },
+      }),
+      runtimeHome: fixture.runtimeHome,
+      env: {},
+      parentSessionId: 'mcp-owner-session',
+    });
+    const handler = createMcpBridgeHandler({ runtimeHome: fixture.runtimeHome, env: {}, hostBridge: bridge });
+    const request = (id) => handler({
+      jsonrpc: '2.0',
+      id,
+      method: 'tools/call',
+      params: {
+        name: 'kernel_next',
+        arguments: { workspaceRoot: fixture.root, runId, surface: 'claude_app' },
+      },
+    });
+
+    const responses = await Promise.all([request(30), request(31)]);
+    for (const response of responses) {
+      assert.equal(response.result.isError, false);
+      const result = parseToolText(response);
+      assert.equal(result.hostReview.status, 'receipt-recorded');
+      assert.equal(result.hostReview.verdict, 'pass');
+    }
+    assert.equal(launchCount, 1, 'concurrent callers must share one reviewer launch');
+
+    const cp = await createKernelControlPlane({ runtimeHome: fixture.runtimeHome, projectRoot: fixture.root });
+    try {
+      assert.equal(cp.listReviewReceipts(runId).length, 1);
+    } finally {
+      await cp.close();
+    }
+  } finally {
+    await cleanupMcpReviewRun(fixture);
+  }
+});
+
+test('review readiness uses the enforced Codex policy and requires independent context', () => {
+  const readiness = assessReviewReadiness({
+    run: { projectMode: 'greenfield', objective: 'review a secure change', proofTier: 'T3' },
+    contract: { objective: 'review a secure change' },
+    modelInput: {
+      action: {
+        type: 'review',
+        independentReviewRequired: true,
+        outstandingObligations: ['security-review'],
+      },
+    },
+    obligations: [{ obligationId: 'security-review', evidenceClass: 'judgment' }],
+    adapter: {
+      nativeDelegationAvailable: true,
+      dispatch: async () => {},
+      capabilities: {
+        surface: 'codex',
+        supportsIndependentContext: false,
+        supportsReadOnlyReview: true,
+      },
+    },
+    registry: createModelRegistry({
+      surface: 'codex',
+      env: { MOON_RELAY_KERNEL_MODEL_REVIEW: 'gpt-5.6-sol' },
+    }),
+    controlPlane: { ingestReviewerOutcome: async () => {} },
+    env: {},
+  });
+
+  assert.equal(readiness.status, 'BLOCKED');
+  assert.ok(readiness.blockers.includes('review-independent-context-unavailable'));
+  assert.equal(readiness.review.model, 'gpt-6-astra');
+  assert.equal(readiness.review.effort, 'high');
+  assert.equal(readiness.review.modelSource, 'codex-model-policy');
+});
+
+test('mcp next blocks before mutation when the Host cannot execute an independent review', async () => {
+  const runId = 'mcp-host-review-blocked';
+  const fixture = await prepareMcpReviewRun(runId);
+  try {
+    const bridge = createKernelHostReviewBridge({
+      adapter: createClaudeAdapter(),
+      registry: createModelRegistry({
+        surface: 'claude',
+        env: {
+          MOON_RELAY_KERNEL_MODEL_FRONTIER: 'mcp-review-frontier',
+          MOON_RELAY_KERNEL_MODEL_FRONTIER_EFFORT: 'high',
+        },
+      }),
+      runtimeHome: fixture.runtimeHome,
+      env: {},
+    });
+    const handler = createMcpBridgeHandler({ runtimeHome: fixture.runtimeHome, env: {}, hostBridge: bridge });
+    const response = await handler({
+      jsonrpc: '2.0',
+      id: 23,
+      method: 'tools/call',
+      params: {
+        name: 'kernel_next',
+        arguments: { workspaceRoot: fixture.root, runId, surface: 'claude_app' },
+      },
+    });
+
+    assert.equal(response.result.isError, false);
+    const result = parseToolText(response);
+    assert.equal(result.status, 'execution-readiness-blocked');
+    assert.equal(result.executionReadiness.status, 'BLOCKED');
+    assert.ok(result.executionReadiness.blockers.includes('review-execution-unavailable'));
+    assert.equal(result.action.type, 'blocked');
+
+    // The report path must preserve the same readiness denial instead of
+    // returning cp.report's unguarded next payload.
+    const reportResponse = await handler({
+      jsonrpc: '2.0',
+      id: 24,
+      method: 'tools/call',
+      params: {
+        name: 'kernel_report',
+        arguments: {
+          workspaceRoot: fixture.root,
+          runId,
+          report: { summary: 'retry review gate', changedPaths: ['app.mjs'] },
+        },
+      },
+    });
+    assert.equal(reportResponse.result.isError, false);
+    const reported = parseToolText(reportResponse);
+    assert.equal(reported.next.status, 'execution-readiness-blocked');
+
+    const cp = await createKernelControlPlane({ runtimeHome: fixture.runtimeHome, projectRoot: fixture.root });
+    try {
+      assert.equal(cp.listReviewReceipts(runId).length, 0);
+      assert.equal(cp.stateStore.getRun(runId).state, 'PROVE');
+    } finally {
+      await cp.close();
+    }
+  } finally {
+    await cleanupMcpReviewRun(fixture);
+  }
 });

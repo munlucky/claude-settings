@@ -294,7 +294,7 @@ export const validateDeclaredSteps = ({
     const allowedPaths = Array.isArray(rawPaths)
       ? normalizeBoundedPaths({ paths: rawPaths, projectRoot, resolveRealpath, checkExists, lstatPath })
       : [];
-    const scope = classifyWorkUnitScope({ allowedPaths, strict: contract.strictBoundedScope === true || raw.strictBoundedScope === true });
+    const scope = classifyWorkUnitScope({ allowedPaths, strict: contract.strictBoundedScope === true || raw.strictBoundedScope === true || isImplementationTask });
     if (isImplementationTask && !scope.valid) {
       throw fail(scope.errorCode, scope.message, { ...details, stepId, scope }, scope.nextAction);
     }

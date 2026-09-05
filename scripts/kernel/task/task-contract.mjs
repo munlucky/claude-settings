@@ -282,6 +282,12 @@ export const normalizeTaskContract = (input = {}, { objective, changedFileCount 
     // Declared decomposition (K2). Present only when the caller actually split
     // the work; otherwise the run gets one synthetic step.
     steps: Array.isArray(contract.steps) ? contract.steps : [],
+    // Step removal is explicit. An omitted step is preserved; only these
+    // stable IDs (or an explicit replacement) may retire one.
+    supersededStepIds: [...new Set([
+      ...(Array.isArray(contract.supersededStepIds) ? contract.supersededStepIds : []),
+      ...(Array.isArray(contract.flags?.supersededStepIds) ? contract.flags.supersededStepIds : []),
+    ].map(String).filter(Boolean))],
     allowedPaths: asStringList(contract.allowedPaths),
     forbiddenPaths: asStringList(contract.forbiddenPaths),
     filesChanged: Number.isFinite(contract.filesChanged) ? Number(contract.filesChanged) : changedFileCount,
@@ -309,6 +315,7 @@ export const contractDigest = (contract) => `sha256:${createHash('sha256').updat
   completionPredicate: contract.completionPredicate,
   seedProvenance: contract.seedProvenance || null,
   steps: contract.steps,
+  supersededStepIds: contract.supersededStepIds || [],
   allowedPaths: contract.allowedPaths,
   forbiddenPaths: contract.forbiddenPaths,
   flags: contract.flags,
@@ -513,7 +520,16 @@ const assertIntroducedBindingsAreClaimed = ({ previous, next, merged, idMap, ste
     throw new ContractBindingError(
       'CONTRACT_STEP_ACCEPTANCE_OMITTED',
       `Successor step plan omits newly merged acceptance id(s): ${missingAcceptanceIds.join(', ')}`,
-      { missingAcceptanceIds, claimedAcceptanceIds: [...claimedAcceptanceIds] },
+      {
+        code: 'contract-step-binding-invalid',
+        missingBindings: missingAcceptanceIds,
+        repair: {
+          preserveExistingSteps: true,
+          appendOrPatchSteps: true,
+        },
+        missingAcceptanceIds,
+        claimedAcceptanceIds: [...claimedAcceptanceIds],
+      },
     );
   }
 
@@ -528,7 +544,16 @@ const assertIntroducedBindingsAreClaimed = ({ previous, next, merged, idMap, ste
     throw new ContractBindingError(
       'CONTRACT_STEP_OBLIGATION_OMITTED',
       `Successor step plan omits newly merged obligation id(s): ${missingObligationIds.join(', ')}`,
-      { missingObligationIds, claimedObligationIds: [...claimedObligationIds] },
+      {
+        code: 'contract-step-binding-invalid',
+        missingBindings: missingObligationIds,
+        repair: {
+          preserveExistingSteps: true,
+          appendOrPatchSteps: true,
+        },
+        missingObligationIds,
+        claimedObligationIds: [...claimedObligationIds],
+      },
     );
   }
   const mergedIds = acceptanceIdSet(merged.acceptance);
@@ -537,7 +562,16 @@ const assertIntroducedBindingsAreClaimed = ({ previous, next, merged, idMap, ste
     throw new ContractBindingError(
       'CONTRACT_STEP_ACCEPTANCE_OMITTED',
       `Successor step plan omits canonical acceptance id(s): ${unclaimedCanonicalIds.join(', ')}`,
-      { missingAcceptanceIds: unclaimedCanonicalIds, claimedAcceptanceIds: [...claimedAcceptanceIds] },
+      {
+        code: 'contract-step-binding-invalid',
+        missingBindings: unclaimedCanonicalIds,
+        repair: {
+          preserveExistingSteps: true,
+          appendOrPatchSteps: true,
+        },
+        missingAcceptanceIds: unclaimedCanonicalIds,
+        claimedAcceptanceIds: [...claimedAcceptanceIds],
+      },
     );
   }
 };
@@ -557,6 +591,57 @@ export const mergeContractRevisionWithBindings = (previous, next) => {
   }
   const union = (left = [], right = []) => [...new Set([...left, ...right])];
   const mergedAcceptance = mergeAcceptance(previous.acceptance, next.acceptance);
+  const canonicalIds = acceptanceIdSet(mergedAcceptance.acceptance);
+  const knownObligations = contractObligationIds({ ...next, acceptance: mergedAcceptance.acceptance });
+
+  const isReplacement = next.replacement === true || next.flags?.replacement === true;
+  const supersededStepIds = new Set(
+    [
+      ...(Array.isArray(next.supersededStepIds) ? next.supersededStepIds : []),
+      ...(Array.isArray(next.flags?.supersededStepIds) ? next.flags.supersededStepIds : []),
+    ].map(String),
+  );
+
+  const rebasedNextSteps = Array.isArray(next.steps) && next.steps.length > 0
+    ? rebaseStepAcceptanceReferences(next.steps, {
+      idMap: mergedAcceptance.idMap,
+      canonicalIds,
+      knownObligations,
+    })
+    : [];
+
+  let mergedSteps = [];
+  if (isReplacement || !previous.steps?.length) {
+    mergedSteps = rebasedNextSteps;
+  } else if (!rebasedNextSteps.length) {
+    mergedSteps = (previous.steps || []).filter((s) => !supersededStepIds.has(String(s.stepId || '')));
+  } else {
+    const hasAnyStepId = previous.steps.some((s) => s.stepId) || rebasedNextSteps.some((s) => s.stepId);
+    if (!hasAnyStepId && previous.steps.length === 1 && rebasedNextSteps.length === 1) {
+      mergedSteps = [{ ...previous.steps[0], ...rebasedNextSteps[0] }];
+    } else {
+      mergedSteps = [];
+      const indexById = new Map();
+      for (const prev of previous.steps) {
+        const id = String(prev.stepId || '');
+        if (id && supersededStepIds.has(id)) continue;
+        const copy = { ...prev };
+        mergedSteps.push(copy);
+        if (id) indexById.set(id, mergedSteps.length - 1);
+      }
+      for (const nextStep of rebasedNextSteps) {
+        const id = String(nextStep.stepId || '');
+        if (id && indexById.has(id)) {
+          const idx = indexById.get(id);
+          mergedSteps[idx] = { ...mergedSteps[idx], ...nextStep };
+        } else {
+          mergedSteps.push(nextStep);
+          if (id) indexById.set(id, mergedSteps.length - 1);
+        }
+      }
+    }
+  }
+
   const merged = {
     ...next,
     acceptance: mergedAcceptance.acceptance,
@@ -571,7 +656,7 @@ export const mergeContractRevisionWithBindings = (previous, next) => {
         next.completionPredicate?.requiredOutcomes,
       ),
     },
-    steps: next.steps?.length ? next.steps : (previous.steps || []),
+    steps: mergedSteps,
     allowedPaths: union(previous.allowedPaths, next.allowedPaths),
     forbiddenPaths: union(previous.forbiddenPaths, next.forbiddenPaths),
     flags: { ...previous.flags, ...next.flags },
@@ -579,20 +664,9 @@ export const mergeContractRevisionWithBindings = (previous, next) => {
     requestedTier: next.requestedTier || previous.requestedTier,
     seedProvenance: next.seedProvenance || previous.seedProvenance || null,
   };
-  const canonicalIds = acceptanceIdSet(merged.acceptance);
-  const knownObligations = contractObligationIds(merged);
-  const stepsComeFromSuccessor = Boolean(next.steps?.length);
-  const steps = rebaseStepAcceptanceReferences(merged.steps, {
-    // A supplied successor step list uses the successor contract's local AC
-    // namespace and must be rebased. When the successor omits steps, the
-    // retained previous plan already contains canonical IDs; remapping those
-    // rows would turn an old AC-1 into a newly appended AC by accident.
-    idMap: stepsComeFromSuccessor ? mergedAcceptance.idMap : new Map(),
-    canonicalIds,
-    knownObligations,
-  });
-  assertIntroducedBindingsAreClaimed({ previous, next, merged, idMap: mergedAcceptance.idMap, steps });
-  const contract = { ...merged, steps, digest: contractDigest({ ...merged, steps }) };
+
+  assertIntroducedBindingsAreClaimed({ previous, next, merged, idMap: mergedAcceptance.idMap, steps: mergedSteps });
+  const contract = { ...merged, steps: mergedSteps, digest: contractDigest({ ...merged, steps: mergedSteps }) };
   return {
     contract,
     acceptanceIdMap: Object.fromEntries(mergedAcceptance.idMap.entries()),

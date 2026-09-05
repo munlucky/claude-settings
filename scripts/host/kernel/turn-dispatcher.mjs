@@ -19,6 +19,8 @@ import { resolveEnforcementStrategy } from '../../kernel/run/model-route-contrac
 import { observeWorkspaceIdentity } from '../../kernel/run/workspace-identity.mjs';
 import { attestReviewTransport, resolveReviewTransports } from './review-transport-resolver.mjs';
 import { normalizeHostBoundaryRequest } from './host-boundary.mjs';
+import { validateIndependentSubagentReviewAttestation } from './independent-subagent-review.mjs';
+import { digestOfEvidence } from '../../kernel/proof/review-receipt.mjs';
 
 const REVIEW_ATTEMPT_META = Symbol('reviewAttemptMeta');
 
@@ -228,6 +230,63 @@ const reviewCandidateUnavailableReason = (candidate) => {
   if (!surface || candidate.registry?.surface !== surface || typeof candidate.registry?.resolve !== 'function') return 'reviewer-registry-unavailable';
   return null;
 };
+
+// A repeated Host call can replay the same stale `review` action after the
+// Kernel has already ingested its receipt. Reusing the current pass is safe
+// only when the reviewed obligation, workspace, mutation revision, and hard
+// evidence set are all identical. A different obligation remains a distinct
+// review point and is allowed to run independently.
+const currentReviewReceiptFor = ({ controlPlane, runId, obligationId } = {}) => {
+  const stateStore = controlPlane?.stateStore;
+  if (!stateStore || !runId || !obligationId
+    || typeof stateStore.getRun !== 'function'
+    || typeof stateStore.listReviewReceipts !== 'function'
+    || typeof stateStore.getVerifications !== 'function') return null;
+  const run = stateStore.getRun(runId);
+  if (!run?.currentWorkspaceIdentity) return null;
+  const evidenceDigest = digestOfEvidence(stateStore.getVerifications(runId), {
+    excludeObligationId: obligationId,
+  });
+  return stateStore.listReviewReceipts(runId, { obligationId })
+    .slice()
+    .reverse()
+    .find((receipt) => receipt?.verdict === 'pass'
+      && receipt.subject?.workspaceIdentity === run.currentWorkspaceIdentity
+      && Number(receipt.subject?.mutationRevision) === Number(run.mutationRevision)
+      && receipt.subject?.evidenceDigest === evidenceDigest) || null;
+};
+
+const buildDeduplicatedReviewResponse = ({ runId, turn = null, receipt } = {}) => ({
+  schemaVersion: 1,
+  runId,
+  dispatched: false,
+  deduplicated: true,
+  reason: 'review-already-recorded',
+  modelInput: turn?.modelInput || null,
+  hostDirective: turn?.hostDirective || null,
+  executionCapsule: turn?.executionCapsule || turn?.hostDirective?.executionCapsule || null,
+  dispatch: {
+    dispatchMechanism: 'deduplicated-review-receipt',
+    actorRole: 'reviewer',
+    actorSessionId: receipt?.reviewer?.actorSessionId || null,
+  },
+  review: {
+    required: true,
+    independent: true,
+    status: 'receipt-recorded',
+    review: {
+      verdict: receipt?.verdict || 'pass',
+      findings: receipt?.findings || [],
+      risks: [],
+      evidenceRefs: [],
+    },
+    reviewReceipt: receipt,
+  },
+  reviewReceipt: receipt,
+  reviewReceiptId: receipt?.receiptId || null,
+  receipt: null,
+  report: null,
+});
 
 // A decision carries no risk-shape data (security/migration/...) to the Host
 // today, only actionKind/riskTier/reasonCodes, so the recommendation below is
@@ -790,6 +849,14 @@ const dispatchKernelTurnAttempt = async ({
       environment: env,
       parentSessionId,
       parentSessionConfig,
+      reviewSubject: decision.role === 'reviewer'
+        ? {
+          runId: executionCapsule?.runId || decision.runId || null,
+          capsuleDigest: executionCapsule?.provenance?.capsuleDigest || null,
+          workspaceIdentity: executionCapsule?.subject?.workspaceIdentity || executionCapsule?.provenance?.workspaceIdentity || null,
+          mutationRevision: executionCapsule?.subject?.mutationRevision ?? executionCapsule?.mutationRevision ?? null,
+        }
+        : null,
       concurrencyGroup: actionContext.concurrencyGroup || runId,
       actionContext,
       executionMode: actionContext.executionMode || null,
@@ -830,6 +897,42 @@ const dispatchKernelTurnAttempt = async ({
         },
       } : {}),
     };
+  }
+
+  // The independent-subagent transport is a Host fallback, but its result is
+  // not trusted merely because it contains a reviewer verdict. Require the
+  // transport's explicit execution attestation before creating even the
+  // usage receipt that can feed the Kernel review chain. Existing native
+  // adapters retain their established provider-specific checks.
+  if (decision.role === 'reviewer' && dispatch.dispatchMechanism === 'independent-subagent') {
+    const reviewSubject = {
+      runId: executionCapsule?.runId || decision.runId || null,
+      capsuleDigest: executionCapsule?.provenance?.capsuleDigest || null,
+      workspaceIdentity: executionCapsule?.subject?.workspaceIdentity || executionCapsule?.provenance?.workspaceIdentity || null,
+      mutationRevision: executionCapsule?.subject?.mutationRevision ?? executionCapsule?.mutationRevision ?? null,
+    };
+    const attestation = validateIndependentSubagentReviewAttestation({
+      dispatch,
+      invocation: dispatch.invocation || {
+        model: resolution.model,
+        effort: resolution.effort,
+      },
+      reviewSubject,
+      parentSessionId,
+    });
+    if (!attestation.valid) {
+      dispatch = {
+        ...dispatch,
+        status: 'failed',
+        resultStatus: 'failed',
+        errorCode: 'review-transport-attestation-invalid',
+        errorSummary: `Independent reviewer attestation failed: ${attestation.reasons.join(', ')}`,
+        failureCategory: 'transport/infrastructure',
+        failureStage: 'post-spawn',
+        outcome: null,
+        report: null,
+      };
+    }
   }
 
   const receipt = buildUsageReceipt({
@@ -1137,6 +1240,17 @@ export const dispatchKernelTurn = async ({
   });
   const reviewIntent = isReviewActionContext(actionContext);
 
+  // Review is one obligation-level action. A retried call for the same
+  // subject must not create a second reviewer session or receipt.
+  if (reviewIntent && actionContext.obligationId) {
+    const existing = currentReviewReceiptFor({
+      controlPlane,
+      runId,
+      obligationId: actionContext.obligationId,
+    });
+    if (existing) return buildDeduplicatedReviewResponse({ runId, receipt: existing });
+  }
+
   // Preserve the original owner-direct and parallel paths byte-for-byte for
   // ordinary work.  Review candidates need one shared hostNext result, so the
   // reviewer path below preloads that turn before trying any adapter.
@@ -1164,6 +1278,19 @@ export const dispatchKernelTurn = async ({
   if (turn.status === 'not_found') return turn;
   if (!turn.hostDirective?.modelRouteDecision) return turn;
   const decision = turn.hostDirective.modelRouteDecision;
+  const existing = currentReviewReceiptFor({
+    controlPlane,
+    runId,
+    obligationId: decision.obligationId,
+  });
+  if (existing) {
+    finishUnusableReviewAttempt({
+      controlPlane,
+      attempt: turn.hostDirective?.attempt || null,
+      reason: 'review-already-recorded',
+    });
+    return buildDeduplicatedReviewResponse({ runId, turn, receipt: existing });
+  }
   const defaults = {
     controlPlane,
     adapter,
