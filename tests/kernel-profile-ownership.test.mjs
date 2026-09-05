@@ -407,3 +407,40 @@ test('installing account-root layout over provider profile fails closed and reje
     /target_collision: foreign or non-account-root Kernel profile manifest/,
   );
 });
+
+test('antigravity profile reinstall with external skillsRoot updates canonical skill files when source changes', async () => {
+  const home = await mkdtemp(path.join(os.tmpdir(), 'kernel-external-skills-update-'));
+  tempRoots.push(home);
+  const targetRoot = path.join(home, 'antigravity');
+  const skillsRoot = path.join(home, 'external-skills');
+  const runtimeHome = path.join(home, 'runtime');
+  const sourceRoot = path.join(home, 'source');
+
+  await cp(path.join(process.cwd(), 'skills', 'moon-relay-kernel'), path.join(sourceRoot, 'skills', 'moon-relay-kernel'), { recursive: true });
+  await cp(path.join(process.cwd(), 'package', 'kernel', 'profiles', 'antigravity'), path.join(sourceRoot, 'package', 'kernel', 'profiles', 'antigravity'), { recursive: true });
+
+  const first = await installKernelProfile({
+    sourceRoot,
+    runtime: 'antigravity',
+    targetRoot,
+    skillsRoot,
+    runtimeHome,
+  });
+  assert.equal(first.status, 'installed');
+
+  const sourceSkill = path.join(sourceRoot, 'skills', 'moon-relay-kernel', 'SKILL.md');
+  await writeFile(sourceSkill, `${await readFile(sourceSkill, 'utf8')}\nUpdated canonical skill\n`);
+
+  const second = await installKernelProfile({
+    sourceRoot,
+    runtime: 'antigravity',
+    targetRoot,
+    skillsRoot,
+    runtimeHome,
+    force: true,
+  });
+  assert.equal(second.status, 'reinstalled');
+  const installedSkill = path.join(skillsRoot, 'skills', 'moon-relay-kernel', 'SKILL.md');
+  assert.match(await readFile(installedSkill, 'utf8'), /Updated canonical skill/);
+});
+

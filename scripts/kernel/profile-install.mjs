@@ -769,9 +769,12 @@ export async function installKernelProfile({ sourceRoot = process.cwd(), runtime
     const external = safeJoin(externalRoot, KERNEL_SKILL_INSTALL_REL);
     if (await exists(external)) {
       for (const rel of await files(canonicalKernelSkillDir(sourceRoot))) {
+        const targetRel = path.join(KERNEL_SKILL_INSTALL_REL, rel).replaceAll('\\', '/');
+        const priorEntry = priorEntryFor(prior, targetRel);
+        if (priorEntry) continue;
         const target = safeJoin(external, rel);
         if (!(await exists(target)) || await sha256(target) !== await sha256(path.join(canonicalKernelSkillDir(sourceRoot), rel))) {
-          return { status: 'collision', targetRoot: root, collisions: [collision(externalRoot, path.join(KERNEL_SKILL_INSTALL_REL, rel), PROFILE_OWNERSHIP.OWNED_FILE, 'external-skill-collision')] };
+          return { status: 'collision', targetRoot: root, collisions: [collision(externalRoot, targetRel, PROFILE_OWNERSHIP.OWNED_FILE, 'external-skill-collision')] };
         }
       }
     }
