@@ -104,10 +104,10 @@ const describeObligations = (obligations = [], obligationIds = []) => obligation
   };
 });
 
-// An ordinary work unit is assigned a bounded execution role before the model
-// can report implementation work. The current native owner is the default
-// executor; a Host may still request an optional native worker. Keep this
-// projection provider-neutral: it is part of the model-visible contract.
+// An ordinary work unit is assigned a bounded role before the model can report
+// implementation work. Transport selection belongs to the Host, so the
+// model-visible projection carries only role and, for protected review, the
+// independent-review requirement.
 const actorRoleForAction = (actionType) => {
   if (actionType === 'review') return 'reviewer';
   if (actionType === 'debug') return 'debugger';
@@ -116,21 +116,26 @@ const actorRoleForAction = (actionType) => {
   return null;
 };
 
-const withExecution = (action) => {
+const withExecution = (action, { transportNeutral = false } = {}) => {
   const role = actorRoleForAction(action?.type);
   if (!role) return action;
   const independentReviewRequired = role === 'reviewer' && action?.independentReviewRequired === true;
   const useSubagent = independentReviewRequired && (action?.mode === 'subagent' || action?.delegationTarget === 'subagent');
+  const execution = {
+    role,
+    delegation: {
+      mode: independentReviewRequired ? 'required' : 'optional',
+      ...(useSubagent ? { target: 'subagent', requested: true } : {}),
+    },
+  };
+  // Contract-bound runs use a transport-neutral model projection. Keep the
+  // legacy unbound payload shape for callers that have not adopted a Task
+  // Contract yet; Host routing still remains authoritative in both cases.
+  if (independentReviewRequired) execution.executionMode = useSubagent ? 'native-subagent' : 'independent-review';
+  else if (!transportNeutral) execution.executionMode = 'owner-direct';
   return {
     ...action,
-    execution: {
-      role,
-      executionMode: useSubagent ? 'native-subagent' : (independentReviewRequired ? 'independent-review' : 'owner-direct'),
-      delegation: {
-        mode: independentReviewRequired ? 'required' : 'optional',
-        ...(useSubagent ? { target: 'subagent', requested: true } : {}),
-      },
-    },
+    execution,
   };
 };
 
@@ -165,6 +170,12 @@ export const buildNextPayload = ({
     outstandingObligationIds,
     failures,
   });
+  const executionProjectionOptions = {
+    // An empty contract briefing is the legacy unplanned-run shape. A
+    // declared acceptance contract is the boundary at which ordinary work
+    // becomes transport-neutral in the model-visible payload.
+    transportNeutral: Array.isArray(contract?.acceptance) && contract.acceptance.length > 0,
+  };
   const base = {
     schemaVersion: 1,
     runId: run.runId,
@@ -192,7 +203,7 @@ export const buildNextPayload = ({
         action: withExecution({
           type: 'implement',
           guidance: 'Work unit finished, but goal is still active. Continue with the remaining acceptance criteria.',
-        }),
+        }, executionProjectionOptions),
       };
     }
     return { ...base, action: { type: 'done', guidance: 'Run is complete. No further work is required.' } };
@@ -236,7 +247,7 @@ export const buildNextPayload = ({
           errorSummary: failure.errorSummary || null,
           allowedCommandRefs: failure.allowedCommandRefs || undefined,
         })),
-      }),
+      }, executionProjectionOptions),
     };
   }
 
@@ -253,7 +264,7 @@ export const buildNextPayload = ({
           outstandingObligations: outstanding,
           obligations: described,
           independentReviewRequired: true,
-        }),
+        }, executionProjectionOptions),
       };
     }
     const unsatisfiable = described
@@ -267,7 +278,7 @@ export const buildNextPayload = ({
           : 'Implement the objective, then submit kernel report with a summary and changed paths. The Kernel will run only outstanding bound proof.',
         outstandingObligations: outstanding,
         obligations: described,
-      }),
+      }, executionProjectionOptions),
     };
   }
 
@@ -277,7 +288,7 @@ export const buildNextPayload = ({
       action: withExecution({
         type: 'implement',
         guidance: `Work unit ${workAuthority.currentWorkUnit?.stepId || ''} is in progress. Continue implementation.`.trim(),
-      }),
+      }, executionProjectionOptions),
     };
   }
 

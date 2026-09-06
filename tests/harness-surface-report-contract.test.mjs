@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
@@ -109,4 +109,33 @@ test('surface report finds JS/CJS specs and invalid test allowances fail closed'
   const checked = run('check', '--source-root', root, '--config', config, '--json');
   assert.equal(checked.status, 1);
   assert.match(JSON.parse(checked.stdout).error, /non-negative integer/);
+});
+
+test('surface budget measures versioned files only and keeps untracked diagnostics informational', async () => {
+  const root = await fixture({
+    'README.md': 'versioned\n',
+    'package.json': JSON.stringify({ scripts: { test: 'node --test tests/registered.test.js' } }),
+    'tests/registered.test.js': 'export {};\n',
+  });
+  await writeFile(path.join(root, 'diagnostic.log'), 'untracked diagnostic\n');
+  const reported = run('report', '--source-root', root, '--json');
+  assert.equal(reported.status, 0, reported.stderr);
+  const report = JSON.parse(reported.stdout);
+  assert.equal(report.authority.includesUntracked, false);
+  assert.equal(report.authority.command, 'git ls-files --cached');
+  assert.ok(report.diagnostics.untrackedFiles.includes('diagnostic.log'));
+  assert.equal(report.totals.files, 3);
+
+  const config = path.join(root, 'budget.json');
+  const configText = `${JSON.stringify({
+    schemaVersion: 1,
+    baseline: report.totals,
+    allowedDelta: { files: 0, nonblankLines: 0, utf8Bytes: 0, estimatedPromptTokens: 0 },
+    allowedUnregisteredTests: 0,
+  }, null, 2)}\n`;
+  await writeFile(config, configText);
+  const checked = run('check', '--source-root', root, '--config', config, '--json');
+  assert.equal(checked.status, 0, checked.stdout || checked.stderr);
+  assert.equal(JSON.parse(checked.stdout).status, 'pass');
+  assert.equal(await readFile(config, 'utf8'), configText, 'check must not ratchet the baseline');
 });

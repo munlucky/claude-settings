@@ -11,6 +11,7 @@ import { after, test } from 'node:test';
 const root = process.cwd();
 const fromRoot = (...segments) => path.join(root, ...segments);
 const tempRoots = [];
+const allocatedFixturePorts = new Set();
 
 after(async () => {
   for (const tempRoot of tempRoots) {
@@ -33,6 +34,13 @@ const getFreePort = async () => new Promise((resolve, reject) => {
   });
 });
 
+const getUniqueFixturePort = async () => {
+  let port = await getFreePort();
+  while (allocatedFixturePorts.has(port)) port = await getFreePort();
+  allocatedFixturePorts.add(port);
+  return port;
+};
+
 const createFakeBrowserctl = async (dir) => {
   const fakeBrowserctl = path.join(dir, process.platform === 'win32' ? 'browserctl.cmd' : 'browserctl');
   const script = process.platform === 'win32'
@@ -41,6 +49,42 @@ const createFakeBrowserctl = async (dir) => {
   await writeFile(fakeBrowserctl, script);
   await chmod(fakeBrowserctl, 0o755);
   return fakeBrowserctl;
+};
+
+const sourceCheckoutMoonshotRelayState = () => {
+  const result = spawnSync('git', ['status', '--porcelain=v1', '--untracked-files=all', '--', '.moonshot-relay'], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  return {
+    exists: existsSync(fromRoot('.moonshot-relay')),
+    status: result.stdout,
+  };
+};
+
+// All browser invocations cross this boundary. It owns the absolute runner,
+// temp-root cwd, verdict/artifact root, unique fixture port, and the invariant
+// that the source checkout's generated-state boundary is unchanged.
+const runIsolatedBrowserFlow = async ({ tempRoot = null, args = [], port = null } = {}) => {
+  const fixtureRoot = tempRoot || await makeTempRoot('moonshot-relay-browser-isolated-');
+  const fixturePort = port || await getUniqueFixturePort();
+  const runner = fromRoot('scripts', 'browser-flow-runner.mjs');
+  const verdictDir = path.join(fixtureRoot, '.moonshot-relay');
+  const artifactRoot = path.join(verdictDir, 'browser-artifacts');
+  await mkdir(artifactRoot, { recursive: true });
+  assert.ok(path.isAbsolute(runner));
+  assert.ok(args.includes('--browserctl'), 'isolated browser flows require an explicit browserctl');
+
+  const before = sourceCheckoutMoonshotRelayState();
+  const result = spawnSync(process.execPath, [runner, ...args], {
+    cwd: fixtureRoot,
+    encoding: 'utf8',
+  });
+  const after = sourceCheckoutMoonshotRelayState();
+  assert.deepEqual(after, before, 'browser flow must not mutate source checkout .moonshot-relay');
+
+  return { result, tempRoot: fixtureRoot, runner, port: fixturePort, verdictDir, artifactRoot };
 };
 
 const readRoot = async (...segments) => readFile(fromRoot(...segments), 'utf8');
@@ -619,15 +663,9 @@ test('closeout template satisfies the closeout schema required contract', async 
 
 test('browser flow runner writes generated-state verdicts and supports smoke health checks', async () => {
   const tempRoot = await makeTempRoot('moonshot-relay-browser-flow-');
-  const fakeBrowserctl = path.join(tempRoot, process.platform === 'win32' ? 'browserctl.cmd' : 'browserctl');
-  const script = process.platform === 'win32'
-    ? '@echo off\r\necho healthy\r\nexit /b 0\r\n'
-    : '#!/usr/bin/env sh\necho healthy\nexit 0\n';
-  await writeFile(fakeBrowserctl, script);
-  await chmod(fakeBrowserctl, 0o755);
+  const fakeBrowserctl = await createFakeBrowserctl(tempRoot);
 
-  const result = spawnSync(process.execPath, [
-    fromRoot('scripts', 'browser-flow-runner.mjs'),
+  const { result } = await runIsolatedBrowserFlow({ tempRoot, args: [
     '--flow',
     'smoke',
     '--url',
@@ -638,10 +676,7 @@ test('browser flow runner writes generated-state verdicts and supports smoke hea
     'contract',
     '--verdict-dir',
     path.join(tempRoot, '.moonshot-relay'),
-  ], {
-    cwd: tempRoot,
-    encoding: 'utf8',
-  });
+  ] });
 
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout.trim(), /\.moonshot-relay\/browser-flow-verdict-contract\.json$/);
@@ -649,6 +684,43 @@ test('browser flow runner writes generated-state verdicts and supports smoke hea
   assert.equal(verdict.status, 'passed');
   assert.equal(verdict.setupGap, false);
   assert.equal(verdict.flow, 'smoke');
+});
+
+test('isolated browser fixture stress keeps roots and artifacts disjoint', async () => {
+  const requested = Number(process.env.MOON_RELAY_BROWSER_ISOLATION_STRESS || 1);
+  const iterations = Number.isInteger(requested) && requested > 0 ? requested : 1;
+  assert.ok(iterations <= 20, 'stress evidence is bounded at 20 iterations');
+
+  const fixtures = [];
+  for (let index = 0; index < iterations; index += 1) {
+    const tempRoot = await makeTempRoot(`moonshot-relay-browser-stress-${index}-`);
+    const fakeBrowserctl = await createFakeBrowserctl(tempRoot);
+    const port = await getUniqueFixturePort();
+    const fixture = await runIsolatedBrowserFlow({
+      tempRoot,
+      port,
+      args: [
+        '--flow',
+        'smoke',
+        '--url',
+        `http://127.0.0.1:${port}/health`,
+        '--browserctl',
+        fakeBrowserctl,
+        '--run-id',
+        `stress-${index}`,
+        '--verdict-dir',
+        path.join(tempRoot, '.moonshot-relay'),
+      ],
+    });
+    const verdict = JSON.parse(await readFile(path.join(fixture.verdictDir, `browser-flow-verdict-stress-${index}.json`), 'utf8'));
+    assert.equal(verdict.status, 'passed');
+    assert.equal(path.dirname(fixture.artifactRoot), path.join(tempRoot, '.moonshot-relay'));
+    fixtures.push(fixture);
+  }
+
+  assert.equal(new Set(fixtures.map((fixture) => fixture.tempRoot)).size, iterations);
+  assert.equal(new Set(fixtures.map((fixture) => fixture.artifactRoot)).size, iterations);
+  assert.equal(new Set(fixtures.map((fixture) => fixture.port)).size, iterations);
 });
 
 test('browser flow runner executes configured preview lifecycle and records cleanup evidence', async () => {

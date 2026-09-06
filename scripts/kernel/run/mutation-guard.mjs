@@ -11,6 +11,19 @@ export const MUTATION_OPERATIONS = Object.freeze([
   'dependency_install', 'migration', 'destructive_command',
 ]);
 
+// Every persisted or compared repository path crosses this primitive. The
+// platform argument is explicit so tests can prove Windows and POSIX rules
+// without depending on the OS that happens to run the test process.
+export const canonicalPathIdentity = (value, { platform = process.platform } = {}) => {
+  if (value === null || value === undefined) return '';
+  const raw = String(value).trim();
+  if (!raw) return '';
+  const pathApi = platform === 'win32' ? path.win32 : path.posix;
+  const normalized = pathApi.normalize(raw.replaceAll('\\', '/')).replaceAll('\\', '/');
+  const relative = normalized.replace(/^\.\/+/, '') || '.';
+  return platform === 'win32' ? relative.toLowerCase() : relative;
+};
+
 const fail = (code, message) => {
   const error = new Error(`${code}: ${message}`);
   error.code = code;
@@ -43,7 +56,8 @@ const readWorkspaceStatus = (workspaceRoot) => {
 
 export const canonicalMutationPath = ({ workspaceRoot, targetPath, platform = process.platform } = {}) => {
   const root = canonicalWorkspace(workspaceRoot);
-  const requested = path.isAbsolute(targetPath) ? path.resolve(targetPath) : path.resolve(root, targetPath);
+  const portableTarget = String(targetPath || '').replaceAll('\\', '/');
+  const requested = path.isAbsolute(portableTarget) ? path.resolve(portableTarget) : path.resolve(root, portableTarget);
   let cursor = requested;
   while (!existsSync(cursor)) {
     const parent = path.dirname(cursor);
@@ -52,15 +66,15 @@ export const canonicalMutationPath = ({ workspaceRoot, targetPath, platform = pr
   }
   const resolvedBase = realpathSync(cursor);
   const resolved = path.resolve(resolvedBase, path.relative(cursor, requested));
-  const normalizeCase = (value) => platform === 'win32' ? value.toLowerCase() : value;
-  const comparableRoot = normalizeCase(root);
-  const comparable = normalizeCase(resolved);
-  if (comparable !== comparableRoot && !comparable.startsWith(`${comparableRoot}${path.sep}`)) {
+  const comparableRoot = canonicalPathIdentity(root, { platform });
+  const comparable = canonicalPathIdentity(resolved, { platform });
+  const rootPrefix = comparableRoot.endsWith('/') ? comparableRoot : `${comparableRoot}/`;
+  if (comparable !== comparableRoot && !comparable.startsWith(rootPrefix)) {
     fail('mutation_outside_workspace', `target escapes workspace: ${targetPath}`);
   }
-  const relative = path.relative(root, resolved).replaceAll('\\', '/');
-  if (!relative || relative.startsWith('../') || path.isAbsolute(relative)) {
-    if (!relative) return '.';
+  const relative = canonicalPathIdentity(path.relative(root, resolved), { platform });
+  if (!relative || relative === '.' || relative.startsWith('../') || path.isAbsolute(relative)) {
+    if (!relative || relative === '.') return '.';
     fail('mutation_outside_workspace', `target escapes workspace: ${targetPath}`);
   }
   return relative;
@@ -90,7 +104,8 @@ export const assertWorkspaceMutationFence = ({
 
   const effectiveWorkspaceId = workspaceId || run.workspaceId;
   const registeredWorkspace = registeredWorkspaceFor({ stateStore, workspaceId: effectiveWorkspaceId, run });
-  if (registeredWorkspace && path.resolve(workspaceRoot) !== path.resolve(registeredWorkspace.canonicalRoot)) {
+  if (registeredWorkspace
+    && canonicalPathIdentity(workspaceRoot) !== canonicalPathIdentity(registeredWorkspace.canonicalRoot)) {
     failForMode(mode, 'mutation_workspace_mismatch', 'delivery_workspace_mismatch', effectiveWorkspaceId || runId);
   }
 

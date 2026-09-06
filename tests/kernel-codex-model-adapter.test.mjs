@@ -769,7 +769,7 @@ test('isWorkUnitBounded rejects root wildcards and empty paths while accepting s
   assert.equal(isWorkUnitBounded({ stepId: 'step-1', allowedPaths: ['   '] }), false);
 });
 
-test('Correction 4: pre-spawn failure with no execution evidence falls back to owner-direct launch', async () => {
+test('Correction 4: Codex adapter reports a pure pre-spawn failure without choosing another transport', async () => {
   let nativeAttempts = 0;
   let ownerDirectAttempts = 0;
   const adapter = createCodexAdapter({
@@ -815,10 +815,10 @@ test('Correction 4: pre-spawn failure with no execution evidence falls back to o
   });
 
   assert.equal(nativeAttempts, 1, 'native worker launch must be attempted');
-  assert.equal(ownerDirectAttempts, 1, 'owner-direct launch must be attempted on pre-spawn fallback');
-  assert.equal(dispatch.dispatchMechanism, 'owner-direct');
-  assert.equal(dispatch.fallbackReason, 'pre-spawn-native-launcher-unavailable');
-  assert.equal(dispatch.status, 'completed');
+  assert.equal(ownerDirectAttempts, 0, 'adapter must not choose the owner transport');
+  assert.equal(dispatch.dispatchMechanism, 'native-subagent');
+  assert.equal(dispatch.fallbackReason, null);
+  assert.equal(dispatch.status, 'failed');
 });
 
 test('Correction 4: pre-spawn failure with observedSessionConfig does not fall back to owner-direct', async () => {

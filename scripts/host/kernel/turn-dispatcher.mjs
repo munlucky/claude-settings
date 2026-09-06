@@ -45,6 +45,48 @@ const REVIEW_TRANSPORT_CATEGORIES = new Set([
   'infrastructure',
 ]);
 
+const normalizeSnapshotStepId = (stepId) => {
+  if (stepId === null || stepId === undefined || stepId === '') return null;
+  return String(stepId);
+};
+
+const finiteSnapshotRevision = (value) => {
+  const revision = Number(value);
+  return Number.isInteger(revision) && revision >= 0 ? revision : null;
+};
+
+// A model payload returned by Kernel `next` is reusable only while the
+// authoritative run, mutation, and work-unit cursor remain the same. This is
+// intentionally a read-only projection: it adds no state, table, or public
+// lifecycle surface and fails closed when the Host cannot read all fields.
+export const captureHostExecutionSnapshot = ({ controlPlane, runId, requestedStepId = undefined } = {}) => {
+  const run = controlPlane?.stateStore?.getRun?.(runId);
+  if (!run) return null;
+  const currentStepId = requestedStepId !== undefined
+    ? requestedStepId
+    : controlPlane?.getCurrentStep?.(runId)?.stepId;
+  const runRevision = finiteSnapshotRevision(run.revision);
+  const mutationRevision = finiteSnapshotRevision(run.mutationRevision);
+  if (runRevision === null || mutationRevision === null) return null;
+  return Object.freeze({
+    runRevision,
+    mutationRevision,
+    stepId: normalizeSnapshotStepId(currentStepId),
+  });
+};
+
+export const isHostExecutionSnapshotFresh = ({ controlPlane, runId, snapshot, requestedStepId = undefined } = {}) => {
+  if (!snapshot || snapshot.stepId === null) return false;
+  const current = captureHostExecutionSnapshot({ controlPlane, runId, requestedStepId });
+  return Boolean(
+    current
+    && current.stepId !== null
+    && current.runRevision === snapshot.runRevision
+    && current.mutationRevision === snapshot.mutationRevision
+    && current.stepId === snapshot.stepId,
+  );
+};
+
 const REVIEW_PROVIDER_EXECUTION_EVIDENCE_FIELDS = Object.freeze([
   'actorSessionId',
   'sessionId',
@@ -118,6 +160,105 @@ const hasReviewerSemanticPayload = (source, seen = new Set()) => {
   if (['findings', 'evidenceRefs', 'risks'].some((field) => Array.isArray(source[field]))) return true;
   return ['details', 'cause', 'error', 'launcherFailure', 'runtimePreflight', 'result', 'response', 'payload']
     .some((field) => hasReviewerSemanticPayload(source[field], seen));
+};
+
+const TRANSPORT_MUTATION_EVIDENCE_FIELDS = Object.freeze([
+  'mutationEvidence',
+  'mutationReceipt',
+  'hasMutations',
+  'mutated',
+  'changedPaths',
+  'writeCount',
+  'artifactWrites',
+]);
+
+const hasMutationEvidence = (source) => {
+  if (!source || typeof source !== 'object') return false;
+  return TRANSPORT_MUTATION_EVIDENCE_FIELDS.some((field) => hasMeaningfulEvidenceValue(source[field]));
+};
+
+const hasSemanticTransportOutcome = (source) => {
+  if (!source || typeof source !== 'object') return false;
+  if (['outcome', 'report', 'reviewerOutcome', 'review', 'reviewReceipt', 'reviewReceiptId']
+    .some((field) => source[field] !== null && source[field] !== undefined)) return true;
+  return ['verdict', 'reviewVerdict'].some((field) => ['pass', 'fail', 'blocked'].includes(String(source[field] || '').toLowerCase()))
+    || hasReviewerSemanticPayload(source);
+};
+
+const transportFailureSources = ({ dispatch = {}, dispatchError = null } = {}) => [
+  dispatch,
+  dispatch?.runtimePreflight,
+  dispatch?.launcherFailure,
+  dispatchError,
+  dispatchError?.details,
+].filter((source) => source && typeof source === 'object');
+
+const isReadOnlyExecution = (permissions) => permissions === 'read_only'
+  || permissions === 'read-only'
+  || permissions?.filesystem === 'read_only'
+  || permissions?.filesystem === 'read-only';
+
+// Transport policy belongs to this Host boundary. Adapters return facts from
+// exactly one requested transport; this classifier decides whether a second,
+// equivalent transport is safe before any receipt or step failure is closed.
+export const classifyTransportFailure = ({
+  dispatch = {},
+  dispatchError = null,
+  decision = {},
+  executionContract = {},
+  adapter = null,
+  requestedTransport = null,
+  retryAttempted = false,
+} = {}) => {
+  const sources = transportFailureSources({ dispatch, dispatchError });
+  const preSpawn = sources.some((source) => String(source.failureStage || '').trim().toLowerCase() === 'pre-spawn');
+  const providerExecutionObserved = sources.some(hasProviderExecutionEvidence);
+  const semanticOutcomeObserved = sources.some(hasSemanticTransportOutcome);
+  const mutationEvidenceObserved = sources.some(hasMutationEvidence);
+  const failed = ['failed', 'unsupported'].includes(String(dispatch.status || '').toLowerCase())
+    && dispatch.resultStatus !== 'completed';
+  const independentReviewRequired = decision.role === 'reviewer'
+    || decision.independentContextRequired === true
+    || executionContract.independentReviewRequired === true
+    || executionContract.independentReview === true
+    || executionContract.reviewMode === 'independent';
+  const contractPreserved = adapter?.supportsOwnerDirectRetry === true
+    && !independentReviewRequired
+    && !isReadOnlyExecution(executionContract.permissions || decision.permissions);
+  const safeToRetryTransport = requestedTransport === 'native-subagent'
+    && retryAttempted !== true
+    && failed
+    && preSpawn
+    && !providerExecutionObserved
+    && !semanticOutcomeObserved
+    && !mutationEvidenceObserved
+    && contractPreserved;
+  return {
+    preSpawn,
+    providerExecutionObserved,
+    semanticOutcomeObserved,
+    mutationEvidenceObserved,
+    failed,
+    contractPreserved,
+    safeToRetryTransport,
+    reason: safeToRetryTransport
+      ? 'pre-spawn-native-transport-failure'
+      : !preSpawn
+        ? 'transport-started-or-stage-unknown'
+        : providerExecutionObserved
+          ? 'provider-execution-observed'
+          : semanticOutcomeObserved
+            ? 'semantic-outcome-observed'
+            : mutationEvidenceObserved
+              ? 'mutation-evidence-observed'
+              : !contractPreserved
+                ? 'equivalent-owner-transport-unavailable'
+                : !failed
+                  ? 'dispatch-not-failed'
+                  : retryAttempted
+                    ? 'transport-retry-already-attempted'
+                    : 'transport-not-requested-as-native',
+  };
 };
 
 const withoutReviewAttemptMeta = (response) => {
@@ -631,9 +772,21 @@ const dispatchKernelTurnAttempt = async ({
     && !['prove', 'close'].includes(actionContext.actionKind)
     && (isExplicitOwnerDirect || !nativeAvailable || !nativeDelegationRequested);
   let evaluatedModelInput = null;
+  let evaluatedModelInputSnapshot = null;
   if (ownerDirectRequested) {
+    const snapshotBeforeNext = captureHostExecutionSnapshot({
+      controlPlane,
+      runId,
+      requestedStepId: actionContext.stepId,
+    });
     const modelInput = await controlPlane.next(runId, { stepId: actionContext.stepId || null });
     evaluatedModelInput = modelInput;
+    if (snapshotBeforeNext) {
+      evaluatedModelInputSnapshot = {
+        ...snapshotBeforeNext,
+        stepId: normalizeSnapshotStepId(modelInput?.action?.step?.stepId) || snapshotBeforeNext.stepId,
+      };
+    }
     if (modelInput.status === 'not_found') return modelInput;
     const independentReviewRequired = modelInput.action?.type === 'review'
       && modelInput.action?.independentReviewRequired === true;
@@ -737,7 +890,20 @@ const dispatchKernelTurnAttempt = async ({
       }),
     });
   }
-  const turn = preloadedTurn || await controlPlane.hostNext(runId, { hostCapabilities, actionContext, modelInput: evaluatedModelInput });
+  const reusableModelInput = evaluatedModelInput
+    && isHostExecutionSnapshotFresh({
+      controlPlane,
+      runId,
+      snapshot: evaluatedModelInputSnapshot,
+      requestedStepId: actionContext.stepId || undefined,
+    })
+    ? evaluatedModelInput
+    : null;
+  const turn = preloadedTurn || await controlPlane.hostNext(runId, {
+    hostCapabilities,
+    actionContext,
+    modelInput: reusableModelInput,
+  });
   if (turn.status === 'not_found') return turn;
 
   const { modelInput, hostDirective } = turn;
@@ -855,6 +1021,10 @@ const dispatchKernelTurnAttempt = async ({
   // capsule for lineage/transport work and reprojects the six-field prompt
   // there; no broad capsule view is sent to a launcher.
   const modelVisiblePrompt = buildModelVisiblePromptView({ modelInput, capsule: executionCapsule });
+  const executionContract = buildExecutionContract(modelInput, decision);
+  const requestedTransport = actionContext.requestedTransport
+    || actionContext.transport
+    || (actionContext.executionMode === 'native-subagent' ? 'native-subagent' : null);
 
   const startedAt = now();
   let dispatch;
@@ -867,7 +1037,7 @@ const dispatchKernelTurnAttempt = async ({
       executionCapsule,
       modelInput,
       modelVisiblePrompt,
-      executionContract: buildExecutionContract(modelInput, decision),
+      executionContract,
       hostExecutionContract: hostBoundary.contract,
       envelope,
       workingDirectory: controlPlane.projectRoot || null,
@@ -884,6 +1054,7 @@ const dispatchKernelTurnAttempt = async ({
         : null,
       concurrencyGroup: actionContext.concurrencyGroup || runId,
       actionContext,
+      requestedTransport,
       executionMode: actionContext.executionMode || ((!isExplicitOwnerDirect && isMutationBearingAction(decision.actionKind, modelInput.action?.type) && executionCapsule && isWorkUnitBounded({ capsule: executionCapsule, modelInput }) && nativeAvailable) ? 'native-subagent' : null),
       delegationRequested: nativeDelegationRequested || decision.role === 'reviewer' || (!isExplicitOwnerDirect && isMutationBearingAction(decision.actionKind, modelInput.action?.type) && executionCapsule && isWorkUnitBounded({ capsule: executionCapsule, modelInput }) && nativeAvailable),
       childSession: {
@@ -921,6 +1092,54 @@ const dispatchKernelTurnAttempt = async ({
           ...reviewerResultFields(error?.details?.runtimePreflight),
         },
       } : {}),
+    };
+  }
+
+  const transportClassification = classifyTransportFailure({
+    dispatch,
+    dispatchError,
+    decision,
+    executionContract,
+    adapter,
+    requestedTransport,
+    retryAttempted: actionContext.transportRetry === true,
+  });
+  if (transportClassification.safeToRetryTransport) {
+    const retry = await dispatchKernelTurnAttempt({
+      controlPlane,
+      runId,
+      adapter,
+      registry,
+      runtimeHome,
+      env,
+      overrides,
+      actionContext: {
+        ...actionContext,
+        executionMode: 'owner-direct',
+        requestedTransport: 'owner-direct',
+        delegationRequested: false,
+        transportRetry: true,
+        transportFallbackReason: transportClassification.reason,
+      },
+      parentSessionId,
+      parentSessionConfig,
+      toolPolicy,
+      permissionPolicy,
+      economics,
+      now,
+      turn,
+      attemptOverride: attempt,
+      suppressOwnerDirect: true,
+      suppressParallel: true,
+      useHostDirectiveStrategy,
+    });
+    return {
+      ...retry,
+      transportFallback: {
+        ...transportClassification,
+        from: requestedTransport,
+        to: 'owner-direct',
+      },
     };
   }
 

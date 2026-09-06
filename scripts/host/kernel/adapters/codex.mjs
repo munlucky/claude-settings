@@ -559,8 +559,12 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
     capabilities: resolved,
     ownerDirectAvailable: true,
     ownerDirectDefault: true,
+    // The Host may request this explicit transport after classifying a pure
+    // pre-spawn native-worker failure.  The adapter advertises only whether a
+    // concrete owner transport launcher exists; it never decides to retry it.
+    supportsOwnerDirectRetry: Boolean(launch),
     nativeDelegationAvailable,
-    async dispatch({ decision, resolution, strategy, executionCapsule = null, modelInput = {}, executionContract, envelope = null, workingDirectory = null, environment = null, parentSessionId = null, parentSessionConfig = defaultParentSessionConfig, parentSessionEnvironment: dispatchParentSessionEnvironment = null, parentEnvironment: dispatchParentEnvironment = null, concurrencyGroup = null, childSession = null, executionMode = null, delegationRequested = false, actionContext = null }) {
+    async dispatch({ decision, resolution, strategy, executionCapsule = null, modelInput = {}, executionContract, envelope = null, workingDirectory = null, environment = null, parentSessionId = null, parentSessionConfig = defaultParentSessionConfig, parentSessionEnvironment: dispatchParentSessionEnvironment = null, parentEnvironment: dispatchParentEnvironment = null, concurrencyGroup = null, childSession = null, executionMode = null, delegationRequested = false, requestedTransport = null, actionContext = null }) {
       const invocation = buildCodexInvocation({ decision, resolution, capabilities: resolved });
       // Reproject at the adapter/provider boundary. A caller-supplied prompt
       // is intentionally not accepted as an authority for provider input.
@@ -593,10 +597,22 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
         actionContext,
         modelInput,
       });
+      const ownerDirectTransportRequested = requestedTransport === 'owner-direct';
       // A missing native launcher only removes optional delegation. The
       // owner-direct path is the normal interactive Codex execution surface;
       // it must not require parent/child telemetry or invent a worker result.
-      if (!nativeRequested || !nativeAvailable) {
+      // An explicit owner-direct transport is different: it is a Host-selected
+      // retry transport and may use the injected owner launcher.  The Host is
+      // responsible for deciding whether this request is safe.
+      if (ownerDirectTransportRequested && !launch) {
+        return buildOwnerDirectDispatch({
+          invocation,
+          parentSessionId,
+          actorRole: actorRoute.role,
+          sessionPolicy: actorRoute.sessionPolicy,
+        });
+      }
+      if ((!nativeRequested || !nativeAvailable) && !ownerDirectTransportRequested) {
         const independentReviewRequired = isIndependentReviewRequired({ decision, actorRoute, executionContract });
         if (independentReviewRequired) {
           return buildIndependentReviewPending({
@@ -706,10 +722,14 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
         return { result, dispatchMechanism, fallbackReason };
       };
 
-      const nativeSelected = nativeAvailable;
+      const nativeSelected = requestedTransport === 'native-subagent'
+        ? nativeAvailable
+        : ownerDirectTransportRequested
+          ? false
+          : nativeAvailable;
       let selectedLaunch = nativeSelected ? effectiveNativeLaunch : launch;
       let dispatchMechanism = nativeSelected ? 'native-subagent' : 'owner-direct';
-      let fallbackReason = null;
+      let fallbackReason = actionContext?.transportFallbackReason || null;
       let invocationResult;
       let caughtError = null;
       try {
@@ -773,42 +793,6 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
       }
       let result = invocationResult.result;
 
-      if (nativeSelected) {
-        const isWorkerFailure = Boolean(caughtError)
-          || result.status === 'failed'
-          || result.resultStatus === 'failed'
-          || Boolean(result.errorCode);
-        if (isWorkerFailure) {
-          const effectiveFailureStage = result.failureStage || caughtError?.failureStage || caughtError?.details?.failureStage || null;
-          const failureDetails = caughtError?.details && typeof caughtError.details === 'object' ? caughtError.details : null;
-          const providerExecutionEvidence = hasCodexProviderExecutionEvidence(result)
-            || hasCodexProviderExecutionEvidence(caughtError)
-            || hasCodexProviderExecutionEvidence(failureDetails);
-          const hasSessionId = Boolean(result.sessionId || caughtError?.sessionId || result.actorSessionId || caughtError?.actorSessionId);
-          const hasTerminalEvents = Boolean((result.terminalEvents && result.terminalEvents.length > 0)
-            || (caughtError?.terminalEvents && caughtError.terminalEvents.length > 0)
-            || (result.events && result.events.length > 0)
-            || (caughtError?.events && caughtError.events.length > 0));
-          const hasOutcome = Boolean(result.outcome || caughtError?.outcome);
-          const hasMutationEvidence = Boolean(result.mutationEvidence || caughtError?.mutationEvidence || result.hasMutations || caughtError?.hasMutations);
-
-          const isPurePreSpawn = effectiveFailureStage === 'pre-spawn'
-            && !providerExecutionEvidence
-            && !hasSessionId
-            && !hasTerminalEvents
-            && !hasOutcome
-            && !hasMutationEvidence;
-
-          if (isPurePreSpawn && launch && decision.role !== 'reviewer') {
-            selectedLaunch = launch;
-            invocationResult = await invoke(launch, 'owner-direct', 'pre-spawn-native-launcher-unavailable');
-            result = invocationResult.result;
-            dispatchMechanism = invocationResult.dispatchMechanism;
-            fallbackReason = invocationResult.fallbackReason;
-            caughtError = null;
-          }
-        }
-      }
       const actualLauncher = Boolean(selectedLaunch);
       const preSpawnFailure = (result.status === 'failed' || result.resultStatus === 'failed')
         && result.failureStage === 'pre-spawn';

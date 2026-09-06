@@ -5,9 +5,16 @@ import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
-import { buildTurnPromptEnvelope, dispatchKernelTurn } from '../scripts/host/kernel/turn-dispatcher.mjs';
+import {
+  buildTurnPromptEnvelope,
+  captureHostExecutionSnapshot,
+  dispatchKernelTurn,
+  isHostExecutionSnapshotFresh,
+} from '../scripts/host/kernel/turn-dispatcher.mjs';
+import { buildNextPayload } from '../scripts/kernel/run/run-loop.mjs';
 import { createModelRegistry } from '../scripts/host/kernel/model-registry.mjs';
 import { createClaudeAdapter } from '../scripts/host/kernel/adapters/claude.mjs';
+import { createCodexAdapter } from '../scripts/host/kernel/adapters/codex.mjs';
 import { createFableAdapter } from '../scripts/host/kernel/adapters/fable.mjs';
 import { MODEL_VISIBLE_PROMPT_FIELDS } from '../scripts/host/kernel/model-capsule-view.mjs';
 
@@ -192,6 +199,70 @@ test('the Fable launcher receives only the sanitized prompt boundary', async () 
   assert.doesNotMatch(seen.message, /executionContract|capsuleId|mutationRevision|routeDecision|provider|lease|control|modelPolicy/u);
 });
 
+test('Host Dispatcher owns the one equivalent transport retry after a pure pre-spawn failure', async () => {
+  await withRun(async (cp, runId) => {
+    let nativeAttempts = 0;
+    let ownerDirectAttempts = 0;
+    const adapter = createCodexAdapter({
+      parentSessionObserver: async ({ parentSessionId }) => ({
+        sessionId: parentSessionId,
+        model: 'owner-model',
+        effort: 'owner-effort',
+      }),
+      launch: async ({ invocation }) => {
+        ownerDirectAttempts += 1;
+        return {
+          status: 'completed',
+          resultStatus: 'completed',
+          resolvedModel: invocation.model,
+          resolvedEffort: invocation.effort,
+          sessionId: 'owner-session-1',
+          outcome: { status: 'completed', summary: 'owner transport completed' },
+        };
+      },
+      nativeLaunch: async () => {
+        nativeAttempts += 1;
+        return {
+          status: 'failed',
+          resultStatus: 'failed',
+          errorCode: 'launcher-unavailable',
+          failureStage: 'pre-spawn',
+        };
+      },
+    });
+    const result = await dispatchKernelTurn({
+      controlPlane: cp,
+      runId,
+      adapter,
+      registry: createModelRegistry({ surface: 'codex', env: FRONTIER_ENV }),
+      actionContext: { executionMode: 'native-subagent', delegationRequested: true },
+      parentSessionId: 'main-session',
+      parentSessionConfig: {
+        before: { sessionId: 'main-session', model: 'owner-model', effort: 'owner-effort' },
+        after: { sessionId: 'main-session', model: 'owner-model', effort: 'owner-effort' },
+      },
+    });
+
+    assert.equal(nativeAttempts, 1, 'the native transport must be attempted once');
+    assert.equal(ownerDirectAttempts, 1, 'the Host may select one equivalent owner transport');
+    assert.equal(result.dispatched, true);
+    assert.equal(result.dispatch.dispatchMechanism, 'owner-direct');
+    assert.equal(result.dispatch.fallbackReason, 'pre-spawn-native-transport-failure');
+    assert.deepEqual(result.transportFallback, {
+      preSpawn: true,
+      providerExecutionObserved: false,
+      semanticOutcomeObserved: false,
+      mutationEvidenceObserved: false,
+      failed: true,
+      contractPreserved: true,
+      safeToRetryTransport: true,
+      reason: 'pre-spawn-native-transport-failure',
+      from: 'native-subagent',
+      to: 'owner-direct',
+    });
+  });
+});
+
 test('Correction 3: normal bounded mutation turn does not invoke controlPlane.next multiple times for same state', async () => {
   await withRun(async (cp, runId) => {
     let nextCalls = 0;
@@ -204,7 +275,7 @@ test('Correction 3: normal bounded mutation turn does not invoke controlPlane.ne
         action: {
           type: 'implement',
           guidance: 'implement bounded work',
-          step: { stepId: 'step-1', allowedPaths: ['src/app.mjs'] },
+          step: { stepId: cp.getCurrentStep(runId)?.stepId || 'step-1', allowedPaths: ['src/app.mjs'] },
         },
       };
     };
@@ -241,6 +312,47 @@ test('Correction 3: normal bounded mutation turn does not invoke controlPlane.ne
     assert.equal(nextCalls, 1, `controlPlane.next must be called exactly once, got ${nextCalls}`);
     assert.ok(hostNextPassedModelInput, 'evaluated modelInput must be passed to hostNext');
     assert.equal(hostNextPassedModelInput.action?.type, 'implement');
+  });
+});
+
+test('ordinary Kernel actions expose a role without selecting Host transport', () => {
+  const payload = buildNextPayload({
+    run: { runId: 'r-action-contract', objective: 'bounded implementation', status: 'active', acceptanceCriteria: [] },
+    requiredObligations: ['unit-test'],
+    contract: {
+      acceptance: [{ id: 'AC-1', statement: 'bounded implementation' }],
+      constraints: [],
+      nonGoals: [],
+      risks: [],
+      completionPredicate: { requiredOutcomes: [] },
+    },
+  });
+
+  assert.equal(payload.action.type, 'implement');
+  assert.deepEqual(payload.action.execution, {
+    role: 'implementer',
+    delegation: { mode: 'optional' },
+  });
+  assert.equal(Object.hasOwn(payload.action.execution, 'executionMode'), false);
+});
+
+test('preloaded Host execution snapshots become stale when the mutation revision advances', async () => {
+  await withRun(async (cp, runId) => {
+    const stepId = cp.getCurrentStep(runId)?.stepId;
+    const snapshot = captureHostExecutionSnapshot({ controlPlane: cp, runId, requestedStepId: stepId });
+    assert.ok(snapshot, 'the live run must provide a complete execution snapshot');
+    assert.equal(isHostExecutionSnapshotFresh({ controlPlane: cp, runId, snapshot, requestedStepId: stepId }), true);
+
+    const currentIdentity = cp.stateStore.getRun(runId).currentWorkspaceIdentity;
+    const firstIdentity = currentIdentity === `sha256:${'a'.repeat(64)}`
+      ? `sha256:${'b'.repeat(64)}`
+      : `sha256:${'a'.repeat(64)}`;
+    const secondIdentity = firstIdentity === `sha256:${'a'.repeat(64)}`
+      ? `sha256:${'b'.repeat(64)}`
+      : `sha256:${'a'.repeat(64)}`;
+    cp.stateStore.observeWorkspaceIdentity(runId, firstIdentity);
+    cp.stateStore.observeWorkspaceIdentity(runId, secondIdentity);
+    assert.equal(isHostExecutionSnapshotFresh({ controlPlane: cp, runId, snapshot, requestedStepId: stepId }), false);
   });
 });
 

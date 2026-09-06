@@ -23,7 +23,14 @@ const git = (...gitArgs) => {
   return result.stdout;
 };
 
-const trackedFiles = () => git('ls-files', '-z', '--cached', '--others', '--exclude-standard')
+const versionedFiles = () => git('ls-files', '-z', '--cached')
+  .split('\0')
+  .filter(Boolean)
+  .map((entry) => entry.replaceAll('\\', '/'))
+  .filter((entry) => existsSync(path.join(sourceRoot, entry)))
+  .sort();
+
+const untrackedFiles = () => git('ls-files', '-z', '--others', '--exclude-standard')
   .split('\0')
   .filter(Boolean)
   .map((entry) => entry.replaceAll('\\', '/'))
@@ -41,7 +48,11 @@ const isTestFile = (relative) => relative.startsWith('tests/') && (
 );
 
 const collectReport = async () => {
-  const files = trackedFiles();
+  // Surface budget authority is the versioned repository surface only. Keep
+  // untracked paths visible for diagnosis, but never let them move a budget
+  // metric or its baseline.
+  const files = versionedFiles();
+  const untracked = untrackedFiles();
   const packageJson = JSON.parse(await readFile(path.join(sourceRoot, 'package.json'), 'utf8'));
   const scripts = Object.entries(packageJson.scripts || {});
   let utf8Bytes = 0;
@@ -72,6 +83,15 @@ const collectReport = async () => {
   return {
     schemaVersion: 1,
     source: { root: sourceRoot, head: git('rev-parse', 'HEAD').trim(), status },
+    authority: {
+      kind: 'versioned-repository-surface',
+      command: 'git ls-files --cached',
+      includesUntracked: false,
+    },
+    diagnostics: {
+      untrackedFiles: untracked,
+      untrackedCount: untracked.length,
+    },
     totals: {
       files: files.length,
       nonblankLines,
