@@ -627,7 +627,7 @@ test('browser flow runner writes generated-state verdicts and supports smoke hea
   await chmod(fakeBrowserctl, 0o755);
 
   const result = spawnSync(process.execPath, [
-    'scripts/browser-flow-runner.mjs',
+    fromRoot('scripts', 'browser-flow-runner.mjs'),
     '--flow',
     'smoke',
     '--url',
@@ -639,7 +639,7 @@ test('browser flow runner writes generated-state verdicts and supports smoke hea
     '--verdict-dir',
     path.join(tempRoot, '.moonshot-relay'),
   ], {
-    cwd: root,
+    cwd: tempRoot,
     encoding: 'utf8',
   });
 
@@ -687,7 +687,7 @@ test('browser flow runner executes configured preview lifecycle and records clea
   }, null, 2));
 
   const result = spawnSync(process.execPath, [
-    'scripts/browser-flow-runner.mjs',
+    fromRoot('scripts', 'browser-flow-runner.mjs'),
     '--flow',
     'preview',
     '--config',
@@ -701,7 +701,7 @@ test('browser flow runner executes configured preview lifecycle and records clea
     '--timeout-ms',
     '5000',
   ], {
-    cwd: root,
+    cwd: tempRoot,
     encoding: 'utf8',
   });
 
@@ -832,7 +832,7 @@ test('browser flow runner preserves adapter setup-gap JSON even with zero exit c
   }, null, 2));
 
   const result = spawnSync(process.execPath, [
-    'scripts/browser-flow-runner.mjs',
+    fromRoot('scripts', 'browser-flow-runner.mjs'),
     '--flow',
     'preview',
     '--config',
@@ -846,7 +846,7 @@ test('browser flow runner preserves adapter setup-gap JSON even with zero exit c
     '--timeout-ms',
     '5000',
   ], {
-    cwd: root,
+    cwd: tempRoot,
     encoding: 'utf8',
   });
 
@@ -878,7 +878,7 @@ test('browser flow runner treats missing agentic adapter executable as setup gap
   }, null, 2));
 
   const result = spawnSync(process.execPath, [
-    'scripts/browser-flow-runner.mjs',
+    fromRoot('scripts', 'browser-flow-runner.mjs'),
     '--flow',
     'preview',
     '--config',
@@ -892,7 +892,7 @@ test('browser flow runner treats missing agentic adapter executable as setup gap
     '--timeout-ms',
     '5000',
   ], {
-    cwd: root,
+    cwd: tempRoot,
     encoding: 'utf8',
   });
 
@@ -928,7 +928,7 @@ test('browser flow runner redacts token-shaped adapter output in raw verdicts', 
   }, null, 2));
 
   const result = spawnSync(process.execPath, [
-    'scripts/browser-flow-runner.mjs',
+    fromRoot('scripts', 'browser-flow-runner.mjs'),
     '--flow',
     'preview',
     '--config',
@@ -942,7 +942,7 @@ test('browser flow runner redacts token-shaped adapter output in raw verdicts', 
     '--timeout-ms',
     '5000',
   ], {
-    cwd: root,
+    cwd: tempRoot,
     encoding: 'utf8',
   });
 
@@ -1056,7 +1056,7 @@ test('browser flow runner reports unsupported agentic confirmation backend as se
   }, null, 2));
 
   const result = spawnSync(process.execPath, [
-    'scripts/browser-flow-runner.mjs',
+    fromRoot('scripts', 'browser-flow-runner.mjs'),
     '--flow',
     'preview',
     '--config',
@@ -1070,7 +1070,7 @@ test('browser flow runner reports unsupported agentic confirmation backend as se
     '--timeout-ms',
     '5000',
   ], {
-    cwd: root,
+    cwd: tempRoot,
     encoding: 'utf8',
   });
 
@@ -1103,7 +1103,7 @@ test('browser flow runner reports missing preview command as setup gap and still
   }, null, 2));
 
   const result = spawnSync(process.execPath, [
-    'scripts/browser-flow-runner.mjs',
+    fromRoot('scripts', 'browser-flow-runner.mjs'),
     '--flow',
     'preview',
     '--config',
@@ -1117,7 +1117,7 @@ test('browser flow runner reports missing preview command as setup gap and still
     '--timeout-ms',
     '1000',
   ], {
-    cwd: root,
+    cwd: tempRoot,
     encoding: 'utf8',
   });
 
@@ -1152,7 +1152,7 @@ test('browser flow runner reports readiness timeout as setup gap and cleans up p
   }, null, 2));
 
   const result = spawnSync(process.execPath, [
-    'scripts/browser-flow-runner.mjs',
+    fromRoot('scripts', 'browser-flow-runner.mjs'),
     '--flow',
     'preview',
     '--config',
@@ -1166,7 +1166,7 @@ test('browser flow runner reports readiness timeout as setup gap and cleans up p
     '--timeout-ms',
     '800',
   ], {
-    cwd: root,
+    cwd: tempRoot,
     encoding: 'utf8',
   });
 
@@ -1200,7 +1200,7 @@ test('browser flow runner downgrades successful preview when cleanup command fai
   }, null, 2));
 
   const result = spawnSync(process.execPath, [
-    'scripts/browser-flow-runner.mjs',
+    fromRoot('scripts', 'browser-flow-runner.mjs'),
     '--flow',
     'preview',
     '--config',
@@ -1214,7 +1214,7 @@ test('browser flow runner downgrades successful preview when cleanup command fai
     '--timeout-ms',
     '5000',
   ], {
-    cwd: root,
+    cwd: tempRoot,
     encoding: 'utf8',
   });
 
@@ -1247,7 +1247,7 @@ test('browser flow runner downgrades successful preview when leak check fails', 
   }, null, 2));
 
   const result = spawnSync(process.execPath, [
-    'scripts/browser-flow-runner.mjs',
+    fromRoot('scripts', 'browser-flow-runner.mjs'),
     '--flow',
     'preview',
     '--config',
@@ -1261,7 +1261,7 @@ test('browser flow runner downgrades successful preview when leak check fails', 
     '--timeout-ms',
     '5000',
   ], {
-    cwd: root,
+    cwd: tempRoot,
     encoding: 'utf8',
   });
 
@@ -1292,7 +1292,7 @@ test('browser flow runner separates fixture seed failure and missing browser bac
   }, null, 2));
 
   const fixtureFailure = spawnSync(process.execPath, [
-    'scripts/browser-flow-runner.mjs',
+    fromRoot('scripts', 'browser-flow-runner.mjs'),
     '--flow',
     'preview',
     '--config',
@@ -1306,7 +1306,7 @@ test('browser flow runner separates fixture seed failure and missing browser bac
     '--timeout-ms',
     '1000',
   ], {
-    cwd: root,
+    cwd: tempRoot,
     encoding: 'utf8',
   });
 
@@ -1319,7 +1319,7 @@ test('browser flow runner separates fixture seed failure and missing browser bac
   await rm(cleanupMarker, { force: true });
 
   const missingBackend = spawnSync(process.execPath, [
-    'scripts/browser-flow-runner.mjs',
+    fromRoot('scripts', 'browser-flow-runner.mjs'),
     '--flow',
     'preview',
     '--config',
@@ -1333,7 +1333,7 @@ test('browser flow runner separates fixture seed failure and missing browser bac
     '--timeout-ms',
     '1000',
   ], {
-    cwd: root,
+    cwd: tempRoot,
     encoding: 'utf8',
   });
 
@@ -1363,7 +1363,7 @@ test('browser flow runner writes structured verdict for malformed preview comman
   }, null, 2));
 
   const result = spawnSync(process.execPath, [
-    'scripts/browser-flow-runner.mjs',
+    fromRoot('scripts', 'browser-flow-runner.mjs'),
     '--flow',
     'preview',
     '--config',
@@ -1377,7 +1377,7 @@ test('browser flow runner writes structured verdict for malformed preview comman
     '--timeout-ms',
     '1000',
   ], {
-    cwd: root,
+    cwd: tempRoot,
     encoding: 'utf8',
   });
 
@@ -1413,7 +1413,7 @@ test('browser flow runner redacts config env secrets from paths urls commands an
   }, null, 2));
 
   const result = spawnSync(process.execPath, [
-    'scripts/browser-flow-runner.mjs',
+    fromRoot('scripts', 'browser-flow-runner.mjs'),
     '--flow',
     'preview',
     '--config',
@@ -1427,7 +1427,7 @@ test('browser flow runner redacts config env secrets from paths urls commands an
     '--timeout-ms',
     '5000',
   ], {
-    cwd: root,
+    cwd: tempRoot,
     encoding: 'utf8',
   });
 
@@ -1492,7 +1492,7 @@ test('browser flow runner browser completion failure class stays inside schema e
 
   for (const fixture of cases) {
     const result = spawnSync(process.execPath, [
-      'scripts/browser-flow-runner.mjs',
+      fromRoot('scripts', 'browser-flow-runner.mjs'),
       ...fixture.args,
       '--run-id',
       fixture.id,
@@ -1501,7 +1501,7 @@ test('browser flow runner browser completion failure class stays inside schema e
       '--timeout-ms',
       '1000',
     ], {
-      cwd: root,
+      cwd: tempRoot,
       encoding: 'utf8',
     });
     assert.notEqual(result.status, 0, `${fixture.id} should fail`);
@@ -1536,7 +1536,7 @@ test('browser flow runner classifies preview port conflicts as unavailable port 
     }, null, 2));
 
     const result = spawnSync(process.execPath, [
-      'scripts/browser-flow-runner.mjs',
+      fromRoot('scripts', 'browser-flow-runner.mjs'),
       '--flow',
       'preview',
       '--config',
@@ -1550,7 +1550,7 @@ test('browser flow runner classifies preview port conflicts as unavailable port 
       '--timeout-ms',
       '1200',
     ], {
-      cwd: root,
+      cwd: tempRoot,
       encoding: 'utf8',
     });
 

@@ -630,8 +630,10 @@ const dispatchKernelTurnAttempt = async ({
     && suppressOwnerDirect !== true
     && !['prove', 'close'].includes(actionContext.actionKind)
     && (isExplicitOwnerDirect || !nativeAvailable || !nativeDelegationRequested);
+  let evaluatedModelInput = null;
   if (ownerDirectRequested) {
-    const modelInput = await controlPlane.next(runId);
+    const modelInput = await controlPlane.next(runId, { stepId: actionContext.stepId || null });
+    evaluatedModelInput = modelInput;
     if (modelInput.status === 'not_found') return modelInput;
     const independentReviewRequired = modelInput.action?.type === 'review'
       && modelInput.action?.independentReviewRequired === true;
@@ -735,7 +737,7 @@ const dispatchKernelTurnAttempt = async ({
       }),
     });
   }
-  const turn = preloadedTurn || await controlPlane.hostNext(runId, { hostCapabilities, actionContext });
+  const turn = preloadedTurn || await controlPlane.hostNext(runId, { hostCapabilities, actionContext, modelInput: evaluatedModelInput });
   if (turn.status === 'not_found') return turn;
 
   const { modelInput, hostDirective } = turn;

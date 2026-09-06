@@ -89,15 +89,15 @@ export function matchesCurrentMutationCandidate({
     if (targetWorkspaceIdentity && targetWorkspaceIdentity !== currentWorkspaceIdentity) return false;
     if (run.currentWorkspaceIdentity && run.currentWorkspaceIdentity !== currentWorkspaceIdentity) return false;
   }
-  const approvedPaths = new Set(Array.isArray(provenance.changedPaths) ? provenance.changedPaths : []);
+  const approvedPaths = new Set(uniquePaths(Array.isArray(provenance.changedPaths) ? provenance.changedPaths : []));
   if (approvedPaths.size === 0) return false;
 
-  const currentList = Array.isArray(currentPaths) ? currentPaths : [];
+  const currentList = uniquePaths(Array.isArray(currentPaths) ? currentPaths : []);
   for (const candidatePath of currentList) {
     if (!approvedPaths.has(candidatePath)) return false;
   }
 
-  const selectedList = Array.isArray(selectedPaths) ? selectedPaths : [];
+  const selectedList = uniquePaths(Array.isArray(selectedPaths) ? selectedPaths : []);
   for (const candidatePath of selectedList) {
     if (!approvedPaths.has(candidatePath)) return false;
   }

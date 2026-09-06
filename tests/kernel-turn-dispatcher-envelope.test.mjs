@@ -191,3 +191,82 @@ test('the Fable launcher receives only the sanitized prompt boundary', async () 
   assert.deepEqual(seen.modelVisiblePrompt.requiredEvidence, [{ obligationId: 'fable-proof' }]);
   assert.doesNotMatch(seen.message, /executionContract|capsuleId|mutationRevision|routeDecision|provider|lease|control|modelPolicy/u);
 });
+
+test('Correction 3: normal bounded mutation turn does not invoke controlPlane.next multiple times for same state', async () => {
+  await withRun(async (cp, runId) => {
+    let nextCalls = 0;
+    const origNext = cp.next.bind(cp);
+    cp.next = async (...args) => {
+      nextCalls += 1;
+      const res = await origNext(...args);
+      return {
+        ...res,
+        action: {
+          type: 'implement',
+          guidance: 'implement bounded work',
+          step: { stepId: 'step-1', allowedPaths: ['src/app.mjs'] },
+        },
+      };
+    };
+
+    let hostNextPassedModelInput = null;
+    const origHostNext = cp.hostNext.bind(cp);
+    cp.hostNext = async (rId, opts) => {
+      hostNextPassedModelInput = opts?.modelInput;
+      return origHostNext(rId, opts);
+    };
+
+    const adapter = {
+      surface: 'codex',
+      ownerDirectDefault: true,
+      nativeDelegationAvailable: true,
+      capabilities: { surface: 'codex', nativeSubagent: true, supportsSubagentModel: true },
+      dispatch: async ({ invocation }) => ({
+        status: 'completed',
+        resultStatus: 'completed',
+        resolvedModel: invocation?.model || 'gpt-5.6-sol',
+        sessionId: 'child-session-1',
+        outcome: { status: 'completed', changedPaths: ['src/app.mjs'] },
+      }),
+    };
+
+    await dispatchKernelTurn({
+      controlPlane: cp,
+      runId,
+      adapter,
+      registry: createModelRegistry({ surface: 'codex', env: FRONTIER_ENV }),
+      actionContext: {},
+    });
+
+    assert.equal(nextCalls, 1, `controlPlane.next must be called exactly once, got ${nextCalls}`);
+    assert.ok(hostNextPassedModelInput, 'evaluated modelInput must be passed to hostNext');
+    assert.equal(hostNextPassedModelInput.action?.type, 'implement');
+  });
+});
+
+test('Correction 3: baseline-required recalculates modelInput via additional next call', async () => {
+  await withRun(async (cp, runId) => {
+    let nextCalls = 0;
+    const origNext = cp.next.bind(cp);
+    cp.next = async (...args) => {
+      nextCalls += 1;
+      return origNext(...args);
+    };
+
+    let captured = false;
+    cp.captureBaseline = async () => {
+      captured = true;
+      return { status: 'captured', baselineFailures: [] };
+    };
+
+    await cp.hostNext(runId, {
+      hostCapabilities: { surface: 'codex', nativeSubagent: true },
+      modelInput: {
+        action: { type: 'baseline-required', commandRefs: ['test'] },
+      },
+    });
+
+    assert.equal(captured, true, 'captureBaseline must be called');
+    assert.equal(nextCalls, 1, 'recalculation must call cp.next');
+  });
+});

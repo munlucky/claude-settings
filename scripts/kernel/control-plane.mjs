@@ -1956,11 +1956,11 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
 
     // Host-only turn API (§8.2). `next` stays exactly as the model sees it;
     // the routing directive travels beside it, never inside it.
-    async hostNext(runId, { hostCapabilities = {}, actionContext = {} } = {}) {
+    async hostNext(runId, { hostCapabilities = {}, actionContext = {}, modelInput: preloadedModelInput = null } = {}) {
       const run = store.getRun(runId);
       if (!run) return { schemaVersion: 1, runId, status: 'not_found' };
       const capabilities = normalizeHostCapabilities(hostCapabilities);
-      let modelInput = await this.next(runId, { stepId: actionContext.stepId || null });
+      let modelInput = preloadedModelInput || await this.next(runId, { stepId: actionContext.stepId || null });
       if (modelInput.action?.type === 'baseline-required') {
         await this.captureBaseline(runId, {
           commandRefs: modelInput.action.commandRefs,

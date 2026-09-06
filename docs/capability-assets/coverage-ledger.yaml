@@ -4,8 +4,8 @@
   "baselineCommit": "9701a86d2225c938f13982a7e0f7f43a7f9bc10e",
   "updatedAt": "2026-09-05",
   "summary": {
-    "totalMapped": 734,
-    "classifiedCapabilityCount": 709,
+    "totalMapped": 737,
+    "classifiedCapabilityCount": 712,
     "ignoredCount": 25,
     "unclassifiedCount": 0
   },
@@ -2734,6 +2734,10 @@
       "classification": "capability",
       "capability": "control-plane-state-authority"
     },
+    "tests/kernel-report-replay.test.mjs": {
+      "classification": "capability",
+      "capability": "control-plane-state-authority"
+    },
     "tests/kernel-required-capability.test.mjs": {
       "classification": "capability",
       "capability": "control-plane-state-authority"
@@ -2743,6 +2747,14 @@
       "capability": "step-ledger-resume"
     },
     "tests/kernel-review-capsule.test.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "tests/kernel-review-claim-recovery.test.mjs": {
+      "classification": "capability",
+      "capability": "evidence-completion-and-review-authority"
+    },
+    "tests/kernel-review-cross-process.test.mjs": {
       "classification": "capability",
       "capability": "evidence-completion-and-review-authority"
     },

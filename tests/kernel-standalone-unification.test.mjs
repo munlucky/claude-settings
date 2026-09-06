@@ -6,7 +6,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 
 import { loadStandaloneCatalog, validateStandaloneCatalog } from '../scripts/kernel/standalone/catalog.mjs';
-import { admitKernelMutation, resolveKernelCloseoutRun } from '../scripts/kernel/standalone/kernel-commit.mjs';
+import { admitKernelMutation, matchesCurrentMutationCandidate, resolveKernelCloseoutRun } from '../scripts/kernel/standalone/kernel-commit.mjs';
 import { buildTaskContractSeed, assertCurrentSeed } from '../scripts/kernel/standalone/prework.mjs';
 import { normalizeTaskContract } from '../scripts/kernel/task/task-contract.mjs';
 import { resolveDomainPolicies } from '../scripts/kernel/proof/domain-policy.mjs';
@@ -161,6 +161,54 @@ test('kernel commit admission rejects unknown, foreign, and drifted provenance',
   } finally {
     await rm(temp, { recursive: true, force: true });
   }
+});
+
+test('matchesCurrentMutationCandidate and resolveKernelCloseoutRun canonicalize paths across Windows case and separators', () => {
+  const run = { runId: 'run-case', currentWorkspaceIdentity: 'id-1' };
+  const provenance = { workspaceIdentity: 'id-1', changedPaths: ['Src/App.mjs'] };
+  assert.equal(matchesCurrentMutationCandidate({
+    run,
+    provenance,
+    currentWorkspaceIdentity: 'id-1',
+    currentPaths: ['src/app.mjs'],
+    selectedPaths: ['SRC/App.mjs'],
+  }), true);
+
+  const project = { projectId: 'fixture-project' };
+  const workspaceId = 'ws-1';
+  const stateStore = {
+    listRuns: () => [
+      {
+        runId: 'run-case',
+        projectId: project.projectId,
+        workspaceId,
+        status: 'completed',
+        currentState: 'CLOSE',
+        finalizationStatus: 'completed',
+        mutationRevision: 1,
+        sourceIdentity: 'src-id',
+        currentWorkspaceIdentity: 'id-1',
+      },
+    ],
+    getCompletionDecision: () => ({ decision: 'accepted' }),
+    getMutationProvenance: () => ({
+      projectId: project.projectId,
+      workspaceId,
+      sourceIdentity: 'src-id',
+      mutationRevision: 1,
+      workspaceIdentity: 'id-1',
+      changedPaths: ['Src/App.mjs'],
+    }),
+  };
+  const resolved = resolveKernelCloseoutRun({
+    stateStore,
+    projectId: project.projectId,
+    workspaceId,
+    currentWorkspaceIdentity: 'id-1',
+    currentPaths: ['src/app.mjs'],
+    selectedPaths: ['SRC/App.mjs'],
+  });
+  assert.equal(resolved.run.runId, 'run-case');
 });
 
 test('replacement and authority audit passes current checkout', async () => {

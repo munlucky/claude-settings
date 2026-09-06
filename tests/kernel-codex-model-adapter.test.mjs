@@ -6,7 +6,7 @@ import path from 'node:path';
 import { CODEX_CAPABILITIES, buildCodexInvocation, createCodexAdapter, selectCodexMechanism } from '../scripts/host/kernel/adapters/codex.mjs';
 import { resolveModelRoute } from '../scripts/kernel/run/model-routing.mjs';
 import { buildUsageReceipt } from '../scripts/host/kernel/usage-receipt.mjs';
-import { resolveCodexActorRoute } from '../scripts/host/kernel/codex-actor-router.mjs';
+import { isWorkUnitBounded, resolveCodexActorRoute } from '../scripts/host/kernel/codex-actor-router.mjs';
 import { compareCodexMainSessionInvariance, buildCodexMainSessionPolicy } from '../scripts/host/kernel/codex-session-observer.mjs';
 import { MODEL_VISIBLE_PROMPT_FIELDS } from '../scripts/host/kernel/model-capsule-view.mjs';
 
@@ -757,4 +757,148 @@ test('Correction 1: child worker capabilities strictly keep canDelegate=false, c
     canCommit: false,
     maxNestedAgents: 0,
   });
+});
+
+test('isWorkUnitBounded rejects root wildcards and empty paths while accepting scoped paths', () => {
+  assert.equal(isWorkUnitBounded({ stepId: 'step-1', allowedPaths: ['**', 'src/**'] }), false);
+  assert.equal(isWorkUnitBounded({ stepId: 'step-1', allowedPaths: ['*', 'src/app.mjs'] }), false);
+  assert.equal(isWorkUnitBounded({ stepId: 'step-1', allowedPaths: ['src/**'] }), true);
+  assert.equal(isWorkUnitBounded({ stepId: 'step-1', allowedPaths: ['src/app.mjs'] }), true);
+  assert.equal(isWorkUnitBounded({ stepId: 'step-1', allowedPaths: [] }), false);
+  assert.equal(isWorkUnitBounded({ stepId: null, allowedPaths: ['src/**'] }), false);
+  assert.equal(isWorkUnitBounded({ stepId: 'step-1', allowedPaths: ['   '] }), false);
+});
+
+test('Correction 4: pre-spawn failure with no execution evidence falls back to owner-direct launch', async () => {
+  let nativeAttempts = 0;
+  let ownerDirectAttempts = 0;
+  const adapter = createCodexAdapter({
+    parentSessionObserver: stableParentObserver,
+    launch: async ({ invocation }) => {
+      ownerDirectAttempts += 1;
+      return {
+        status: 'completed',
+        resultStatus: 'completed',
+        resolvedModel: invocation.model,
+        resolvedEffort: invocation.effort,
+        sessionId: 'owner-session-1',
+      };
+    },
+    nativeLaunch: async () => {
+      nativeAttempts += 1;
+      return {
+        status: 'failed',
+        resultStatus: 'failed',
+        errorCode: 'launcher-unavailable',
+        failureStage: 'pre-spawn',
+      };
+    },
+  });
+
+  const decision = decisionFor('implement');
+  const executionCapsule = {
+    stepId: 'step-1',
+    workUnit: { stepId: 'step-1', allowedPaths: ['src/app.mjs'] },
+  };
+
+  const dispatch = await adapter.dispatch({
+    decision,
+    resolution: resolution('gpt-5.6-sol'),
+    parentSessionId: 'main-session',
+    parentSessionConfig: {
+      before: { sessionId: 'main-session', model: 'gpt-5.6-sol', effort: 'high' },
+      after: { sessionId: 'main-session', model: 'gpt-5.6-sol', effort: 'high' },
+    },
+    executionCapsule,
+    modelInput: { action: { type: 'implement', step: { stepId: 'step-1', allowedPaths: ['src/app.mjs'] } } },
+    executionContract: {},
+  });
+
+  assert.equal(nativeAttempts, 1, 'native worker launch must be attempted');
+  assert.equal(ownerDirectAttempts, 1, 'owner-direct launch must be attempted on pre-spawn fallback');
+  assert.equal(dispatch.dispatchMechanism, 'owner-direct');
+  assert.equal(dispatch.fallbackReason, 'pre-spawn-native-launcher-unavailable');
+  assert.equal(dispatch.status, 'completed');
+});
+
+test('Correction 4: pre-spawn failure with observedSessionConfig does not fall back to owner-direct', async () => {
+  let ownerDirectAttempts = 0;
+  const adapter = createCodexAdapter({
+    parentSessionObserver: stableParentObserver,
+    launch: async () => {
+      ownerDirectAttempts += 1;
+      return { status: 'completed' };
+    },
+    nativeLaunch: async () => ({
+      status: 'failed',
+      resultStatus: 'failed',
+      errorCode: 'launcher-unavailable',
+      failureStage: 'pre-spawn',
+      observedSessionConfig: { model: 'gpt-5.6-sol', effort: 'high' },
+    }),
+  });
+
+  const decision = decisionFor('implement');
+  const executionCapsule = {
+    stepId: 'step-1',
+    workUnit: { stepId: 'step-1', allowedPaths: ['src/app.mjs'] },
+  };
+
+  const dispatch = await adapter.dispatch({
+    decision,
+    resolution: resolution('gpt-5.6-sol'),
+    parentSessionId: 'main-session',
+    parentSessionConfig: {
+      before: { sessionId: 'main-session', model: 'gpt-5.6-sol', effort: 'high' },
+      after: { sessionId: 'main-session', model: 'gpt-5.6-sol', effort: 'high' },
+    },
+    executionCapsule,
+    modelInput: { action: { type: 'implement', step: { stepId: 'step-1', allowedPaths: ['src/app.mjs'] } } },
+    executionContract: {},
+  });
+
+  assert.equal(ownerDirectAttempts, 0, 'owner-direct launch must not be invoked when execution evidence exists');
+  assert.equal(dispatch.status, 'failed');
+  assert.equal(dispatch.dispatchMechanism, 'native-subagent');
+});
+
+test('Correction 4: pre-spawn failure with sessionId does not fall back to owner-direct', async () => {
+  let ownerDirectAttempts = 0;
+  const adapter = createCodexAdapter({
+    parentSessionObserver: stableParentObserver,
+    launch: async () => {
+      ownerDirectAttempts += 1;
+      return { status: 'completed' };
+    },
+    nativeLaunch: async () => ({
+      status: 'failed',
+      resultStatus: 'failed',
+      errorCode: 'launcher-unavailable',
+      failureStage: 'pre-spawn',
+      sessionId: 'child-session-leaked',
+    }),
+  });
+
+  const decision = decisionFor('implement');
+  const executionCapsule = {
+    stepId: 'step-1',
+    workUnit: { stepId: 'step-1', allowedPaths: ['src/app.mjs'] },
+  };
+
+  const dispatch = await adapter.dispatch({
+    decision,
+    resolution: resolution('gpt-5.6-sol'),
+    parentSessionId: 'main-session',
+    parentSessionConfig: {
+      before: { sessionId: 'main-session', model: 'gpt-5.6-sol', effort: 'high' },
+      after: { sessionId: 'main-session', model: 'gpt-5.6-sol', effort: 'high' },
+    },
+    executionCapsule,
+    modelInput: { action: { type: 'implement', step: { stepId: 'step-1', allowedPaths: ['src/app.mjs'] } } },
+    executionContract: {},
+  });
+
+  assert.equal(ownerDirectAttempts, 0, 'owner-direct launch must not be invoked when sessionId exists');
+  assert.equal(dispatch.status, 'failed');
+  assert.equal(dispatch.dispatchMechanism, 'native-subagent');
 });

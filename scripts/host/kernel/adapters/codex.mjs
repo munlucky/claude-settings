@@ -711,9 +711,11 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
       let dispatchMechanism = nativeSelected ? 'native-subagent' : 'owner-direct';
       let fallbackReason = null;
       let invocationResult;
+      let caughtError = null;
       try {
         invocationResult = await invoke(selectedLaunch, dispatchMechanism);
       } catch (error) {
+        caughtError = error;
         const failureStage = error?.failureStage || error?.details?.failureStage || 'launch';
         const failureDetails = error?.details && typeof error.details === 'object' ? error.details : null;
         const providerExecutionEvidence = hasCodexProviderExecutionEvidence(error)
@@ -770,6 +772,43 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
         };
       }
       let result = invocationResult.result;
+
+      if (nativeSelected) {
+        const isWorkerFailure = Boolean(caughtError)
+          || result.status === 'failed'
+          || result.resultStatus === 'failed'
+          || Boolean(result.errorCode);
+        if (isWorkerFailure) {
+          const effectiveFailureStage = result.failureStage || caughtError?.failureStage || caughtError?.details?.failureStage || null;
+          const failureDetails = caughtError?.details && typeof caughtError.details === 'object' ? caughtError.details : null;
+          const providerExecutionEvidence = hasCodexProviderExecutionEvidence(result)
+            || hasCodexProviderExecutionEvidence(caughtError)
+            || hasCodexProviderExecutionEvidence(failureDetails);
+          const hasSessionId = Boolean(result.sessionId || caughtError?.sessionId || result.actorSessionId || caughtError?.actorSessionId);
+          const hasTerminalEvents = Boolean((result.terminalEvents && result.terminalEvents.length > 0)
+            || (caughtError?.terminalEvents && caughtError.terminalEvents.length > 0)
+            || (result.events && result.events.length > 0)
+            || (caughtError?.events && caughtError.events.length > 0));
+          const hasOutcome = Boolean(result.outcome || caughtError?.outcome);
+          const hasMutationEvidence = Boolean(result.mutationEvidence || caughtError?.mutationEvidence || result.hasMutations || caughtError?.hasMutations);
+
+          const isPurePreSpawn = effectiveFailureStage === 'pre-spawn'
+            && !providerExecutionEvidence
+            && !hasSessionId
+            && !hasTerminalEvents
+            && !hasOutcome
+            && !hasMutationEvidence;
+
+          if (isPurePreSpawn && launch && decision.role !== 'reviewer') {
+            selectedLaunch = launch;
+            invocationResult = await invoke(launch, 'owner-direct', 'pre-spawn-native-launcher-unavailable');
+            result = invocationResult.result;
+            dispatchMechanism = invocationResult.dispatchMechanism;
+            fallbackReason = invocationResult.fallbackReason;
+            caughtError = null;
+          }
+        }
+      }
       const actualLauncher = Boolean(selectedLaunch);
       const preSpawnFailure = (result.status === 'failed' || result.resultStatus === 'failed')
         && result.failureStage === 'pre-spawn';
@@ -801,12 +840,12 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
           requested: { model: invocation.model, effort: invocation.effort },
           observed: { model: observedModel, effort: observedEffort },
         });
-        const lineageReason = !candidate.sessionId
+        const lineageReason = requiresTerminalTelemetry && !candidate.sessionId
           ? 'worker-session-observation-missing'
-          : !parentSessionId
+          : requiresTerminalTelemetry && !parentSessionId
             ? 'parent-session-missing'
-            : String(candidate.sessionId) === String(parentSessionId)
-              || nativeSessionId(candidate.sessionId) === nativeSessionId(parentSessionId)
+            : requiresTerminalTelemetry && (String(candidate.sessionId) === String(parentSessionId)
+              || nativeSessionId(candidate.sessionId) === nativeSessionId(parentSessionId))
               ? 'worker-session-not-distinct'
               : null;
         if (lineageReason) observation = { ...observation, exact: false, reason: lineageReason };
@@ -837,7 +876,7 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
       const explicitDispatchFailure = result.status === 'failed'
         || result.resultStatus === 'failed'
         || Boolean(result.errorCode);
-      const workerCapabilityUnavailable = !explicitDispatchFailure && isWorkerTelemetryUnavailable({
+      const workerCapabilityUnavailable = dispatchMechanism === 'native-subagent' && !explicitDispatchFailure && isWorkerTelemetryUnavailable({
         actualLauncher,
         identityRequired,
         observation,

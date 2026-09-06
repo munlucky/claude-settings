@@ -36,11 +36,12 @@ export const isWorkUnitBounded = ({ stepId = null, allowedPaths = null, capsule 
     || modelInput?.action?.step?.allowedPaths
     || null;
   if (!Array.isArray(paths) || paths.length === 0) return false;
-  const boundedPaths = paths.filter((p) => {
-    const s = String(p || '').trim();
-    return s.length > 0 && s !== '*' && s !== '**';
-  });
-  return boundedPaths.length > 0;
+  const validPaths = paths
+    .map((p) => String(p || '').trim())
+    .filter((s) => s.length > 0);
+  if (validPaths.length === 0) return false;
+  if (validPaths.some((s) => s === '*' || s === '**')) return false;
+  return true;
 };
 
 // Native subagents are opt-in or automatically selected for mutation-bearing
