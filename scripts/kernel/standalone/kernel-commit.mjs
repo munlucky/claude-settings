@@ -76,20 +76,31 @@ export function mutationAdmissionDigest({ runId, projectId, workspaceId, sourceI
   });
 }
 
-export function resolveKernelCloseoutRun({ stateStore, projectId, workspaceId, runId = null } = {}) {
-  const effectiveRunId = runId || process.env.MOON_RELAY_KERNEL_RUN_ID || null;
+export function resolveKernelCloseoutRun({ stateStore, projectId, workspaceId, runId = null, env = {} } = {}) {
+  const effectiveRunId = runId || env.MOON_RELAY_KERNEL_RUN_ID || null;
   const candidates = effectiveRunId
     ? [stateStore.getRun(effectiveRunId)].filter(Boolean)
     : stateStore.listRuns({ projectId, statuses: ['completed'] })
-      .filter((candidate) => candidate.workspaceId === workspaceId)
-      .slice()
-      .sort((a, b) => {
-        const timeA = new Date(a.updatedAt || a.completedAt || a.createdAt || 0).getTime();
-        const timeB = new Date(b.updatedAt || b.completedAt || b.createdAt || 0).getTime();
-        return timeB - timeA;
+      .filter((candidate) => candidate.projectId === projectId && candidate.workspaceId === workspaceId)
+      .filter((candidate) => candidate.status === 'completed' && candidate.currentState === 'CLOSE' && candidate.finalizationStatus === 'completed')
+      .filter((candidate) => stateStore.getCompletionDecision(candidate.runId)?.decision === 'accepted')
+      .filter((candidate) => {
+        const provenance = stateStore.getMutationProvenance(candidate.runId);
+        return provenance
+          && provenance.projectId === projectId
+          && provenance.workspaceId === workspaceId
+          && provenance.sourceIdentity === candidate.sourceIdentity
+          && Number(provenance.mutationRevision) > 0
+          && Number(provenance.mutationRevision) === Number(candidate.mutationRevision)
+          && Boolean(provenance.workspaceIdentity)
+          && Array.isArray(provenance.changedPaths)
+          && provenance.changedPaths.length > 0;
       });
   if (candidates.length === 0) {
     throw admissionError(effectiveRunId ? 'UNKNOWN_RUN_ID' : 'RUN_PROVENANCE_REQUIRED', { runId: effectiveRunId, projectId, workspaceId });
+  }
+  if (!effectiveRunId && candidates.length > 1) {
+    throw admissionError('RUN_PROVENANCE_AMBIGUOUS', { projectId, workspaceId, runIds: candidates.map((candidate) => candidate.runId) });
   }
   const run = candidates[0];
   if (run.projectId !== projectId) {
@@ -108,10 +119,10 @@ export function resolveKernelCloseoutRun({ stateStore, projectId, workspaceId, r
   return { run, completion };
 }
 
-export function admitKernelMutation({ stateStore, project, statusEntries = [], selected = [], runId = null } = {}) {
+export function admitKernelMutation({ stateStore, project, statusEntries = [], selected = [], runId = null, env = {} } = {}) {
   const workspace = registerWorkspace({ stateStore, projectId: project.projectId, workspaceRoot: project.projectRoot });
   const currentObservation = observeWorkspaceIdentity({ projectRoot: project.projectRoot });
-  const { run, completion } = resolveKernelCloseoutRun({ stateStore, projectId: project.projectId, workspaceId: workspace.workspaceId, runId });
+  const { run, completion } = resolveKernelCloseoutRun({ stateStore, projectId: project.projectId, workspaceId: workspace.workspaceId, runId, env });
   const provenance = stateStore.getMutationProvenance(run.runId) || stateStore.getLatestImplementationAttempt(run.runId);
   if (!provenance || provenance.status && provenance.status !== 'passed') {
     throw admissionError('MUTATION_PROVENANCE_MISSING', { runId: run.runId });
@@ -198,7 +209,7 @@ export async function kernelCommit({ cwd = process.cwd(), env = process.env, mes
   const stateStore = await openKernelStateStore({ runtimeHome: project.runtimeHome });
   try {
     const admission = selected.length > 0
-      ? admitKernelMutation({ stateStore, project, statusEntries, selected, runId })
+      ? admitKernelMutation({ stateStore, project, statusEntries, selected, runId, env })
       : null;
     const index = await buildCodebaseIndex({ projectRoot: project.projectRoot, projectId: project.projectId, codebaseRoot: project.codebaseRoot, runtimeHome: project.runtimeHome });
     let candidates = [];

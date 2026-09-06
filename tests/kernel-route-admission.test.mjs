@@ -62,6 +62,53 @@ test('K3-2: a T3 review on a frontier, read-only, independent session is admitte
   assert.equal(admission.economics.costClass, 'frontier');
 });
 
+test('K3: raw decision executionClass/modelClass divergence is rejected before reviewer role rules', () => {
+  const admission = admitRoute({
+    decision: decisionFor({
+      role: 'reviewer',
+      executionClass: 'review',
+      modelClass: 'value_coding',
+      permissions: 'read_only',
+      riskTier: 'T3',
+      independentContextRequired: true,
+    }),
+    resolution: resolutionFor({ executionClass: 'review', modelClass: 'frontier_reasoning', model: 'configured-frontier' }),
+    capabilities: FULL_HOST,
+    capsule: capsuleFor({ role: 'reviewer', permissions: { filesystem: 'read_only', canCommit: false, canDelegate: false } }),
+  });
+  assert.equal(admission.decision, 'blocked');
+  assert.equal(admission.rejectionCode, REJECTION_CODES.ROUTE_CLASS_MISMATCH);
+});
+
+test('K3: a Host resolution class that diverges from the raw decision is rejected before role rules', () => {
+  const admission = admitRoute({
+    decision: decisionFor({
+      role: 'reviewer',
+      executionClass: 'review',
+      modelClass: 'frontier_reasoning',
+      permissions: 'read_only',
+      riskTier: 'T3',
+      independentContextRequired: true,
+    }),
+    resolution: resolutionFor({ executionClass: 'standard', modelClass: 'value_coding', model: 'configured-value' }),
+    capabilities: FULL_HOST,
+    capsule: capsuleFor({ role: 'reviewer', permissions: { filesystem: 'read_only', canCommit: false, canDelegate: false } }),
+  });
+  assert.equal(admission.decision, 'blocked');
+  assert.equal(admission.rejectionCode, REJECTION_CODES.ROUTE_CLASS_MISMATCH);
+});
+
+test('K3: explicit complex frontier escalation remains admitted when decision and Host resolution agree', () => {
+  const admission = admitRoute({
+    decision: decisionFor({ executionClass: 'complex_implementation', modelClass: 'frontier_reasoning' }),
+    resolution: resolutionFor({ executionClass: 'complex_implementation', modelClass: 'frontier_reasoning', model: 'configured-frontier' }),
+    capabilities: FULL_HOST,
+    capsule: capsuleFor(),
+  });
+  assert.equal(admission.decision, 'admitted');
+  assert.equal(admission.rejectionCode, null);
+});
+
 test('K3-3: a T3 review on the value class is blocked', () => {
   const admission = admitRoute({
     decision: decisionFor({ role: 'reviewer', modelClass: 'value_coding', permissions: 'read_only', riskTier: 'T3', independentContextRequired: true }),

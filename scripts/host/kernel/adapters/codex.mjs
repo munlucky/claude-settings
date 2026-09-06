@@ -4,6 +4,7 @@
 
 import { selectCodexProfileName } from '../codex-model-policy.mjs';
 import { isNativeDelegationRequested, resolveCodexActorRoute } from '../codex-actor-router.mjs';
+import { buildModelVisiblePromptMessage, buildModelVisiblePromptView } from '../model-capsule-view.mjs';
 import {
   buildCodexMainSessionPolicy,
   compareCodexSessionConfig,
@@ -121,33 +122,6 @@ const assertReviewOutcome = (value) => {
   return value;
 };
 
-const workerPrompt = ({ executionContract, executionCapsule }) => [
-  'Perform the bounded Kernel worker action described below.',
-  'You are a child actor assigned by the Host. Do not invoke Kernel next/report commands, do not delegate to another agent, and do not claim completion authority.',
-  'Use only the supplied execution contract and capsule. Apply the requested workspace changes when the permissions allow them.',
-  'Return only the JSON object required by the supplied output schema. Include every verification, risk, judgment, and reusable knowledge observation needed by the parent orchestrator.',
-  'Report verification requests in the structured verifications array. Copy the exact obligationId, one exact commandRef from allowedCommandRefs, and exact acceptance IDs from acceptanceIds in WORKER CAPSULE.verification.obligations. Never invent, rename, infer, or substitute these IDs. When using structured verifications, set legacy requestedVerifications to [].',
-  '',
-  'EXECUTION CONTRACT',
-  JSON.stringify(executionContract || {}, null, 2),
-  '',
-  'WORKER CAPSULE',
-  JSON.stringify(executionCapsule || {}, null, 2),
-].join('\n');
-
-const reviewPrompt = ({ executionContract, executionCapsule }) => [
-  'Perform the independent Kernel review described below.',
-  'You are a read-only reviewer. Do not edit files, run mutating commands, or invoke Kernel commands.',
-  'Inspect the current workspace and return only the JSON object required by the supplied output schema.',
-  'A pass verdict requires every reviewed acceptance claim to be supported by the current files and evidence.',
-  '',
-  'EXECUTION CONTRACT',
-  JSON.stringify(executionContract || {}, null, 2),
-  '',
-  'REVIEW CAPSULE',
-  JSON.stringify(executionCapsule || {}, null, 2),
-].join('\n');
-
 const resolveNativeSpawnAgent = ({ spawnAgent = null, host = globalThis } = {}) => {
   if (typeof spawnAgent === 'function') return spawnAgent;
   if (typeof host?.spawn_agent === 'function') return host.spawn_agent.bind(host);
@@ -158,6 +132,39 @@ const resolveNativeSpawnAgent = ({ spawnAgent = null, host = globalThis } = {}) 
 };
 
 const firstNativeValue = (values) => values.find((value) => value !== undefined && value !== null && String(value).trim()) ?? null;
+
+const providerEnvironment = (value) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const safe = {};
+  let requiresProjection = false;
+  let keys = [];
+  try { keys = Object.keys(value); } catch { return null; }
+  for (const key of keys) {
+    try {
+      const next = value[key];
+      if (typeof next === 'string' || typeof next === 'boolean' || (typeof next === 'number' && Number.isFinite(next))) {
+        safe[key] = next;
+      } else {
+        requiresProjection = true;
+      }
+    } catch {
+      // A malformed runtime value is omitted at the provider boundary.
+    }
+  }
+  return requiresProjection ? Object.freeze(safe) : value;
+};
+
+const providerChildSession = (value) => {
+  if (!value || typeof value !== 'object') return null;
+  const maxNestedAgents = Number.isInteger(value.maxNestedAgents) && value.maxNestedAgents >= 0
+    ? value.maxNestedAgents
+    : null;
+  return {
+    canDelegate: value.canDelegate === true,
+    canCommit: value.canCommit === true,
+    ...(maxNestedAgents === null ? {} : { maxNestedAgents }),
+  };
+};
 
 const CODEX_PROVIDER_EXECUTION_EVIDENCE_FIELDS = Object.freeze([
   'actorSessionId', 'actor_session_id', 'sessionId', 'session_id', 'childSessionId', 'child_session_id',
@@ -208,20 +215,17 @@ const codexReviewerResultFields = (source) => {
 export const createCodexNativeAgentLauncher = ({ spawnAgent = null, host = globalThis } = {}) => {
   const dispatch = resolveNativeSpawnAgent({ spawnAgent, host });
   if (!dispatch) return null;
-  return async ({ invocation, executionCapsule, executionContract, parentSessionId = null, actorRoute = null, childSession = null, workingDirectory = null, concurrencyGroup = null }) => {
+  return async ({ invocation, message = null, modelVisiblePrompt = null, taskName = 'kernel_worker', parentSessionId = null, childSession = null, workingDirectory = null, concurrencyGroup = null }) => {
     if (!invocation?.model || !invocation?.effort) throw new Error('codex_native_worker_requires_explicit_model_and_effort');
-    const reviewer = actorRoute?.role === 'reviewer';
+    const reviewer = taskName === 'kernel_reviewer';
+    const safeChildSession = providerChildSession(childSession) || { canDelegate: false, canCommit: false };
     const handle = await dispatch({
-      task_name: `kernel_${actorRoute?.role || 'worker'}`,
+      task_name: taskName,
       model: invocation.model,
       reasoning_effort: invocation.effort,
-      message: reviewer
-        ? reviewPrompt({ executionContract, executionCapsule })
-        : workerPrompt({ executionContract, executionCapsule }),
-      execution_contract: executionContract || null,
-      execution_capsule: executionCapsule || null,
+      message: message || buildModelVisiblePromptMessage({ prompt: modelVisiblePrompt || {} }),
       parent_session_id: parentSessionId,
-      child_session: childSession || { canDelegate: false, canCommit: false },
+      child_session: safeChildSession,
       working_directory: workingDirectory,
       concurrency_group: concurrencyGroup,
     });
@@ -558,8 +562,14 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
     ownerDirectAvailable: true,
     ownerDirectDefault: true,
     nativeDelegationAvailable,
-    async dispatch({ decision, resolution, strategy, executionCapsule = null, executionContract, envelope = null, workingDirectory = null, environment = null, parentSessionId = null, parentSessionConfig = defaultParentSessionConfig, parentSessionEnvironment: dispatchParentSessionEnvironment = null, parentEnvironment: dispatchParentEnvironment = null, concurrencyGroup = null, childSession = null, executionMode = null, delegationRequested = false, actionContext = null }) {
+    async dispatch({ decision, resolution, strategy, executionCapsule = null, modelInput = {}, executionContract, envelope = null, workingDirectory = null, environment = null, parentSessionId = null, parentSessionConfig = defaultParentSessionConfig, parentSessionEnvironment: dispatchParentSessionEnvironment = null, parentEnvironment: dispatchParentEnvironment = null, concurrencyGroup = null, childSession = null, executionMode = null, delegationRequested = false, actionContext = null }) {
       const invocation = buildCodexInvocation({ decision, resolution, capabilities: resolved });
+      // Reproject at the adapter/provider boundary. A caller-supplied prompt
+      // is intentionally not accepted as an authority for provider input.
+      const providerPrompt = buildModelVisiblePromptView({ modelInput, capsule: executionCapsule });
+      const providerMessage = buildModelVisiblePromptMessage({ prompt: providerPrompt, review: decision.role === 'reviewer' });
+      const providerInvocation = { model: invocation.model, effort: invocation.effort };
+      const taskName = decision.role === 'reviewer' ? 'kernel_reviewer' : 'kernel_implementer';
       const nativeAvailable = Boolean(effectiveNativeLaunch && resolved.supportsSubagentModel === true);
       const nativeRequested = isNativeDelegationRequested({ executionMode, delegationRequested, actionContext, executionContract });
       const actorRoute = resolveCodexActorRoute({
@@ -671,19 +681,15 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
         if (!selectedLaunch) return { result: {}, dispatchMechanism, fallbackReason };
         const dispatchedInvocation = { ...invocation, dispatchMechanism, fallbackReason };
         const result = (await selectedLaunch({
-          invocation: dispatchedInvocation,
-          actorRoute,
-          executionCapsule,
-          executionContract,
-          decision,
-          strategy,
-          envelope,
-          workingDirectory,
-          environment,
-          parentSessionId,
-          parentSessionPolicy: parentSessionPolicyBefore,
-          concurrencyGroup,
-          childSession,
+          invocation: providerInvocation,
+          message: providerMessage,
+          modelVisiblePrompt: providerPrompt,
+          taskName,
+          workingDirectory: typeof workingDirectory === 'string' ? workingDirectory : null,
+          environment: providerEnvironment(environment),
+          parentSessionId: typeof parentSessionId === 'string' ? parentSessionId : null,
+          concurrencyGroup: typeof concurrencyGroup === 'string' ? concurrencyGroup : null,
+          childSession: providerChildSession(childSession),
         })) || {};
         return { result, dispatchMechanism, fallbackReason };
       };

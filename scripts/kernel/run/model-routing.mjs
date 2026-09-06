@@ -137,8 +137,8 @@ export const resolveModelRoute = ({
   // The Kernel records the requested workload class. The legacy modelClass is
   // retained only as a compatibility projection for pre-B1 consumers; old
   // retry/replan behavior may still make that projection frontier-shaped.
-  const selectedExecutionClass = escalation && effectiveAction !== actionKind
-    ? spec.executionClass
+  const selectedExecutionClass = escalation
+    ? (effectiveAction === 'replan' ? 'planning' : effectiveAction === 'review_engineering' || effectiveAction === 'review_contract' ? 'review' : 'complex_implementation')
     : executionClass ?? spec.executionClass;
   const modelClass = escalation ? 'frontier_reasoning' : legacyModelClassForExecutionClass(selectedExecutionClass);
 

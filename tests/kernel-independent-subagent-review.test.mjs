@@ -7,6 +7,7 @@ import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
 import { dispatchKernelTurn } from '../scripts/host/kernel/turn-dispatcher.mjs';
 import { createKernelHostReviewBridge } from '../scripts/host/kernel/lifecycle-bridge.mjs';
 import { createIndependentSubagentReviewTransport, validateIndependentSubagentReviewAttestation } from '../scripts/host/kernel/independent-subagent-review.mjs';
+import { MODEL_VISIBLE_PROMPT_FIELDS } from '../scripts/host/kernel/model-capsule-view.mjs';
 import { createModelRegistry } from '../scripts/host/kernel/model-registry.mjs';
 import { createClaudeAdapter } from '../scripts/host/kernel/adapters/claude.mjs';
 import { createCodexAdapter } from '../scripts/host/kernel/adapters/codex.mjs';
@@ -80,7 +81,14 @@ const cleanupReviewRun = async ({ cp, root, runtimeHome }) => {
   await rm(root, { recursive: true, force: true });
 };
 
-const attestationFor = (request, childSessionId = 'independent-reviewer-session') => ({
+const latestReviewSubject = (cp, runId) => {
+  const capsule = cp.stateStore.listExecutionCapsules(runId)
+    .filter((entry) => entry.role === 'reviewer')
+    .at(-1);
+  return capsule ? { ...capsule.subject, capsuleDigest: capsule.provenance?.capsuleDigest } : null;
+};
+
+const attestationFor = (request, reviewSubject, childSessionId = 'independent-reviewer-session') => ({
   schemaVersion: 1,
   transport: 'independent-subagent',
   executionId: 'independent-review-execution-1',
@@ -95,11 +103,11 @@ const attestationFor = (request, childSessionId = 'independent-reviewer-session'
   canCommit: false,
   canDelegate: false,
   cleanupStatus: 'clean',
-  workspaceIdentityBefore: request.reviewSubject.workspaceIdentity,
-  workspaceIdentityAfter: request.reviewSubject.workspaceIdentity,
-  mutationRevisionBefore: request.reviewSubject.mutationRevision,
-  mutationRevisionAfter: request.reviewSubject.mutationRevision,
-  capsuleDigest: request.reviewSubject.capsuleDigest,
+  workspaceIdentityBefore: reviewSubject.workspaceIdentity,
+  workspaceIdentityAfter: reviewSubject.workspaceIdentity,
+  mutationRevisionBefore: reviewSubject.mutationRevision,
+  mutationRevisionAfter: reviewSubject.mutationRevision,
+  capsuleDigest: reviewSubject.capsuleDigest,
 });
 
 test('independent subagent transport becomes the last fallback when native reviewer is absent', async () => {
@@ -110,9 +118,11 @@ test('independent subagent transport becomes the last fallback when native revie
       host: {
         spawn_independent_reviewer: async (payload) => {
           request = payload;
+          const reviewSubject = latestReviewSubject(fixture.cp, 'independent-subagent-chain');
+          assert.ok(reviewSubject);
           return {
             outcome: { verdict: 'pass', findings: [], risks: [], evidenceRefs: ['review://independent-subagent'] },
-            reviewTransportAttestation: attestationFor(payload),
+            reviewTransportAttestation: attestationFor(payload, reviewSubject),
           };
         },
       },
@@ -137,8 +147,19 @@ test('independent subagent transport becomes the last fallback when native revie
     assert.equal(request.child_session.canCommit, false);
     assert.equal(request.child_session.canDelegate, false);
     assert.equal(request.child_session.permissions, 'read_only');
-    assert.match(request.message, /Return exactly one JSON object/u);
-    assert.doesNotMatch(request.message, /reviewSubject|mutationRevision.*\d/u);
+    const marker = 'MODEL VISIBLE CONTEXT\n';
+    const providerPrompt = JSON.parse(request.message.slice(request.message.indexOf(marker) + marker.length));
+    assert.deepEqual(Object.keys(providerPrompt), [...MODEL_VISIBLE_PROMPT_FIELDS]);
+    assert.equal(providerPrompt.currentWork.type, 'review');
+    assert.match(request.message, /independent Kernel review/u);
+    assert.match(request.message, /security-review/u);
+    for (const forbidden of ['reviewSubject', 'mutationRevision', 'executionContract', 'executionCapsule']) {
+      assert.doesNotMatch(request.message, new RegExp(forbidden, 'u'));
+    }
+    for (const forbidden of ['executionContract', 'execution_contract', 'executionCapsule', 'execution_capsule', 'reviewSubject', 'envelope', 'control', 'modelPolicy']) {
+      assert.equal(Object.hasOwn(request, forbidden), false, `launcher request leaked ${forbidden}`);
+    }
+    assert.doesNotMatch(JSON.stringify(request), /route-host-only|nested-leak/u);
   } finally {
     await cleanupReviewRun(fixture);
   }
@@ -152,9 +173,11 @@ test('Kernel Host bridge auto-injects the independent subagent fallback and repo
       nativeAgentHost: {
         spawn_independent_reviewer: async (payload) => {
           request = payload;
+          const reviewSubject = latestReviewSubject(fixture.cp, 'independent-bridge-chain');
+          assert.ok(reviewSubject);
           return {
             outcome: { verdict: 'pass', findings: [], risks: [], evidenceRefs: ['review://bridge-subagent'] },
-            reviewTransportAttestation: attestationFor(payload, 'bridge-reviewer-session'),
+            reviewTransportAttestation: attestationFor(payload, reviewSubject, 'bridge-reviewer-session'),
           };
         },
       },
@@ -204,9 +227,11 @@ test('the same review point reuses its current receipt instead of reviewing twic
       nativeAgentHost: {
         spawn_independent_reviewer: async (payload) => {
           launchCount += 1;
+          const reviewSubject = latestReviewSubject(fixture.cp, 'independent-dedupe-chain');
+          assert.ok(reviewSubject);
           return {
             outcome: { verdict: 'pass', findings: [], risks: [], evidenceRefs: ['review://dedupe'] },
-            reviewTransportAttestation: attestationFor(payload, 'dedupe-reviewer-session'),
+            reviewTransportAttestation: attestationFor(payload, reviewSubject, 'dedupe-reviewer-session'),
           };
         },
       },

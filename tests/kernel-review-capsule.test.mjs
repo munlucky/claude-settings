@@ -14,6 +14,7 @@ import { hashSessionId } from '../scripts/kernel/run/model-route-contract.mjs';
 import { dispatchKernelTurn } from '../scripts/host/kernel/turn-dispatcher.mjs';
 import { createModelRegistry } from '../scripts/host/kernel/model-registry.mjs';
 import { createClaudeAdapter } from '../scripts/host/kernel/adapters/claude.mjs';
+import { MODEL_VISIBLE_PROMPT_FIELDS } from '../scripts/host/kernel/model-capsule-view.mjs';
 
 const IMPLEMENTER = hashSessionId('review-capsule-implementer');
 
@@ -171,10 +172,11 @@ test('K1: the capsule reaches the worker launcher, not just the dispatcher', asy
   const cp = await createKernelControlPlane(fixture);
   try {
     await cp.startRun({ runId: 'r-launch', objective: 'auth boundary', taskContract: { surfaces: ['security_boundary'], acceptance: ['works'], allowedPaths: ['src/auth/**'] } });
-    const seen = [];
+    const seenProviders = [];
     const adapter = createClaudeAdapter({
-      launch: async ({ invocation, executionCapsule }) => {
-        seen.push(executionCapsule);
+      launch: async (providerInput) => {
+        seenProviders.push(providerInput);
+        const { invocation } = providerInput;
         return { resolvedModel: invocation.model, sessionId: 'worker' };
       },
     });
@@ -186,15 +188,9 @@ test('K1: the capsule reaches the worker launcher, not just the dispatcher', asy
       registry: createModelRegistry({ surface: 'claude', env: { MOON_RELAY_KERNEL_MODEL_FRONTIER: 'configured-frontier', MOON_RELAY_KERNEL_MODEL_VALUE: 'configured-value' } }),
       actionContext: { executionMode: 'native-subagent', delegationRequested: true },
     });
-    // The launcher is the thing that actually starts a worker session; a capsule
-    // that stops at the dispatcher would leave the worker with the old flat
-    // contract and no work unit at all. It receives the model-visible
-    // projection, though — capsuleId and other control fields stay on the
-    // full capsule dispatchKernelTurn returns, never on what the launcher saw.
+    // The provider launcher receives only the six-field projection. The full
+    // capsule and execution contract stay on the Host/transport boundary.
     assert.ok(implementTurn.executionCapsule.capsuleId);
-    assert.ok(!Object.hasOwn(seen[0], 'capsuleId'), 'the launcher must not see the persisted capsuleId');
-    assert.equal(seen[0].role, 'implementer');
-    assert.deepEqual(seen[0].workUnit.allowedPaths, ['src/auth/**']);
 
     const reviewTurn = await dispatchKernelTurn({
       controlPlane: cp,
@@ -209,10 +205,18 @@ test('K1: the capsule reaches the worker launcher, not just the dispatcher', asy
       },
     });
     assert.ok(reviewTurn.executionCapsule.capsuleId);
-    assert.ok(!Object.hasOwn(seen[1], 'capsuleId'), 'the launcher must not see the persisted capsuleId');
-    assert.equal(seen[1].role, 'reviewer');
-    assert.equal(seen[1].permissions.filesystem, 'read_only');
-    assert.equal(seen[1].workUnit, undefined, 'a reviewer never receives the implementer work unit');
+    assert.equal(seenProviders.length, 2);
+    for (const providerInput of seenProviders) {
+      for (const forbidden of ['executionContract', 'executionCapsule', 'role', 'permissions', 'nonGoals']) {
+        assert.equal(Object.hasOwn(providerInput, forbidden), false, `provider input leaked ${forbidden}`);
+        assert.equal(Object.hasOwn(providerInput.invocation, forbidden), false, `provider invocation leaked ${forbidden}`);
+      }
+      assert.deepEqual(Object.keys(providerInput.modelVisiblePrompt), [...MODEL_VISIBLE_PROMPT_FIELDS]);
+      assert.deepEqual(providerInput.prompt, providerInput.modelVisiblePrompt);
+      assert.doesNotMatch(providerInput.message, /executionContract|executionCapsule|"role"|"permissions"|"nonGoals"/);
+    }
+    assert.deepEqual(seenProviders[0].modelVisiblePrompt.currentWork.allowedPaths, ['src/auth/**']);
+    assert.match(seenProviders[1].message, /independent Kernel review/);
   } finally {
     await cp.close();
     await cleanup(fixture);

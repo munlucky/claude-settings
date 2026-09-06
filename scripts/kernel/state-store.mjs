@@ -754,6 +754,20 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
   addCol('run_step_attempts', 'mutation_revision', 'INTEGER');
   addCol('run_step_attempts', 'retry_reason', 'TEXT');
   addCol('run_step_attempts', 'failure_category', 'TEXT');
+  addCol('run_step_attempts', 'report_digest', 'TEXT');
+  addCol('run_step_attempts', 'report_result_json', 'TEXT');
+  addCol('run_step_attempts', 'review_claim_key', 'TEXT');
+  addCol('run_step_attempts', 'review_claim_holder', 'TEXT');
+  addCol('run_step_attempts', 'review_claim_expires_at', 'TEXT');
+  // A review claim is scoped to the durable subject, not globally to a
+  // caller-chosen string. This lets a new plan/step reuse a claim label
+  // without colliding with an old-plan attempt.
+  db.exec(`
+    DROP INDEX IF EXISTS idx_run_step_attempts_review_claim;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_run_step_attempts_review_claim
+    ON run_step_attempts(run_id, step_id, plan_revision, review_claim_key)
+    WHERE review_claim_key IS NOT NULL;
+  `);
   addCol('route_admissions', 'attempt_id', 'TEXT');
   addCol('review_receipts', 'step_id', 'TEXT');
   addCol('review_receipts', 'reviewer_binding_id', 'TEXT');
@@ -4595,6 +4609,7 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       baseWorkspaceIdentity = null,
       verificationRefs = [],
       knowledgeObservationRefs = [],
+      reportDigest = null,
     }) {
       const run = this.getRun(runId);
       if (!run) throw new Error(`Run ${runId} not found`);
@@ -4619,13 +4634,13 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
       });
       const attemptNumber = this.nextStepAttemptNumber(runId, stepId);
       const result = db.prepare(`
-        INSERT INTO run_step_attempts(attempt_id, run_id, step_id, attempt_number, binding_id, actor_session_id, capsule_id, capsule_digest, admission_id, route_decision_id, usage_receipt_id, parent_attempt_id, provenance_kind, plan_revision, mutation_revision, retry_reason, failure_category, status, workspace_identity_start, summary, changed_paths_json, workspace_id, workspace_root_hash, base_workspace_identity, verification_refs_json, knowledge_observation_refs_json, started_at)
-        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'started', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO run_step_attempts(attempt_id, run_id, step_id, attempt_number, binding_id, actor_session_id, capsule_id, capsule_digest, admission_id, route_decision_id, usage_receipt_id, parent_attempt_id, provenance_kind, plan_revision, mutation_revision, retry_reason, failure_category, report_digest, status, workspace_identity_start, summary, changed_paths_json, workspace_id, workspace_root_hash, base_workspace_identity, verification_refs_json, knowledge_observation_refs_json, started_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'started', ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         provenance.attemptId, runId, stepId, attemptNumber, provenance.bindingId, hashSessionId(actorSessionId), provenance.capsuleId,
         provenance.capsuleDigest, provenance.admissionId, routeDecisionId, usageReceiptId, provenance.parentAttemptId,
         provenance.provenanceKind, provenance.planRevision, provenance.mutationRevision, provenance.retryReason,
-        provenance.failureCategory, workspaceIdentityStart, summary, JSON.stringify(changedPaths), workspaceId,
+        provenance.failureCategory, reportDigest, workspaceIdentityStart, summary, JSON.stringify(changedPaths), workspaceId,
         workspaceRootHash, baseWorkspaceIdentity, JSON.stringify(verificationRefs), JSON.stringify(knowledgeObservationRefs), now(),
       );
       db.prepare(`UPDATE run_steps SET attempt_count=attempt_count+1, updated_at=? WHERE run_id=? AND step_id=?`).run(now(), runId, stepId);
@@ -4700,6 +4715,43 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         });
       }
       return finished;
+    },
+
+    // Canonical attempt settlement and the exact report result are one durable
+    // fact. Keep them in the same SQLite transaction so a process exit cannot
+    // leave a passed attempt that can only replay as a synthetic result.
+    finishStepAttemptWithReportResult(attemptId, finishOptions = {}, reportResult = null) {
+      if (!attemptId || !reportResult) return null;
+      return db.transaction(() => {
+        const current = this.getStepAttemptByAttemptId(attemptId) || this.getStepAttempt(attemptId);
+        if (!current) return null;
+        const serialized = JSON.stringify(reportResult);
+        if (current.reportResult) {
+          if (JSON.stringify(current.reportResult) !== serialized) {
+            throw Object.assign(new Error('canonical report result changed concurrently'), {
+              code: 'STEP_REPORT_RESULT_IMMUTABLE_CONFLICT',
+              errorCode: 'STEP_REPORT_RESULT_IMMUTABLE_CONFLICT',
+            });
+          }
+          if (!['started', 'reported', 'verifying'].includes(current.status)) return current;
+          return this.finishStepAttempt(current.id, finishOptions);
+        }
+
+        const finished = this.finishStepAttempt(current.id, finishOptions);
+        if (!finished) return null;
+        const persisted = db.prepare(`
+          UPDATE run_step_attempts
+          SET report_result_json=?
+          WHERE id=? AND report_result_json IS NULL
+        `).run(serialized, current.id);
+        if (persisted.changes !== 1) {
+          throw Object.assign(new Error('canonical report result changed concurrently'), {
+            code: 'STEP_REPORT_RESULT_IMMUTABLE_CONFLICT',
+            errorCode: 'STEP_REPORT_RESULT_IMMUTABLE_CONFLICT',
+          });
+        }
+        return this.getStepAttempt(current.id);
+      })();
     },
 
     updateStepAttempt(attemptId, patch = {}) {
@@ -4866,6 +4918,11 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         mutationRevision: legacy || row.mutation_revision === null ? null : Number(row.mutation_revision),
         retryReason: row.retry_reason || null,
         failureCategory: row.failure_category || null,
+        reportDigest: row.report_digest || null,
+        reportResult: row.report_result_json ? safeJsonParse(row.report_result_json, null) : null,
+        reviewClaimKey: row.review_claim_key || null,
+        reviewClaimHolder: row.review_claim_holder || null,
+        reviewClaimExpiresAt: row.review_claim_expires_at || null,
         status: row.status,
         workspaceIdentityStart: row.workspace_identity_start || null,
         workspaceIdentityEnd: row.workspace_identity_end || null,
@@ -4893,6 +4950,135 @@ export const openKernelStateStore = async ({ runtimeHome: runtimeHomeInput = res
         ? db.prepare(`SELECT id FROM run_step_attempts WHERE attempt_id=? AND run_id=? LIMIT 1`).get(String(attemptId), runId)
         : db.prepare(`SELECT id FROM run_step_attempts WHERE attempt_id=? LIMIT 1`).get(String(attemptId));
       return row ? this.getStepAttempt(row.id) : null;
+    },
+
+    findStepAttemptByReportDigest(runId, reportDigest) {
+      if (!runId || !reportDigest) return null;
+      const row = db.prepare(`SELECT id FROM run_step_attempts WHERE run_id=? AND report_digest=? ORDER BY id DESC LIMIT 1`).get(runId, reportDigest);
+      return row ? this.getStepAttempt(row.id) : null;
+    },
+
+    claimReviewAttempt({ runId, stepId, claimKey, holder, expiresAt, role = null, actionKind = null, obligationId = null, planRevision = null, mutationRevision = null } = {}) {
+      if (!runId || !stepId || !claimKey || !holder || !expiresAt) return { claimed: false, reason: 'invalid-claim' };
+      if (role !== 'reviewer' || !['review', 'review_engineering', 'review_contract'].includes(String(actionKind)) || !obligationId) return { claimed: false, reason: 'review-route-required' };
+      try {
+        return db.transaction(() => {
+          const nowIso = now();
+          const run = db.prepare('SELECT plan_revision, mutation_revision FROM runs WHERE run_id=?').get(runId);
+          const subjectPlanRevision = Number(planRevision ?? run?.plan_revision);
+          const subjectMutationRevision = Number(mutationRevision ?? run?.mutation_revision);
+          if (!run || Number(run.plan_revision) !== subjectPlanRevision || Number(run.mutation_revision) !== subjectMutationRevision) return { claimed: false, reason: 'review-subject-stale' };
+
+          const existing = db.prepare(`
+            SELECT a.*
+            FROM run_step_attempts a
+            JOIN model_route_decisions d ON d.decision_id=a.route_decision_id
+            WHERE a.run_id=? AND a.step_id=?
+              AND a.plan_revision=? AND a.mutation_revision=?
+              AND a.review_claim_key=?
+              AND d.run_id=? AND d.role='reviewer'
+              AND d.action_kind IN ('review','review_engineering','review_contract')
+              AND d.obligation_id=? AND d.plan_revision=?
+            LIMIT 1
+          `).get(runId, stepId, subjectPlanRevision, subjectMutationRevision, claimKey, runId, obligationId, subjectPlanRevision);
+          if (existing && existing.review_claim_holder === holder) return { claimed: true, existing: this.getStepAttempt(existing.id) };
+          if (existing && existing.review_claim_expires_at > nowIso) return { claimed: false, existing: this.getStepAttempt(existing.id), reason: 'already-claimed' };
+
+          // Reclaim expired rows inside the same transaction before choosing a
+          // candidate. The old implementation selected only NULL claims first,
+          // so an expired row made the dispatch report no-review-attempt and
+          // could never be recovered after a crashed Host process.
+          db.prepare(`
+            UPDATE run_step_attempts
+            SET review_claim_key=NULL, review_claim_holder=NULL, review_claim_expires_at=NULL
+            WHERE id IN (
+              SELECT a.id
+              FROM run_step_attempts a
+              JOIN model_route_decisions d ON d.decision_id=a.route_decision_id
+              WHERE a.run_id=? AND a.step_id=?
+                AND a.plan_revision=? AND a.mutation_revision=?
+                AND a.review_claim_key IS NOT NULL
+                AND a.review_claim_expires_at IS NOT NULL
+                AND a.review_claim_expires_at<=?
+                AND d.run_id=? AND d.role='reviewer'
+                AND d.action_kind IN ('review','review_engineering','review_contract')
+                AND d.obligation_id=? AND d.plan_revision=?
+            )
+          `).run(runId, stepId, subjectPlanRevision, subjectMutationRevision, nowIso, runId, obligationId, subjectPlanRevision);
+
+          const candidate = db.prepare(`
+            SELECT a.id
+            FROM run_step_attempts a
+            JOIN model_route_decisions d ON d.decision_id=a.route_decision_id
+            WHERE a.run_id=? AND a.step_id=?
+              AND a.plan_revision=? AND a.mutation_revision=?
+              AND a.provenance_kind='routed'
+              AND a.status IN ('started','verifying','reported')
+              AND a.review_claim_key IS NULL
+              AND d.run_id=? AND d.role='reviewer'
+              AND d.action_kind IN ('review','review_engineering','review_contract')
+              AND d.obligation_id=? AND d.plan_revision=?
+            ORDER BY a.id ASC
+            LIMIT 1
+          `).get(runId, stepId, subjectPlanRevision, subjectMutationRevision, runId, obligationId, subjectPlanRevision);
+          if (!candidate) return { claimed: false, reason: 'no-review-attempt' };
+
+          const updated = db.prepare(`
+            UPDATE run_step_attempts
+            SET review_claim_key=?, review_claim_holder=?, review_claim_expires_at=?
+            WHERE id=? AND run_id=? AND step_id=? AND plan_revision=? AND mutation_revision=? AND review_claim_key IS NULL
+          `).run(claimKey, holder, expiresAt, candidate.id, runId, stepId, subjectPlanRevision, subjectMutationRevision);
+          if (updated.changes !== 1) return { claimed: false, existing: this.getStepAttempt(candidate.id), reason: 'already-claimed' };
+          return { claimed: true, existing: this.getStepAttempt(candidate.id) };
+        })();
+      } catch (error) {
+        if (String(error?.message || '').includes('review_claim')) {
+          const currentPlanRevision = Number(planRevision ?? db.prepare('SELECT plan_revision FROM runs WHERE run_id=?').get(runId)?.plan_revision);
+          const row = db.prepare(`
+            SELECT id FROM run_step_attempts
+            WHERE run_id=? AND step_id=? AND plan_revision=? AND review_claim_key=?
+            LIMIT 1
+          `).get(runId, stepId, currentPlanRevision, claimKey);
+          return { claimed: false, existing: row ? this.getStepAttempt(row.id) : null, reason: 'already-claimed' };
+        }
+        throw error;
+      }
+    },
+
+    releaseReviewClaim(claimKey, holder, { runId = null, stepId = null, planRevision = null } = {}) {
+      if (!claimKey || !holder) return false;
+      const scope = [
+        runId ? 'run_id=?' : null,
+        stepId ? 'step_id=?' : null,
+        planRevision === null || planRevision === undefined ? null : 'plan_revision=?',
+      ].filter(Boolean);
+      const values = [claimKey, holder, ...(runId ? [runId] : []), ...(stepId ? [stepId] : []), ...(planRevision === null || planRevision === undefined ? [] : [Number(planRevision)])];
+      return db.prepare(`UPDATE run_step_attempts SET review_claim_key=NULL, review_claim_holder=NULL, review_claim_expires_at=NULL WHERE review_claim_key=? AND review_claim_holder=?${scope.length ? ` AND ${scope.join(' AND ')}` : ''}`).run(...values).changes === 1;
+    },
+
+    bindStepAttemptReportDigest(attemptId, reportDigest) {
+      if (!attemptId || !reportDigest) return null;
+      db.prepare(`UPDATE run_step_attempts SET report_digest=? WHERE attempt_id=? AND (report_digest IS NULL OR report_digest=?)`).run(reportDigest, String(attemptId), reportDigest);
+      return this.getStepAttemptByAttemptId(attemptId);
+    },
+
+    setStepAttemptReportResult(attemptId, reportResult) {
+      if (!attemptId || !reportResult) return null;
+      const serialized = JSON.stringify(reportResult);
+      const persisted = db.prepare(`
+        UPDATE run_step_attempts
+        SET report_result_json=?
+        WHERE attempt_id=? AND (report_result_json IS NULL OR report_result_json=?)
+      `).run(serialized, String(attemptId), serialized);
+      if (persisted.changes !== 1) {
+        const current = this.getStepAttemptByAttemptId(attemptId);
+        if (current?.reportResult && JSON.stringify(current.reportResult) === serialized) return current;
+        throw Object.assign(new Error('canonical report result changed concurrently'), {
+          code: 'STEP_REPORT_RESULT_IMMUTABLE_CONFLICT',
+          errorCode: 'STEP_REPORT_RESULT_IMMUTABLE_CONFLICT',
+        });
+      }
+      return this.getStepAttemptByAttemptId(attemptId);
     },
 
     getActiveStepAttempt(runId, { stepId = null, attemptId = null, capsuleId = null } = {}) {

@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildModelCapsuleView, findControlMetadataLeaks, CONTROL_ONLY_CAPSULE_FIELDS } from '../scripts/host/kernel/model-capsule-view.mjs';
+import {
+  buildModelCapsuleView,
+  buildModelVisiblePromptMessage,
+  buildModelVisiblePromptView,
+  findControlMetadataLeaks,
+  CONTROL_ONLY_CAPSULE_FIELDS,
+  MODEL_VISIBLE_PROMPT_FIELDS,
+} from '../scripts/host/kernel/model-capsule-view.mjs';
 import { normalizeReviewCapsule } from '../scripts/kernel/run/execution-capsule.mjs';
 
 const persistedCapsule = () => ({
@@ -120,4 +127,42 @@ test('the greenfield walking skeleton reaches the view; an absent one does not f
   assert.deepEqual(withSkeleton.repositoryContext.walkingSkeleton, { slices: [{ name: 'auth' }] });
   const withoutSkeleton = buildModelCapsuleView({ repositoryContext: { entrypoints: ['bin/x.mjs'] } });
   assert.equal(withoutSkeleton.repositoryContext.walkingSkeleton, null);
+});
+
+test('the six-field prompt projection recursively drops nested Host control data', () => {
+  const hostile = {
+    objective: 'legitimate objective',
+    acceptance: [{ id: 'AC-1', statement: 'it works', executionContract: { leak: 'nested' } }],
+    constraints: ['keep the authority unchanged', { control: { leak: 'nested' } }],
+    action: {
+      type: 'implement',
+      guidance: 'legitimate guidance',
+      step: {
+        objective: 'legitimate step',
+        allowedPaths: ['src/**', { path: 'bad-object', provider: 'nested-leak' }],
+        forbiddenPaths: ['secrets/**'],
+        expectedOutputs: ['result'],
+        executionCapsule: { capsuleId: 'nested-leak' },
+      },
+    },
+    knowledge: [{ recordId: 'K-1', summary: 'legitimate fact', route: { admissionId: 'nested-leak' } }],
+    requiredEvidence: [{ obligationId: 'proof-1', allowedCommandRefs: ['test:ok'], lease: { leaseId: 'nested-leak' } }],
+    executionContract: { mutationRevision: 99 },
+  };
+  const view = buildModelVisiblePromptView({ modelInput: hostile });
+  assert.deepEqual(Object.keys(view), [...MODEL_VISIBLE_PROMPT_FIELDS]);
+  assert.equal(view.objective, 'legitimate objective');
+  assert.equal(view.currentWork.objective, 'legitimate step');
+  assert.deepEqual(view.currentWork.allowedPaths, ['src/**']);
+  assert.deepEqual(view.requiredEvidence, [{ obligationId: 'proof-1', allowedCommandRefs: ['test:ok'] }]);
+  assert.deepEqual(view.relevantProjectKnowledge, [{ recordId: 'K-1', summary: 'legitimate fact' }]);
+  assert.deepEqual(findControlMetadataLeaks(view), []);
+  assert.doesNotMatch(JSON.stringify(view), /executionContract|executionCapsule|capsuleId|mutationRevision|route|admission|provider|lease|control/u);
+
+  const messageView = JSON.parse(buildModelVisiblePromptMessage({
+    prompt: { ...view, requiredEvidence: [{ obligationId: 'proof-2', control: { runId: 'nested-leak' } }] },
+  }).split('MODEL VISIBLE CONTEXT\n')[1]);
+  assert.deepEqual(Object.keys(messageView), [...MODEL_VISIBLE_PROMPT_FIELDS]);
+  assert.deepEqual(messageView.requiredEvidence, [{ obligationId: 'proof-2' }]);
+  assert.doesNotMatch(JSON.stringify(messageView), /nested-leak/u);
 });

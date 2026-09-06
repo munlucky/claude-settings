@@ -10,6 +10,7 @@ import {
 } from '../../kernel/workspace/step-worktree-manager.mjs';
 import { executeTrustedProof } from '../../kernel/proof/proof-executor.mjs';
 import { buildUsageReceipt } from './usage-receipt.mjs';
+import { buildModelVisiblePromptView } from './model-capsule-view.mjs';
 
 const baseCommit = (repoRoot) => {
   const result = runGit(repoRoot, ['rev-parse', '--verify', 'HEAD']);
@@ -115,11 +116,18 @@ const dispatchDefaultStep = async ({ adapter, hosted, dispatchContext = null, wo
     || null;
   const delegationRequested = context.hostDirective?.executionAssignment?.delegation?.requested === true
     || hosted.hostDirective?.executionAssignment?.delegation?.requested === true;
+  const decision = context.decision || context.hostDirective?.modelRouteDecision || hosted.hostDirective?.modelRouteDecision || {};
+  // Ignore any caller-provided projection. The adapter will reproject this
+  // current capsule again at the provider boundary.
+  const modelInput = context.modelInput || hosted.modelInput || { action: { type: 'implement' } };
+  const modelVisiblePrompt = buildModelVisiblePromptView({ modelInput, capsule });
   return adapter.dispatch({
-    decision: context.decision || context.hostDirective?.modelRouteDecision || hosted.hostDirective?.modelRouteDecision || {},
+    decision,
     resolution: context.resolution,
     strategy: context.strategy || context.hostDirective?.enforcementStrategy || hosted.hostDirective?.enforcementStrategy || 'isolated',
-    executionCapsule: context.modelVisibleCapsule || capsule,
+    executionCapsule: capsule,
+    modelInput,
+    modelVisiblePrompt,
     executionContract: context.executionContract || hosted.executionContract || {
       objective: step.objective,
       role: 'worker',

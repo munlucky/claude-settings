@@ -8,6 +8,11 @@
 // Without it a T3 independent review can quietly execute on a host default.
 
 import { canonicalDigest, digestWithout } from '../canonical-digest.mjs';
+import {
+  executionClassFromLegacyModelClass,
+  legacyModelClassForExecutionClass,
+  normalizeExecutionClass,
+} from '../run/execution-class.mjs';
 
 export const ADMISSION_SCHEMA_VERSION = 1;
 export const ADMISSION_DECISIONS = Object.freeze(['admitted', 'fallback_admitted', 'advisory_admitted', 'blocked', 'redecision_required']);
@@ -24,6 +29,7 @@ export const REJECTION_CODES = Object.freeze({
   CAPSULE_PERMISSION_MISMATCH: 'capsule-permission-does-not-match-route-permission',
   CAPSULE_GRANTS_AUTHORITY: 'capsule-must-not-grant-commit-or-delegation',
   ADAPTER_CANNOT_SELECT_MODEL: 'adapter-cannot-apply-the-requested-model',
+  ROUTE_CLASS_MISMATCH: 'route-execution-class-mismatch',
   COST_CAP_EXCEEDED: 'cost-cap-exceeded',
   PROFILE_DRIFT: 'profile-changed-after-the-route-decision',
   PERMISSION_POLICY_DRIFT: 'permission-policy-changed-after-the-route-decision',
@@ -59,6 +65,42 @@ export const policyDigests = ({
 });
 
 const rank = { T0: 0, T1: 1, T2: 2, T3: 3 };
+
+// Raw admission callers can arrive before the full model-route normalizer. Keep
+// the compatibility modelClass field honest at this boundary as well: an
+// explicit executionClass must map to the same legacy class, and the Host must
+// resolve the same execution class the Kernel decided. A malformed or partial
+// pair is a rejection, never an invitation to let role rules guess.
+const comparableRouteClass = (route = {}) => {
+  const hasExecutionClass = Object.hasOwn(route, 'executionClass');
+  const hasModelClass = Object.hasOwn(route, 'modelClass');
+  let executionClass = null;
+  let modelClass = hasModelClass ? route.modelClass : null;
+
+  try {
+    if (hasExecutionClass) executionClass = normalizeExecutionClass(route.executionClass);
+    if (hasModelClass) {
+      const modelExecutionClass = executionClassFromLegacyModelClass(route.modelClass);
+      if (hasExecutionClass && legacyModelClassForExecutionClass(executionClass) !== route.modelClass) {
+        return { mismatch: true };
+      }
+      if (!hasExecutionClass) executionClass = modelExecutionClass;
+    }
+    if (!hasModelClass) modelClass = legacyModelClassForExecutionClass(executionClass);
+    return { executionClass, modelClass, mismatch: false };
+  } catch {
+    return { mismatch: true };
+  }
+};
+
+const routeClassRejection = ({ decision, resolution } = {}) => {
+  const decided = comparableRouteClass(decision);
+  const resolved = comparableRouteClass(resolution);
+  if (decided.mismatch || resolved.mismatch || decided.executionClass !== resolved.executionClass) {
+    return REJECTION_CODES.ROUTE_CLASS_MISMATCH;
+  }
+  return null;
+};
 
 // Role rules (§8.6). Each returns a rejection code or null.
 const checkRoleRules = ({ decision, resolution, capabilities, capsule, riskTier }) => {
@@ -131,6 +173,11 @@ export const admitRoute = ({
   if (decision.modelClass === 'kernel') {
     admissionDecision = 'blocked';
     rejectionCode = REJECTION_CODES.KERNEL_OWNED;
+  }
+
+  if (!rejectionCode) {
+    rejectionCode = routeClassRejection({ decision, resolution });
+    if (rejectionCode) admissionDecision = 'blocked';
   }
 
   if (!rejectionCode) {

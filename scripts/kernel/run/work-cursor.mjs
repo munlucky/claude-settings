@@ -577,7 +577,15 @@ export const createWorkCursorApi = ({ store, projectRoot, runtimeHome, worktree 
   // evidence that now exists. A synthetic step carries the whole run, so it is
   // settled by the run-level obligation check; a declared step is settled by
   // the acceptance and obligations it was actually made responsible for.
-  settleStep(runId, { step, attempt, report, failures = [], outstanding = [], observation }) {
+  settleStep(runId, {
+    step,
+    attempt,
+    report,
+    failures = [],
+    outstanding = [],
+    observation,
+    persistAttempt = true,
+  }) {
     const run = store.getRun(runId);
     store.updateRunStep(runId, step.stepId, { state: 'reported' });
     store.updateRunStep(runId, step.stepId, { state: 'verifying' });
@@ -605,8 +613,7 @@ export const createWorkCursorApi = ({ store, projectRoot, runtimeHome, worktree 
     } else {
       this.failStep(runId, step.stepId, { reason: evaluation.reasons[0] || 'evidence-failed' });
     }
-    if (attempt) {
-      store.finishStepAttempt(attempt.id, {
+    const attemptSettlement = attempt ? {
         status: passed ? 'passed' : 'failed',
         workspaceIdentityEnd: observation.identity,
         changedPaths: report.changedPaths,
@@ -614,11 +621,20 @@ export const createWorkCursorApi = ({ store, projectRoot, runtimeHome, worktree 
         verificationRefs: store.getVerifications(runId).map((verification) => verification.evidenceRef).filter(Boolean),
         failureReasons: passed ? [] : [...evaluation.reasons, ...failures.map((failure) => failure.errorSummary).filter(Boolean)],
         failureCategory: passed ? null : (failures[0]?.failureCategory || 'proof'),
-      });
+    } : null;
+    if (attempt && persistAttempt) {
+      store.finishStepAttempt(attempt.id, attemptSettlement);
     }
 
-    const stagnation = passed ? { stagnant: false, recommendation: 'retry', signals: {} } : this.detectStepStagnation(runId, { stepId: step.stepId });
-    return {
+    const attemptsForStagnation = store.getStepAttempts(runId, { stepId: step.stepId })
+      .filter((candidate) => !attempt || candidate.id !== attempt.id);
+    if (attempt && attemptSettlement) {
+      attemptsForStagnation.push({ ...attempt, ...attemptSettlement, stepId: step.stepId });
+    }
+    const stagnation = passed
+      ? { stagnant: false, recommendation: 'retry', signals: {} }
+      : detectStepStagnation({ step, attempts: attemptsForStagnation });
+    const outcome = {
       stepId: step.stepId,
       state: passed ? 'passed' : 'failed',
       synthetic: step.synthetic,
@@ -628,6 +644,14 @@ export const createWorkCursorApi = ({ store, projectRoot, runtimeHome, worktree 
       // A stuck step is replanned, not retried forever (§7.9).
       stagnation,
     };
+    // Keep the settlement receipt available to the control plane without
+    // making it part of the model-visible Step result. The control plane can
+    // then commit this receipt and the exact report result together.
+    Object.defineProperty(outcome, 'attemptSettlement', {
+      value: attemptSettlement,
+      enumerable: false,
+    });
+    return outcome;
   },
 
   // Returns the rejection list when a report cannot be accepted against the

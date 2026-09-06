@@ -8,6 +8,7 @@ import { resolveModelRoute } from '../scripts/kernel/run/model-routing.mjs';
 import { buildUsageReceipt } from '../scripts/host/kernel/usage-receipt.mjs';
 import { resolveCodexActorRoute } from '../scripts/host/kernel/codex-actor-router.mjs';
 import { compareCodexMainSessionInvariance, buildCodexMainSessionPolicy } from '../scripts/host/kernel/codex-session-observer.mjs';
+import { MODEL_VISIBLE_PROMPT_FIELDS } from '../scripts/host/kernel/model-capsule-view.mjs';
 
 const decisionFor = (actionKind, riskTier = 'T1') => resolveModelRoute({ runId: 'r-codex', actionKind, riskTier, obligationId: 'default' });
 const resolution = (model) => ({ model, effort: model ? 'high' : null, enforcementIntent: model ? 'enforced' : 'advisory' });
@@ -269,6 +270,82 @@ test('native reviewer dispatch uses the read-only review contract and schema', a
   assert.equal(dispatch.outcome.verdict, 'pass');
   assert.match(request.message, /independent Kernel review/i);
   assert.doesNotMatch(request.message, /bounded Kernel worker action/i);
+});
+
+test('captured Codex provider message is reprojected to the six-field prompt contract', async () => {
+  let request = null;
+  const adapter = createCodexAdapter({
+    nativeAgentHost: {
+      spawn_agent: async (payload) => {
+        request = payload;
+        return {
+          session_id: 'native-prompt-session',
+          terminalEvents: [{ type: 'turn.completed', model: 'gpt-5.6-luna', reasoning_effort: 'high' }],
+          outcome: {
+            status: 'completed',
+            summary: 'prompt contract checked',
+            changedPaths: [],
+            risks: [],
+            requestedVerifications: [],
+            judgments: [],
+            knowledgeObservations: [],
+            blocker: null,
+          },
+        };
+      },
+    },
+    parentSessionObserver: stableParentObserver,
+  });
+  const modelInput = {
+    objective: 'caller objective',
+    acceptance: ['caller acceptance'],
+    constraints: ['caller constraint'],
+    knowledge: ['caller knowledge'],
+    requiredEvidence: [{ obligationId: 'caller-obligation' }],
+    action: {
+      type: 'implement',
+      guidance: 'caller guidance',
+      step: {
+        objective: 'caller step',
+        allowedPaths: ['src/**'],
+        forbiddenPaths: ['secrets/**'],
+        expectedOutputs: ['source'],
+      },
+    },
+  };
+  const dispatch = await adapter.dispatch({
+    decision: decisionFor('implement'),
+    resolution: { model: 'gpt-5.6-luna', effort: 'high', enforcementIntent: 'enforced' },
+    modelInput,
+    executionCapsule: {
+      capsuleId: 'capsule-host-only',
+      role: 'reviewer',
+      permissions: { filesystem: 'read_only' },
+      nonGoals: ['host-only value'],
+      objective: 'capsule objective',
+      workUnit: { objective: 'capsule step', allowedPaths: ['wrong/**'] },
+      repositoryContext: { knowledgeRecords: ['host-only knowledge'] },
+      verification: { obligations: [{ obligationId: 'host-only-obligation' }] },
+      mutationRevision: 99,
+      provenance: { capsuleDigest: 'host-only-digest' },
+    },
+    modelVisiblePrompt: { executionContract: 'caller bypass', role: 'attacker', permissions: 'write' },
+    executionContract: { role: 'reviewer', permissions: 'read_only', nonGoals: ['must not leak'] },
+    parentSessionId: 'main-session',
+    executionMode: 'native-subagent',
+    delegationRequested: true,
+  });
+
+  assert.equal(dispatch.status, 'completed');
+  const marker = 'MODEL VISIBLE CONTEXT\n';
+  const visible = JSON.parse(request.message.slice(request.message.indexOf(marker) + marker.length));
+  assert.deepEqual(Object.keys(visible), [...MODEL_VISIBLE_PROMPT_FIELDS]);
+  assert.equal(visible.objective, 'caller objective');
+  assert.deepEqual(visible.currentWork.allowedPaths, ['src/**']);
+  assert.doesNotMatch(request.message, /executionContract|executionCapsule|execution_contract|execution_capsule|"role"|"permissions"|"nonGoals"/);
+  for (const forbidden of ['execution_contract', 'execution_capsule', 'role', 'permissions', 'nonGoals', 'envelope', 'control', 'modelPolicy', 'reviewSubject']) {
+    assert.equal(Object.hasOwn(request, forbidden), false, `provider request leaked ${forbidden}`);
+  }
 });
 
 test('a parent session identity change observed after child execution fails the whole dispatch closed', async () => {

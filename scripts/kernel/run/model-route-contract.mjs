@@ -254,6 +254,10 @@ export const normalizeModelRouteDecision = (decision = {}) => {
   const modelClass = Object.hasOwn(decision, 'modelClass')
     ? decision.modelClass
     : legacyModelClassForExecutionClass(executionClass);
+  if (Object.hasOwn(decision, 'executionClass') && Object.hasOwn(decision, 'modelClass')
+    && legacyModelClassForExecutionClass(executionClass) !== modelClass) {
+    fail('kernel_model_route_invalid', 'executionClass and modelClass are incongruent');
+  }
   if (!ROLES.includes(decision.role)) fail('kernel_model_route_invalid', `role must be one of: ${ROLES.join(', ')}`);
   if (!PERMISSIONS.includes(decision.permissions)) fail('kernel_model_route_invalid', `permissions must be one of: ${PERMISSIONS.join(', ')}`);
   if (!RISK_TIERS.includes(decision.riskTier)) fail('kernel_model_route_invalid', `riskTier must be one of: ${RISK_TIERS.join(', ')}`);

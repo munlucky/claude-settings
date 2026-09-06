@@ -2,6 +2,7 @@
 // adapter to run the turn under the requested model class, and files the
 // receipt. It owns no provider client: `adapter.dispatch` is the only edge.
 
+import { randomUUID } from 'node:crypto';
 import { buildUsageReceipt } from './usage-receipt.mjs';
 import { createModelRegistry } from './model-registry.mjs';
 import { currentHostPolicies, revalidateBeforeDispatch } from './admission-revalidator.mjs';
@@ -12,7 +13,7 @@ import { buildKernelContextSegments } from '../../kernel/context-segments.mjs';
 import { resolveOptimizationModes } from './provider-prompt-policy.mjs';
 import { resolveCodexModelPolicy } from './codex-model-policy.mjs';
 import { resolveClaudeEffort } from './claude-effort-policy.mjs';
-import { buildModelCapsuleView } from './model-capsule-view.mjs';
+import { buildModelCapsuleView, buildModelVisiblePromptView } from './model-capsule-view.mjs';
 import { dispatchKernelRun } from './parallel-dispatcher.mjs';
 import { isNativeDelegationRequested } from './codex-actor-router.mjs';
 import { resolveEnforcementStrategy } from '../../kernel/run/model-route-contract.mjs';
@@ -571,6 +572,7 @@ export const prepareParallelWorkerDispatch = async ({
     resolution,
     executionCapsule,
     modelVisibleCapsule: executionCapsule ? buildModelCapsuleView(executionCapsule, { role: decision.role }) : null,
+    modelVisiblePrompt: buildModelVisiblePromptView({ modelInput, capsule: executionCapsule }),
     executionContract: buildExecutionContract(modelInput, decision),
     hostExecutionContract: hostBoundary.contract,
     admission,
@@ -826,12 +828,10 @@ const dispatchKernelTurnAttempt = async ({
   // continued session.
   const sessionLineage = resolveSessionLineage({ previous: null, current: envelope.cacheIdentity, role: decision.role, instanceSeed: decision.decisionId });
 
-  // Wave 3: the launcher gets the allowlisted model-visible projection, never
-  // the persisted capsule — the persisted one carries control/provenance
-  // fields (capsuleId, mutationRevision, workspaceIdentity, ...) that must
-  // not enter a cacheable prompt. `executionCapsule` below (unprojected)
-  // still flows to admission and the receipt, where that lineage is required.
-  const modelVisibleCapsule = executionCapsule ? buildModelCapsuleView(executionCapsule, { role: decision.role }) : null;
+  // The adapter is the provider boundary. It receives the current Host
+  // capsule for lineage/transport work and reprojects the six-field prompt
+  // there; no broad capsule view is sent to a launcher.
+  const modelVisiblePrompt = buildModelVisiblePromptView({ modelInput, capsule: executionCapsule });
 
   const startedAt = now();
   let dispatch;
@@ -841,7 +841,9 @@ const dispatchKernelTurnAttempt = async ({
       decision,
       resolution,
       strategy: enforcementStrategy,
-      executionCapsule: modelVisibleCapsule,
+      executionCapsule,
+      modelInput,
+      modelVisiblePrompt,
       executionContract: buildExecutionContract(modelInput, decision),
       hostExecutionContract: hostBoundary.contract,
       envelope,
@@ -862,7 +864,6 @@ const dispatchKernelTurnAttempt = async ({
       executionMode: actionContext.executionMode || null,
       delegationRequested: nativeDelegationRequested || decision.role === 'reviewer',
       childSession: {
-        role: decision.role,
         canDelegate: false,
         canCommit: false,
         freshSessionRequired: decision.workProfile?.independentContextRequired === true || decision.independentContextRequired === true || decision.role === 'reviewer',
@@ -1203,6 +1204,40 @@ const buildReviewSubjectStaleResponse = ({ turn, runId, lastTransportFailure, fr
   };
 };
 
+const buildReviewClaimFailureResponse = ({ turn, runId, claim, claimKey } = {}) => {
+  const reason = claim?.reason || 'review-claim-not-established';
+  const base = {
+    schemaVersion: 1,
+    runId,
+    dispatched: false,
+    modelInput: turn?.modelInput || null,
+    hostDirective: turn?.hostDirective || null,
+    executionCapsule: turn?.executionCapsule || turn?.hostDirective?.executionCapsule || null,
+    receipt: null,
+    report: null,
+  };
+  return {
+    ...base,
+    reason,
+    executionMode: 'independent-review',
+    claim: claim || { claimed: false, reason },
+    claimKey: claimKey || null,
+    review: {
+      required: true,
+      independent: true,
+      status: 'blocked',
+      blockedReason: reason,
+      errorSummary: 'Reviewer dispatch stopped because durable claim ownership was not established.',
+    },
+    reviewReceipt: null,
+    reviewReceiptId: null,
+    blocker: {
+      reason,
+      detail: 'No reviewer provider was invoked without an owned durable review claim.',
+    },
+  };
+};
+
 export const dispatchKernelTurn = async ({
   controlPlane,
   runId,
@@ -1290,6 +1325,44 @@ export const dispatchKernelTurn = async ({
       reason: 'review-already-recorded',
     });
     return buildDeduplicatedReviewResponse({ runId, turn, receipt: existing });
+  }
+  const reviewStepId = decision.stepId || turn.hostDirective?.attempt?.stepId || turn.executionCapsule?.stepId;
+  const reviewPlanRevision = turn.executionCapsule?.planRevision ?? turn.hostDirective?.attempt?.planRevision ?? null;
+  const reviewMutationRevision = turn.executionCapsule?.mutationRevision ?? turn.hostDirective?.attempt?.mutationRevision ?? null;
+  // The claim label is part of the durable subject identity. Including the
+  // plan and step prevents a new plan from inheriting a stale old-plan claim.
+  const reviewClaimKey = JSON.stringify({
+    runId,
+    stepId: reviewStepId || null,
+    planRevision: reviewPlanRevision,
+    mutationRevision: reviewMutationRevision,
+    obligationId: decision.obligationId || 'review',
+  });
+  const reviewClaimHolder = `host-review:${process.pid}:${randomUUID()}`;
+  const reviewClaim = controlPlane.stateStore?.claimReviewAttempt?.({
+    runId,
+    stepId: reviewStepId,
+    claimKey: reviewClaimKey,
+    holder: reviewClaimHolder,
+    expiresAt: new Date(Date.now() + 300000).toISOString(),
+    role: decision.role,
+    actionKind: decision.actionKind,
+    obligationId: decision.obligationId,
+    planRevision: reviewPlanRevision,
+    mutationRevision: reviewMutationRevision,
+  });
+  if (reviewClaim?.reason === 'already-claimed' || (reviewClaim && !reviewClaim.claimed && reviewClaim.existing)) {
+    return { ...buildDeduplicatedReviewResponse({ runId, turn, receipt: null }), status: 'review-in-progress', reason: 'review-already-claimed', claim: reviewClaim.existing || null };
+  }
+  const reviewClaimEstablished = reviewClaim?.claimed === true && Boolean(reviewClaim.existing?.attemptId);
+  if (decision.role === 'reviewer' && !reviewClaimEstablished) {
+    const claimFailureReason = reviewClaim?.reason || 'review-claim-not-established';
+    finishUnusableReviewAttempt({
+      controlPlane,
+      attempt: turn.hostDirective?.attempt || null,
+      reason: claimFailureReason,
+    });
+    return buildReviewClaimFailureResponse({ runId, turn, claim: reviewClaim, claimKey: reviewClaimKey });
   }
   const defaults = {
     controlPlane,
@@ -1395,6 +1468,11 @@ export const dispatchKernelTurn = async ({
       reason: 'no-independent-review-capability',
     });
   }
+  controlPlane.stateStore?.releaseReviewClaim?.(reviewClaimKey, reviewClaimHolder, {
+    runId,
+    stepId: reviewStepId,
+    planRevision: reviewPlanRevision,
+  });
 
   const base = withoutReviewAttemptMeta(lastTransportFailure) || {
     schemaVersion: 1,

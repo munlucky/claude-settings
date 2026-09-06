@@ -3,6 +3,8 @@
 // Work still proceeds on the current model — it is simply not counted as
 // routed. Assuming an unverified capability is the failure mode this prevents.
 
+import { buildModelVisiblePromptMessage, buildModelVisiblePromptView } from '../model-capsule-view.mjs';
+
 export const FALLBACK_CAPABILITIES = Object.freeze({
   surface: 'fable',
   supportsSubagentModel: false,
@@ -17,14 +19,19 @@ export const createFableAdapter = ({ surface = 'fable', capabilities = {}, launc
   return {
     surface,
     capabilities: resolved,
-    async dispatch({ decision, resolution, strategy, executionCapsule = null, executionContract }) {
+    async dispatch({ decision, resolution, strategy, executionCapsule = null, modelInput = {} }) {
       const advisory = {
         requestedModelClass: decision.modelClass,
         advisoryModel: resolution.model,
         permissions: decision.permissions,
       };
       if (!launch) return { status: 'unsupported', resultStatus: 'completed', resolvedModel: null, advisory };
-      const result = (await launch({ advisory, executionCapsule, executionContract, decision, strategy })) || {};
+      const modelVisiblePrompt = buildModelVisiblePromptView({ modelInput, capsule: executionCapsule });
+      const result = (await launch({
+        message: buildModelVisiblePromptMessage({ prompt: modelVisiblePrompt, review: decision.role === 'reviewer' }),
+        modelVisiblePrompt,
+        prompt: modelVisiblePrompt,
+      })) || {};
       return {
         status: result.status || 'unsupported',
         resultStatus: result.resultStatus || 'completed',

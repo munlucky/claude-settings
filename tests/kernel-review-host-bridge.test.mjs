@@ -214,8 +214,9 @@ test('the native Host review bridge ingests the observed outcome into a Kernel r
     });
     assert.equal(nativeRequest.task_name, 'kernel_reviewer');
     assert.equal(nativeRequest.child_session.canCommit, false);
-    assert.equal(nativeRequest.execution_capsule.permissions.filesystem, 'read_only');
-    assert.equal(nativeRequest.execution_capsule.mutationRevision, undefined, 'control provenance stays out of the model-visible capsule');
+    assert.equal(nativeRequest.execution_capsule, undefined, 'the provider request must not receive the Host capsule');
+    assert.equal(nativeRequest.execution_contract, undefined, 'the provider request must not receive the Host contract');
+    assert.doesNotMatch(nativeRequest.message, /"role"|"permissions"|"nonGoals"|executionCapsule|executionContract/);
     assert.equal(result.review.review.verdict, 'pass');
     assert.match(result.reviewReceiptId, /^review-receipt-[a-f0-9]{24}$/);
     assert.equal(result.reviewReceipt.reviewer.usageReceiptId, result.receipt.receiptId);
@@ -370,7 +371,7 @@ test('a pre-spawn reviewer transport failure can use the next concrete transport
     assert.equal(fallbackInvocation.parentSessionId, 'review-owner');
     assert.equal(fallbackInvocation.environment, originalEnv);
     assert.equal(fallbackInvocation.invocation.model, 'main-review-model');
-    assert.equal(fallbackInvocation.decision.role, 'reviewer');
+    assert.equal(fallbackInvocation.invocation.subagent, 'kernel-reviewer');
     const reviewerAttempts = fixture.cp.stateStore.getStepAttempts('review-preflight-chain')
       .filter((attempt) => fixture.cp.stateStore.getModelRouteDecision(attempt.routeDecisionId, { runId: 'review-preflight-chain' })?.role === 'reviewer');
     assert.equal(reviewerAttempts.length, 2);
@@ -1685,8 +1686,10 @@ test('Case A DoD: a pure Codex environment completes independent review with a f
     assert.equal(spawnedReviewerRequest.parent_session_id, ownerSessionId);
     assert.equal(spawnedReviewerRequest.task_name, 'kernel_reviewer');
     assert.equal(spawnedReviewerRequest.child_session.canCommit, false);
-    assert.equal(spawnedReviewerRequest.child_session.freshSessionRequired, true);
-    assert.equal(spawnedReviewerRequest.execution_capsule.permissions.filesystem, 'read_only');
+    assert.equal(spawnedReviewerRequest.child_session.freshSessionRequired, undefined);
+    assert.equal(spawnedReviewerRequest.execution_capsule, undefined);
+    assert.equal(spawnedReviewerRequest.execution_contract, undefined);
+    assert.doesNotMatch(spawnedReviewerRequest.message, /"role"|"permissions"|"nonGoals"|executionCapsule|executionContract/);
     assert.equal(result.review.review.verdict, 'pass');
     assert.match(result.reviewReceiptId, /^review-receipt-[a-f0-9]{24}$/);
     assert.equal(result.reviewReceipt.reviewer.usageReceiptId, result.receipt.receiptId);

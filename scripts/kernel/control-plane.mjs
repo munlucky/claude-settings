@@ -496,6 +496,19 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     void idempotentReplay;
     return publicResult;
   };
+  const settleDurableReportReplay = (attempt) => {
+    if (!attempt?.reportResult || !['started', 'reported', 'verifying'].includes(attempt.status)) return;
+    if (typeof store.finishStepAttemptWithReportResult !== 'function') return;
+    const result = attempt.reportResult;
+    const step = result.step || {};
+    store.finishStepAttemptWithReportResult(attempt.attemptId, {
+      status: step.state === 'failed' || (Array.isArray(result.failures) && result.failures.length > 0) ? 'failed' : 'passed',
+      resultDigest: step.resultDigest || null,
+      changedPaths: Array.isArray(result.reportedChangedPaths) ? result.reportedChangedPaths : null,
+      failureReasons: Array.isArray(result.failures) ? result.failures.map((failure) => failure.errorSummary).filter(Boolean) : [],
+      failureCategory: result.failures?.[0]?.failureCategory || null,
+    }, result);
+  };
   let deliveryRecoveryInProgress = false;
   // Reconcile terminal bindings and stale mutation locks at the public Kernel
   // lifecycle boundary. Preserve only a completed binding owned by this host
@@ -3735,7 +3748,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       }
       const fencingToken = leaseResult.lease.fencingToken;
       try {
-        const result = await this.reportUnderLease(runId, payload, {
+        const reportResult = await this.reportUnderLease(runId, payload, {
           fencingToken,
           parallelSettlement: {
             expectedMutationRevision: Number(snapshot.expectedMutationRevision),
@@ -3746,8 +3759,8 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
             result,
           },
         });
-        recordReportOutcome(runId, result);
-        return publicReportResult(result);
+        recordReportOutcome(runId, reportResult);
+        return publicReportResult(reportResult);
       } finally {
         store.releaseLease(runId, { holder, fencingToken });
       }
@@ -3770,6 +3783,13 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         payload,
         workspaceIdentity: workspaceObservation?.identity || null,
       });
+      const durableReplay = typeof store.findStepAttemptByReportDigest === 'function'
+        ? store.findStepAttemptByReportDigest(runId, reportKey)
+        : null;
+      if (durableReplay?.reportResult) {
+        settleDurableReportReplay(durableReplay);
+        return { ...durableReplay.reportResult, idempotentReplay: true };
+      }
       if (reportIdempotencyCache.has(reportKey)) {
         const cached = reportIdempotencyCache.get(reportKey);
         return {
@@ -3812,6 +3832,13 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         payload,
         workspaceIdentity: currentObservation?.identity || null,
       });
+      const durableReplay = typeof store.findStepAttemptByReportDigest === 'function'
+        ? store.findStepAttemptByReportDigest(runId, reportKey)
+        : null;
+      if (durableReplay?.reportResult) {
+        settleDurableReportReplay(durableReplay);
+        return { ...durableReplay.reportResult, idempotentReplay: true };
+      }
       if (reportIdempotencyCache.has(reportKey)) {
         const cached = reportIdempotencyCache.get(reportKey);
         return {
@@ -4133,7 +4160,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       // rows so retry counting survives restarts.
       // Compatibility projection only. Completion, retry, and lineage below
       // use the step attempt returned by the canonical work-attempt authority.
-      const attempt = store.recordAttempt(runId, { attemptNumber: store.nextAttemptNumber(runId), state: run.state, status: 'started' });
+      const compatibilityAttempt = store.recordAttempt(runId, { attemptNumber: store.nextAttemptNumber(runId), state: run.state, status: 'started' });
 
       const boundAttempt = stepResolution.attempt || null;
       const boundWorkspaceId = report.workspaceId || boundAttempt?.workspaceId || null;
@@ -4185,10 +4212,17 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
             mutationRevision: run.mutationRevision,
             workspaceIdentityStart: observation.identity,
             summary: report.summary || null,
+            reportDigest: reportKey,
             changedPaths: report.changedPaths,
             workspaceId: report.workspaceId || null,
             baseWorkspaceIdentity: stepResolution.step?.baseWorkspaceIdentity || null,
           });
+        }
+        if (stepAttempt && typeof store.bindStepAttemptReportDigest === 'function') {
+          // Report digest binding belongs to the canonical Step Attempt API.
+          // The numeric `id` is only the legacy attempts-row compatibility
+          // projection and must never identify durable report state.
+          stepAttempt = store.bindStepAttemptReportDigest(stepAttempt.attemptId, reportKey) || stepAttempt;
         }
         // Workspace observation is what advances mutationRevision for a direct
         // report. Bind the active attempt to that observed result before proof
@@ -4561,7 +4595,15 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       // moves the cursor, and only a plan whose every step passed can reach
       // run-level completion.
       const stepOutcome = activeStep
-        ? this.settleStep(runId, { step: activeStep, attempt: stepAttempt, report, failures, outstanding, observation })
+        ? this.settleStep(runId, {
+          step: activeStep,
+          attempt: stepAttempt,
+          report,
+          failures,
+          outstanding,
+          observation,
+          persistAttempt: false,
+        })
         : null;
       const currentSteps = store.getRunSteps(runId, { planRevision: refreshed.planRevision });
       const stepsSettled = allStepsPassed(currentSteps, refreshed.planRevision);
@@ -4616,7 +4658,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         ? (finalization.finalizationStatus === 'completed' ? 'completed' : 'finalization-incomplete')
         : failures.length > 0 ? 'evidence-failed' : 'in-progress';
 
-      store.finishAttempt(attempt.id, failures.length > 0 ? 'failed' : 'finished');
+      store.finishAttempt(compatibilityAttempt.id, failures.length > 0 ? 'failed' : 'finished');
 
       // Classify failures against the run's baseline so the model can tell
       // which failures it caused vs. pre-existing/unrelated breakage.
@@ -4651,14 +4693,14 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         workUnitStatus,
         goalStatus,
         continuation,
-        attemptNumber: attempt.attemptNumber,
+        attemptNumber: stepAttempt?.attemptNumber ?? compatibilityAttempt.attemptNumber,
         mutationDetected: observed.changed,
         actualChangedPaths,
         reportedChangedPaths,
         executed,
         failures,
         failureClassification,
-        step: stepOutcome,
+        step: stepOutcome ? { ...stepOutcome } : null,
         finalization,
         next: buildNextForRun(finalRun, {
           verifications: store.getVerifications(runId),
@@ -4667,6 +4709,33 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
           failures,
         }),
       };
+      if (stepAttempt?.attemptId && stepOutcome?.attemptSettlement) {
+        // Journal the exact result before the settlement transaction. If the
+        // process exits after that transaction's status UPDATE, the durable
+        // result still lets restart replay the original bytes and finish the
+        // active attempt without rerunning proof.
+        if (typeof store.setStepAttemptReportResult === 'function') {
+          store.setStepAttemptReportResult(stepAttempt.attemptId, reportResult);
+        }
+        // The State Store owns the atomic boundary: use the same canonical
+        // string attemptId that owns the report digest, including when the
+        // Host pre-bound the attempt before this report crossed a process
+        // boundary.
+        if (typeof store.finishStepAttemptWithReportResult === 'function') {
+          store.finishStepAttemptWithReportResult(
+            stepAttempt.attemptId,
+            stepOutcome.attemptSettlement,
+            reportResult,
+          );
+        } else {
+          // Compatibility for narrow test doubles and older embedded callers.
+          // The real SQLite State Store always takes the atomic path above.
+          store.finishStepAttempt(stepAttempt.id, stepOutcome.attemptSettlement);
+          if (typeof store.setStepAttemptReportResult === 'function') {
+            store.setStepAttemptReportResult(stepAttempt.attemptId, reportResult);
+          }
+        }
+      }
       if (reportKey) reportIdempotencyCache.set(reportKey, reportResult);
       return reportResult;
     },

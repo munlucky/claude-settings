@@ -159,6 +159,7 @@ export const assessReviewReadiness = ({
   implementationOnly = false,
   env = process.env,
 } = {}) => {
+  const action = modelInput?.action || {};
   const reviewRequired = reviewRequiredForRun({ run, modelInput, obligations, verifications });
   const contractReady = isObject(contract)
     && (present(contract.objective) || list(contract.acceptance).length > 0 || list(contract.steps).length > 0);
@@ -209,29 +210,31 @@ export const assessReviewReadiness = ({
     modelSource: reviewRequired ? modelRoute.source : null,
   };
 
+  const completionBlockers = [];
   if (reviewRequired) {
-    if (!executionAvailable) blockers.push('review-execution-unavailable');
-    if (!modelAvailable) blockers.push('review-model-or-effort-unavailable');
-    if (!readOnlyAvailable) blockers.push('review-read-only-unavailable');
-    if (!independentContextAvailable) blockers.push('review-independent-context-unavailable');
+    if (!executionAvailable) completionBlockers.push('review-execution-unavailable');
+    if (!modelAvailable) completionBlockers.push('review-model-or-effort-unavailable');
+    if (!readOnlyAvailable) completionBlockers.push('review-read-only-unavailable');
+    if (!independentContextAvailable) completionBlockers.push('review-independent-context-unavailable');
     if (!receiptAvailable) degraded.push('review-receipt-attestation-unavailable');
   }
 
-  const status = blockers.length > 0
+  const currentWorkIsReview = action.type === 'review';
+  const status = blockers.length > 0 || (currentWorkIsReview && completionBlockers.length > 0)
     ? 'BLOCKED'
-    : degraded.length > 0
+    : degraded.length > 0 || completionBlockers.length > 0
       ? 'DEGRADED'
       : 'READY';
-  const reviewOnlyBlocker = blockers.length > 0 && blockers.every((blocker) => String(blocker).startsWith('review-'));
   const canComplete = status === 'READY';
-  const canStartMutation = canComplete
-    || (status === 'DEGRADED' && implementationOnly === true)
-    || (implementationOnly === true && reviewOnlyBlocker);
+  const canExecuteCurrentWork = status !== 'BLOCKED' && (!currentWorkIsReview || completionBlockers.length === 0);
+  const canStartMutation = canExecuteCurrentWork && (canComplete || implementationOnly === true);
   return Object.freeze({
     schemaVersion: REVIEW_READINESS_SCHEMA_VERSION,
     status,
     canStartMutation,
+    canExecuteCurrentWork,
     canComplete,
+    canCompleteGoal: canComplete,
     review,
     checks: {
       contract: { status: contractReady ? 'ready' : 'blocked', reason: contractReady ? 'contract-present' : 'contract-unavailable' },
@@ -239,12 +242,14 @@ export const assessReviewReadiness = ({
       verificationCommands: verification,
       permission: { status: permissionReady ? 'ready' : 'blocked', reason: permissionReady ? 'read-only-review-permission' : 'review-permission-not-read-only' },
     },
-    blockers: Object.freeze([...new Set(blockers)]),
+    blockers: Object.freeze([...new Set([...blockers, ...completionBlockers])]),
+    executionBlockers: Object.freeze([...new Set(blockers)]),
+    completionBlockers: Object.freeze([...new Set(completionBlockers)]),
     degraded: Object.freeze([...new Set(degraded)]),
     implementationOnly: implementationOnly === true,
     nextAction: status === 'READY'
       ? 'continue'
-      : (status === 'DEGRADED' || reviewOnlyBlocker) && implementationOnly === true
+      : (status === 'DEGRADED' && implementationOnly === true && canExecuteCurrentWork)
         ? 'continue-with-degraded-review'
         : 'stop-before-mutation',
   });

@@ -8,6 +8,8 @@ import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
 import { buildTurnPromptEnvelope, dispatchKernelTurn } from '../scripts/host/kernel/turn-dispatcher.mjs';
 import { createModelRegistry } from '../scripts/host/kernel/model-registry.mjs';
 import { createClaudeAdapter } from '../scripts/host/kernel/adapters/claude.mjs';
+import { createFableAdapter } from '../scripts/host/kernel/adapters/fable.mjs';
+import { MODEL_VISIBLE_PROMPT_FIELDS } from '../scripts/host/kernel/model-capsule-view.mjs';
 
 // Regression for a Codex review finding on PR #19: buildPromptEnvelope was
 // exercised only by the replay corpus and unit tests, never by a real
@@ -60,10 +62,9 @@ test('a real dispatch records a non-null prefix digest and cache mode on the rec
   await withRun(async (cp, runId) => {
     const adapter = createClaudeAdapter({
       launch: async ({ invocation, envelope }) => {
-        // A real launcher would read envelope.segments for cache breakpoints;
-        // this fake just proves the envelope actually arrived.
-        assert.ok(envelope, 'launch() must receive the prompt envelope');
-        assert.match(envelope.cacheIdentity.prefixDigest, /^sha256:[a-f0-9]{64}$/);
+        // The envelope remains available to the Host receipt path, but is
+        // intentionally not a provider-launch argument.
+        assert.equal(envelope, undefined, 'Host prompt envelope must not cross the provider boundary');
         return { resolvedModel: invocation.model, sessionId: 'claude-session-1' };
       },
     });
@@ -88,12 +89,13 @@ test('a real dispatch records a non-null prefix digest and cache mode on the rec
   });
 });
 
-test('computing the envelope does not change the legacy execution contract sent to the worker', async () => {
+test('the provider does not receive the Host execution contract', async () => {
   await withRun(async (cp, runId) => {
-    let seenContract = null;
+    let seenProviderInput = null;
     const adapter = createClaudeAdapter({
-      launch: async ({ invocation, executionContract }) => {
-        seenContract = executionContract;
+      launch: async (providerInput) => {
+        seenProviderInput = providerInput;
+        const { invocation } = providerInput;
         return { resolvedModel: invocation.model, sessionId: 'claude-session-1' };
       },
     });
@@ -104,9 +106,14 @@ test('computing the envelope does not change the legacy execution contract sent 
       registry: createModelRegistry({ surface: 'claude', env: FRONTIER_ENV }),
       actionContext: { executionMode: 'native-subagent', delegationRequested: true },
     });
-    assert.ok(seenContract);
-    assert.equal(typeof seenContract.objective, 'string');
-    assert.ok(!Object.hasOwn(seenContract, 'envelope'));
+    assert.ok(seenProviderInput);
+    assert.equal(seenProviderInput.executionContract, undefined);
+    assert.equal(seenProviderInput.executionCapsule, undefined);
+    assert.equal(seenProviderInput.envelope, undefined);
+    assert.equal(seenProviderInput.control, undefined);
+    assert.equal(seenProviderInput.modelPolicy, undefined);
+    assert.equal(seenProviderInput.message.includes('executionContract'), false);
+    assert.equal(seenProviderInput.message.includes('executionCapsule'), false);
   });
 });
 
@@ -130,14 +137,14 @@ test('two independent turns with the same identity fingerprint do not share a se
   });
 });
 
-test('the launcher receives the model-visible capsule projection, never the persisted one', async () => {
-  // Regression: buildModelCapsuleView() had no production caller — the raw
-  // persisted executionCapsule (capsuleId, mutationRevision, provenance,
-  // workspaceIdentity, ...) went straight to the launcher.
+test('the provider launcher receives only the six-field prompt projection', async () => {
+  // Regression: the raw persisted executionCapsule used to reach the
+  // launcher, and a caller-supplied modelVisiblePrompt could bypass the
+  // projection boundary.
   await withRun(async (cp, runId) => {
-    let seenCapsule = null;
+    let seenProviderInput = null;
     const adapter = createClaudeAdapter({
-      launch: async ({ executionCapsule }) => { seenCapsule = executionCapsule; return { resolvedModel: 'model-a', sessionId: 'claude-session-1' }; },
+      launch: async (providerInput) => { seenProviderInput = providerInput; return { resolvedModel: 'model-a', sessionId: 'claude-session-1' }; },
     });
     const result = await dispatchKernelTurn({
       controlPlane: cp,
@@ -146,13 +153,41 @@ test('the launcher receives the model-visible capsule projection, never the pers
       registry: createModelRegistry({ surface: 'claude', env: FRONTIER_ENV }),
       actionContext: { executionMode: 'native-subagent', delegationRequested: true },
     });
-    assert.ok(seenCapsule, 'the fake launcher must have received a capsule to make this regression meaningful');
-    assert.ok(!Object.hasOwn(seenCapsule, 'capsuleId'));
-    assert.ok(!Object.hasOwn(seenCapsule, 'mutationRevision'));
-    assert.ok(!Object.hasOwn(seenCapsule, 'provenance'));
-    assert.ok(!Object.hasOwn(seenCapsule, 'workspaceIdentity'));
-    assert.equal(typeof seenCapsule.objective, 'string');
+    assert.ok(seenProviderInput, 'the fake provider must receive a prompt');
+    assert.deepEqual(Object.keys(seenProviderInput.modelVisiblePrompt), [...MODEL_VISIBLE_PROMPT_FIELDS]);
+    assert.deepEqual(seenProviderInput.prompt, seenProviderInput.modelVisiblePrompt);
+    for (const forbidden of ['executionContract', 'executionCapsule', 'role', 'permissions', 'nonGoals', 'envelope', 'control', 'modelPolicy', 'reviewSubject']) {
+      assert.equal(Object.hasOwn(seenProviderInput, forbidden), false, `provider input leaked ${forbidden}`);
+      assert.equal(Object.hasOwn(seenProviderInput.invocation, forbidden), false, `provider invocation leaked ${forbidden}`);
+    }
+    assert.doesNotMatch(seenProviderInput.message, /executionContract|executionCapsule|"role"|"permissions"|"nonGoals"/);
     // The full, unprojected capsule is still what the receipt's lineage uses.
     assert.ok(result.executionCapsule.capsuleId);
   });
+});
+
+test('the Fable launcher receives only the sanitized prompt boundary', async () => {
+  let seen = null;
+  const adapter = createFableAdapter({
+    launch: async (providerInput) => {
+      seen = providerInput;
+      return { status: 'completed' };
+    },
+  });
+  const result = await adapter.dispatch({
+    decision: { role: 'implementer', modelClass: 'value_coding', permissions: { filesystem: 'workspace_write' } },
+    resolution: { model: 'host-only-model', effort: 'high' },
+    modelInput: {
+      objective: 'fable objective',
+      action: { type: 'implement', step: { allowedPaths: ['src/**'] } },
+      requiredEvidence: [{ obligationId: 'fable-proof', provider: { leaseId: 'nested-leak' } }],
+      executionContract: { mutationRevision: 7 },
+    },
+    executionCapsule: { capsuleId: 'capsule-host-only', mutationRevision: 7, provenance: { routeDecisionId: 'route-host-only' } },
+    envelope: { control: { runId: 'run-host-only' }, modelPolicy: { resolvedModel: 'host-only-model' } },
+  });
+  assert.equal(result.status, 'completed');
+  assert.deepEqual(Object.keys(seen).sort(), ['message', 'modelVisiblePrompt', 'prompt']);
+  assert.deepEqual(seen.modelVisiblePrompt.requiredEvidence, [{ obligationId: 'fable-proof' }]);
+  assert.doesNotMatch(seen.message, /executionContract|capsuleId|mutationRevision|routeDecision|provider|lease|control|modelPolicy/u);
 });

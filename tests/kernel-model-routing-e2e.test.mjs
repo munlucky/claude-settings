@@ -14,9 +14,14 @@ const ENV = { MOON_RELAY_KERNEL_CLAUDE_FRONTIER: 'frontier-model', MOON_RELAY_KE
 // A Host that honestly reports the model it was told to use, and a fresh
 // session id per role so reviewer independence is observable.
 const adapterFor = (sessions) => createClaudeAdapter({
-  launch: async ({ invocation, decision }) => {
-    sessions.push({ role: decision.role, model: invocation.model });
-    return { resolvedModel: invocation.model, sessionId: `${decision.role}-session`, inputTokens: 1000, outputTokens: 200, wallClockMs: 5000 };
+  launch: async ({ invocation }) => {
+    const role = invocation.subagent === 'kernel-planner'
+      ? 'planner'
+      : invocation.subagent === 'kernel-reviewer'
+        ? 'reviewer'
+        : 'implementer';
+    sessions.push({ role, model: invocation.model });
+    return { resolvedModel: invocation.model, sessionId: `${role}-session`, inputTokens: 1000, outputTokens: 200, wallClockMs: 5000 };
   },
 });
 

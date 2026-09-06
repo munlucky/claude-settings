@@ -3,6 +3,7 @@
 // work remains in the current native owner surface.
 
 import { isNativeDelegationRequested } from '../codex-actor-router.mjs';
+import { buildModelVisiblePromptMessage, buildModelVisiblePromptView } from '../model-capsule-view.mjs';
 
 export const CLAUDE_AGENT_FOR_ROLE = Object.freeze({
   planner: 'kernel-planner',
@@ -114,6 +115,39 @@ const hasClaudeProviderExecutionEvidence = (value) => {
   return CLAUDE_PROVIDER_EXECUTION_EVIDENCE_FIELDS.some((field) => hasMeaningfulEvidenceValue(value[field]));
 };
 
+const providerEnvironment = (value) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const safe = {};
+  let requiresProjection = false;
+  let keys = [];
+  try { keys = Object.keys(value); } catch { return null; }
+  for (const key of keys) {
+    try {
+      const next = value[key];
+      if (typeof next === 'string' || typeof next === 'boolean' || (typeof next === 'number' && Number.isFinite(next))) {
+        safe[key] = next;
+      } else {
+        requiresProjection = true;
+      }
+    } catch {
+      // A malformed runtime value is omitted at the provider boundary.
+    }
+  }
+  return requiresProjection ? Object.freeze(safe) : value;
+};
+
+const providerChildSession = (value) => {
+  if (!value || typeof value !== 'object') return null;
+  const maxNestedAgents = Number.isInteger(value.maxNestedAgents) && value.maxNestedAgents >= 0
+    ? value.maxNestedAgents
+    : null;
+  return {
+    canDelegate: value.canDelegate === true,
+    canCommit: value.canCommit === true,
+    ...(maxNestedAgents === null ? {} : { maxNestedAgents }),
+  };
+};
+
 const reviewPendingDispatch = ({ decision, resolution, parentSessionId = null } = {}) => ({
   status: 'review-required',
   resultStatus: 'interrupted',
@@ -143,7 +177,7 @@ export const createClaudeAdapter = ({ launch = null, capabilities = {} } = {}) =
   ownerDirectAvailable: true,
   ownerDirectDefault: true,
   nativeDelegationAvailable: hasLauncher,
-  async dispatch({ decision, resolution, strategy, executionCapsule = null, executionContract, envelope = null, workingDirectory = null, environment = null, parentSessionId = null, concurrencyGroup = null, childSession = null, executionMode = null, delegationRequested = false, actionContext = null }) {
+  async dispatch({ decision, resolution, strategy, executionCapsule = null, modelInput = {}, executionContract, envelope = null, workingDirectory = null, environment = null, parentSessionId = null, concurrencyGroup = null, childSession = null, executionMode = null, delegationRequested = false, actionContext = null }) {
     const invocation = buildClaudeInvocation({ decision, resolution });
     const nativeRequested = isNativeDelegationRequested({ executionMode, delegationRequested, actionContext, executionContract });
     const independentReviewRequired = decision.role === 'reviewer' && decision.independentContextRequired === true;
@@ -155,10 +189,27 @@ export const createClaudeAdapter = ({ launch = null, capabilities = {} } = {}) =
     if (!nativeRequested || !hasLauncher) {
       return { ...ownerDirectDispatch({ decision, resolution, parentSessionId }), invocation };
     }
-    // The envelope carries the cache-stable segments and breakpoint digests
-    // (Wave 3/5); a launcher that speaks the Claude API reads it for
-    // cache_control placement, but this adapter still owns no provider SDK.
-    const result = (await launch({ invocation, executionCapsule, executionContract, decision, strategy, envelope, workingDirectory, environment, parentSessionId, concurrencyGroup, childSession })) || {};
+    // Reproject from the current Host capsule at the provider boundary. The
+    // caller's prior projection is deliberately not trusted or forwarded.
+    // `envelope` remains Host-only for receipt/accounting and never crosses
+    // into the provider launcher.
+    const providerPrompt = buildModelVisiblePromptView({ modelInput, capsule: executionCapsule });
+    const providerInvocation = {
+      subagent: invocation.subagent,
+      model: invocation.model,
+      effort: invocation.effort,
+    };
+    const result = (await launch({
+      invocation: providerInvocation,
+      message: buildModelVisiblePromptMessage({ prompt: providerPrompt, review: decision.role === 'reviewer' }),
+      modelVisiblePrompt: providerPrompt,
+      prompt: providerPrompt,
+      workingDirectory: typeof workingDirectory === 'string' ? workingDirectory : null,
+      environment: providerEnvironment(environment),
+      parentSessionId: typeof parentSessionId === 'string' ? parentSessionId : null,
+      concurrencyGroup: typeof concurrencyGroup === 'string' ? concurrencyGroup : null,
+      childSession: providerChildSession(childSession),
+    })) || {};
     const preSpawnFailure = (result.status === 'failed' || result.resultStatus === 'failed')
       && result.failureStage === 'pre-spawn';
     const providerExecutionEvidence = hasClaudeProviderExecutionEvidence(result);

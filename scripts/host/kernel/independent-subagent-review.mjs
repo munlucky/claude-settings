@@ -7,6 +7,7 @@
 // allows the existing Kernel receipt path to ingest the verdict.
 
 import { observeWorkspaceIdentity } from '../../kernel/run/workspace-identity.mjs';
+import { buildModelVisiblePromptMessage, buildModelVisiblePromptView } from './model-capsule-view.mjs';
 
 export const INDEPENDENT_SUBAGENT_REVIEW_SCHEMA_VERSION = 1;
 export const INDEPENDENT_SUBAGENT_REVIEW_TRANSPORT = 'independent-subagent';
@@ -15,16 +16,33 @@ export const INDEPENDENT_SUBAGENT_REVIEW_DEFAULT_TIMEOUT_MS = Number(process.env
 const isObject = (value) => Boolean(value && typeof value === 'object' && !Array.isArray(value));
 const present = (value) => value !== null && value !== undefined && String(value).trim() !== '';
 
-const REVIEW_OUTPUT_SCHEMA = Object.freeze({
-  type: 'object',
-  properties: {
-    verdict: { type: 'string', enum: ['pass', 'fail', 'blocked'] },
-    findings: { type: 'array' },
-    risks: { type: 'array' },
-    evidenceRefs: { type: 'array', items: { type: 'string' } },
-  },
-  required: ['verdict', 'findings', 'risks', 'evidenceRefs'],
-  additionalProperties: false,
+const providerEnvironment = (value) => {
+  if (!isObject(value)) return null;
+  const safe = {};
+  let requiresProjection = false;
+  let keys = [];
+  try { keys = Object.keys(value); } catch { return null; }
+  for (const key of keys) {
+    try {
+      const next = value[key];
+      if (typeof next === 'string' || typeof next === 'boolean' || (typeof next === 'number' && Number.isFinite(next))) {
+        safe[key] = next;
+      } else {
+        requiresProjection = true;
+      }
+    } catch {
+      // A malformed runtime value is omitted at the provider boundary.
+    }
+  }
+  return requiresProjection ? Object.freeze(safe) : value;
+};
+
+const providerChildSession = (value) => ({
+  role: 'reviewer',
+  freshSessionRequired: true,
+  canCommit: false,
+  canDelegate: false,
+  permissions: 'read_only',
 });
 
 const normalizeReviewOutcome = (value) => {
@@ -39,21 +57,10 @@ const normalizeReviewOutcome = (value) => {
   return value;
 };
 
-export const buildIndependentSubagentReviewPrompt = ({ executionContract = null, executionCapsule = null } = {}) => [
-  'Perform the independent Kernel review described below.',
-  'You are a read-only reviewer in a fresh child context. Do not edit files, run mutating commands, invoke Kernel commands, or delegate to another agent.',
-  'Inspect only the current workspace and the supplied review capsule. Return exactly one JSON object matching the output schema.',
-  'A pass verdict requires every reviewed acceptance claim to be supported by the current files and evidence.',
-  '',
-  'OUTPUT SCHEMA',
-  JSON.stringify(REVIEW_OUTPUT_SCHEMA),
-  '',
-  'EXECUTION CONTRACT',
-  JSON.stringify(executionContract || {}, null, 2),
-  '',
-  'REVIEW CAPSULE',
-  JSON.stringify(executionCapsule || {}, null, 2),
-].join('\n');
+export const buildIndependentSubagentReviewPrompt = ({ modelInput = {}, executionCapsule = null } = {}) => {
+  const providerPrompt = buildModelVisiblePromptView({ modelInput, capsule: executionCapsule });
+  return buildModelVisiblePromptMessage({ prompt: providerPrompt, review: true });
+};
 
 const resolveLauncher = ({ spawnIndependentReviewer = null, host = globalThis } = {}) => {
   if (typeof spawnIndependentReviewer === 'function') return spawnIndependentReviewer;
@@ -256,10 +263,8 @@ export const createIndependentSubagentReviewTransport = ({
     async dispatch({
       decision,
       resolution,
+      modelInput = {},
       executionCapsule = null,
-      executionContract = null,
-      hostExecutionContract = null,
-      envelope = null,
       workingDirectory = null,
       environment = null,
       parentSessionId = null,
@@ -316,41 +321,22 @@ export const createIndependentSubagentReviewTransport = ({
         model: invocation.model,
         reasoningEffort: invocation.effort,
         reasoning_effort: invocation.effort,
-        message: buildIndependentSubagentReviewPrompt({ executionContract, executionCapsule }),
-        executionContract,
-        execution_contract: executionContract,
-        executionCapsule,
-        execution_capsule: executionCapsule,
-        hostExecutionContract,
-        parentSessionId,
-        parent_session_id: parentSessionId,
+        message: buildIndependentSubagentReviewPrompt({ modelInput, executionCapsule }),
+        parentSessionId: typeof parentSessionId === 'string' ? parentSessionId : null,
+        parent_session_id: typeof parentSessionId === 'string' ? parentSessionId : null,
         childSession: {
-          ...(childSession || {}),
-          role: 'reviewer',
-          freshSessionRequired: true,
-          canCommit: false,
-          canDelegate: false,
-          permissions: 'read_only',
+          ...providerChildSession(childSession),
         },
         child_session: {
-          ...(childSession || {}),
-          role: 'reviewer',
-          freshSessionRequired: true,
-          canCommit: false,
-          canDelegate: false,
-          permissions: 'read_only',
+          ...providerChildSession(childSession),
         },
-        workingDirectory,
-        working_directory: workingDirectory,
-        environment,
-        concurrencyGroup: concurrencyGroup || null,
-        concurrency_group: concurrencyGroup || null,
+        workingDirectory: typeof workingDirectory === 'string' ? workingDirectory : null,
+        working_directory: typeof workingDirectory === 'string' ? workingDirectory : null,
+        environment: providerEnvironment(environment),
+        concurrencyGroup: typeof concurrencyGroup === 'string' ? concurrencyGroup : null,
+        concurrency_group: typeof concurrencyGroup === 'string' ? concurrencyGroup : null,
         timeoutMs: usableTimeoutMs,
         timeout_ms: usableTimeoutMs,
-        // This is Host control data. Implementations must not append it to the
-        // model prompt; it is supplied so the launcher can bind its before /
-        // after workspace observation to the Kernel-issued subject.
-        reviewSubject,
       };
 
       let invoked;

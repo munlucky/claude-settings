@@ -7,7 +7,8 @@ import test from 'node:test';
 import { runGit } from '../scripts/lib/git-safe.mjs';
 import { observeWorkspaceIdentity } from '../scripts/kernel/run/workspace-identity.mjs';
 import { cleanupExecutionWorkspaces, executionRoot } from '../scripts/kernel/workspace/step-worktree-manager.mjs';
-import { dispatchKernelParallel } from '../scripts/host/kernel/parallel-dispatcher.mjs';
+import { dispatchKernelParallel, dispatchKernelStep } from '../scripts/host/kernel/parallel-dispatcher.mjs';
+import { createClaudeAdapter } from '../scripts/host/kernel/adapters/claude.mjs';
 import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
 
 const capabilities = {
@@ -198,6 +199,76 @@ const finishFixture = async ({ fixture, result }) => {
   await rm(fixture.projectRoot, { recursive: true, force: true });
   assert.ok(result);
 };
+
+test('parallel default worker dispatch keeps its Host envelope out of the provider launch', async () => {
+  const fixture = await createFixture();
+  const controlPlane = makeControlPlane({ fixture });
+  const step = makeSteps()[0];
+  const workspace = {
+    workspaceId: 'workspace-worker-alpha',
+    workspaceRoot: fixture.projectRoot,
+    baseWorkspaceIdentity: observeWorkspaceIdentity({ projectRoot: fixture.projectRoot }).identity,
+  };
+  let seen = null;
+  const adapter = createClaudeAdapter({
+    capabilities,
+    launch: async (providerInput) => {
+      seen = providerInput;
+      return {
+        status: 'completed',
+        resolvedModel: 'fixture-model',
+        sessionId: 'parallel-worker-session',
+        report: { summary: 'parallel worker complete', changedPaths: [] },
+      };
+    },
+  });
+  try {
+    const result = await dispatchKernelStep({
+      controlPlane,
+      runId: 'run-parallel-dispatch',
+      step,
+      workspace,
+      adapter,
+      hostCapabilities: capabilities,
+      prepareDispatch: async ({ hosted }) => ({
+        ...hosted,
+        resolution: { model: 'fixture-model', effort: 'high' },
+        decision: { role: 'implementer', modelClass: 'value_coding' },
+        executionCapsule: {
+          ...hosted.executionCapsule,
+          role: 'implementer',
+          objective: 'parallel objective',
+          workUnit: { objective: step.objective, allowedPaths: step.allowedPaths, expectedOutputs: step.expectedOutputs },
+          permissions: { filesystem: 'workspace_write' },
+          mutationRevision: 8,
+          provenance: { capsuleDigest: 'host-only-capsule', routeDecisionId: 'host-only-route' },
+        },
+        modelInput: {
+          objective: 'parallel objective',
+          action: { type: 'implement', step },
+          requiredEvidence: [{ obligationId: 'alpha-proof', control: { runId: 'nested-leak' } }],
+        },
+        hostDirective: {
+          ...hosted.hostDirective,
+          executionAssignment: { executionMode: 'native-subagent', delegation: { requested: true } },
+        },
+        envelope: { control: { runId: 'host-only-run' }, modelPolicy: { resolvedModel: 'host-only-model' } },
+      }),
+      deferReport: true,
+    });
+    assert.equal(result.status, 'passed', JSON.stringify(result));
+    assert.ok(seen);
+    assert.equal(seen.envelope, undefined);
+    assert.equal(seen.control, undefined);
+    assert.equal(seen.modelPolicy, undefined);
+    assert.deepEqual(seen.modelVisiblePrompt.requiredEvidence, [{ obligationId: 'alpha-proof' }]);
+    assert.doesNotMatch(seen.message, /host-only-run|host-only-model|nested-leak|mutationRevision|routeDecision/u);
+  } finally {
+    await cleanupExecutionWorkspaces({ runtimeHome: fixture.runtimeHome, projectId: 'project-parallel-dispatch', runId: 'run-parallel-dispatch', repoRoot: fixture.projectRoot, retain: false }).catch(() => {});
+    await rm(fixture.runtimeHome, { recursive: true, force: true });
+    await rm(fixture.projectRoot, { recursive: true, force: true });
+  }
+});
 
 test('parallel success uses existing Step receipts and integrates deterministic worker results', async () => {
   const run = await runDispatch();

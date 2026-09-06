@@ -113,8 +113,9 @@ const readinessBlockedPayload = ({ modelInput, readiness }) => ({
 
 const processHostLifecycleOutput = async ({ bridge, controlPlane, runId, modelInput, parameters = {} }) => {
   if (!bridge || !modelInput || modelInput.status === 'contract-rejected') return { output: modelInput, hostReview: null };
+  const implementationOnly = ['implement', 'fix', 'debug'].includes(String(modelInput.action?.type || '').toLowerCase());
   const readiness = typeof bridge.assess === 'function'
-    ? await bridge.assess({ controlPlane, runId, modelInput })
+    ? await bridge.assess({ controlPlane, runId, modelInput, implementationOnly })
     : null;
   const reviewRequired = Boolean(readiness?.review?.required || isKernelReviewAction(modelInput));
 
@@ -122,7 +123,7 @@ const processHostLifecycleOutput = async ({ bridge, controlPlane, runId, modelIn
   // lets an owner mutate through this lifecycle. The model cannot opt out by
   // adding a parameter to the MCP call; implementation-only is a trusted Host
   // policy decision, not model input.
-  if (reviewRequired && (!readiness || !readiness.canStartMutation || !readiness.canComplete)) {
+  if (reviewRequired && (!readiness || !readiness.canExecuteCurrentWork || (isKernelReviewAction(modelInput) && !readiness.canCompleteGoal))) {
     return {
       output: readinessBlockedPayload({ modelInput, readiness: readiness || {
         schemaVersion: 1,
