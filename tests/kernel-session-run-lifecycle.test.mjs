@@ -145,6 +145,63 @@ test('explicit new-task intent fails closed instead of revising an active worktr
   assert.equal(holderRun.taskContract.digest, contract.digest);
 });
 
+test('a blocked worktree run is automatically abandoned and lease reclaimed when a new task contract arrives', () => {
+  const projectId = 'auto-abandon-project';
+  const worktreeId = 'worktree-auto-abandon';
+  const workspaceId = 'workspace-auto-abandon';
+  const contractOld = normalizeTaskContract({
+    objective: 'old blocked task',
+    acceptance: ['old blocked task is complete'],
+  });
+  let holderRun = {
+    runId: 'run-blocked-holder',
+    projectId,
+    workspaceId,
+    worktreeId,
+    status: 'blocked',
+    blockedReason: 'question',
+    taskContract: contractOld,
+  };
+  let lease = {
+    worktreeId,
+    projectId,
+    holderRunId: 'run-blocked-holder',
+  };
+  let abandonedReason = null;
+  const stateStore = {
+    getActiveOwnerBinding: () => null,
+    getRun: (runId) => runId === holderRun.runId ? holderRun : null,
+    listRuns: () => [holderRun],
+    getWorktreeMutationLease: () => lease,
+    getLatestRunForWorktree: () => holderRun,
+    abandonRun: (runId, { reason }) => {
+      if (runId === holderRun.runId) {
+        holderRun = { ...holderRun, status: 'abandoned' };
+        lease = null;
+        abandonedReason = reason;
+      }
+    },
+  };
+
+  const resolved = resolveBoundInvocation({
+    stateStore,
+    projectId,
+    provider: 'codex',
+    sessionId: 'codex:fresh-session',
+    workspaceId,
+    worktreeId,
+    taskContract: {
+      objective: 'new distinct task',
+      acceptance: ['new distinct task completes'],
+    },
+  });
+
+  assert.equal(resolved.mode, 'create');
+  assert.equal(holderRun.status, 'abandoned');
+  assert.equal(lease, null);
+  assert.equal(abandonedReason, 'superseded-and-archived-for-new-task');
+});
+
 test('contract-first invocation resolver fails closed on explicit, provider, and workspace mismatches', () => {
   const stateStore = {
     getActiveOwnerBinding: () => ({
@@ -342,12 +399,10 @@ const explicitNewTaskAgainstActiveRun = async () => {
 
     const result = invokeNext({ ...fixture, sessionId, contractPath, invocationIntent: 'new-task' });
 
-    assert.notEqual(result.status, 0);
+    assert.equal(result.status, 0);
     const payload = parseCliJson(result);
-    assert.equal(payload.errorCode, 'worktree_run_conflict');
-    assert.equal(payload.diagnostics.reason, 'new-task-cannot-revise-mutable-run');
-    assert.equal(payload.diagnostics.holderRunId, holderRunId);
-    assert.equal(payload.diagnostics.holder.runId, holderRunId);
+    assert.equal(payload.status, 'read-only');
+    assert.equal(payload.activeWriterRunId, holderRunId);
 
     const store = await openKernelStateStore({ runtimeHome: fixture.runtimeHome });
     try {

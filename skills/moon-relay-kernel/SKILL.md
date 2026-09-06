@@ -28,4 +28,16 @@ The account command skillset defaults to Kernel. Bind the current project/worktr
 ## Verification
 - Request verifications using the command refs `next` lists for each outstanding obligation; the Kernel runtime executes them and owns the resulting evidence receipts.
 - For independent review actions (security review, protected T3 obligations, explicit flags), satisfy them via trusted review receipts recorded from an independent reviewer session (or native subagent fallback).
-- Follow a single linear verification sequence: Bounded Impact Test → Build/Typecheck → Regression Gate → Final Report.
+- Satisfy every verification obligation with fresh evidence; choose an order that fits the work, and report only after all required evidence is recorded.
+
+## Plan Ingestion & Worktree Reclaim
+- **Fast 2-Turn Plan Reading**: When ingesting an external plan or large specification (>200 lines), do not run iterative chunk loops (`Select-Object -Skip ... -First ...` or repeated `head/tail` turns).
+  - Turn 1 (Index Scan): Extract outline and line numbers in one turn:
+    - PowerShell: `Select-String -Path <planPath> -Pattern '^#+ ' | Select-Object LineNumber, Line`
+    - Shell: `grep -nE '^#+ ' <planPath>`
+  - Turn 2 (Targeted Slice): Extract only the targeted section or Wave range identified from the index scan, then proceed immediately to task contract creation.
+- **Contract Scale Sizing**:
+  - Small / Bounded Tasks (1–3 files): Produce a lightweight 1-step contract (30–40 lines) to enter execution within 30 seconds.
+  - Multi-Wave / Large Tasks (5+ subsystems): Map all waves into a structured task contract up front so the run executes autonomously under Kernel step sequencing.
+- **Ghost Run Recovery**: Starting a new task with `--invocation-intent new-task` or a distinct task contract automatically supersedes and archives any unresumed `blocked` run on the worktree, reclaiming the mutation lease.
+

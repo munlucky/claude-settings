@@ -148,13 +148,33 @@ export const resolveBoundInvocation = ({
           ...(effectiveWorktreeId ? { worktreeId: effectiveWorktreeId } : { workspaceId }),
         })
       : [];
-  const worktreeLease = effectiveWorktreeId && typeof stateStore.getWorktreeMutationLease === 'function'
+  let worktreeLease = effectiveWorktreeId && typeof stateStore.getWorktreeMutationLease === 'function'
     ? stateStore.getWorktreeMutationLease(effectiveWorktreeId)
     : null;
-  const mutableRuns = candidateRuns.filter((run) => run.status === 'active'
+  let mutableRuns = candidateRuns.filter((run) => run.status === 'active'
     || (run.status === 'blocked'
       && worktreeLease?.projectId === projectId
       && worktreeLease?.holderRunId === run.runId));
+
+  const shouldAbandonBlockedRuns = mutableRuns.length > 0
+    && mutableRuns.every((run) => run.status === 'blocked')
+    && (
+      isNewTask
+      || (contract && !requestedRunId && !binding?.runId && mutableRuns.every((run) => !isSameGoalIdentity({ existingRun: run, contract, binding, requestedRunId })))
+    );
+
+  if (shouldAbandonBlockedRuns) {
+    for (const run of mutableRuns) {
+      if (typeof stateStore.abandonRun === 'function') {
+        stateStore.abandonRun(run.runId, { reason: 'superseded-and-archived-for-new-task' });
+      }
+    }
+    mutableRuns = [];
+    worktreeLease = effectiveWorktreeId && typeof stateStore.getWorktreeMutationLease === 'function'
+      ? stateStore.getWorktreeMutationLease(effectiveWorktreeId)
+      : null;
+  }
+
   if (mutableRuns.length > 1) {
     throw codedError(
       'worktree_run_conflict',
@@ -168,7 +188,7 @@ export const resolveBoundInvocation = ({
       }),
     );
   }
-  const mutableRun = mutableRuns[0] || null;
+  let mutableRun = mutableRuns[0] || null;
   const requestedRun = requestedRunId ? stateStore.getRun(requestedRunId) : null;
   if (requestedRun) assertRunBinding(requestedRun);
 
@@ -241,7 +261,11 @@ export const resolveBoundInvocation = ({
 
   if (cursorRun && !requestedRunId && !binding?.runId && contract) {
     if (!isSameGoalIdentity({ existingRun: cursorRun, contract, binding, requestedRunId })) {
-      if (cursorRun.status === 'blocked' && (!worktreeLease || worktreeLease.holderRunId !== cursorRun.runId)) {
+      if (cursorRun.status === 'blocked') {
+        if (typeof stateStore.abandonRun === 'function' && worktreeLease?.holderRunId === cursorRun.runId) {
+          stateStore.abandonRun(cursorRun.runId, { reason: 'superseded-and-archived-for-new-task' });
+          worktreeLease = null;
+        }
         cursorRun = null;
       }
     }
