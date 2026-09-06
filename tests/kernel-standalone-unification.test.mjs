@@ -99,6 +99,48 @@ test('kernel commit admission rejects unknown, foreign, and drifted provenance',
       getMutationProvenance: (id) => provenanceFor(id),
     };
     assert.throws(() => resolveKernelCloseoutRun({ stateStore: multiStateStore, projectId: project.projectId, workspaceId: stable.workspaceId }), (error) => error.code === 'RUN_PROVENANCE_AMBIGUOUS');
+    // Test: 2 completed runs in DB, both match exact provenance -> RUN_PROVENANCE_AMBIGUOUS fail closed
+    assert.throws(() => resolveKernelCloseoutRun({
+      stateStore: multiStateStore,
+      projectId: project.projectId,
+      workspaceId: stable.workspaceId,
+      currentWorkspaceIdentity: workspaceIdentity,
+      currentPaths: ['app.txt'],
+      selectedPaths: ['app.txt'],
+    }), (error) => error.code === 'RUN_PROVENANCE_AMBIGUOUS');
+
+    // Test: 2 completed runs in DB, Run A matches current workspace identity/paths, Run B has older workspace identity -> Run A is selected cleanly
+    const runA = { ...run, runId: 'run-a', currentWorkspaceIdentity: workspaceIdentity };
+    const runB = { ...run, runId: 'run-b', currentWorkspaceIdentity: 'sha256:' + 'e'.repeat(64) };
+    const provenanceA = { ...provenance, runId: 'run-a', workspaceIdentity };
+    const provenanceB = { ...provenance, runId: 'run-b', workspaceIdentity: 'sha256:' + 'e'.repeat(64) };
+    const twoRunsStore = {
+      ...stateStore,
+      getRun: (id) => (id === 'run-a' ? runA : id === 'run-b' ? runB : null),
+      listRuns: () => [runB, runA],
+      getCompletionDecision: (id) => ({ runId: id, decision: 'accepted', sourceIdentity }),
+      getMutationProvenance: (id) => (id === 'run-a' ? provenanceA : id === 'run-b' ? provenanceB : null),
+    };
+    const resolvedRunA = resolveKernelCloseoutRun({
+      stateStore: twoRunsStore,
+      projectId: project.projectId,
+      workspaceId: stable.workspaceId,
+      currentWorkspaceIdentity: workspaceIdentity,
+      currentPaths: ['app.txt'],
+      selectedPaths: ['app.txt'],
+    });
+    assert.equal(resolvedRunA.run.runId, 'run-a');
+
+    // Test: selected path outside provenance -> fail closed
+    assert.throws(() => resolveKernelCloseoutRun({
+      stateStore: twoRunsStore,
+      projectId: project.projectId,
+      workspaceId: stable.workspaceId,
+      currentWorkspaceIdentity: workspaceIdentity,
+      currentPaths: ['app.txt'],
+      selectedPaths: ['outside.txt'],
+    }), (error) => error.code === 'RUN_PROVENANCE_REQUIRED');
+
     const uniqueStateStore = { ...multiStateStore, listRuns: () => [olderRun] };
     assert.equal(resolveKernelCloseoutRun({ stateStore: uniqueStateStore, projectId: project.projectId, workspaceId: stable.workspaceId }).run.runId, 'run-older');
     assert.throws(() => resolveKernelCloseoutRun({ stateStore: { ...stateStore, listRuns: () => [] }, projectId: project.projectId, workspaceId: stable.workspaceId }), (error) => error.code === 'RUN_PROVENANCE_REQUIRED');

@@ -585,3 +585,176 @@ test('pre-spawn observed session config counts as provider execution evidence', 
   assert.equal(dispatch.launcherFailure?.providerExecutionEvidence, true);
   assert.equal(dispatch.runtimePreflight, null);
 });
+
+test('Correction 1: mutation action + bounded capsule + capable host -> native worker selected automatically', async () => {
+  let launched = false;
+  let receivedChildSession = null;
+  const adapter = createCodexAdapter({
+    parentSessionObserver: stableParentObserver,
+    nativeLaunch: async ({ invocation, childSession }) => {
+      launched = true;
+      receivedChildSession = childSession;
+      return {
+        status: 'completed',
+        resultStatus: 'completed',
+        sessionId: 'child-worker-1',
+        observedSessionConfig: { model: invocation.model, effort: invocation.effort },
+        outcome: {
+          status: 'completed',
+          summary: 'implemented step',
+          changedPaths: ['src/app.mjs'],
+          risks: [],
+          verifications: [],
+          requestedVerifications: [],
+          judgments: [],
+          knowledgeObservations: [],
+          blocker: null,
+        },
+      };
+    },
+  });
+
+  const decision = decisionFor('implement');
+  const executionCapsule = {
+    stepId: 'step-1',
+    workUnit: { stepId: 'step-1', allowedPaths: ['src/app.mjs'] },
+  };
+
+  const dispatch = await adapter.dispatch({
+    decision,
+    resolution: resolution('gpt-5.6-sol'),
+    strategy: 'session',
+    parentSessionId: 'main-session',
+    parentSessionConfig: {
+      before: { sessionId: 'main-session', model: 'gpt-5.6-sol', effort: 'high' },
+      after: { sessionId: 'main-session', model: 'gpt-5.6-sol', effort: 'high' },
+    },
+    executionCapsule,
+    modelInput: { action: { type: 'implement', step: { stepId: 'step-1', allowedPaths: ['src/app.mjs'] } } },
+    executionContract: {},
+  });
+
+  assert.equal(launched, true, 'native worker must be launched automatically');
+  assert.equal(dispatch.dispatchMechanism, 'native-subagent');
+  assert.equal(dispatch.status, 'completed');
+  assert.deepEqual(receivedChildSession, {
+    canDelegate: false,
+    canCommit: false,
+    maxNestedAgents: 0,
+  });
+});
+
+test('Correction 1: read/non-mutating work remains owner-direct even on capable host', async () => {
+  let launched = false;
+  const adapter = createCodexAdapter({
+    parentSessionObserver: stableParentObserver,
+    nativeLaunch: async () => { launched = true; return {}; },
+  });
+
+  const decision = { ...decisionFor('understand'), role: 'planner' };
+  const executionCapsule = {
+    stepId: 'step-1',
+    workUnit: { stepId: 'step-1', allowedPaths: ['src/app.mjs'] },
+  };
+
+  const dispatch = await adapter.dispatch({
+    decision,
+    resolution: resolution('gpt-5.6-sol'),
+    parentSessionId: 'main-session',
+    executionCapsule,
+    modelInput: { action: { type: 'read' } },
+    executionContract: {},
+  });
+
+  assert.equal(launched, false, 'read action must not launch native worker');
+  assert.equal(dispatch.status, 'owner-direct');
+  assert.equal(dispatch.dispatchMechanism, 'owner-direct');
+  assert.equal(dispatch.executionMode, 'owner-direct');
+});
+
+test('Correction 1: post-spawn worker failure does not fall back to owner-direct', async () => {
+  let launchAttempts = 0;
+  const adapter = createCodexAdapter({
+    parentSessionObserver: stableParentObserver,
+    nativeLaunch: async () => {
+      launchAttempts += 1;
+      return {
+        status: 'failed',
+        resultStatus: 'failed',
+        errorCode: 'worker-crashed',
+        failureStage: 'post-spawn',
+        sessionId: 'failed-child',
+      };
+    },
+  });
+
+  const decision = decisionFor('implement');
+  const executionCapsule = {
+    stepId: 'step-1',
+    workUnit: { stepId: 'step-1', allowedPaths: ['src/app.mjs'] },
+  };
+
+  const dispatch = await adapter.dispatch({
+    decision,
+    resolution: resolution('gpt-5.6-sol'),
+    parentSessionId: 'main-session',
+    parentSessionConfig: {
+      before: { sessionId: 'main-session', model: 'gpt-5.6-sol', effort: 'high' },
+      after: { sessionId: 'main-session', model: 'gpt-5.6-sol', effort: 'high' },
+    },
+    executionCapsule,
+    modelInput: { action: { type: 'implement', step: { stepId: 'step-1', allowedPaths: ['src/app.mjs'] } } },
+    executionContract: {},
+  });
+
+  assert.equal(launchAttempts, 1, 'must attempt worker launch exactly once');
+  assert.equal(dispatch.status, 'failed');
+  assert.equal(dispatch.dispatchMechanism, 'native-subagent');
+  assert.notEqual(dispatch.status, 'owner-direct');
+});
+
+test('Correction 1: child worker capabilities strictly keep canDelegate=false, canCommit=false, maxNestedAgents=0', async () => {
+  let observedChild = null;
+  const adapter = createCodexAdapter({
+    parentSessionObserver: stableParentObserver,
+    nativeLaunch: async ({ childSession }) => {
+      observedChild = childSession;
+      return {
+        status: 'completed',
+        resultStatus: 'completed',
+        sessionId: 'child-1',
+        outcome: {
+          status: 'completed',
+          summary: 'done',
+          changedPaths: ['src/app.mjs'],
+          risks: [],
+          verifications: [],
+          requestedVerifications: [],
+          judgments: [],
+          knowledgeObservations: [],
+          blocker: null,
+        },
+      };
+    },
+  });
+
+  await adapter.dispatch({
+    decision: decisionFor('implement'),
+    resolution: resolution('gpt-5.6-sol'),
+    parentSessionId: 'main-session',
+    parentSessionConfig: {
+      before: { sessionId: 'main-session', model: 'gpt-5.6-sol', effort: 'high' },
+      after: { sessionId: 'main-session', model: 'gpt-5.6-sol', effort: 'high' },
+    },
+    executionCapsule: { stepId: 'step-1', workUnit: { stepId: 'step-1', allowedPaths: ['src/app.mjs'] } },
+    modelInput: { action: { type: 'implement', step: { stepId: 'step-1', allowedPaths: ['src/app.mjs'] } } },
+    childSession: { canDelegate: true, canCommit: true, maxNestedAgents: 5 },
+    executionContract: {},
+  });
+
+  assert.deepEqual(observedChild, {
+    canDelegate: false,
+    canCommit: false,
+    maxNestedAgents: 0,
+  });
+});

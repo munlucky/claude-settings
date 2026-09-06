@@ -137,14 +137,12 @@ const providerEnvironment = (value) => {
 };
 
 const providerChildSession = (value) => {
-  if (!value || typeof value !== 'object') return null;
-  const maxNestedAgents = Number.isInteger(value.maxNestedAgents) && value.maxNestedAgents >= 0
-    ? value.maxNestedAgents
-    : null;
+  if (!value || typeof value !== 'object') return { canDelegate: false, canCommit: false, maxNestedAgents: 0 };
+  const hasMaxNested = Number.isInteger(value.maxNestedAgents) && value.maxNestedAgents >= 0;
   return {
-    canDelegate: value.canDelegate === true,
-    canCommit: value.canCommit === true,
-    ...(maxNestedAgents === null ? {} : { maxNestedAgents }),
+    canDelegate: false,
+    canCommit: false,
+    ...(hasMaxNested ? { maxNestedAgents: 0 } : {}),
   };
 };
 
@@ -179,7 +177,17 @@ export const createClaudeAdapter = ({ launch = null, capabilities = {} } = {}) =
   nativeDelegationAvailable: hasLauncher,
   async dispatch({ decision, resolution, strategy, executionCapsule = null, modelInput = {}, executionContract, envelope = null, workingDirectory = null, environment = null, parentSessionId = null, concurrencyGroup = null, childSession = null, executionMode = null, delegationRequested = false, actionContext = null }) {
     const invocation = buildClaudeInvocation({ decision, resolution });
-    const nativeRequested = isNativeDelegationRequested({ executionMode, delegationRequested, actionContext, executionContract });
+    const nativeRequested = isNativeDelegationRequested({
+      executionMode,
+      delegationRequested,
+      actionContext,
+      executionContract,
+      executionCapsule,
+      decision,
+      modelInput,
+      capabilities: resolvedCapabilities,
+      hasNativeLauncher: hasLauncher,
+    });
     const independentReviewRequired = decision.role === 'reviewer' && decision.independentContextRequired === true;
     if (independentReviewRequired && !hasLauncher) {
       // Independent review cannot silently fall back to the owner's context,

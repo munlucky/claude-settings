@@ -6,7 +6,11 @@ import { test } from 'node:test';
 import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
 import { dispatchKernelTurn } from '../scripts/host/kernel/turn-dispatcher.mjs';
 import { createKernelHostReviewBridge } from '../scripts/host/kernel/lifecycle-bridge.mjs';
-import { createIndependentSubagentReviewTransport, validateIndependentSubagentReviewAttestation } from '../scripts/host/kernel/independent-subagent-review.mjs';
+import {
+  createIndependentSubagentReviewTransport,
+  validateIndependentSubagentReviewAttestation,
+  INDEPENDENT_SUBAGENT_REVIEW_DEFAULT_TIMEOUT_MS,
+} from '../scripts/host/kernel/independent-subagent-review.mjs';
 import { MODEL_VISIBLE_PROMPT_FIELDS } from '../scripts/host/kernel/model-capsule-view.mjs';
 import { createModelRegistry } from '../scripts/host/kernel/model-registry.mjs';
 import { createClaudeAdapter } from '../scripts/host/kernel/adapters/claude.mjs';
@@ -329,4 +333,55 @@ test('missing independent subagent launcher remains unavailable and cannot claim
   assert.equal(transport.nativeDelegationAvailable, false);
   assert.equal(transport.capabilities.supportsIndependentContext, false);
   assert.equal(transport.capabilities.supportsIndependentSubagentReview, false);
+});
+
+test('independent subagent reviewer timeout resolves with strict precedence: explicit > injected env > 90000 default', async () => {
+  assert.equal(INDEPENDENT_SUBAGENT_REVIEW_DEFAULT_TIMEOUT_MS, 90000);
+
+  // 1. Default when neither explicit timeout nor env is provided
+  const defaultTransport = createIndependentSubagentReviewTransport({ host: {}, env: {} });
+  assert.equal(defaultTransport.timeoutMs, 90000);
+
+  // 2. Injected env takes precedence over default and ignores process.env
+  const envTransport = createIndependentSubagentReviewTransport({
+    host: {},
+    env: { MOON_RELAY_KERNEL_REVIEW_TIMEOUT_MS: '45000' },
+  });
+  assert.equal(envTransport.timeoutMs, 45000);
+
+  // 3. Explicit timeoutMs takes top precedence over injected env
+  const explicitTransport = createIndependentSubagentReviewTransport({
+    host: {},
+    timeoutMs: 30000,
+    env: { MOON_RELAY_KERNEL_REVIEW_TIMEOUT_MS: '60000' },
+  });
+  assert.equal(explicitTransport.timeoutMs, 30000);
+
+  // 4. Dispatched request forwards resolved timeoutMs to the launcher
+  let capturedRequest = null;
+  const mockLauncher = async (request) => {
+    capturedRequest = request;
+    return {
+      verdict: 'pass',
+      findings: [],
+      risks: [],
+      evidenceRefs: [],
+    };
+  };
+
+  const activeTransport = createIndependentSubagentReviewTransport({
+    spawnIndependentReviewer: mockLauncher,
+    env: { MOON_RELAY_KERNEL_REVIEW_TIMEOUT_MS: '55000' },
+  });
+  assert.equal(activeTransport.timeoutMs, 55000);
+
+  await activeTransport.dispatch({
+    decision: { role: 'reviewer' },
+    resolution: { model: 'gpt-6-astra', effort: 'high' },
+    modelInput: { objective: 'test' },
+  });
+
+  assert.ok(capturedRequest, 'launcher should have been invoked');
+  assert.equal(capturedRequest.timeoutMs, 55000);
+  assert.equal(capturedRequest.timeout_ms, 55000);
 });

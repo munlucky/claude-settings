@@ -111,6 +111,7 @@ export const createKernelHostReviewBridge = ({
   const independentSubagentTransport = createIndependentSubagentReviewTransport({
     host: nativeAgentHost,
     surface: effectiveSurface,
+    env,
   });
   const effectiveReviewTransports = [
     ...(Array.isArray(reviewTransports) ? reviewTransports : []),

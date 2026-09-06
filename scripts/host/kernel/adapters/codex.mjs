@@ -155,14 +155,12 @@ const providerEnvironment = (value) => {
 };
 
 const providerChildSession = (value) => {
-  if (!value || typeof value !== 'object') return null;
-  const maxNestedAgents = Number.isInteger(value.maxNestedAgents) && value.maxNestedAgents >= 0
-    ? value.maxNestedAgents
-    : null;
+  if (!value || typeof value !== 'object') return { canDelegate: false, canCommit: false, maxNestedAgents: 0 };
+  const hasMaxNested = Number.isInteger(value.maxNestedAgents) && value.maxNestedAgents >= 0;
   return {
-    canDelegate: value.canDelegate === true,
-    canCommit: value.canCommit === true,
-    ...(maxNestedAgents === null ? {} : { maxNestedAgents }),
+    canDelegate: false,
+    canCommit: false,
+    ...(hasMaxNested ? { maxNestedAgents: 0 } : {}),
   };
 };
 
@@ -571,7 +569,17 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
       const providerInvocation = { model: invocation.model, effort: invocation.effort };
       const taskName = decision.role === 'reviewer' ? 'kernel_reviewer' : 'kernel_implementer';
       const nativeAvailable = Boolean(effectiveNativeLaunch && resolved.supportsSubagentModel === true);
-      const nativeRequested = isNativeDelegationRequested({ executionMode, delegationRequested, actionContext, executionContract });
+      const nativeRequested = isNativeDelegationRequested({
+        executionMode,
+        delegationRequested,
+        actionContext,
+        executionContract,
+        executionCapsule,
+        decision,
+        modelInput,
+        capabilities: resolved,
+        hasNativeLauncher: Boolean(effectiveNativeLaunch),
+      });
       const actorRoute = resolveCodexActorRoute({
         decision,
         invocation,
@@ -580,6 +588,10 @@ export const createCodexAdapter = ({ launch = null, nativeLaunch = null, nativeA
         delegationRequested: nativeRequested,
         parentSessionId,
         parentSessionConfig,
+        executionCapsule,
+        executionContract,
+        actionContext,
+        modelInput,
       });
       // A missing native launcher only removes optional delegation. The
       // owner-direct path is the normal interactive Codex execution surface;

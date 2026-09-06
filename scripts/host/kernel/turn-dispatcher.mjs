@@ -15,7 +15,7 @@ import { resolveCodexModelPolicy } from './codex-model-policy.mjs';
 import { resolveClaudeEffort } from './claude-effort-policy.mjs';
 import { buildModelCapsuleView, buildModelVisiblePromptView } from './model-capsule-view.mjs';
 import { dispatchKernelRun } from './parallel-dispatcher.mjs';
-import { isNativeDelegationRequested } from './codex-actor-router.mjs';
+import { isMutationBearingAction, isNativeDelegationRequested, isWorkUnitBounded } from './codex-actor-router.mjs';
 import { resolveEnforcementStrategy } from '../../kernel/run/model-route-contract.mjs';
 import { observeWorkspaceIdentity } from '../../kernel/run/workspace-identity.mjs';
 import { attestReviewTransport, resolveReviewTransports } from './review-transport-resolver.mjs';
@@ -604,7 +604,21 @@ const dispatchKernelTurnAttempt = async ({
 } = {}) => {
   if (!adapter) throw new Error('dispatchKernelTurn requires a Host adapter');
   const hostCapabilities = adapter.capabilities || {};
-  const nativeDelegationRequested = isNativeDelegationRequested({ actionContext });
+  const hasSubagentCapability = adapter.nativeDelegationAvailable === true
+    || hostCapabilities.nativeSubagent === true
+    || hostCapabilities.supportsSubagentModel === true;
+  const nativeAvailable = Boolean(adapter.nativeDelegationAvailable && hasSubagentCapability);
+
+  const isExplicitOwnerDirect = actionContext.executionMode === 'owner-direct' || actionContext.ownerDirect === true;
+
+  const nativeDelegationRequested = isNativeDelegationRequested({
+    executionMode: actionContext.executionMode,
+    delegationRequested: actionContext.delegationRequested,
+    actionContext,
+    capabilities: hostCapabilities,
+    hasNativeLauncher: adapter.nativeDelegationAvailable === true,
+  });
+
   // Codex Desktop is already the native owner session. When it has no
   // optional native worker launcher, return the Kernel work unit to that
   // owner instead of entering the child-worker dispatcher and manufacturing a
@@ -615,15 +629,12 @@ const dispatchKernelTurnAttempt = async ({
     && adapter.ownerDirectDefault === true
     && suppressOwnerDirect !== true
     && !['prove', 'close'].includes(actionContext.actionKind)
-    && (!nativeDelegationRequested || adapter.nativeDelegationAvailable !== true);
+    && (isExplicitOwnerDirect || !nativeAvailable || !nativeDelegationRequested);
   if (ownerDirectRequested) {
     const modelInput = await controlPlane.next(runId);
     if (modelInput.status === 'not_found') return modelInput;
     const independentReviewRequired = modelInput.action?.type === 'review'
       && modelInput.action?.independentReviewRequired === true;
-    const hasSubagentCapability = adapter.nativeDelegationAvailable === true
-      || hostCapabilities.nativeSubagent === true
-      || hostCapabilities.supportsSubagentModel === true;
     if (independentReviewRequired) {
       if (!hasSubagentCapability) {
         return {
@@ -651,22 +662,32 @@ const dispatchKernelTurnAttempt = async ({
         delegationRequested: true,
       };
     } else {
-      return {
-        schemaVersion: 1,
-        runId,
-        dispatched: false,
-        executionMode: 'owner-direct',
-        reason: 'owner-session-execution-required',
-        ownerExecution: {
-          mode: 'owner-direct',
-          delegation: { mode: 'optional', available: false },
-          report: 'kernel report',
-        },
-        modelInput,
-        hostDirective: null,
-        receipt: null,
-        report: null,
-      };
+      const isMutation = isMutationBearingAction(actionContext.actionKind, modelInput.action?.type);
+      const isBounded = isWorkUnitBounded({ modelInput, stepId: modelInput.action?.step?.stepId, allowedPaths: modelInput.action?.step?.allowedPaths });
+      if (!isExplicitOwnerDirect && isMutation && isBounded && nativeAvailable) {
+        actionContext = {
+          ...actionContext,
+          executionMode: 'native-subagent',
+          delegationRequested: true,
+        };
+      } else {
+        return {
+          schemaVersion: 1,
+          runId,
+          dispatched: false,
+          executionMode: 'owner-direct',
+          reason: 'owner-session-execution-required',
+          ownerExecution: {
+            mode: 'owner-direct',
+            delegation: { mode: 'optional', available: false },
+            report: 'kernel report',
+          },
+          modelInput,
+          hostDirective: null,
+          receipt: null,
+          report: null,
+        };
+      }
     }
   }
   const parallelMode = String(env.MOON_RELAY_KERNEL_PARALLEL_MODE || 'shadow').toLowerCase();
@@ -861,11 +882,12 @@ const dispatchKernelTurnAttempt = async ({
         : null,
       concurrencyGroup: actionContext.concurrencyGroup || runId,
       actionContext,
-      executionMode: actionContext.executionMode || null,
-      delegationRequested: nativeDelegationRequested || decision.role === 'reviewer',
+      executionMode: actionContext.executionMode || ((!isExplicitOwnerDirect && isMutationBearingAction(decision.actionKind, modelInput.action?.type) && executionCapsule && isWorkUnitBounded({ capsule: executionCapsule, modelInput }) && nativeAvailable) ? 'native-subagent' : null),
+      delegationRequested: nativeDelegationRequested || decision.role === 'reviewer' || (!isExplicitOwnerDirect && isMutationBearingAction(decision.actionKind, modelInput.action?.type) && executionCapsule && isWorkUnitBounded({ capsule: executionCapsule, modelInput }) && nativeAvailable),
       childSession: {
         canDelegate: false,
         canCommit: false,
+        maxNestedAgents: 0,
         freshSessionRequired: decision.workProfile?.independentContextRequired === true || decision.independentContextRequired === true || decision.role === 'reviewer',
       },
     }) || {};
@@ -994,7 +1016,23 @@ const dispatchKernelTurnAttempt = async ({
       }
       : null,
   };
-  if (decision.role !== 'reviewer') return response;
+  if (decision.role !== 'reviewer') {
+    if (dispatch.status === 'failed' || dispatch.resultStatus === 'failed') {
+      const stepId = executionCapsule?.stepId || boundAttempt?.stepId;
+      if (stepId && typeof controlPlane?.failStepAttempt === 'function') {
+        try {
+          await controlPlane.failStepAttempt(runId, stepId, {
+            code: dispatch.errorCode || 'worker-dispatch-failed',
+            failureCategory: dispatch.failureCategory || 'provider/infrastructure',
+            errorSummary: dispatch.errorSummary || null,
+          });
+        } catch {
+          // fail safe if attempt is already closed
+        }
+      }
+    }
+    return response;
+  }
 
   if (dispatch.status !== 'completed' || !dispatch.outcome) {
     finishUnusableReviewAttempt({

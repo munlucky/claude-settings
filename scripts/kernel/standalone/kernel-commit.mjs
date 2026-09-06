@@ -76,9 +76,48 @@ export function mutationAdmissionDigest({ runId, projectId, workspaceId, sourceI
   });
 }
 
-export function resolveKernelCloseoutRun({ stateStore, projectId, workspaceId, runId = null, env = {} } = {}) {
+export function matchesCurrentMutationCandidate({
+  run,
+  provenance,
+  currentWorkspaceIdentity = null,
+  currentPaths = [],
+  selectedPaths = [],
+} = {}) {
+  if (!run || !provenance) return false;
+  const targetWorkspaceIdentity = provenance.workspaceIdentity || provenance.resultWorkspaceIdentity || provenance.workspaceIdentityEnd || null;
+  if (currentWorkspaceIdentity) {
+    if (targetWorkspaceIdentity && targetWorkspaceIdentity !== currentWorkspaceIdentity) return false;
+    if (run.currentWorkspaceIdentity && run.currentWorkspaceIdentity !== currentWorkspaceIdentity) return false;
+  }
+  const approvedPaths = new Set(Array.isArray(provenance.changedPaths) ? provenance.changedPaths : []);
+  if (approvedPaths.size === 0) return false;
+
+  const currentList = Array.isArray(currentPaths) ? currentPaths : [];
+  for (const candidatePath of currentList) {
+    if (!approvedPaths.has(candidatePath)) return false;
+  }
+
+  const selectedList = Array.isArray(selectedPaths) ? selectedPaths : [];
+  for (const candidatePath of selectedList) {
+    if (!approvedPaths.has(candidatePath)) return false;
+  }
+
+  return true;
+}
+
+export function resolveKernelCloseoutRun({
+  stateStore,
+  projectId,
+  workspaceId,
+  runId = null,
+  env = {},
+  currentWorkspaceIdentity = null,
+  currentPaths = [],
+  selectedPaths = [],
+} = {}) {
   const effectiveRunId = runId || env.MOON_RELAY_KERNEL_RUN_ID || null;
-  const candidates = effectiveRunId
+  // Stage 1: Filter Completed Structural Candidates
+  const structuralCandidates = effectiveRunId
     ? [stateStore.getRun(effectiveRunId)].filter(Boolean)
     : stateStore.listRuns({ projectId, statuses: ['completed'] })
       .filter((candidate) => candidate.projectId === projectId && candidate.workspaceId === workspaceId)
@@ -96,6 +135,22 @@ export function resolveKernelCloseoutRun({ stateStore, projectId, workspaceId, r
           && Array.isArray(provenance.changedPaths)
           && provenance.changedPaths.length > 0;
       });
+
+  // Stage 2: Filter Exact Current Mutation Candidates
+  let candidates = structuralCandidates;
+  if (!effectiveRunId && (currentWorkspaceIdentity || (Array.isArray(currentPaths) && currentPaths.length > 0) || (Array.isArray(selectedPaths) && selectedPaths.length > 0))) {
+    candidates = structuralCandidates.filter((candidate) => {
+      const provenance = stateStore.getMutationProvenance(candidate.runId) || stateStore.getLatestImplementationAttempt?.(candidate.runId);
+      return matchesCurrentMutationCandidate({
+        run: candidate,
+        provenance,
+        currentWorkspaceIdentity,
+        currentPaths,
+        selectedPaths,
+      });
+    });
+  }
+
   if (candidates.length === 0) {
     throw admissionError(effectiveRunId ? 'UNKNOWN_RUN_ID' : 'RUN_PROVENANCE_REQUIRED', { runId: effectiveRunId, projectId, workspaceId });
   }
@@ -122,7 +177,18 @@ export function resolveKernelCloseoutRun({ stateStore, projectId, workspaceId, r
 export function admitKernelMutation({ stateStore, project, statusEntries = [], selected = [], runId = null, env = {} } = {}) {
   const workspace = registerWorkspace({ stateStore, projectId: project.projectId, workspaceRoot: project.projectRoot });
   const currentObservation = observeWorkspaceIdentity({ projectRoot: project.projectRoot });
-  const { run, completion } = resolveKernelCloseoutRun({ stateStore, projectId: project.projectId, workspaceId: workspace.workspaceId, runId, env });
+  const currentPaths = uniquePaths(statusEntries.map((entry) => entry.path));
+  const selectedPaths = uniquePaths(selected);
+  const { run, completion } = resolveKernelCloseoutRun({
+    stateStore,
+    projectId: project.projectId,
+    workspaceId: workspace.workspaceId,
+    runId,
+    env,
+    currentWorkspaceIdentity: currentObservation.identity || currentObservation.workspaceIdentity || null,
+    currentPaths,
+    selectedPaths,
+  });
   const provenance = stateStore.getMutationProvenance(run.runId) || stateStore.getLatestImplementationAttempt(run.runId);
   if (!provenance || provenance.status && provenance.status !== 'passed') {
     throw admissionError('MUTATION_PROVENANCE_MISSING', { runId: run.runId });
@@ -131,8 +197,6 @@ export function admitKernelMutation({ stateStore, project, statusEntries = [], s
   if (approvedPaths.length === 0) {
     throw admissionError('MUTATION_PROVENANCE_MISSING', { runId: run.runId, reason: 'changed_paths_empty' });
   }
-  const currentPaths = uniquePaths(statusEntries.map((entry) => entry.path));
-  const selectedPaths = uniquePaths(selected);
   const approvedSet = new Set(approvedPaths);
   const foreignPaths = currentPaths.filter((candidate) => !approvedSet.has(candidate));
   const unapprovedSelectedPaths = selectedPaths.filter((candidate) => !approvedSet.has(candidate));

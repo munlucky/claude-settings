@@ -771,7 +771,7 @@ test('browser flow runner executes swappable agentic confirmation adapter after 
   }, null, 2));
 
   const result = spawnSync(process.execPath, [
-    'scripts/browser-flow-runner.mjs',
+    fromRoot('scripts', 'browser-flow-runner.mjs'),
     '--flow',
     'preview',
     '--config',
@@ -785,7 +785,7 @@ test('browser flow runner executes swappable agentic confirmation adapter after 
     '--timeout-ms',
     '5000',
   ], {
-    cwd: root,
+    cwd: tempRoot,
     encoding: 'utf8',
   });
 
@@ -990,7 +990,7 @@ test('browser flow runner rejects agentic artifacts outside browser artifact roo
   }, null, 2));
 
   const result = spawnSync(process.execPath, [
-    'scripts/browser-flow-runner.mjs',
+    fromRoot('scripts', 'browser-flow-runner.mjs'),
     '--flow',
     'preview',
     '--config',
@@ -1004,7 +1004,7 @@ test('browser flow runner rejects agentic artifacts outside browser artifact roo
     '--timeout-ms',
     '5000',
   ], {
-    cwd: root,
+    cwd: tempRoot,
     encoding: 'utf8',
   });
 
